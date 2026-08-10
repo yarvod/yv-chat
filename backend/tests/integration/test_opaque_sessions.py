@@ -13,6 +13,7 @@ from messenger.application.errors import (
     SessionNotAuthenticatedError,
 )
 from messenger.application.ports.identity import IdentityUnitOfWork
+from messenger.application.security_event_policy import SecurityEventPolicy
 from messenger.application.session_policy import SessionPolicy
 from messenger.application.use_cases.authenticate_session import (
     AuthenticateSession,
@@ -25,6 +26,11 @@ from messenger.application.use_cases.bootstrap_admin import (
 )
 from messenger.application.use_cases.login import Login, LoginCommand
 from messenger.application.use_cases.logout import Logout, LogoutCommand
+from messenger.application.use_cases.revoke_other_sessions import (
+    RevokeOtherSessions,
+    RevokeOtherSessionsCommand,
+    RevokeOtherSessionsResult,
+)
 from messenger.infrastructure.auth.passwords import Argon2PasswordHasher
 from messenger.infrastructure.auth.session_credentials import SecureSessionCredentialService
 from messenger.infrastructure.persistence.database import create_engine, create_session_factory
@@ -32,6 +38,7 @@ from messenger.infrastructure.persistence.identity_uow import SqlAlchemyIdentity
 from messenger.infrastructure.persistence.models import (
     ActivationTokenModel,
     DeviceModel,
+    SecurityEventModel,
     SessionModel,
     UserModel,
 )
@@ -46,6 +53,7 @@ POLICY = SessionPolicy(
     previous_token_grace=timedelta(seconds=60),
     touch_interval=timedelta(minutes=5),
 )
+EVENT_POLICY = SecurityEventPolicy(retention=timedelta(days=90))
 
 
 def configured_database_url() -> str:
@@ -59,6 +67,7 @@ async def reset_identity_tables(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with session_factory.begin() as session:
+        await session.execute(delete(SecurityEventModel))
         await session.execute(delete(SessionModel))
         await session.execute(delete(DeviceModel))
         await session.execute(delete(ActivationTokenModel))
@@ -93,6 +102,7 @@ async def run_flow(database_url: str) -> None:
             passwords=passwords,
             credentials=credentials,
             policy=POLICY,
+            event_policy=EVENT_POLICY,
         ).execute(
             LoginCommand(
                 username=admin.username,
@@ -107,6 +117,7 @@ async def run_flow(database_url: str) -> None:
             clock=FixedClock(NOW + timedelta(minutes=5)),
             credentials=credentials,
             policy=POLICY,
+            event_policy=EVENT_POLICY,
         ).execute(
             AuthenticateSessionCommand(
                 session_credential=login.session_credential,
@@ -120,6 +131,7 @@ async def run_flow(database_url: str) -> None:
             clock=FixedClock(NOW + timedelta(days=1)),
             credentials=credentials,
             policy=POLICY,
+            event_policy=EVENT_POLICY,
         )
 
         async def authenticate_once() -> AuthenticateSessionResult | Exception:
@@ -166,6 +178,7 @@ async def run_flow(database_url: str) -> None:
             clock=FixedClock(NOW + timedelta(days=1, seconds=60)),
             credentials=credentials,
             policy=POLICY,
+            event_policy=EVENT_POLICY,
         )
         with pytest.raises(SessionCredentialReplayError):
             await replay.execute(
@@ -180,6 +193,7 @@ async def run_flow(database_url: str) -> None:
             passwords=passwords,
             credentials=credentials,
             policy=POLICY,
+            event_policy=EVENT_POLICY,
         ).execute(
             LoginCommand(
                 username=admin.username,
@@ -187,11 +201,52 @@ async def run_flow(database_url: str) -> None:
                 device_name="Integration phone",
             )
         )
+        third_login = await Login(
+            unit_of_work=unit_of_work,
+            clock=FixedClock(NOW + timedelta(days=2)),
+            passwords=passwords,
+            credentials=credentials,
+            policy=POLICY,
+            event_policy=EVENT_POLICY,
+        ).execute(
+            LoginCommand(
+                username=admin.username,
+                password=PASSWORD,
+                device_name="Integration tablet",
+            )
+        )
+        revoke_others = RevokeOtherSessions(
+            unit_of_work=unit_of_work,
+            clock=FixedClock(NOW + timedelta(days=2, seconds=30)),
+            event_policy=EVENT_POLICY,
+        )
+
+        async def revoke_others_once() -> RevokeOtherSessionsResult:
+            return await revoke_others.execute(
+                RevokeOtherSessionsCommand(
+                    user_id=admin.user_id,
+                    current_session_id=second_login.session_id,
+                )
+            )
+
+        revoke_outcomes = await asyncio.gather(revoke_others_once(), revoke_others_once())
+        assert sorted(outcome.revoked_count for outcome in revoke_outcomes) == [0, 1]
+        async with session_factory() as session:
+            preserved_current = await session.get(SessionModel, second_login.session_id)
+            revoked_other = await session.get(SessionModel, third_login.session_id)
+            preserved_device = await session.get(DeviceModel, second_login.device_id)
+            revoked_device = await session.get(DeviceModel, third_login.device_id)
+            assert preserved_current is not None and preserved_current.revoked_at is None
+            assert preserved_device is not None and preserved_device.revoked_at is None
+            assert revoked_other is not None and revoked_other.revoked_at is not None
+            assert revoked_device is not None and revoked_device.revoked_at is not None
+
         logout_at = NOW + timedelta(days=2, minutes=1)
         await Logout(
             unit_of_work=unit_of_work,
             clock=FixedClock(logout_at),
             credentials=credentials,
+            event_policy=EVENT_POLICY,
         ).execute(LogoutCommand(session_credential=second_login.session_credential))
         async with session_factory() as session:
             logged_out = await session.get(SessionModel, second_login.session_id)

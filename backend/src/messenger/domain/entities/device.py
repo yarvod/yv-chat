@@ -99,3 +99,21 @@ class Device:
             normalize_ip(client_ip, "client_ip") if client_ip is not None else self.last_ip
         )
         return replace(self, last_seen_at=timestamp, last_ip=normalized_ip)
+
+    def rename(self, name: str) -> "Device":
+        """Change only the user-visible label, preserving authentication state."""
+        normalized_name = normalize_bounded_text(
+            name,
+            field_name="name",
+            maximum_length=80,
+        )
+        return replace(self, name=normalized_name)
+
+    def revoke(self, now: datetime) -> "Device":
+        """Revoke the device without using its metadata as an auth factor."""
+        timestamp = require_aware_datetime(now, "now")
+        if timestamp < self.created_at:
+            raise DomainValidationError("revoked_at must not be before created_at")
+        if self.revoked_at is not None:
+            return self
+        return replace(self, revoked_at=timestamp)

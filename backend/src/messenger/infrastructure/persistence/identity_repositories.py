@@ -1,20 +1,30 @@
 """SQLAlchemy repositories for identity use cases."""
 
+from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from messenger.application.errors import DuplicateUsernameError
 from messenger.application.ports.identity import (
+    DeviceSessionRecord,
     SessionCredentialMatch,
     UserAuthenticationRecord,
 )
-from messenger.domain.entities import ActivationToken, Device, Session, User
+from messenger.domain.entities import (
+    ActivationToken,
+    Device,
+    SecurityEvent,
+    SecurityEventType,
+    Session,
+    User,
+)
 from messenger.infrastructure.persistence.models import (
     ActivationTokenModel,
     DeviceModel,
+    SecurityEventModel,
     SessionModel,
     UserModel,
 )
@@ -74,6 +84,19 @@ def map_session(model: SessionModel) -> Session:
         absolute_expires_at=model.absolute_expires_at,
         rotated_at=model.rotated_at,
         revoked_at=model.revoked_at,
+    )
+
+
+def map_security_event(model: SecurityEventModel) -> SecurityEvent:
+    """Map only typed identifiers and timestamps; there is no free-form payload."""
+    return SecurityEvent(
+        id=model.id,
+        user_id=model.user_id,
+        event_type=SecurityEventType(model.event_type),
+        created_at=model.created_at,
+        expires_at=model.expires_at,
+        actor_session_id=model.actor_session_id,
+        target_device_id=model.target_device_id,
     )
 
 
@@ -219,6 +242,22 @@ class SqlAlchemyDeviceRepository:
         model = await self._session.scalar(statement)
         return map_device(model) if model is not None else None
 
+    async def get_owned_by_id(
+        self,
+        *,
+        user_id: UUID,
+        device_id: UUID,
+        for_update: bool = False,
+    ) -> Device | None:
+        statement = select(DeviceModel).where(
+            DeviceModel.id == device_id,
+            DeviceModel.user_id == user_id,
+        )
+        if for_update:
+            statement = statement.with_for_update()
+        model = await self._session.scalar(statement)
+        return map_device(model) if model is not None else None
+
     async def add(self, device: Device) -> None:
         self._session.add(
             DeviceModel(
@@ -304,3 +343,108 @@ class SqlAlchemySessionRepository:
         model.rotated_at = session.rotated_at
         model.revoked_at = session.revoked_at
         await self._session.flush()
+
+    async def list_active_with_devices(
+        self,
+        *,
+        user_id: UUID,
+        now: datetime,
+    ) -> list[DeviceSessionRecord]:
+        statement = (
+            select(SessionModel, DeviceModel)
+            .join(DeviceModel, DeviceModel.id == SessionModel.device_id)
+            .where(
+                SessionModel.user_id == user_id,
+                SessionModel.revoked_at.is_(None),
+                SessionModel.idle_expires_at > now,
+                SessionModel.absolute_expires_at > now,
+                DeviceModel.revoked_at.is_(None),
+            )
+            .order_by(SessionModel.last_seen_at.desc(), SessionModel.id)
+        )
+        rows = (await self._session.execute(statement)).all()
+        return [
+            DeviceSessionRecord(device=map_device(device), session=map_session(session))
+            for session, device in rows
+        ]
+
+    async def get_by_device_for_user_for_update(
+        self,
+        *,
+        user_id: UUID,
+        device_id: UUID,
+    ) -> DeviceSessionRecord | None:
+        statement = (
+            select(SessionModel, DeviceModel)
+            .join(DeviceModel, DeviceModel.id == SessionModel.device_id)
+            .where(
+                SessionModel.user_id == user_id,
+                SessionModel.device_id == device_id,
+                DeviceModel.user_id == user_id,
+            )
+            .with_for_update()
+        )
+        row = (await self._session.execute(statement)).one_or_none()
+        if row is None:
+            return None
+        session, device = row
+        return DeviceSessionRecord(device=map_device(device), session=map_session(session))
+
+    async def list_for_user_for_update(self, user_id: UUID) -> list[DeviceSessionRecord]:
+        statement = (
+            select(SessionModel, DeviceModel)
+            .join(DeviceModel, DeviceModel.id == SessionModel.device_id)
+            .where(SessionModel.user_id == user_id, DeviceModel.user_id == user_id)
+            .order_by(SessionModel.id)
+            .with_for_update()
+        )
+        rows = (await self._session.execute(statement)).all()
+        return [
+            DeviceSessionRecord(device=map_device(device), session=map_session(session))
+            for session, device in rows
+        ]
+
+
+class SqlAlchemySecurityEventRepository:
+    """Typed event persistence with retention pruning and user-scoped reads."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def add(self, event: SecurityEvent) -> None:
+        self._session.add(
+            SecurityEventModel(
+                id=event.id,
+                user_id=event.user_id,
+                event_type=event.event_type.value,
+                created_at=event.created_at,
+                expires_at=event.expires_at,
+                actor_session_id=event.actor_session_id,
+                target_device_id=event.target_device_id,
+            )
+        )
+        await self._session.flush()
+
+    async def list_recent(
+        self,
+        *,
+        user_id: UUID,
+        now: datetime,
+        limit: int,
+    ) -> list[SecurityEvent]:
+        statement = (
+            select(SecurityEventModel)
+            .where(
+                SecurityEventModel.user_id == user_id,
+                SecurityEventModel.expires_at > now,
+            )
+            .order_by(SecurityEventModel.created_at.desc(), SecurityEventModel.id.desc())
+            .limit(limit)
+        )
+        models = (await self._session.scalars(statement)).all()
+        return [map_security_event(model) for model in models]
+
+    async def prune_expired(self, now: datetime) -> None:
+        await self._session.execute(
+            delete(SecurityEventModel).where(SecurityEventModel.expires_at <= now)
+        )

@@ -2,22 +2,29 @@
 
 import secrets
 from datetime import datetime
-from typing import cast
 from uuid import UUID
 
+from dishka.integrations.fastapi import DishkaRoute, FromDishka
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 
 from messenger.application.errors import InvalidCredentialsError, SessionNotAuthenticatedError
-from messenger.application.use_cases.authenticate_session import AuthenticateSessionCommand
-from messenger.application.use_cases.login import LoginCommand
-from messenger.application.use_cases.logout import LogoutCommand
-from messenger.bootstrap.container import AuthServices
+from messenger.application.use_cases.authenticate_session import (
+    AuthenticateSession,
+    AuthenticateSessionCommand,
+    AuthenticateSessionResult,
+)
+from messenger.application.use_cases.login import Login, LoginCommand
+from messenger.application.use_cases.logout import Logout, LogoutCommand
 from messenger.bootstrap.settings import AppSettings
 from messenger.domain.exceptions import DomainValidationError
 from messenger.presentation.http.security import client_ip, require_allowed_origin, require_csrf
 
-router = APIRouter(prefix="/api/v1/auth", tags=["authentication"])
+router = APIRouter(
+    prefix="/api/v1/auth",
+    tags=["authentication"],
+    route_class=DishkaRoute,
+)
 
 
 class LoginRequest(BaseModel):
@@ -31,14 +38,6 @@ class SessionResponse(BaseModel):
     session_id: UUID
     device_id: UUID
     absolute_expires_at: datetime
-
-
-def settings_from(request: Request) -> AppSettings:
-    return cast(AppSettings, request.app.state.settings)
-
-
-def services_from(request: Request) -> AuthServices:
-    return cast(AuthServices, request.app.state.auth_services)
 
 
 def set_session_cookie(
@@ -58,12 +57,49 @@ def set_session_cookie(
     )
 
 
+async def authenticate_request(
+    request: Request,
+    response: Response,
+    settings: AppSettings,
+    authenticate_session: AuthenticateSession,
+) -> AuthenticateSessionResult:
+    """Authenticate the cookie and transparently apply credential rotation."""
+    credential = request.cookies.get(settings.session_cookie_name)
+    if credential is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
+    try:
+        result = await authenticate_session.execute(
+            AuthenticateSessionCommand(
+                session_credential=credential,
+                client_ip=client_ip(request, settings),
+            )
+        )
+    except SessionNotAuthenticatedError as error:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="unauthorized",
+        ) from error
+    if result.rotated_session_credential is not None:
+        set_session_cookie(
+            response,
+            settings,
+            result.rotated_session_credential,
+            result.absolute_expires_at,
+        )
+    return result
+
+
 @router.post("/login", response_model=SessionResponse)
-async def login(request: Request, response: Response, payload: LoginRequest) -> SessionResponse:
-    settings = settings_from(request)
+async def login(
+    request: Request,
+    response: Response,
+    payload: LoginRequest,
+    settings: FromDishka[AppSettings],
+    use_case: FromDishka[Login],
+) -> SessionResponse:
     require_allowed_origin(request, settings)
     try:
-        result = await services_from(request).login.execute(
+        result = await use_case.execute(
             LoginCommand(
                 username=payload.username,
                 password=payload.password,
@@ -110,30 +146,10 @@ async def login(request: Request, response: Response, payload: LoginRequest) -> 
 async def current_session(
     request: Request,
     response: Response,
+    settings: FromDishka[AppSettings],
+    use_case: FromDishka[AuthenticateSession],
 ) -> SessionResponse:
-    settings = settings_from(request)
-    credential = request.cookies.get(settings.session_cookie_name)
-    if credential is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
-    try:
-        result = await services_from(request).authenticate_session.execute(
-            AuthenticateSessionCommand(
-                session_credential=credential,
-                client_ip=client_ip(request, settings),
-            )
-        )
-    except SessionNotAuthenticatedError as error:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="unauthorized",
-        ) from error
-    if result.rotated_session_credential is not None:
-        set_session_cookie(
-            response,
-            settings,
-            result.rotated_session_credential,
-            result.absolute_expires_at,
-        )
+    result = await authenticate_request(request, response, settings, use_case)
     return SessionResponse(
         user_id=result.user_id,
         session_id=result.session_id,
@@ -143,12 +159,16 @@ async def current_session(
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-async def logout(request: Request, response: Response) -> None:
-    settings = settings_from(request)
+async def logout(
+    request: Request,
+    response: Response,
+    settings: FromDishka[AppSettings],
+    use_case: FromDishka[Logout],
+) -> None:
     require_csrf(request, settings)
     credential = request.cookies.get(settings.session_cookie_name)
     if credential is not None:
-        await services_from(request).logout.execute(LogoutCommand(session_credential=credential))
+        await use_case.execute(LogoutCommand(session_credential=credential))
     response.delete_cookie(
         settings.session_cookie_name,
         path="/",

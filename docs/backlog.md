@@ -6,18 +6,7 @@
 
 ## In progress
 
-### BL-003C — Active device/session management
-
-Результат: пользователь видит только свои device-bound sessions, отличает текущую, переименовывает устройство и отзывает одну или все остальные сессии.
-
-- user-scoped list/rename/revoke/revoke-all-others use cases;
-- current marker, stable ordering, bounded browser/OS/IP/last-seen metadata;
-- atomic session + device revoke и сохранение current session при revoke-others;
-- security events для login/logout/replay/device actions с bounded retention;
-- `/api/v1/devices` и `/api/v1/sessions` DTO без credential/password hashes;
-- negative ownership, CSRF/Origin и PostgreSQL concurrency tests.
-
-Definition of Done находится в `docs/workplan.md`.
+Активная фича отсутствует: `BL-003C` завершена, следующей будет выбрана `BL-003D`.
 
 ## Next — identity и account management
 
@@ -388,6 +377,10 @@ Definition of Done находится в `docs/workplan.md`.
 - решение о native wrapper только при подтверждённой необходимости.
 
 ## Completed
+
+### BL-003C — Active device/session management
+
+Dishka composition root с явными APP/REQUEST scopes, user-scoped device/session use cases, list/current marker, rename, revoke одной и всех остальных sessions, bounded typed security events, versioned FastAPI endpoints, Origin/CSRF/ownership tests и PostgreSQL concurrency verification.
 
 ### BL-003B — Session HTTP transport
 

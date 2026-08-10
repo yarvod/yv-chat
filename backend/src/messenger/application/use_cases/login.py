@@ -9,8 +9,9 @@ from messenger.application.ports.clock import Clock
 from messenger.application.ports.identity import IdentityUnitOfWorkFactory
 from messenger.application.ports.passwords import PasswordHasher
 from messenger.application.ports.session_credentials import SessionCredentialService
+from messenger.application.security_event_policy import SecurityEventPolicy
 from messenger.application.session_policy import SessionPolicy
-from messenger.domain.entities import Device, Session
+from messenger.domain.entities import Device, SecurityEvent, SecurityEventType, Session
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,12 +47,14 @@ class Login:
         passwords: PasswordHasher,
         credentials: SessionCredentialService,
         policy: SessionPolicy,
+        event_policy: SecurityEventPolicy,
     ) -> None:
         self._unit_of_work = unit_of_work
         self._clock = clock
         self._passwords = passwords
         self._credentials = credentials
         self._policy = policy
+        self._event_policy = event_policy
 
     async def execute(self, command: LoginCommand) -> LoginResult:
         """Return the same failure for unknown, inactive and wrong-password users."""
@@ -82,6 +85,17 @@ class Login:
             )
             await uow.devices.add(device)
             await uow.sessions.add(session)
+            await uow.security_events.prune_expired(now)
+            await uow.security_events.add(
+                SecurityEvent.create(
+                    user_id=session.user_id,
+                    event_type=SecurityEventType.LOGIN,
+                    now=now,
+                    retention=self._event_policy.retention,
+                    actor_session_id=session.id,
+                    target_device_id=device.id,
+                )
+            )
             await uow.commit()
 
         return LoginResult(

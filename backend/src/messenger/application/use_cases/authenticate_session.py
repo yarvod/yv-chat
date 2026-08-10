@@ -11,7 +11,9 @@ from messenger.application.errors import (
 from messenger.application.ports.clock import Clock
 from messenger.application.ports.identity import IdentityUnitOfWorkFactory
 from messenger.application.ports.session_credentials import SessionCredentialService
+from messenger.application.security_event_policy import SecurityEventPolicy
 from messenger.application.session_policy import SessionPolicy
+from messenger.domain.entities import SecurityEvent, SecurityEventType
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,11 +45,13 @@ class AuthenticateSession:
         clock: Clock,
         credentials: SessionCredentialService,
         policy: SessionPolicy,
+        event_policy: SecurityEventPolicy,
     ) -> None:
         self._unit_of_work = unit_of_work
         self._clock = clock
         self._credentials = credentials
         self._policy = policy
+        self._event_policy = event_policy
 
     async def execute(
         self,
@@ -81,6 +85,17 @@ class AuthenticateSession:
                 deferred_error = SessionNotAuthenticatedError("session is not authenticated")
             elif matched.matched_previous and not session.previous_token_is_valid(now):
                 await uow.sessions.update(session.revoke(now))
+                await uow.security_events.prune_expired(now)
+                await uow.security_events.add(
+                    SecurityEvent.create(
+                        user_id=session.user_id,
+                        event_type=SecurityEventType.CREDENTIAL_REPLAY,
+                        now=now,
+                        retention=self._event_policy.retention,
+                        actor_session_id=session.id,
+                        target_device_id=session.device_id,
+                    )
+                )
                 await uow.commit()
                 deferred_error = SessionCredentialReplayError(
                     "expired previous session credential was replayed"

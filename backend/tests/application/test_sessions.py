@@ -10,6 +10,7 @@ from messenger.application.errors import (
     SessionCredentialReplayError,
     SessionNotAuthenticatedError,
 )
+from messenger.application.security_event_policy import SecurityEventPolicy
 from messenger.application.session_policy import SessionPolicy
 from messenger.application.use_cases.authenticate_session import (
     AuthenticateSession,
@@ -17,7 +18,7 @@ from messenger.application.use_cases.authenticate_session import (
 )
 from messenger.application.use_cases.login import Login, LoginCommand
 from messenger.application.use_cases.logout import Logout, LogoutCommand
-from messenger.domain.entities import User
+from messenger.domain.entities import SecurityEventType, User
 from tests.application.fakes import (
     FakeIdentityUnitOfWorkFactory,
     FakePasswordHasher,
@@ -35,6 +36,7 @@ POLICY = SessionPolicy(
     previous_token_grace=timedelta(seconds=60),
     touch_interval=timedelta(minutes=5),
 )
+EVENT_POLICY = SecurityEventPolicy(retention=timedelta(days=90))
 
 
 def active_identity() -> tuple[IdentityState, FakePasswordHasher]:
@@ -63,6 +65,7 @@ def login_use_case(
         passwords=passwords,
         credentials=credentials,
         policy=POLICY,
+        event_policy=EVENT_POLICY,
     )
 
 
@@ -95,6 +98,10 @@ def test_login_enrolls_device_and_persists_only_credential_digest() -> None:
     assert device.user_id == session.user_id
     assert device.login_ip == "2001:db8::1"
     assert device.last_ip == "2001:db8::1"
+    event = next(iter(state.security_events.values()))
+    assert event.event_type is SecurityEventType.LOGIN
+    assert event.actor_session_id == session.id
+    assert event.target_device_id == device.id
     assert state.commits == 1
 
 
@@ -141,6 +148,7 @@ def test_rotation_allows_concurrent_previous_credential_then_revokes_replay() ->
         clock=FixedClock(NOW + timedelta(hours=1)),
         credentials=credentials,
         policy=POLICY,
+        event_policy=EVENT_POLICY,
     )
     rotated = asyncio.run(rotate.execute(AuthenticateSessionCommand(session_credential=original)))
     replacement = rotated.rotated_session_credential
@@ -151,6 +159,7 @@ def test_rotation_allows_concurrent_previous_credential_then_revokes_replay() ->
         clock=FixedClock(NOW + timedelta(hours=1, seconds=59)),
         credentials=credentials,
         policy=POLICY,
+        event_policy=EVENT_POLICY,
     )
     concurrent = asyncio.run(
         within_grace.execute(AuthenticateSessionCommand(session_credential=original))
@@ -162,12 +171,17 @@ def test_rotation_allows_concurrent_previous_credential_then_revokes_replay() ->
         clock=FixedClock(NOW + timedelta(hours=1, seconds=60)),
         credentials=credentials,
         policy=POLICY,
+        event_policy=EVENT_POLICY,
     )
     with pytest.raises(SessionCredentialReplayError):
         asyncio.run(replay.execute(AuthenticateSessionCommand(session_credential=original)))
 
     session = next(iter(state.sessions.values()))
     assert session.revoked_at == NOW + timedelta(hours=1, seconds=60)
+    assert any(
+        event.event_type is SecurityEventType.CREDENTIAL_REPLAY
+        for event in state.security_events.values()
+    )
     with pytest.raises(SessionNotAuthenticatedError):
         asyncio.run(
             replay.execute(AuthenticateSessionCommand(session_credential=replacement or "missing"))
@@ -184,6 +198,7 @@ def test_touch_is_throttled_and_ip_change_does_not_revoke() -> None:
         clock=FixedClock(NOW + timedelta(minutes=5)),
         credentials=credentials,
         policy=POLICY,
+        event_policy=EVENT_POLICY,
     )
     asyncio.run(
         touch.execute(
@@ -208,6 +223,7 @@ def test_touch_is_throttled_and_ip_change_does_not_revoke() -> None:
         clock=FixedClock(NOW + timedelta(minutes=6)),
         credentials=credentials,
         policy=POLICY,
+        event_policy=EVENT_POLICY,
     )
     asyncio.run(
         no_touch.execute(
@@ -228,6 +244,7 @@ def test_idle_expiry_and_logout_revoke_session_idempotently() -> None:
         clock=FixedClock(NOW + timedelta(hours=2)),
         credentials=credentials,
         policy=POLICY,
+        event_policy=EVENT_POLICY,
     )
 
     with pytest.raises(SessionNotAuthenticatedError):
@@ -238,6 +255,7 @@ def test_idle_expiry_and_logout_revoke_session_idempotently() -> None:
         unit_of_work=factory,
         clock=FixedClock(NOW + timedelta(hours=2, minutes=1)),
         credentials=credentials,
+        event_policy=EVENT_POLICY,
     )
     asyncio.run(logout.execute(LogoutCommand(session_credential=plaintext)))
     asyncio.run(logout.execute(LogoutCommand(session_credential="unknown")))

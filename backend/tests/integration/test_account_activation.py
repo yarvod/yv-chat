@@ -35,6 +35,7 @@ from messenger.infrastructure.persistence.identity_uow import SqlAlchemyIdentity
 from messenger.infrastructure.persistence.models import (
     ActivationTokenModel,
     DeviceModel,
+    SecurityEventModel,
     SessionModel,
     UserModel,
 )
@@ -55,6 +56,7 @@ async def reset_identity_tables(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with session_factory.begin() as session:
+        await session.execute(delete(SecurityEventModel))
         await session.execute(delete(SessionModel))
         await session.execute(delete(DeviceModel))
         await session.execute(delete(ActivationTokenModel))

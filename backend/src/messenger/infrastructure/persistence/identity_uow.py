@@ -7,12 +7,15 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from messenger.application.ports.identity import (
     ActivationTokenRepository,
     DeviceRepository,
+    IdentityUnitOfWork,
+    SecurityEventRepository,
     SessionRepository,
     UserRepository,
 )
 from messenger.infrastructure.persistence.identity_repositories import (
     SqlAlchemyActivationTokenRepository,
     SqlAlchemyDeviceRepository,
+    SqlAlchemySecurityEventRepository,
     SqlAlchemySessionRepository,
     SqlAlchemyUserRepository,
 )
@@ -28,6 +31,7 @@ class SqlAlchemyIdentityUnitOfWork:
         self.activation_tokens: ActivationTokenRepository
         self.devices: DeviceRepository
         self.sessions: SessionRepository
+        self.security_events: SecurityEventRepository
 
     async def __aenter__(self) -> "SqlAlchemyIdentityUnitOfWork":
         self._session = self._session_factory()
@@ -35,6 +39,7 @@ class SqlAlchemyIdentityUnitOfWork:
         self.activation_tokens = SqlAlchemyActivationTokenRepository(self._session)
         self.devices = SqlAlchemyDeviceRepository(self._session)
         self.sessions = SqlAlchemySessionRepository(self._session)
+        self.security_events = SqlAlchemySecurityEventRepository(self._session)
         return self
 
     async def __aexit__(
@@ -53,3 +58,13 @@ class SqlAlchemyIdentityUnitOfWork:
         if self._session is None:
             raise RuntimeError("unit of work has not been entered")
         await self._session.commit()
+
+
+class SqlAlchemyIdentityUnitOfWorkFactory:
+    """Create an independent SQLAlchemy transaction boundary per operation."""
+
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+        self._session_factory = session_factory
+
+    def __call__(self) -> IdentityUnitOfWork:
+        return SqlAlchemyIdentityUnitOfWork(self._session_factory)

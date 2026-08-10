@@ -136,7 +136,26 @@ Route не выполняет SQL, TTL calculation, membership business rules, c
 
 ### Bootstrap
 
-Единственный composition root читает typed settings, создаёт engine/adapters/use cases и управляет lifecycle process resources. `os.getenv()` не разбрасывается по модулям. Runtime dependencies constructor-injected; скрытых mutable globals нет.
+Единственный composition root читает typed settings, а Dishka явно связывает ports с concrete adapters и управляет lifecycle. `os.getenv()` не разбрасывается по модулям. Runtime dependencies constructor-injected; скрытых mutable globals и service locator через `request.app.state` нет.
+
+Scope contract:
+
+```text
+Dishka APP scope
+├── AppSettings
+├── AsyncEngine / async_sessionmaker
+├── IdentityUnitOfWorkFactory
+├── Clock / password / credential adapters
+└── immutable timing policies
+
+Dishka REQUEST scope
+└── typed application use cases
+
+application operation
+└── fresh UnitOfWork created by the use case
+```
+
+FastAPI handlers получают только нужные им зависимости через `FromDishka`; агрегат «все сервисы приложения» не передаётся. Dishka остаётся bootstrap/presentation detail: domain и application не импортируют DI framework. Request scope не заменяет transaction boundary — каждый use case сам открывает отдельный UoW, поэтому authentication и последующая command в одном HTTP request не делят скрытую транзакцию.
 
 ## 5. Code design contract
 
@@ -204,6 +223,8 @@ Browser auth использует opaque random credential + server-side state, 
 IP, GeoIP, User-Agent, Client Hints, OS/browser version и device model — только approximate/risk metadata. Их изменение само по себе не отзывает session и не даёт authorization. Client IP берётся только из socket peer/trusted reverse-proxy chain.
 
 Cookie-authenticated writes требуют exact allowed `Origin` и CSRF protection. Credential не принимается из URL, body, `Authorization`, `localStorage` или WebSocket query string.
+
+Active-device API выводит только non-revoked/non-expired sessions текущего пользователя, сервером отмечает current session и позволяет rename, revoke одной не-current device-bound session или atomic revoke-all-others. Ownership всегда ограничивается authenticated `user_id`; guessed foreign UUID возвращает тот же not-found outcome. Typed security events (`login`, `logout`, credential replay и device actions) содержат только opaque IDs/timestamps, имеют configurable bounded retention и не принимают free-form payload.
 
 ## 8. Conversation и authorization model
 

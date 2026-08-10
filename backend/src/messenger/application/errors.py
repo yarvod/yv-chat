@@ -47,3 +47,11 @@ class SessionNotAuthenticatedError(ApplicationError):
 
 class SessionCredentialReplayError(SessionNotAuthenticatedError):
     """An expired previous credential was replayed and the session was revoked."""
+
+
+class OwnedDeviceNotFoundError(ApplicationError):
+    """The requested device is absent or owned by another user."""
+
+
+class CurrentDeviceRevocationError(ApplicationError):
+    """The current device must be terminated through logout, not remote revoke."""

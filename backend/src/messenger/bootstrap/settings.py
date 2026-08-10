@@ -8,6 +8,7 @@ from urllib.parse import urlsplit
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from messenger.application.security_event_policy import SecurityEventPolicy
 from messenger.application.session_policy import SessionPolicy
 
 
@@ -52,6 +53,7 @@ class AppSettings(BaseSettings):
     session_rotation_interval_seconds: int = Field(default=86_400, gt=0)
     session_previous_token_grace_seconds: int = Field(default=60, gt=0)
     session_touch_interval_seconds: int = Field(default=300, gt=0)
+    security_event_retention_seconds: int = Field(default=7_776_000, gt=0, le=31_536_000)
 
     @field_validator("allowed_origins")
     @classmethod
@@ -108,6 +110,13 @@ class AppSettings(BaseSettings):
             rotation_interval=timedelta(seconds=self.session_rotation_interval_seconds),
             previous_token_grace=timedelta(seconds=self.session_previous_token_grace_seconds),
             touch_interval=timedelta(seconds=self.session_touch_interval_seconds),
+        )
+
+    @property
+    def security_event_policy(self) -> SecurityEventPolicy:
+        """Build the bounded account security-event policy."""
+        return SecurityEventPolicy(
+            retention=timedelta(seconds=self.security_event_retention_seconds)
         )
 
 

@@ -19,6 +19,7 @@ def test_identity_metadata_contains_expected_tables() -> None:
     assert set(Base.metadata.tables) == {
         "activation_tokens",
         "devices",
+        "security_events",
         "sessions",
         "users",
     }
@@ -83,3 +84,16 @@ def test_session_schema_stores_only_hashes_and_binds_device_owner() -> None:
     assert sessions.columns["previous_token_hash"].unique is True
     assert "session_credential" not in sessions.columns
     assert foreign_keys["fk_sessions_device_owner_devices"].ondelete == "CASCADE"
+
+
+def test_security_event_schema_is_typed_bounded_and_has_no_freeform_payload() -> None:
+    security_events = Base.metadata.tables["security_events"]
+
+    assert "event_type" in security_events.columns
+    assert "expires_at" in security_events.columns
+    assert "payload" not in security_events.columns
+    assert "metadata" not in security_events.columns
+    assert {
+        "ix_security_events_expires_at",
+        "ix_security_events_user_created_at",
+    }.issubset({index.name for index in security_events.indexes})

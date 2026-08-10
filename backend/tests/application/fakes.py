@@ -12,14 +12,16 @@ from messenger.application.ports.activation_secrets import GeneratedActivationSe
 from messenger.application.ports.identity import (
     ActivationTokenRepository,
     DeviceRepository,
+    DeviceSessionRecord,
     IdentityUnitOfWork,
+    SecurityEventRepository,
     SessionCredentialMatch,
     SessionRepository,
     UserAuthenticationRecord,
     UserRepository,
 )
 from messenger.application.ports.session_credentials import GeneratedSessionCredential
-from messenger.domain.entities import ActivationToken, Device, Session, User
+from messenger.domain.entities import ActivationToken, Device, SecurityEvent, Session, User
 
 
 @dataclass(slots=True)
@@ -31,6 +33,7 @@ class IdentityState:
     password_hashes: dict[UUID, str] = field(default_factory=dict)
     devices: dict[UUID, Device] = field(default_factory=dict)
     sessions: dict[UUID, Session] = field(default_factory=dict)
+    security_events: dict[UUID, SecurityEvent] = field(default_factory=dict)
     commits: int = 0
 
 
@@ -106,6 +109,17 @@ class FakeDeviceRepository:
         del for_update
         return self._state.devices.get(device_id)
 
+    async def get_owned_by_id(
+        self,
+        *,
+        user_id: UUID,
+        device_id: UUID,
+        for_update: bool = False,
+    ) -> Device | None:
+        del for_update
+        device = self._state.devices.get(device_id)
+        return device if device is not None and device.user_id == user_id else None
+
     async def add(self, device: Device) -> None:
         self._state.devices[device.id] = device
 
@@ -134,6 +148,88 @@ class FakeSessionRepository:
     async def update(self, session: Session) -> None:
         self._state.sessions[session.id] = session
 
+    async def list_active_with_devices(
+        self,
+        *,
+        user_id: UUID,
+        now: datetime,
+    ) -> list[DeviceSessionRecord]:
+        records = [
+            DeviceSessionRecord(device=self._state.devices[session.device_id], session=session)
+            for session in self._state.sessions.values()
+            if session.user_id == user_id
+            and session.revoked_at is None
+            and not session.is_expired(now)
+            and self._state.devices[session.device_id].revoked_at is None
+        ]
+        return sorted(
+            records,
+            key=lambda record: (record.session.last_seen_at, record.session.id),
+            reverse=True,
+        )
+
+    async def get_by_device_for_user_for_update(
+        self,
+        *,
+        user_id: UUID,
+        device_id: UUID,
+    ) -> DeviceSessionRecord | None:
+        session = next(
+            (
+                item
+                for item in self._state.sessions.values()
+                if item.user_id == user_id and item.device_id == device_id
+            ),
+            None,
+        )
+        device = self._state.devices.get(device_id)
+        if session is None or device is None or device.user_id != user_id:
+            return None
+        return DeviceSessionRecord(device=device, session=session)
+
+    async def list_for_user_for_update(self, user_id: UUID) -> list[DeviceSessionRecord]:
+        sessions = sorted(
+            (session for session in self._state.sessions.values() if session.user_id == user_id),
+            key=lambda session: session.id,
+        )
+        return [
+            DeviceSessionRecord(device=self._state.devices[session.device_id], session=session)
+            for session in sessions
+        ]
+
+
+class FakeSecurityEventRepository:
+    def __init__(self, state: IdentityState) -> None:
+        self._state = state
+
+    async def add(self, event: SecurityEvent) -> None:
+        self._state.security_events[event.id] = event
+
+    async def list_recent(
+        self,
+        *,
+        user_id: UUID,
+        now: datetime,
+        limit: int,
+    ) -> list[SecurityEvent]:
+        events = [
+            event
+            for event in self._state.security_events.values()
+            if event.user_id == user_id and event.expires_at > now
+        ]
+        return sorted(
+            events,
+            key=lambda event: (event.created_at, event.id),
+            reverse=True,
+        )[:limit]
+
+    async def prune_expired(self, now: datetime) -> None:
+        self._state.security_events = {
+            event_id: event
+            for event_id, event in self._state.security_events.items()
+            if event.expires_at > now
+        }
+
 
 class FakeIdentityUnitOfWork:
     def __init__(self, state: IdentityState) -> None:
@@ -142,6 +238,7 @@ class FakeIdentityUnitOfWork:
         self.activation_tokens: ActivationTokenRepository = FakeActivationTokenRepository(state)
         self.devices: DeviceRepository = FakeDeviceRepository(state)
         self.sessions: SessionRepository = FakeSessionRepository(state)
+        self.security_events: SecurityEventRepository = FakeSecurityEventRepository(state)
 
     async def __aenter__(self) -> Self:
         return self

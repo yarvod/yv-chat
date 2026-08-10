@@ -6,13 +6,13 @@
 
 ## Статус
 
-Готовы закрытый lifecycle пользователей, device-bound opaque sessions и защищённый FastAPI transport: `__Host-` cookies, exact Origin/CSRF, safe client IP, rotation и logout. Следующий этап — управление активными устройствами.
+Готовы закрытый lifecycle пользователей, device-bound opaque sessions, защищённый FastAPI transport и управление активными устройствами: list/current marker, rename, revoke одной или всех остальных сессий и bounded security events. Следующий этап — admin user management и activation HTTP API.
 
 Текущая фича и подробный план находятся в [docs/workplan.md](docs/workplan.md). Полный продуктовый backlog — в [docs/backlog.md](docs/backlog.md), архитектура и правила её развития — в [docs/architecture.md](docs/architecture.md), найденные дефекты — в [docs/bugs.md](docs/bugs.md).
 
 ## Стек
 
-- Backend: Python 3.13, FastAPI, Pydantic, `uv`.
+- Backend: Python 3.13, FastAPI, Dishka, Pydantic, `uv`.
 - Frontend: Nuxt 4, Vue 3, TypeScript, PWA.
 - Runtime: PostgreSQL, Docker Compose, Nginx.
 - Quality: Ruff, mypy, pytest, ESLint, Vitest, Nuxt typecheck.

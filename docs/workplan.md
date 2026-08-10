@@ -4,7 +4,7 @@
 
 ## WP-006 — Active device/session management
 
-Статус: **planned**  
+Статус: **completed**  
 Backlog item: `BL-003C`  
 Цель: дать пользователю безопасное управление собственными устройствами и сессиями, не раскрывая credentials и не используя browser metadata как фактор авторизации.
 
@@ -27,20 +27,20 @@ Backlog item: `BL-003C`
 
 ### План реализации
 
-- [ ] Добавить typed list/rename/revoke/revoke-all commands, results и ownership errors.
-- [ ] Расширить repository ports узкими user-scoped session/device queries.
-- [ ] Реализовать list-my-sessions с current marker и стабильной сортировкой.
-- [ ] Реализовать rename-my-device с bounded domain validation.
-- [ ] Реализовать atomic revoke-one и revoke-all-others.
-- [ ] Добавить bounded `security_events` model/migration для login, logout, replay и revoke actions.
-- [ ] Связать существующие login/logout/replay transitions с event repository без secret payload.
-- [ ] Добавить `/api/v1/devices` list/rename/revoke/revoke-others endpoints.
-- [ ] Добавить response DTO, исключающие credential/hash fields.
-- [ ] Добавить unit tests всех use cases и negative ownership cases.
-- [ ] Добавить PostgreSQL tests для concurrent revoke-all/current preservation.
-- [ ] Добавить HTTP Origin/CSRF и response-schema tests.
-- [ ] Проверить migration fresh/roundtrip, `make ci` и Docker smoke test.
-- [ ] Обновить README/docs и зафиксировать фичу отдельным коммитом.
+- [x] Добавить typed list/rename/revoke/revoke-all commands, results и ownership errors.
+- [x] Расширить repository ports узкими user-scoped session/device queries.
+- [x] Реализовать list-my-sessions с current marker и стабильной сортировкой.
+- [x] Реализовать rename-my-device с bounded domain validation.
+- [x] Реализовать atomic revoke-one и revoke-all-others.
+- [x] Добавить bounded `security_events` model/migration для login, logout, replay и revoke actions.
+- [x] Связать существующие login/logout/replay transitions с event repository без secret payload.
+- [x] Добавить `/api/v1/devices` list/rename/revoke/revoke-others endpoints.
+- [x] Добавить response DTO, исключающие credential/hash fields.
+- [x] Добавить unit tests всех use cases и negative ownership cases.
+- [x] Добавить PostgreSQL tests для concurrent revoke-all/current preservation.
+- [x] Добавить HTTP Origin/CSRF и response-schema tests.
+- [x] Проверить migration fresh/roundtrip, `make ci` и Docker smoke test.
+- [x] Обновить README/docs и зафиксировать фичу отдельным коммитом.
 
 ### Не входит в scope
 

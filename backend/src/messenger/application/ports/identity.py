@@ -1,11 +1,12 @@
 """Persistence ports for account invitation and activation."""
 
 from dataclasses import dataclass
+from datetime import datetime
 from types import TracebackType
 from typing import Protocol, Self
 from uuid import UUID
 
-from messenger.domain.entities import ActivationToken, Device, Session, User
+from messenger.domain.entities import ActivationToken, Device, SecurityEvent, Session, User
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,6 +23,14 @@ class SessionCredentialMatch:
 
     session: Session
     matched_previous: bool
+
+
+@dataclass(frozen=True, slots=True)
+class DeviceSessionRecord:
+    """A user-owned device and its one device-bound session."""
+
+    device: Device
+    session: Session
 
 
 class UserRepository(Protocol):
@@ -86,6 +95,16 @@ class DeviceRepository(Protocol):
         """Load one device, optionally locking its row."""
         ...
 
+    async def get_owned_by_id(
+        self,
+        *,
+        user_id: UUID,
+        device_id: UUID,
+        for_update: bool = False,
+    ) -> Device | None:
+        """Load a device only when it belongs to the authenticated user."""
+        ...
+
     async def add(self, device: Device) -> None:
         """Persist a device owned by the authenticated user."""
         ...
@@ -113,6 +132,50 @@ class SessionRepository(Protocol):
         """Persist an already locked session state transition."""
         ...
 
+    async def list_active_with_devices(
+        self,
+        *,
+        user_id: UUID,
+        now: datetime,
+    ) -> list[DeviceSessionRecord]:
+        """List non-revoked, non-expired sessions for one user."""
+        ...
+
+    async def get_by_device_for_user_for_update(
+        self,
+        *,
+        user_id: UUID,
+        device_id: UUID,
+    ) -> DeviceSessionRecord | None:
+        """Lock one user-owned device/session pair."""
+        ...
+
+    async def list_for_user_for_update(self, user_id: UUID) -> list[DeviceSessionRecord]:
+        """Lock all device/session pairs in stable order for bulk revoke."""
+        ...
+
+
+class SecurityEventRepository(Protocol):
+    """Bounded account security-event persistence."""
+
+    async def add(self, event: SecurityEvent) -> None:
+        """Persist a typed event without arbitrary secret-bearing payload."""
+        ...
+
+    async def list_recent(
+        self,
+        *,
+        user_id: UUID,
+        now: datetime,
+        limit: int,
+    ) -> list[SecurityEvent]:
+        """Return non-expired events for one user in stable newest-first order."""
+        ...
+
+    async def prune_expired(self, now: datetime) -> None:
+        """Delete events outside their configured retention."""
+        ...
+
 
 class IdentityUnitOfWork(Protocol):
     """One transaction containing identity repositories."""
@@ -121,6 +184,7 @@ class IdentityUnitOfWork(Protocol):
     activation_tokens: ActivationTokenRepository
     devices: DeviceRepository
     sessions: SessionRepository
+    security_events: SecurityEventRepository
 
     async def __aenter__(self) -> Self:
         """Open the transaction scope."""

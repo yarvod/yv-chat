@@ -3,34 +3,33 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+from dishka import AsyncContainer
+from dishka.integrations.fastapi import setup_dishka
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from messenger.bootstrap.container import ApplicationContainer, AuthServices, build_container
+from messenger.bootstrap.container import create_container
 from messenger.bootstrap.settings import AppSettings
 from messenger.presentation.http.auth import router as auth_router
+from messenger.presentation.http.devices import router as devices_router
 from messenger.presentation.http.health import router as health_router
 
 
 def create_app(
     settings: AppSettings | None = None,
     *,
-    auth_services: AuthServices | None = None,
+    container: AsyncContainer | None = None,
 ) -> FastAPI:
     """Create and configure the HTTP application."""
     resolved_settings = settings or AppSettings()
-    container: ApplicationContainer | None = None
-    if auth_services is None:
-        container = build_container(resolved_settings)
-        auth_services = container.auth
+    resolved_container = container or create_container(resolved_settings)
 
     @asynccontextmanager
-    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         try:
             yield
         finally:
-            if container is not None:
-                await container.close()
+            await application.state.dishka_container.close()
 
     docs_url = "/docs" if resolved_settings.expose_api_schema else None
     openapi_url = "/openapi.json" if resolved_settings.expose_api_schema else None
@@ -43,15 +42,15 @@ def create_app(
         openapi_url=openapi_url,
         lifespan=lifespan,
     )
-    application.state.settings = resolved_settings
-    application.state.auth_services = auth_services
     application.add_middleware(
         CORSMiddleware,
         allow_origins=resolved_settings.allowed_origins,
         allow_credentials=True,
-        allow_methods=["GET", "POST"],
+        allow_methods=["GET", "POST", "PATCH", "DELETE"],
         allow_headers=[resolved_settings.csrf_header_name, "Content-Type"],
     )
     application.include_router(health_router)
     application.include_router(auth_router)
+    application.include_router(devices_router)
+    setup_dishka(container=resolved_container, app=application)
     return application

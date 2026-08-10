@@ -3,18 +3,30 @@
 import asyncio
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
+from dishka import Provider, Scope, make_async_container, provide
+from dishka.integrations.fastapi import FastapiProvider
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient, Response
 
+from messenger.application.ports.clock import Clock
+from messenger.application.ports.identity import IdentityUnitOfWorkFactory
+from messenger.application.ports.passwords import PasswordHasher
+from messenger.application.ports.session_credentials import SessionCredentialService
+from messenger.application.security_event_policy import SecurityEventPolicy
 from messenger.application.session_policy import SessionPolicy
 from messenger.application.use_cases.authenticate_session import AuthenticateSession
+from messenger.application.use_cases.list_my_sessions import ListMySessions
+from messenger.application.use_cases.list_security_events import ListSecurityEvents
 from messenger.application.use_cases.login import Login
 from messenger.application.use_cases.logout import Logout
+from messenger.application.use_cases.rename_my_device import RenameMyDevice
+from messenger.application.use_cases.revoke_my_device import RevokeMyDevice
+from messenger.application.use_cases.revoke_other_sessions import RevokeOtherSessions
 from messenger.bootstrap.app import create_app
-from messenger.bootstrap.container import AuthServices
 from messenger.bootstrap.settings import AppEnvironment, AppSettings
-from messenger.domain.entities import User
+from messenger.domain.entities import Device, Session, User
 from tests.application.fakes import (
     FakeIdentityUnitOfWorkFactory,
     FakePasswordHasher,
@@ -31,6 +43,7 @@ POLICY = SessionPolicy(
     previous_token_grace=timedelta(seconds=60),
     touch_interval=timedelta(minutes=5),
 )
+EVENT_POLICY = SecurityEventPolicy(retention=timedelta(days=90))
 DATABASE_URL = "postgresql+asyncpg://test:test@127.0.0.1:5432/test"
 
 
@@ -40,6 +53,63 @@ class MutableClock:
 
     def now(self) -> datetime:
         return self.instant
+
+
+class HttpTestProvider(Provider):
+    """Inject deterministic adapters while preserving production scope rules."""
+
+    def __init__(
+        self,
+        *,
+        settings: AppSettings,
+        unit_of_work: IdentityUnitOfWorkFactory,
+        clock: Clock,
+        passwords: PasswordHasher,
+        credentials: SessionCredentialService,
+    ) -> None:
+        super().__init__()
+        self._settings = settings
+        self._unit_of_work = unit_of_work
+        self._clock = clock
+        self._passwords = passwords
+        self._credentials = credentials
+
+    @provide(scope=Scope.APP)
+    def settings(self) -> AppSettings:
+        return self._settings
+
+    @provide(scope=Scope.APP)
+    def unit_of_work(self) -> IdentityUnitOfWorkFactory:
+        return self._unit_of_work
+
+    @provide(scope=Scope.APP)
+    def clock(self) -> Clock:
+        return self._clock
+
+    @provide(scope=Scope.APP)
+    def passwords(self) -> PasswordHasher:
+        return self._passwords
+
+    @provide(scope=Scope.APP)
+    def credentials(self) -> SessionCredentialService:
+        return self._credentials
+
+    @provide(scope=Scope.APP)
+    def session_policy(self) -> SessionPolicy:
+        return POLICY
+
+    @provide(scope=Scope.APP)
+    def event_policy(self) -> SecurityEventPolicy:
+        return EVENT_POLICY
+
+    login = provide(Login, scope=Scope.REQUEST)
+    authenticate_session = provide(AuthenticateSession, scope=Scope.REQUEST)
+    logout = provide(Logout, scope=Scope.REQUEST)
+    list_my_sessions = provide(ListMySessions, scope=Scope.REQUEST)
+    list_security_events = provide(ListSecurityEvents, scope=Scope.REQUEST)
+    rename_my_device = provide(RenameMyDevice, scope=Scope.REQUEST)
+    revoke_my_device = provide(RevokeMyDevice, scope=Scope.REQUEST)
+    revoke_other_sessions = provide(RevokeOtherSessions, scope=Scope.REQUEST)
 
 
 def build_test_application(
@@ -56,22 +126,6 @@ def build_test_application(
     credentials = FixedSessionCredentials()
     clock = MutableClock(NOW)
     factory = FakeIdentityUnitOfWorkFactory(state)
-    services = AuthServices(
-        login=Login(
-            unit_of_work=factory,
-            clock=clock,
-            passwords=passwords,
-            credentials=credentials,
-            policy=POLICY,
-        ),
-        authenticate_session=AuthenticateSession(
-            unit_of_work=factory,
-            clock=clock,
-            credentials=credentials,
-            policy=POLICY,
-        ),
-        logout=Logout(unit_of_work=factory, clock=clock, credentials=credentials),
-    )
     settings = AppSettings(
         app_env=AppEnvironment.TEST,
         database_url=DATABASE_URL,
@@ -83,7 +137,17 @@ def build_test_application(
         session_previous_token_grace_seconds=60,
         session_touch_interval_seconds=300,
     )
-    return create_app(settings, auth_services=services), state, clock
+    container = make_async_container(
+        HttpTestProvider(
+            settings=settings,
+            unit_of_work=factory,
+            clock=clock,
+            passwords=passwords,
+            credentials=credentials,
+        ),
+        FastapiProvider(),
+    )
+    return create_app(settings, container=container), state, clock
 
 
 async def login(client: AsyncClient) -> Response:
@@ -120,6 +184,93 @@ async def run_cookie_flow() -> None:
         assert current.status_code == 200
         assert "set-cookie" not in current.headers
 
+        second_login = await login(client)
+        assert second_login.status_code == 200
+        current_session_id = UUID(second_login.json()["session_id"])
+        current_device_id = UUID(second_login.json()["device_id"])
+        current_csrf = client.cookies["__Host-yv_csrf"]
+
+        devices = await client.get("/api/v1/devices")
+        assert devices.status_code == 200
+        assert len(devices.json()) == 2
+        current_items = [item for item in devices.json() if item["is_current"]]
+        assert [UUID(item["session_id"]) for item in current_items] == [current_session_id]
+        forbidden_response_fields = {
+            "current_token_hash",
+            "previous_token_hash",
+            "session_credential",
+            "password_hash",
+        }
+        assert all(forbidden_response_fields.isdisjoint(item) for item in devices.json())
+
+        bob = User.create(username="bob", display_name="Bob", now=NOW)
+        foreign_device = Device.create(user_id=bob.id, name="Bob phone", now=NOW)
+        foreign_session = Session.create(
+            user_id=bob.id,
+            device_id=foreign_device.id,
+            token_hash="f" * 64,
+            now=NOW,
+            idle_timeout=timedelta(hours=2),
+            absolute_lifetime=timedelta(hours=3),
+        )
+        state.users[bob.id] = bob
+        state.devices[foreign_device.id] = foreign_device
+        state.sessions[foreign_session.id] = foreign_session
+
+        missing_device_csrf = await client.patch(
+            f"/api/v1/devices/{current_device_id}",
+            headers={"Origin": "https://test"},
+            json={"name": "No CSRF"},
+        )
+        assert missing_device_csrf.status_code == 403
+
+        foreign_rename = await client.patch(
+            f"/api/v1/devices/{foreign_device.id}",
+            headers={"Origin": "https://test", "X-CSRF-Token": current_csrf},
+            json={"name": "Stolen"},
+        )
+        assert foreign_rename.status_code == 404
+
+        other_device_id = next(
+            UUID(item["device_id"]) for item in devices.json() if not item["is_current"]
+        )
+        renamed = await client.patch(
+            f"/api/v1/devices/{other_device_id}",
+            headers={"Origin": "https://test", "X-CSRF-Token": current_csrf},
+            json={"name": "Old laptop"},
+        )
+        assert renamed.status_code == 200
+        assert renamed.json()["name"] == "Old laptop"
+
+        current_revoke = await client.delete(
+            f"/api/v1/devices/{current_device_id}",
+            headers={"Origin": "https://test", "X-CSRF-Token": current_csrf},
+        )
+        assert current_revoke.status_code == 409
+
+        revoked_other = await client.delete(
+            f"/api/v1/devices/{other_device_id}",
+            headers={"Origin": "https://test", "X-CSRF-Token": current_csrf},
+        )
+        assert revoked_other.status_code == 204
+
+        revoked_others = await client.post(
+            "/api/v1/sessions/revoke-others",
+            headers={"Origin": "https://test", "X-CSRF-Token": current_csrf},
+        )
+        assert revoked_others.status_code == 200
+        assert revoked_others.json() == {"revoked_count": 0}
+
+        events = await client.get("/api/v1/security-events")
+        assert events.status_code == 200
+        assert {event["event_type"] for event in events.json()} >= {
+            "login",
+            "device_renamed",
+            "device_revoked",
+            "other_sessions_revoked",
+        }
+        assert all(forbidden_response_fields.isdisjoint(event) for event in events.json())
+
         original_credential = client.cookies["__Host-yv_session"]
         clock.instant = NOW + timedelta(hours=1)
         rotated = await client.get("/api/v1/auth/session")
@@ -133,7 +284,7 @@ async def run_cookie_flow() -> None:
             headers={"Origin": "https://evil.example", "X-CSRF-Token": csrf_value},
         )
         assert forbidden.status_code == 403
-        assert next(iter(state.sessions.values())).revoked_at is None
+        assert state.sessions[current_session_id].revoked_at is None
 
         missing_csrf = await client.post(
             "/api/v1/auth/logout",
@@ -146,7 +297,8 @@ async def run_cookie_flow() -> None:
             headers={"Origin": "https://test", "X-CSRF-Token": csrf_value},
         )
         assert logged_out.status_code == 204
-        assert next(iter(state.sessions.values())).revoked_at == clock.instant
+        assert state.sessions[current_session_id].revoked_at == clock.instant
+        assert state.devices[current_device_id].revoked_at == clock.instant
 
 
 def test_login_session_rotation_and_csrf_logout_cookie_flow() -> None:
