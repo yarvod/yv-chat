@@ -978,6 +978,22 @@ Do not assume a migration is correct because model tests pass.
 
 Keep changes focused on the user's task.
 
+### Work tracking and commits
+
+Use the repository documents as the persistent development loop:
+
+```text
+docs/backlog.md -> docs/workplan.md -> implementation/tests -> docs/bugs.md -> commit
+```
+
+- `docs/workplan.md` contains exactly one current feature with detailed scope, steps, tests, exclusions, and Definition of Done.
+- `docs/backlog.md` contains ordered future features and completed feature summaries. Move only one item into active work at a time.
+- `docs/bugs.md` contains reproducible defects found during development. Do not hide a known defect by describing it as future work.
+- Update the three documents before committing a completed feature.
+- Keep one focused feature per commit unless a prerequisite bootstrap change cannot be separated safely.
+- Do not start the next backlog feature until the current workplan checks pass and its commit succeeds.
+- Keep `README.md` concise: product purpose, status, key invariants, setup, checks, and links to detailed working documents.
+
 Do not refactor unrelated areas "while here" unless required for correctness.
 
 Do not rename public APIs casually.
