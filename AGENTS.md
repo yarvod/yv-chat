@@ -987,12 +987,14 @@ docs/backlog.md -> docs/workplan.md -> implementation/tests -> docs/bugs.md -> c
 ```
 
 - `docs/workplan.md` contains exactly one current feature with detailed scope, steps, tests, exclusions, and Definition of Done.
-- `docs/backlog.md` contains ordered future features and completed feature summaries. Move only one item into active work at a time.
+- `docs/backlog.md` contains the complete ordered product scope and completed feature summaries. Move only one item into active work at a time; do not collapse or delete detailed requirements merely to shorten the file.
 - `docs/bugs.md` contains reproducible defects found during development. Do not hide a known defect by describing it as future work.
-- Update the three documents before committing a completed feature.
+- `docs/architecture.md` contains durable system boundaries, trust/data ownership, deployment decisions, and rules for architectural change. Read it before cross-layer, security, persistence, sync, storage, or deployment changes; update it when those decisions change.
+- Update the relevant working documents before committing a completed feature.
 - Keep one focused feature per commit unless a prerequisite bootstrap change cannot be separated safely.
 - Do not start the next backlog feature until the current workplan checks pass and its commit succeeds.
 - Keep `README.md` concise: product purpose, status, key invariants, setup, checks, and links to detailed working documents.
+- Before removing detailed product or architecture material from `README.md` or another document, first preserve every still-valid requirement in `docs/backlog.md` or `docs/architecture.md` and verify the mapping in the diff.
 
 Do not refactor unrelated areas "while here" unless required for correctness.
 

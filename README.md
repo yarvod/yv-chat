@@ -8,7 +8,7 @@
 
 Готовы закрытый lifecycle пользователей, device-bound opaque sessions и защищённый FastAPI transport: `__Host-` cookies, exact Origin/CSRF, safe client IP, rotation и logout. Следующий этап — управление активными устройствами.
 
-Текущая фича и подробный план находятся в [docs/workplan.md](docs/workplan.md). Будущие задачи — в [docs/backlog.md](docs/backlog.md), найденные дефекты — в [docs/bugs.md](docs/bugs.md).
+Текущая фича и подробный план находятся в [docs/workplan.md](docs/workplan.md). Полный продуктовый backlog — в [docs/backlog.md](docs/backlog.md), архитектура и правила её развития — в [docs/architecture.md](docs/architecture.md), найденные дефекты — в [docs/bugs.md](docs/bugs.md).
 
 ## Стек
 
