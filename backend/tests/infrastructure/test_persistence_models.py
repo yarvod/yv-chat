@@ -16,7 +16,12 @@ FORBIDDEN_COLUMNS = {
 
 
 def test_identity_metadata_contains_expected_tables() -> None:
-    assert set(Base.metadata.tables) == {"activation_tokens", "devices", "users"}
+    assert set(Base.metadata.tables) == {
+        "activation_tokens",
+        "devices",
+        "sessions",
+        "users",
+    }
 
 
 def test_user_schema_enforces_normalized_unique_username() -> None:
@@ -64,3 +69,17 @@ def test_activation_schema_stores_digest_without_plaintext_secret() -> None:
     assert "activation_secret" not in activation_tokens.columns
     assert "token" not in activation_tokens.columns
     assert activation_tokens.columns["token_hash"].unique is True
+
+
+def test_session_schema_stores_only_hashes_and_binds_device_owner() -> None:
+    sessions = Base.metadata.tables["sessions"]
+    foreign_keys = {
+        constraint.name: constraint
+        for constraint in sessions.constraints
+        if isinstance(constraint, ForeignKeyConstraint)
+    }
+
+    assert sessions.columns["current_token_hash"].unique is True
+    assert sessions.columns["previous_token_hash"].unique is True
+    assert "session_credential" not in sessions.columns
+    assert foreign_keys["fk_sessions_device_owner_devices"].ondelete == "CASCADE"

@@ -2,64 +2,63 @@
 
 Этот файл содержит только одну текущую фичу. Перед началом следующей фичи завершённая работа фиксируется коммитом, а новый пункт переносится сюда из `backlog.md`.
 
-## WP-004 — Opaque session core
+## WP-005 — Session HTTP transport и browser security boundary
 
 Статус: **planned**  
-Backlog item: `BL-003`  
-Цель: реализовать application и persistence core для входа, проверки, безопасного обновления и завершения device-bound opaque-сессий без HTTP/cookie transport.
+Backlog item: `BL-003B`  
+Цель: подключить готовые login/authenticate/logout use cases к versioned FastAPI API через защищённую same-origin cookie, строгую Origin/CSRF policy и явный composition root.
 
 ### Пользовательский результат
 
-Активированный пользователь может войти с паролем на конкретном устройстве, получить случайный session credential и завершить сессию. Последующие запросы проверяют credential, idle/absolute expiry и revocation. Credential периодически ротируется без поломки параллельных запросов, а PostgreSQL хранит только его производные lookup-значения.
+Активированный пользователь может войти через `/api/v1/auth/login`, получить browser session в `Secure`/`HttpOnly` cookie, проверить текущую identity и выйти. Ротация credential прозрачно обновляет cookie на обычном authenticated response; bearer/JWT/localStorage не используются.
 
 ### Security invariants
 
-1. Вход разрешён только активному пользователю с корректным Argon2id password hash.
-2. Session credential генерируется криптографически безопасно и возвращается plaintext только при создании или ротации.
-3. PostgreSQL не хранит plaintext текущего или предыдущего credential.
-4. Каждая сессия связана с одним `user_id` и одним `device_id`; клиент не выбирает владельца сессии.
-5. Idle expiry может скользить только до неизменяемого absolute expiry.
-6. `last_seen_at` и idle expiry обновляются с throttling, а не на каждый запрос.
-7. Credential rotation выполняется атомарно; предыдущий credential действует только в короткий grace period для конкурентных запросов.
-8. Replay предыдущего credential после grace period отклоняется и отзывает скомпрометированную сессию.
-9. Смена IP/User-Agent сама по себе не отзывает валидную сессию: это только обновляемые risk metadata.
-10. Use cases зависят от узких repository/password/token/clock ports; ORM не выходит из infrastructure.
+1. Session cookie имеет `Secure`, `HttpOnly`, `SameSite=Strict`, `Path=/`, не имеет `Domain` и не доступна JavaScript.
+2. Credential не принимается из query string, JSON body или `Authorization`; единственный browser transport — cookie.
+3. Login failure одинаков для unknown/inactive user и неверного пароля.
+4. Cookie-authenticated state-changing requests требуют разрешённый exact `Origin` и CSRF proof.
+5. CORS не использует wildcard с credentials; разрешены только явно настроенные same-origin значения.
+6. WebSocket scope отсутствует, но HTTP middleware/dependencies не создают bearer-token shortcut.
+7. `Set-Cookie` rotation выполняется только когда application result вернул новый credential.
+8. Logout идемпотентно отзывает серверную сессию и удаляет cookie даже для неизвестного/устаревшего credential.
+9. Client IP берётся из socket peer; proxy headers доверяются только при явно настроенном trusted proxy.
+10. Ошибки API не раскрывают password hash, session hash, внутренний SQL или stack trace.
 
 ### План реализации
 
-- [ ] Уточнить domain-модели `Device` и `Session`, их состояния и timezone-aware инварианты.
-- [ ] Добавить typed session policy/settings: idle timeout, absolute lifetime, rotation interval, previous-token grace и touch interval.
-- [ ] Добавить Alembic migration для session credential hashes, expiry/rotation/revocation и минимальных device metadata.
-- [ ] Расширить password hasher port безопасной password verification.
-- [ ] Создать session credential generator/hasher и repository/UoW ports.
-- [ ] Реализовать login use case с device enrollment и generic invalid-credentials error.
-- [ ] Реализовать authenticate/touch use case с expiry, throttling и атомарной rotation.
-- [ ] Реализовать logout/revoke-current-session use case.
-- [ ] Реализовать SQLAlchemy repositories с блокировкой строки на критических переходах.
-- [ ] Добавить unit tests для policy/state transitions и application use cases.
-- [ ] Добавить PostgreSQL integration tests для concurrent rotation, grace/replay, expiry и revocation.
-- [ ] Проверить fresh migration upgrade и downgrade/upgrade roundtrip.
-- [ ] Обновить README/docs, выполнить полный `make ci` и Docker migration smoke test.
+- [ ] Добавить typed HTTP/security settings: allowed origins, cookie name/attributes и trusted proxy policy.
+- [ ] Создать composition root для engine, UoW, password/session adapters и session policy.
+- [ ] Добавить transport DTO для login и безопасного current-session response.
+- [ ] Реализовать exact Origin validation и CSRF boundary для state-changing cookie requests.
+- [ ] Реализовать безопасное извлечение client IP без доверия произвольному `X-Forwarded-For`.
+- [ ] Добавить `POST /api/v1/auth/login` с generic 401 и защищённой cookie.
+- [ ] Добавить authenticated `GET /api/v1/auth/session` с transparent credential rotation.
+- [ ] Добавить `POST /api/v1/auth/logout` с server revoke и cookie deletion.
+- [ ] Добавить application-error → HTTP mapping без утечки внутренних деталей.
+- [ ] Добавить API tests для cookie flags, отсутствия bearer/query auth и rotation `Set-Cookie`.
+- [ ] Добавить negative CSRF/Origin/trusted-proxy tests.
+- [ ] Обновить OpenAPI/README/docs и выполнить полный `make ci`/Docker smoke test.
 - [ ] Зафиксировать фичу отдельным коммитом.
 
 ### Не входит в scope
 
-- HTTP login/logout endpoints и установка cookie;
-- CSRF middleware и Origin/CORS policy;
-- trusted-proxy parsing и GeoIP enrichment;
-- UI списка устройств, rename и revoke-all-others;
+- list/rename/revoke devices и revoke-all-others;
+- admin invitation/activation HTTP endpoints;
 - password reset;
-- WebSocket authentication.
+- WebSocket authentication;
+- GeoIP enrichment и risk scoring;
+- frontend login UI.
 
 ### Проверка готовности
 
-- inactive/revoked/unknown user и неверный пароль дают одинаковую внешнюю ошибку;
-- credential и его hashes не попадают в логи или application DTO после выдачи;
-- idle-expired, absolute-expired и revoked session отклоняются;
-- absolute expiry никогда не продлевается;
-- частые запросы не создают DB write на каждый touch;
-- два конкурентных запроса переживают rotation через grace period;
-- previous credential после grace period вызывает compromise handling;
-- смена IP сама по себе не отзывает сессию;
-- `make ci`, PostgreSQL integration tests и migration roundtrip проходят;
+- cookie flags и отсутствие `Domain` проверены тестом;
+- credential не возвращается в response body и не читается из bearer/query;
+- неверный/просроченный/revoked credential получает одинаковый 401;
+- rotation устанавливает новый cookie, обычный touch — нет;
+- logout отзывает session и очищает cookie;
+- missing/cross-origin Origin или CSRF proof отклоняются до use case;
+- spoofed forwarding headers не меняют client IP без trusted proxy config;
+- API schema не содержит password/session secret fields;
+- `make ci` и transport security tests проходят;
 - изменения зафиксированы отдельным коммитом.

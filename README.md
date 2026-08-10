@@ -6,7 +6,7 @@
 
 ## Статус
 
-Готовы bootstrap, persistence foundation и закрытый lifecycle пользователей: one-time bootstrap первого администратора, admin-only invitations, одноразовая активация и Argon2id password hashing. Следующий этап — device-bound opaque sessions.
+Готовы bootstrap, persistence foundation, закрытый lifecycle пользователей и ядро device-bound opaque sessions: hashed credentials, idle/absolute expiry, throttled touch, atomic rotation/grace и replay revocation. Следующий этап — защищённый HTTP cookie transport.
 
 Текущая фича и подробный план находятся в [docs/workplan.md](docs/workplan.md). Будущие задачи — в [docs/backlog.md](docs/backlog.md), найденные дефекты — в [docs/bugs.md](docs/bugs.md).
 

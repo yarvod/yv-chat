@@ -4,9 +4,16 @@ from types import TracebackType
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from messenger.application.ports.identity import ActivationTokenRepository, UserRepository
+from messenger.application.ports.identity import (
+    ActivationTokenRepository,
+    DeviceRepository,
+    SessionRepository,
+    UserRepository,
+)
 from messenger.infrastructure.persistence.identity_repositories import (
     SqlAlchemyActivationTokenRepository,
+    SqlAlchemyDeviceRepository,
+    SqlAlchemySessionRepository,
     SqlAlchemyUserRepository,
 )
 
@@ -19,11 +26,15 @@ class SqlAlchemyIdentityUnitOfWork:
         self._session: AsyncSession | None = None
         self.users: UserRepository
         self.activation_tokens: ActivationTokenRepository
+        self.devices: DeviceRepository
+        self.sessions: SessionRepository
 
     async def __aenter__(self) -> "SqlAlchemyIdentityUnitOfWork":
         self._session = self._session_factory()
         self.users = SqlAlchemyUserRepository(self._session)
         self.activation_tokens = SqlAlchemyActivationTokenRepository(self._session)
+        self.devices = SqlAlchemyDeviceRepository(self._session)
+        self.sessions = SqlAlchemySessionRepository(self._session)
         return self
 
     async def __aexit__(

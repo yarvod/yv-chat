@@ -10,6 +10,6 @@ class PasswordHasher(Protocol):
         """Return a modern password hash."""
         ...
 
-    async def verify(self, password_hash: str, password: str) -> bool:
-        """Verify a password without exposing it."""
+    async def verify(self, password_hash: str | None, password: str) -> bool:
+        """Verify a password, doing equivalent work when no hash exists."""
         ...

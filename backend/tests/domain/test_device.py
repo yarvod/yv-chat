@@ -55,3 +55,23 @@ def test_loaded_device_rejects_invalid_last_seen_order() -> None:
             last_seen_at=NOW - timedelta(seconds=1),
             revoked_at=None,
         )
+
+
+def test_device_ip_is_normalized_and_change_does_not_revoke() -> None:
+    device = Device.create(
+        user_id=USER_ID,
+        name="Phone",
+        now=NOW,
+        client_ip="2001:0db8::1",
+    )
+
+    seen = device.seen(NOW + timedelta(minutes=5), "203.0.113.8")
+
+    assert device.login_ip == "2001:db8::1"
+    assert seen.last_ip == "203.0.113.8"
+    assert seen.revoked_at is None
+
+
+def test_device_rejects_invalid_ip() -> None:
+    with pytest.raises(DomainValidationError, match="valid IP"):
+        Device.create(user_id=USER_ID, name="Phone", now=NOW, client_ip="not-an-ip")

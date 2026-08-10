@@ -35,3 +35,15 @@ class WeakPasswordError(ApplicationError):
 
 class BootstrapAlreadyCompletedError(ApplicationError):
     """At least one user exists, so initial admin bootstrap is closed."""
+
+
+class InvalidCredentialsError(ApplicationError):
+    """Login failed without disclosing which credential was incorrect."""
+
+
+class SessionNotAuthenticatedError(ApplicationError):
+    """The presented session cannot authenticate a request."""
+
+
+class SessionCredentialReplayError(SessionNotAuthenticatedError):
+    """An expired previous credential was replayed and the session was revoked."""

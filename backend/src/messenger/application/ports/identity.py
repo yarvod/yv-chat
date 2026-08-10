@@ -1,10 +1,27 @@
 """Persistence ports for account invitation and activation."""
 
+from dataclasses import dataclass
 from types import TracebackType
 from typing import Protocol, Self
 from uuid import UUID
 
-from messenger.domain.entities import ActivationToken, User
+from messenger.domain.entities import ActivationToken, Device, Session, User
+
+
+@dataclass(frozen=True, slots=True)
+class UserAuthenticationRecord:
+    """User identity plus the encoded password needed only by login."""
+
+    user: User
+    password_hash: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class SessionCredentialMatch:
+    """Locked session and which stored credential matched the request."""
+
+    session: Session
+    matched_previous: bool
 
 
 class UserRepository(Protocol):
@@ -16,6 +33,13 @@ class UserRepository(Protocol):
 
     async def get_by_username(self, username: str) -> User | None:
         """Load by normalized case-insensitive username."""
+        ...
+
+    async def get_authentication_by_username(
+        self,
+        username: str,
+    ) -> UserAuthenticationRecord | None:
+        """Load login identity and encoded password without exposing ORM state."""
         ...
 
     async def lock_initial_bootstrap(self) -> None:
@@ -55,11 +79,48 @@ class ActivationTokenRepository(Protocol):
         ...
 
 
+class DeviceRepository(Protocol):
+    """Device enrollment and activity operations required by sessions."""
+
+    async def get_by_id(self, device_id: UUID, *, for_update: bool = False) -> Device | None:
+        """Load one device, optionally locking its row."""
+        ...
+
+    async def add(self, device: Device) -> None:
+        """Persist a device owned by the authenticated user."""
+        ...
+
+    async def update(self, device: Device) -> None:
+        """Persist throttled activity metadata."""
+        ...
+
+
+class SessionRepository(Protocol):
+    """Opaque session persistence with row-level serialization."""
+
+    async def add(self, session: Session) -> None:
+        """Persist a newly issued session."""
+        ...
+
+    async def get_by_token_hash_for_update(
+        self,
+        token_hash: str,
+    ) -> SessionCredentialMatch | None:
+        """Lock a session matched by its current or previous lookup digest."""
+        ...
+
+    async def update(self, session: Session) -> None:
+        """Persist an already locked session state transition."""
+        ...
+
+
 class IdentityUnitOfWork(Protocol):
     """One transaction containing identity repositories."""
 
     users: UserRepository
     activation_tokens: ActivationTokenRepository
+    devices: DeviceRepository
+    sessions: SessionRepository
 
     async def __aenter__(self) -> Self:
         """Open the transaction scope."""

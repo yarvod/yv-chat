@@ -32,7 +32,12 @@ from messenger.infrastructure.auth.activation_secrets import SecureActivationSec
 from messenger.infrastructure.auth.passwords import Argon2PasswordHasher
 from messenger.infrastructure.persistence.database import create_engine, create_session_factory
 from messenger.infrastructure.persistence.identity_uow import SqlAlchemyIdentityUnitOfWork
-from messenger.infrastructure.persistence.models import ActivationTokenModel, UserModel
+from messenger.infrastructure.persistence.models import (
+    ActivationTokenModel,
+    DeviceModel,
+    SessionModel,
+    UserModel,
+)
 from tests.application.fakes import FixedClock
 
 NOW = datetime(2026, 8, 11, 12, 0, tzinfo=UTC)
@@ -50,6 +55,8 @@ async def reset_identity_tables(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with session_factory.begin() as session:
+        await session.execute(delete(SessionModel))
+        await session.execute(delete(DeviceModel))
         await session.execute(delete(ActivationTokenModel))
         await session.execute(delete(UserModel))
 

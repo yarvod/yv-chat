@@ -4,17 +4,17 @@
 
 ## In progress
 
-### BL-003 — Opaque session core
+### BL-003B — Session HTTP transport
 
-Device-bound login/logout, hashed session credentials, idle/absolute expiry, throttled touch, atomic rotation, previous-token grace и replay handling. Подробности: `docs/workplan.md`.
+Versioned FastAPI login/session/logout, protected cookie, exact Origin/CSRF checks, safe client IP и composition root. Подробности: `docs/workplan.md`.
 
 ## Next
 
-### BL-003B — Session HTTP transport и active devices
+### BL-003C — Active device/session management
 
-- login/logout через `Secure`, `HttpOnly`, `SameSite=Strict`, `Path=/` cookie;
 - list/rename/revoke device, revoke all other sessions;
-- CSRF/Origin и trusted-proxy client IP handling.
+- bounded device metadata и security-event visibility;
+- negative ownership/credential-exposure tests.
 
 ### BL-004 — Conversations и membership authorization
 
@@ -108,6 +108,10 @@ Device-bound login/logout, hashed session credentials, idle/absolute expiry, thr
 - call state machine и failure/reconnect UX.
 
 ## Completed
+
+### BL-003 — Opaque session core
+
+Device-bound login/logout, 256-bit credentials with SHA-256 lookup hashes, idle/absolute expiry, throttled touch, atomic row-locked rotation, previous-token grace, replay revocation и PostgreSQL concurrency tests.
 
 ### BL-002 — User repositories и admin-controlled activation
 
