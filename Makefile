@@ -1,6 +1,7 @@
 .PHONY: dev down logs backend-install backend-dev backend-lint backend-format \
 	backend-typecheck backend-test frontend-install frontend-dev frontend-lint \
-	frontend-typecheck frontend-test frontend-build migrate migration-sql test ci compose-check
+	frontend-typecheck frontend-test frontend-build migrate migration-sql bootstrap-admin \
+	test ci compose-check
 
 dev:
 	@echo "Run 'make backend-dev' and 'make frontend-dev' in separate terminals."
@@ -34,6 +35,9 @@ migrate:
 
 migration-sql:
 	cd backend && uv run alembic upgrade head --sql
+
+bootstrap-admin:
+	cd backend && uv run python -m messenger.bootstrap_admin
 
 frontend-install:
 	cd frontend && npm ci

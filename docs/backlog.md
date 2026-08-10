@@ -4,19 +4,15 @@
 
 ## In progress
 
-### BL-002 — User repositories и admin-controlled activation
+### BL-003 — Opaque session core
 
-Repository ports/adapters, admin-only invitation, одноразовый hashed activation secret и Argon2id password activation. Подробности: `docs/workplan.md`.
+Device-bound login/logout, hashed session credentials, idle/absolute expiry, throttled touch, atomic rotation, previous-token grace и replay handling. Подробности: `docs/workplan.md`.
 
 ## Next
 
-### BL-003 — Opaque sessions и active devices
+### BL-003B — Session HTTP transport и active devices
 
 - login/logout через `Secure`, `HttpOnly`, `SameSite=Strict`, `Path=/` cookie;
-- хранение только session credential hash;
-- device-bound sessions, idle/absolute expiry и throttled touch;
-- atomic credential rotation с previous-token grace period;
-- replay handling и security events;
 - list/rename/revoke device, revoke all other sessions;
 - CSRF/Origin и trusted-proxy client IP handling.
 
@@ -112,6 +108,10 @@ Repository ports/adapters, admin-only invitation, одноразовый hashed 
 - call state machine и failure/reconnect UX.
 
 ## Completed
+
+### BL-002 — User repositories и admin-controlled activation
+
+Repository ports/adapters, one-time bootstrap первого администратора, admin-only invitation, одноразовый hashed activation secret, Argon2id password activation и concurrency/uniqueness tests.
 
 ### BL-001 — Persistence foundation
 

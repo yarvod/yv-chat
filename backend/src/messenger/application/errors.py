@@ -1,0 +1,37 @@
+"""Typed errors exposed by identity use cases."""
+
+
+class ApplicationError(Exception):
+    """Base for expected application-level failures."""
+
+
+class AuthorizationDeniedError(ApplicationError):
+    """The current principal cannot perform the requested operation."""
+
+
+class DuplicateUsernameError(ApplicationError):
+    """A normalized username is already in use."""
+
+
+class InvalidActivationSecretError(ApplicationError):
+    """The supplied activation credential is unknown."""
+
+
+class ActivationExpiredError(ApplicationError):
+    """The supplied activation credential has expired."""
+
+
+class ActivationAlreadyUsedError(ApplicationError):
+    """The supplied activation credential was already consumed."""
+
+
+class AccountAlreadyActiveError(ApplicationError):
+    """The invited account has already been activated."""
+
+
+class WeakPasswordError(ApplicationError):
+    """The supplied password violates the bounded password policy."""
+
+
+class BootstrapAlreadyCompletedError(ApplicationError):
+    """At least one user exists, so initial admin bootstrap is closed."""

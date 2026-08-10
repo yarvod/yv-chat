@@ -6,7 +6,7 @@
 
 ## Статус
 
-Bootstrap и persistence foundation завершены. Реализованы FastAPI healthcheck, Nuxt PWA shell, базовые Docker/Compose-конфигурации, PostgreSQL schema для `users`/`devices`, Alembic migrations, проверки качества и GitHub Actions CI.
+Готовы bootstrap, persistence foundation и закрытый lifecycle пользователей: one-time bootstrap первого администратора, admin-only invitations, одноразовая активация и Argon2id password hashing. Следующий этап — device-bound opaque sessions.
 
 Текущая фича и подробный план находятся в [docs/workplan.md](docs/workplan.md). Будущие задачи — в [docs/backlog.md](docs/backlog.md), найденные дефекты — в [docs/bugs.md](docs/bugs.md).
 
@@ -70,3 +70,11 @@ Backend-команды используют только `uv`; dependency source
 ```bash
 make migrate
 ```
+
+Первый администратор создаётся ровно один раз. Перед запуском задайте `BOOTSTRAP_ADMIN_USERNAME`, `BOOTSTRAP_ADMIN_DISPLAY_NAME` и секретный `BOOTSTRAP_ADMIN_PASSWORD` в runtime environment, затем выполните:
+
+```bash
+make bootstrap-admin
+```
+
+Не храните bootstrap-пароль в репозитории и удалите его из runtime-конфигурации после успешного создания администратора.

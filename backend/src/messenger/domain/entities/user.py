@@ -1,7 +1,7 @@
 """User domain entity."""
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from uuid import UUID, uuid4
 
@@ -74,3 +74,30 @@ class User:
             created_at=timestamp,
             updated_at=timestamp,
         )
+
+    @classmethod
+    def invite(
+        cls,
+        *,
+        username: str,
+        display_name: str,
+        now: datetime,
+        user_id: UUID | None = None,
+    ) -> "User":
+        """Create an inactive account awaiting one-time activation."""
+        active_user = cls.create(
+            username=username,
+            display_name=display_name,
+            now=now,
+            user_id=user_id,
+        )
+        return replace(active_user, is_active=False)
+
+    def activate(self, now: datetime) -> "User":
+        """Transition an invited user to an active account."""
+        if self.is_active:
+            raise DomainValidationError("user is already active")
+        timestamp = require_aware_datetime(now, "now")
+        if timestamp < self.created_at:
+            raise DomainValidationError("activation time must not be before created_at")
+        return replace(self, is_active=True, updated_at=timestamp)

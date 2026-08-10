@@ -12,12 +12,11 @@ FORBIDDEN_COLUMNS = {
     "private_key",
     "session_token",
     "text",
-    "token_hash",
 }
 
 
 def test_identity_metadata_contains_expected_tables() -> None:
-    assert set(Base.metadata.tables) == {"devices", "users"}
+    assert set(Base.metadata.tables) == {"activation_tokens", "devices", "users"}
 
 
 def test_user_schema_enforces_normalized_unique_username() -> None:
@@ -56,3 +55,12 @@ def test_identity_schema_has_no_secret_or_plaintext_columns() -> None:
     }
 
     assert actual_columns.isdisjoint(FORBIDDEN_COLUMNS)
+
+
+def test_activation_schema_stores_digest_without_plaintext_secret() -> None:
+    activation_tokens = Base.metadata.tables["activation_tokens"]
+
+    assert "token_hash" in activation_tokens.columns
+    assert "activation_secret" not in activation_tokens.columns
+    assert "token" not in activation_tokens.columns
+    assert activation_tokens.columns["token_hash"].unique is True

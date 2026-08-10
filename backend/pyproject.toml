@@ -5,6 +5,7 @@ description = "Backend for the yv-chat private messenger"
 requires-python = ">=3.13"
 dependencies = [
     "alembic>=1.16.0,<2.0.0",
+    "argon2-cffi>=25.1.0,<26.0.0",
     "asyncpg>=0.30.0,<1.0.0",
     "fastapi>=0.116.0,<1.0.0",
     "pydantic-settings>=2.10.0,<3.0.0",
@@ -30,6 +31,7 @@ packages = ["src/messenger"]
 [tool.pytest.ini_options]
 addopts = "-q"
 testpaths = ["tests"]
+markers = ["integration: requires a PostgreSQL test database"]
 
 [tool.mypy]
 python_version = "3.13"
@@ -43,4 +45,3 @@ src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
-
