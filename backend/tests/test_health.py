@@ -20,7 +20,7 @@ async def get(application: FastAPI, path: str) -> Response:
 
 def test_health_endpoint_reports_ok() -> None:
     settings = AppSettings(database_url=TEST_DATABASE_URL)
-    response = asyncio.run(get(create_app(settings), "/api/health"))
+    response = asyncio.run(get(create_app(settings), "/api/v1/health"))
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
@@ -30,6 +30,7 @@ def test_production_does_not_expose_openapi() -> None:
     settings = AppSettings(
         app_env=AppEnvironment.PRODUCTION,
         database_url=TEST_DATABASE_URL,
+        allowed_origins=["https://chat.example"],
     )
     application = create_app(settings)
 

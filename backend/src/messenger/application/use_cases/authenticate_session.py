@@ -1,6 +1,7 @@
 """Authenticate, touch and rotate one opaque session."""
 
 from dataclasses import dataclass
+from datetime import datetime
 from uuid import UUID
 
 from messenger.application.errors import (
@@ -29,6 +30,7 @@ class AuthenticateSessionResult:
     session_id: UUID
     device_id: UUID
     rotated_session_credential: str | None
+    absolute_expires_at: datetime
 
 
 class AuthenticateSession:
@@ -117,6 +119,7 @@ class AuthenticateSession:
                     session_id=session.id,
                     device_id=session.device_id,
                     rotated_session_credential=rotated_plaintext,
+                    absolute_expires_at=session.absolute_expires_at,
                 )
 
         if deferred_error is not None:

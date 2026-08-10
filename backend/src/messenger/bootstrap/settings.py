@@ -2,8 +2,10 @@
 
 from datetime import timedelta
 from enum import StrEnum
+from ipaddress import ip_network
+from urllib.parse import urlsplit
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from messenger.application.session_policy import SessionPolicy
@@ -39,12 +41,53 @@ class AppSettings(BaseSettings):
 
     app_env: AppEnvironment = AppEnvironment.DEVELOPMENT
     database_url: str = Field(default_factory=missing_database_url)
+    allowed_origins: list[str] = Field(default_factory=lambda: ["http://localhost:8080"])
+    trusted_proxy_cidrs: list[str] = Field(default_factory=list)
+    session_cookie_name: str = Field(default="__Host-yv_session", pattern=r"^__Host-")
+    csrf_cookie_name: str = Field(default="__Host-yv_csrf", pattern=r"^__Host-")
+    csrf_header_name: str = Field(default="X-CSRF-Token", min_length=1)
     activation_token_ttl_seconds: int = Field(default=86_400, gt=0, le=604_800)
     session_idle_timeout_seconds: int = Field(default=2_592_000, gt=0)
     session_absolute_lifetime_seconds: int = Field(default=7_776_000, gt=0)
     session_rotation_interval_seconds: int = Field(default=86_400, gt=0)
     session_previous_token_grace_seconds: int = Field(default=60, gt=0)
     session_touch_interval_seconds: int = Field(default=300, gt=0)
+
+    @field_validator("allowed_origins")
+    @classmethod
+    def validate_allowed_origins(cls, origins: list[str]) -> list[str]:
+        if not origins:
+            raise ValueError("at least one allowed origin is required")
+        normalized: list[str] = []
+        for origin in origins:
+            parsed = urlsplit(origin)
+            if (
+                parsed.scheme not in {"http", "https"}
+                or not parsed.netloc
+                or parsed.path not in {"", "/"}
+                or parsed.query
+                or parsed.fragment
+                or parsed.username
+                or parsed.password
+            ):
+                raise ValueError("allowed origins must be exact HTTP(S) origins")
+            normalized.append(f"{parsed.scheme}://{parsed.netloc}")
+        if len(set(normalized)) != len(normalized) or "*" in normalized:
+            raise ValueError("allowed origins must be unique and cannot contain wildcard")
+        return normalized
+
+    @field_validator("trusted_proxy_cidrs")
+    @classmethod
+    def validate_proxy_cidrs(cls, cidrs: list[str]) -> list[str]:
+        return [str(ip_network(cidr, strict=False)) for cidr in cidrs]
+
+    @model_validator(mode="after")
+    def require_https_origins_in_production(self) -> "AppSettings":
+        if self.app_env is AppEnvironment.PRODUCTION and any(
+            not origin.startswith("https://") for origin in self.allowed_origins
+        ):
+            raise ValueError("production allowed origins must use HTTPS")
+        return self
 
     @property
     def expose_api_schema(self) -> bool:

@@ -4,17 +4,11 @@
 
 ## In progress
 
-### BL-003B — Session HTTP transport
-
-Versioned FastAPI login/session/logout, protected cookie, exact Origin/CSRF checks, safe client IP и composition root. Подробности: `docs/workplan.md`.
-
-## Next
-
 ### BL-003C — Active device/session management
 
-- list/rename/revoke device, revoke all other sessions;
-- bounded device metadata и security-event visibility;
-- negative ownership/credential-exposure tests.
+User-scoped list/rename/revoke/revoke-all-others, bounded metadata/security events и negative ownership tests. Подробности: `docs/workplan.md`.
+
+## Next
 
 ### BL-004 — Conversations и membership authorization
 
@@ -108,6 +102,10 @@ Versioned FastAPI login/session/logout, protected cookie, exact Origin/CSRF chec
 - call state machine и failure/reconnect UX.
 
 ## Completed
+
+### BL-003B — Session HTTP transport
+
+Versioned FastAPI login/session/logout, `Secure`/`HttpOnly`/`SameSite=Strict` `__Host-` cookie, exact Origin + double-submit CSRF, explicit CORS, safe client IP/trusted-proxy boundary и composition root.
 
 ### BL-003 — Opaque session core
 

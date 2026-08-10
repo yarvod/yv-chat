@@ -6,7 +6,7 @@
 
 ## Статус
 
-Готовы bootstrap, persistence foundation, закрытый lifecycle пользователей и ядро device-bound opaque sessions: hashed credentials, idle/absolute expiry, throttled touch, atomic rotation/grace и replay revocation. Следующий этап — защищённый HTTP cookie transport.
+Готовы закрытый lifecycle пользователей, device-bound opaque sessions и защищённый FastAPI transport: `__Host-` cookies, exact Origin/CSRF, safe client IP, rotation и logout. Следующий этап — управление активными устройствами.
 
 Текущая фича и подробный план находятся в [docs/workplan.md](docs/workplan.md). Будущие задачи — в [docs/backlog.md](docs/backlog.md), найденные дефекты — в [docs/bugs.md](docs/bugs.md).
 
@@ -46,7 +46,7 @@ make frontend-dev
 
 - Frontend: `http://localhost:3000`
 - Backend: `http://localhost:8000`
-- Healthcheck: `http://localhost:8000/api/health`
+- Healthcheck: `http://localhost:8000/api/v1/health`
 - OpenAPI в development: `http://localhost:8000/docs`
 
 Интегрированный локальный HTTP stack:

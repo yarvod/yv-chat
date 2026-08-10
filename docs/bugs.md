@@ -6,7 +6,7 @@
 
 Активных известных дефектов нет.
 
-Последняя сверка: `WP-004` — новых открытых воспроизводимых дефектов нет.
+Последняя сверка: `WP-005` — новых открытых воспроизводимых дефектов нет.
 
 ## Формат записи
 
@@ -23,6 +23,18 @@
 - Проверка: тест или команда, подтверждающая fix.
 
 ## Resolved
+
+### BUG-004 — Healthcheck endpoint обходил versioned API prefix
+
+- Статус: `verified`.
+- Найдено в: `WP-005`, проверка HTTP transport contract.
+- Severity: `low`.
+- Условия воспроизведения: запросить healthcheck и сравнить path с обязательным `/api/v1` prefix.
+- Ожидаемое поведение: публичный endpoint доступен как `/api/v1/health`.
+- Фактическое поведение: bootstrap endpoint оставался на `/api/health`.
+- Причина: healthcheck был создан до фиксации versioned API contract.
+- Исправление: router, Compose healthcheck, README и tests переведены на `/api/v1/health`.
+- Проверка: HTTP test и OpenAPI image smoke test подтверждают `/api/v1/health`.
 
 ### BUG-003 — `uv run` не запускался под непривилегированным пользователем container
 

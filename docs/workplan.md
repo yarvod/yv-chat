@@ -2,63 +2,64 @@
 
 Этот файл содержит только одну текущую фичу. Перед началом следующей фичи завершённая работа фиксируется коммитом, а новый пункт переносится сюда из `backlog.md`.
 
-## WP-005 — Session HTTP transport и browser security boundary
+## WP-006 — Active device/session management
 
 Статус: **planned**  
-Backlog item: `BL-003B`  
-Цель: подключить готовые login/authenticate/logout use cases к versioned FastAPI API через защищённую same-origin cookie, строгую Origin/CSRF policy и явный composition root.
+Backlog item: `BL-003C`  
+Цель: дать пользователю безопасное управление собственными устройствами и сессиями, не раскрывая credentials и не используя browser metadata как фактор авторизации.
 
 ### Пользовательский результат
 
-Активированный пользователь может войти через `/api/v1/auth/login`, получить browser session в `Secure`/`HttpOnly` cookie, проверить текущую identity и выйти. Ротация credential прозрачно обновляет cookie на обычном authenticated response; bearer/JWT/localStorage не используются.
+Пользователь видит текущую и остальные активные сессии с понятным device name и bounded metadata, может переименовать своё устройство, отозвать одну сессию или все остальные. Security events показывают важные действия и replay-сигналы с ограниченным retention.
 
 ### Security invariants
 
-1. Session cookie имеет `Secure`, `HttpOnly`, `SameSite=Strict`, `Path=/`, не имеет `Domain` и не доступна JavaScript.
-2. Credential не принимается из query string, JSON body или `Authorization`; единственный browser transport — cookie.
-3. Login failure одинаков для unknown/inactive user и неверного пароля.
-4. Cookie-authenticated state-changing requests требуют разрешённый exact `Origin` и CSRF proof.
-5. CORS не использует wildcard с credentials; разрешены только явно настроенные same-origin значения.
-6. WebSocket scope отсутствует, но HTTP middleware/dependencies не создают bearer-token shortcut.
-7. `Set-Cookie` rotation выполняется только когда application result вернул новый credential.
-8. Logout идемпотентно отзывает серверную сессию и удаляет cookie даже для неизвестного/устаревшего credential.
-9. Client IP берётся из socket peer; proxy headers доверяются только при явно настроенном trusted proxy.
-10. Ошибки API не раскрывают password hash, session hash, внутренний SQL или stack trace.
+1. Все операции используют `user_id` из аутентифицированной сессии; client-supplied owner ID отсутствует.
+2. Угадывание чужого `session_id`/`device_id` не позволяет читать или изменять чужие записи.
+3. API никогда не возвращает current/previous token hash, credential, password hash или private metadata вне явного DTO.
+4. Current session/device определяется серверным `session_id`, а не флагом клиента.
+5. Rename меняет только display name и не влияет на authentication validity.
+6. Revoke одной device-bound session атомарно отзывает session и device.
+7. Revoke-all-others сохраняет текущую сессию даже при конкурентном запросе.
+8. IP, User-Agent и device model остаются информационными metadata, не authorization factors.
+9. State-changing endpoints проходят существующие exact Origin + CSRF checks.
+10. Security events не содержат credentials, plaintext messages или полные чувствительные заголовки.
 
 ### План реализации
 
-- [ ] Добавить typed HTTP/security settings: allowed origins, cookie name/attributes и trusted proxy policy.
-- [ ] Создать composition root для engine, UoW, password/session adapters и session policy.
-- [ ] Добавить transport DTO для login и безопасного current-session response.
-- [ ] Реализовать exact Origin validation и CSRF boundary для state-changing cookie requests.
-- [ ] Реализовать безопасное извлечение client IP без доверия произвольному `X-Forwarded-For`.
-- [ ] Добавить `POST /api/v1/auth/login` с generic 401 и защищённой cookie.
-- [ ] Добавить authenticated `GET /api/v1/auth/session` с transparent credential rotation.
-- [ ] Добавить `POST /api/v1/auth/logout` с server revoke и cookie deletion.
-- [ ] Добавить application-error → HTTP mapping без утечки внутренних деталей.
-- [ ] Добавить API tests для cookie flags, отсутствия bearer/query auth и rotation `Set-Cookie`.
-- [ ] Добавить negative CSRF/Origin/trusted-proxy tests.
-- [ ] Обновить OpenAPI/README/docs и выполнить полный `make ci`/Docker smoke test.
-- [ ] Зафиксировать фичу отдельным коммитом.
+- [ ] Добавить typed list/rename/revoke/revoke-all commands, results и ownership errors.
+- [ ] Расширить repository ports узкими user-scoped session/device queries.
+- [ ] Реализовать list-my-sessions с current marker и стабильной сортировкой.
+- [ ] Реализовать rename-my-device с bounded domain validation.
+- [ ] Реализовать atomic revoke-one и revoke-all-others.
+- [ ] Добавить bounded `security_events` model/migration для login, logout, replay и revoke actions.
+- [ ] Связать существующие login/logout/replay transitions с event repository без secret payload.
+- [ ] Добавить `/api/v1/devices` list/rename/revoke/revoke-others endpoints.
+- [ ] Добавить response DTO, исключающие credential/hash fields.
+- [ ] Добавить unit tests всех use cases и negative ownership cases.
+- [ ] Добавить PostgreSQL tests для concurrent revoke-all/current preservation.
+- [ ] Добавить HTTP Origin/CSRF и response-schema tests.
+- [ ] Проверить migration fresh/roundtrip, `make ci` и Docker smoke test.
+- [ ] Обновить README/docs и зафиксировать фичу отдельным коммитом.
 
 ### Не входит в scope
 
-- list/rename/revoke devices и revoke-all-others;
-- admin invitation/activation HTTP endpoints;
-- password reset;
-- WebSocket authentication;
-- GeoIP enrichment и risk scoring;
-- frontend login UI.
+- GeoIP database/provider;
+- automatic revoke только из-за смены IP/браузера;
+- password reset/security reset;
+- admin management чужих сессий;
+- WebSocket presence;
+- frontend devices UI.
 
 ### Проверка готовности
 
-- cookie flags и отсутствие `Domain` проверены тестом;
-- credential не возвращается в response body и не читается из bearer/query;
-- неверный/просроченный/revoked credential получает одинаковый 401;
-- rotation устанавливает новый cookie, обычный touch — нет;
-- logout отзывает session и очищает cookie;
-- missing/cross-origin Origin или CSRF proof отклоняются до use case;
-- spoofed forwarding headers не меняют client IP без trusted proxy config;
-- API schema не содержит password/session secret fields;
-- `make ci` и transport security tests проходят;
+- list показывает только сессии текущего пользователя;
+- response отмечает current session и не содержит hashes/credentials;
+- пользователь не может rename/revoke чужой device по guessed UUID;
+- revoke-one блокирует последующую auth этой сессией;
+- revoke-all-others не отзывает current session при concurrency;
+- rename/IP metadata change не влияет на auth;
+- security events bounded и не содержат secret values;
+- все write endpoints требуют Origin + CSRF;
+- PostgreSQL integration, migration roundtrip и `make ci` проходят;
 - изменения зафиксированы отдельным коммитом.
