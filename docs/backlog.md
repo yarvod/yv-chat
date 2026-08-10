@@ -4,20 +4,11 @@
 
 ## In progress
 
-### BL-001 — Persistence foundation
-
-SQLAlchemy async, asyncpg, Alembic, `User`/`Device`, первая migration. Подробности: `docs/workplan.md`.
-
-## Next
-
 ### BL-002 — User repositories и admin-controlled activation
 
-- typed repository ports и SQLAlchemy adapters;
-- создание пользователя только администратором;
-- одноразовый hashed activation token с expiry и невозможностью повторного использования;
-- установка Argon2id password hash;
-- admin bootstrap без default production password;
-- negative authorization tests.
+Repository ports/adapters, admin-only invitation, одноразовый hashed activation secret и Argon2id password activation. Подробности: `docs/workplan.md`.
+
+## Next
 
 ### BL-003 — Opaque sessions и active devices
 
@@ -122,7 +113,10 @@ SQLAlchemy async, asyncpg, Alembic, `User`/`Device`, первая migration. П�
 
 ## Completed
 
+### BL-001 — Persistence foundation
+
+SQLAlchemy async + asyncpg, Alembic, отдельные domain/ORM модели `User`/`Device`, typed database settings, первая migration и PostgreSQL upgrade/downgrade verification.
+
 ### BL-000 — Repository bootstrap
 
 FastAPI healthcheck, Nuxt PWA shell, lint/typecheck/tests/build, `uv`/npm lockfiles, Compose, Nginx local config, Makefile и GitHub Actions CI.
-

@@ -8,6 +8,8 @@ from httpx import ASGITransport, AsyncClient, Response
 from messenger.bootstrap.app import create_app
 from messenger.bootstrap.settings import AppEnvironment, AppSettings
 
+TEST_DATABASE_URL = "postgresql+asyncpg://test:test@127.0.0.1:5432/test"
+
 
 async def get(application: FastAPI, path: str) -> Response:
     """Issue a request directly against the ASGI application."""
@@ -17,14 +19,18 @@ async def get(application: FastAPI, path: str) -> Response:
 
 
 def test_health_endpoint_reports_ok() -> None:
-    response = asyncio.run(get(create_app(), "/api/health"))
+    settings = AppSettings(database_url=TEST_DATABASE_URL)
+    response = asyncio.run(get(create_app(settings), "/api/health"))
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
 
 
 def test_production_does_not_expose_openapi() -> None:
-    settings = AppSettings(app_env=AppEnvironment.PRODUCTION)
+    settings = AppSettings(
+        app_env=AppEnvironment.PRODUCTION,
+        database_url=TEST_DATABASE_URL,
+    )
     application = create_app(settings)
 
     assert asyncio.run(get(application, "/docs")).status_code == 404

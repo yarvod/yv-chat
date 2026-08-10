@@ -15,6 +15,22 @@ concurrency:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql+asyncpg://messenger:ci-only-password@127.0.0.1:5432/messenger
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: messenger
+          POSTGRES_USER: messenger
+          POSTGRES_PASSWORD: ci-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U messenger -d messenger"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     defaults:
       run:
         working-directory: backend
@@ -28,6 +44,8 @@ jobs:
           cache-dependency-glob: backend/uv.lock
       - name: Sync dependencies
         run: uv sync --frozen
+      - name: Apply migrations to a fresh database
+        run: uv run alembic upgrade head
       - name: Lint
         run: uv run ruff check .
       - name: Check formatting

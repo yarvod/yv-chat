@@ -1,6 +1,6 @@
 .PHONY: dev down logs backend-install backend-dev backend-lint backend-format \
 	backend-typecheck backend-test frontend-install frontend-dev frontend-lint \
-	frontend-typecheck frontend-test frontend-build test ci compose-check
+	frontend-typecheck frontend-test frontend-build migrate migration-sql test ci compose-check
 
 dev:
 	@echo "Run 'make backend-dev' and 'make frontend-dev' in separate terminals."
@@ -29,6 +29,12 @@ backend-typecheck:
 backend-test:
 	cd backend && uv run pytest
 
+migrate:
+	cd backend && uv run alembic upgrade head
+
+migration-sql:
+	cd backend && uv run alembic upgrade head --sql
+
 frontend-install:
 	cd frontend && npm ci
 
@@ -54,4 +60,3 @@ compose-check:
 	docker compose config --quiet
 
 ci: backend-lint backend-typecheck backend-test frontend-lint frontend-typecheck frontend-test frontend-build compose-check
-

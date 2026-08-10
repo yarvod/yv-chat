@@ -6,7 +6,7 @@
 
 ## Статус
 
-Bootstrap завершён. Реализованы FastAPI healthcheck, Nuxt PWA shell, базовые Docker/Compose-конфигурации, проверки качества и GitHub Actions CI.
+Bootstrap и persistence foundation завершены. Реализованы FastAPI healthcheck, Nuxt PWA shell, базовые Docker/Compose-конфигурации, PostgreSQL schema для `users`/`devices`, Alembic migrations, проверки качества и GitHub Actions CI.
 
 Текущая фича и подробный план находятся в [docs/workplan.md](docs/workplan.md). Будущие задачи — в [docs/backlog.md](docs/backlog.md), найденные дефекты — в [docs/bugs.md](docs/bugs.md).
 
@@ -65,3 +65,8 @@ make ci
 
 Backend-команды используют только `uv`; dependency source of truth — `backend/pyproject.toml` и `backend/uv.lock`.
 
+Применить migrations:
+
+```bash
+make migrate
+```

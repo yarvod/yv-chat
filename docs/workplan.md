@@ -2,58 +2,61 @@
 
 Этот файл содержит только одну текущую фичу. Перед началом следующей фичи завершённая работа фиксируется коммитом, а новый пункт переносится сюда из `backlog.md`.
 
-## WP-002 — Persistence foundation: User и Device
+## WP-003 — User repositories и admin-controlled activation
 
-Статус: **in progress**  
-Backlog item: `BL-001`  
-Цель: создать минимальный PostgreSQL persistence foundation для последующей закрытой регистрации и управления устройствами.
+Статус: **planned**  
+Backlog item: `BL-002`  
+Цель: реализовать application flow, в котором только администратор создаёт неактивного пользователя, а пользователь один раз активирует аккаунт по ограниченному во времени секрету и задаёт пароль.
 
 ### Пользовательский результат
 
-После этой фичи backend имеет версионируемую схему `users` и `devices`, а код может безопасно создавать async SQLAlchemy sessions через bootstrap-конфигурацию. HTTP API пользователей в эту фичу не входит.
+Администратор может создать приглашённого пользователя и получить одноразовый activation secret. Пользователь активирует свой аккаунт до expiry, после чего secret становится недействительным, а пароль хранится только как Argon2id hash. HTTP endpoints в эту фичу не входят — use cases будут готовы для последующего transport layer.
 
-### Архитектурные решения
+### Security invariants
 
-1. `User` и `Device` являются отдельными доменными сущностями.
-2. Domain не импортирует SQLAlchemy, FastAPI или Pydantic.
-3. ORM-модели находятся в infrastructure и не выходят за её границу.
-4. Время в доменной логике передаётся явно и хранится как timezone-aware UTC.
-5. Идентификаторы генерируются приложением как UUID, а не зависят от ORM lifecycle.
-6. Production-схема изменяется только Alembic migration; `metadata.create_all()` не используется как migration strategy.
-7. `username` уникален без учёта регистра на уровне PostgreSQL expression index.
-8. Устройство всегда принадлежит пользователю; удаление пользователя каскадно удаляет его устройства.
+1. Public self-registration отсутствует.
+2. Создавать приглашения может только активный администратор.
+3. Activation secret генерируется криптографически безопасно и возвращается plaintext только один раз.
+4. В PostgreSQL хранится только SHA-256 lookup hash activation secret.
+5. Secret имеет expiry, одноразовое использование и не может быть применён к другому пользователю.
+6. Пароль никогда не логируется и хранится только как Argon2id hash.
+7. Повторный username отклоняется независимо от регистра.
+8. Use cases зависят от repository/password/token/clock ports, а не от SQLAlchemy или системного времени.
+9. Transaction boundary охватывает одну application operation.
 
 ### План реализации
 
-- [ ] Добавить SQLAlchemy, asyncpg и Alembic через `uv` и обновить lockfile.
-- [ ] Расширить typed settings значением `DATABASE_URL`.
-- [ ] Создать доменные сущности `User` и `Device` с базовыми инвариантами.
-- [ ] Создать SQLAlchemy declarative base и отдельные ORM-модели.
-- [ ] Добавить async engine/session factory на infrastructure boundary.
-- [ ] Настроить Alembic на async PostgreSQL URL и metadata проекта.
-- [ ] Создать начальную migration для `users` и `devices` с PK/FK/unique/check constraints и indexes.
-- [ ] Добавить domain и mapping/schema tests, включая negative cases.
-- [ ] Проверить offline SQL генерацию migration для PostgreSQL.
-- [ ] Обновить `docs/backlog.md`, `docs/bugs.md` и этот workplan перед коммитом.
+- [ ] Добавить Argon2 password-hashing dependency через `uv`.
+- [ ] Расширить domain-модель lifecycle пользователя: invited → active.
+- [ ] Добавить `activation_tokens` и nullable `password_hash` новой Alembic migration.
+- [ ] Создать typed application commands/results/errors для create invitation и activate account.
+- [ ] Создать узкие repository, transaction, password hasher, secret generator и Clock ports.
+- [ ] Реализовать use case создания пользователя с admin authorization.
+- [ ] Реализовать use case одноразовой активации с expiry и Argon2id hashing.
+- [ ] Реализовать SQLAlchemy repositories/mappers без выхода ORM наружу.
+- [ ] Добавить unit tests с in-memory fakes и PostgreSQL integration tests для concurrency/uniqueness.
+- [ ] Проверить fresh migration upgrade и downgrade/upgrade roundtrip.
+- [ ] Обновить README/docs и выполнить полный `make ci`.
+- [ ] Зафиксировать фичу отдельным коммитом.
 
 ### Не входит в scope
 
-- repositories и application use cases;
-- admin bootstrap и activation tokens;
-- password hashing;
-- login, cookies и sessions;
-- crypto identity устройства;
-- HTTP endpoints пользователей.
+- HTTP admin/activation endpoints;
+- login и opaque sessions;
+- cookie/CSRF/Origin handling;
+- device enrollment;
+- password reset;
+- email delivery activation link.
 
 ### Проверка готовности
 
-- `cd backend && uv run ruff check .`
-- `cd backend && uv run ruff format --check .`
-- `cd backend && uv run mypy .`
-- `cd backend && uv run pytest`
-- `cd backend && uv run alembic upgrade head --sql`
-- `make ci`
-- migration не содержит plaintext/message/crypto secret полей;
-- ORM не импортируется domain/application слоями;
+- non-admin не может создать приглашение;
+- inactive/revoked admin не может создать приглашение;
+- duplicate username не создаёт вторую запись;
+- expired/used/unknown activation secret отклоняется;
+- token hash и password hash не выходят из infrastructure/API;
+- concurrent activation допускает только один success;
+- `make ci` проходит;
+- fresh PostgreSQL migration и roundtrip проходят;
 - изменения зафиксированы отдельным коммитом.
 

@@ -6,6 +6,8 @@
 
 Активных известных дефектов нет.
 
+Последняя сверка: `WP-002` — новых воспроизводимых дефектов нет.
+
 ## Формат записи
 
 ### BUG-NNN — Краткое название
@@ -22,5 +24,14 @@
 
 ## Resolved
 
-Разрешённых дефектов пока нет.
+### BUG-001 — Frontend image не собирался из чистого Docker context
 
+- Статус: `verified`.
+- Найдено в: `WP-002`, проверка bootstrap Dockerfile.
+- Severity: `medium`.
+- Условия воспроизведения: выполнить clean `docker build` для `frontend/`.
+- Ожидаемое поведение: Nuxt PWA production image успешно собирается.
+- Фактическое поведение: generated `.nuxt` types не знали о PWA module, затем typecheck завершался ошибкой.
+- Причина: `npm ci` запускал `nuxt prepare` до копирования `nuxt.config.ts` в build stage.
+- Исправление: dependency install выполняется с `--ignore-scripts`, затем после `COPY . .` явно запускаются `npm run postinstall` и `npm run build`.
+- Проверка: clean `docker build -t yv-chat-frontend:wp002-check frontend` завершён успешно, PWA service worker сгенерирован.
