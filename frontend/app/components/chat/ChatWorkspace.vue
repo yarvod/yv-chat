@@ -1,17 +1,21 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 
-import AdminUsersPanel from '../admin/AdminUsersPanel.vue'
 import { useMessenger } from '../../composables/useMessenger'
-import type { CurrentAccount } from '../../services/parsers'
+import type { CurrentAccount } from '../../domain/accounts/account'
 import ConversationSidebar from './ConversationSidebar.vue'
 import MessagePanel from './MessagePanel.vue'
 
 const props = defineProps<{ user: CurrentAccount }>()
-const emit = defineEmits<{ logout: [], sessionExpired: [] }>()
+const emit = defineEmits<{ sessionExpired: [] }>()
 const messenger = useMessenger(props.user.userId, () => emit('sessionExpired'))
 let pollTimer: ReturnType<typeof setInterval> | null = null
-const managingUsers = ref(false)
+const mobilePane = ref<'list' | 'conversation'>('list')
+
+function selectConversation(conversationId: string): void {
+  void messenger.selectConversation(conversationId)
+  mobilePane.value = 'conversation'
+}
 
 onMounted(async () => {
   await messenger.load()
@@ -24,18 +28,16 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="messenger-shell">
+  <section class="messenger-shell" :class="`messenger-shell--${mobilePane}`">
     <ConversationSidebar
       :user="user"
       :conversations="messenger.state.conversations"
       :directory="messenger.state.directory"
       :active-conversation-id="messenger.state.activeConversationId"
       :creating="messenger.state.creating"
-      @select="messenger.selectConversation"
+      @select="selectConversation"
       @direct="messenger.createDirect"
       @group="messenger.createGroup"
-      @manage-users="managingUsers = true"
-      @logout="emit('logout')"
     />
 
     <div v-if="messenger.state.phase === 'loading'" class="conversation-placeholder" aria-live="polite">
@@ -54,8 +56,8 @@ onBeforeUnmount(() => {
         :sending="messenger.state.sending"
         :codec="messenger.codec"
         :send-message="messenger.send"
+        @back="mobilePane = 'list'"
       />
     </div>
-    <AdminUsersPanel v-if="managingUsers && user.isAdmin" @close="managingUsers = false" />
   </section>
 </template>

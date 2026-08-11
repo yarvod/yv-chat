@@ -17,8 +17,3 @@ export interface Invitation {
   activationSecret: string
   expiresAt: string
 }
-
-export interface ActivationResult {
-  userId: string
-  activatedAt: string
-}

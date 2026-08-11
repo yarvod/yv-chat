@@ -2,7 +2,7 @@ import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 
 import MessagePanel from '../app/components/chat/MessagePanel.vue'
-import { syntheticMessageCodec } from '../app/services/messaging/syntheticCodec'
+import { syntheticMessageCodec } from '../app/infrastructure/crypto/synthetic-message-codec'
 
 const conversation = {
   conversationId: 'conversation-1',

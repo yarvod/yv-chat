@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
-import { ApiError } from '../app/services/api'
-import { parseConversation, parseSyncPage } from '../app/services/messaging/parsers'
-import { syntheticMessageCodec } from '../app/services/messaging/syntheticCodec'
+import { ApplicationError } from '../app/application/errors'
+import { syntheticMessageCodec } from '../app/infrastructure/crypto/synthetic-message-codec'
+import { parseConversation, parseSyncPage } from '../app/infrastructure/http/messaging-parsers'
 
 const conversation = {
   conversation_id: 'conversation-1',
@@ -25,7 +25,7 @@ describe('messaging boundaries', () => {
   it('parses the explicit conversation shape and rejects an unknown enum', () => {
     expect(parseConversation(conversation).conversationType).toBe('direct')
     expect(() => parseConversation({ ...conversation, conversation_type: 'channel' }))
-      .toThrow(ApiError)
+      .toThrow(ApplicationError)
   })
 
   it('rejects a malformed sync cursor', () => {
@@ -35,7 +35,7 @@ describe('messaging boundaries', () => {
       stream_cursor: 0,
       has_more: false,
       reset_required: false,
-    })).toThrow(ApiError)
+    })).toThrow(ApplicationError)
   })
 
   it('labels the temporary codec as insecure and round-trips unicode', () => {

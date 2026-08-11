@@ -1,12 +1,4 @@
-import { ApiError } from '../api'
-import {
-  arrayField,
-  booleanField,
-  integerField,
-  nullableStringField,
-  record,
-  stringField,
-} from '../parsers'
+import { ApplicationError } from '../../application/errors'
 import type {
   Conversation,
   ConversationMember,
@@ -17,18 +9,13 @@ import type {
   SyncEvent,
   SyncEventType,
   SyncPage,
-} from './types'
+} from '../../domain/messaging/models'
+import { arrayField, booleanField, integerField, nullableStringField, record, stringField } from './runtime-parsers'
 
-function enumField<T extends string>(
-  value: Record<string, unknown>,
-  name: string,
-  allowed: readonly T[],
-): T {
+function enumField<T extends string>(value: Record<string, unknown>, name: string, allowed: readonly T[]): T {
   const field = stringField(value, name)
   const match = allowed.find(item => item === field)
-  if (match === undefined) {
-    throw new ApiError(200, 'invalid-response', `invalid ${name}`)
-  }
+  if (match === undefined) throw new ApplicationError(200, 'invalid-response', `invalid ${name}`)
   return match
 }
 
@@ -42,7 +29,7 @@ export function parseDirectoryUser(value: unknown): DirectoryUser {
 }
 
 export function parseDirectory(value: unknown): DirectoryUser[] {
-  if (!Array.isArray(value)) throw new ApiError(200, 'invalid-response', 'invalid directory')
+  if (!Array.isArray(value)) throw new ApplicationError(200, 'invalid-response', 'invalid directory')
   return value.map(parseDirectoryUser)
 }
 
@@ -70,7 +57,7 @@ export function parseConversation(value: unknown): Conversation {
 }
 
 export function parseConversations(value: unknown): Conversation[] {
-  if (!Array.isArray(value)) throw new ApiError(200, 'invalid-response', 'invalid conversations')
+  if (!Array.isArray(value)) throw new ApplicationError(200, 'invalid-response', 'invalid conversations')
   return value.map(parseConversation)
 }
 
@@ -90,7 +77,7 @@ export function parseOpaqueMessage(value: unknown): OpaqueMessage {
 }
 
 export function parseMessages(value: unknown): OpaqueMessage[] {
-  if (!Array.isArray(value)) throw new ApiError(200, 'invalid-response', 'invalid messages')
+  if (!Array.isArray(value)) throw new ApplicationError(200, 'invalid-response', 'invalid messages')
   return value.map(parseOpaqueMessage)
 }
 
@@ -99,11 +86,7 @@ function parseSyncEvent(value: unknown): SyncEvent {
   return {
     eventId: stringField(item, 'event_id'),
     cursor: integerField(item, 'cursor'),
-    eventType: enumField<SyncEventType>(
-      item,
-      'event_type',
-      ['conversation_updated', 'message_created'],
-    ),
+    eventType: enumField<SyncEventType>(item, 'event_type', ['conversation_updated', 'message_created']),
     conversationId: stringField(item, 'conversation_id'),
     messageId: nullableStringField(item, 'message_id'),
     createdAt: stringField(item, 'created_at'),

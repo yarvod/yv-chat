@@ -1,6 +1,6 @@
-import { ApiError } from '../api'
-import { booleanField, record, stringField } from '../parsers'
-import type { ActivationResult, Invitation, ManagedUser } from './types'
+import { ApplicationError } from '../../application/errors'
+import type { Invitation, ManagedUser } from '../../domain/accounts/managed-user'
+import { booleanField, record, stringField } from './runtime-parsers'
 
 function parseManagedUser(value: unknown): ManagedUser {
   const item = record(value)
@@ -18,7 +18,7 @@ function parseManagedUser(value: unknown): ManagedUser {
 }
 
 export function parseManagedUsers(value: unknown): ManagedUser[] {
-  if (!Array.isArray(value)) throw new ApiError(200, 'invalid-response', 'invalid users')
+  if (!Array.isArray(value)) throw new ApplicationError(200, 'invalid-response', 'invalid users')
   return value.map(parseManagedUser)
 }
 
@@ -30,13 +30,5 @@ export function parseInvitation(value: unknown): Invitation {
     displayName: stringField(item, 'display_name'),
     activationSecret: stringField(item, 'activation_secret'),
     expiresAt: stringField(item, 'expires_at'),
-  }
-}
-
-export function parseActivation(value: unknown): ActivationResult {
-  const item = record(value)
-  return {
-    userId: stringField(item, 'user_id'),
-    activatedAt: stringField(item, 'activated_at'),
   }
 }

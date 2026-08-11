@@ -3,17 +3,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import AdminUsersPanel from '../app/components/admin/AdminUsersPanel.vue'
 import ActivationForm from '../app/components/auth/ActivationForm.vue'
-import { accountAdminService, activationService } from '../app/services/accounts/api'
-
-afterEach(() => vi.restoreAllMocks())
+afterEach(() => {
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+})
 
 describe('closed onboarding UI', () => {
   it('clears activation credentials after a successful activation', async () => {
-    const activate = vi.spyOn(activationService, 'activate').mockResolvedValue({
-      userId: 'bob-id',
-      activatedAt: '2026-08-11T12:00:00Z',
-    })
-    const wrapper = mount(ActivationForm)
+    const activate = vi.fn().mockResolvedValue(undefined)
+    const wrapper = mount(ActivationForm, { props: { activate } })
     await wrapper.get('textarea[name="activation-secret"]').setValue('a'.repeat(48))
     await wrapper.get('input[name="new-password"]').setValue('strong local password')
     await wrapper.get('input[name="password-confirmation"]').setValue('strong local password')
@@ -27,16 +25,24 @@ describe('closed onboarding UI', () => {
   })
 
   it('shows an invitation secret transiently and removes it on demand', async () => {
-    vi.spyOn(accountAdminService, 'list')
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([])
-    vi.spyOn(accountAdminService, 'invite').mockResolvedValue({
+    const buildInvitationLink = vi.fn((secret: string) => `https://chat.example/activate#token=${secret}`)
+    const listManagedUsers = vi.fn().mockResolvedValue([])
+    const inviteUser = vi.fn().mockResolvedValue({
       userId: 'bob-id',
       username: 'bob',
       displayName: 'Bob',
       activationSecret: 'one-time-secret-value',
       expiresAt: '2026-08-12T12:00:00Z',
     })
+    vi.stubGlobal('useNuxtApp', () => ({
+      $frontend: {
+        listManagedUsers: { execute: listManagedUsers },
+        inviteUser: { execute: inviteUser },
+        buildInvitationLink: { execute: buildInvitationLink },
+        clipboard: { writeText: vi.fn() },
+        haptics: { perform: vi.fn() },
+      },
+    }))
     const wrapper = mount(AdminUsersPanel)
     await flushPromises()
     const inputs = wrapper.findAll('input')
@@ -45,7 +51,9 @@ describe('closed onboarding UI', () => {
     await wrapper.get('form').trigger('submit')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('one-time-secret-value')
+    expect(inviteUser).toHaveBeenCalledWith('bob', 'Bob')
+    expect(buildInvitationLink).toHaveBeenCalledWith('one-time-secret-value')
+    expect(wrapper.text()).toContain('https://chat.example/activate#token=one-time-secret-value')
     await wrapper.get('.invitation-result .text-button').trigger('click')
     expect(wrapper.text()).not.toContain('one-time-secret-value')
   })

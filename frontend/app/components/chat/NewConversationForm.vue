@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 
-import type { DirectoryUser } from '../../services/messaging/types'
+import type { DirectoryUser } from '../../domain/messaging/models'
 
 const props = defineProps<{
   users: readonly DirectoryUser[]

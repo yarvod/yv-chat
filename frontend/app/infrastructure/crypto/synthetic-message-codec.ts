@@ -1,9 +1,4 @@
-export interface MessageCodec {
-  readonly secure: boolean
-  readonly label: string
-  encode(plaintext: string): string
-  decode(ciphertextBase64: string): string
-}
+import type { MessageCodec } from '../../application/ports/message-codec'
 
 function bytesToBase64(bytes: Uint8Array): string {
   let binary = ''
@@ -16,10 +11,7 @@ function base64ToBytes(value: string): Uint8Array {
   return Uint8Array.from(binary, character => character.charCodeAt(0))
 }
 
-/**
- * Temporary transport codec for MVP usability testing. It is encoding, not
- * encryption, and must be replaced by the reviewed E2EE adapter in BL-012–014.
- */
+/** Temporary transport adapter. Encoding only; it is not encryption or E2EE. */
 export const syntheticMessageCodec: MessageCodec = {
   secure: false,
   label: 'Тестовый режим: сообщения не защищены E2EE',

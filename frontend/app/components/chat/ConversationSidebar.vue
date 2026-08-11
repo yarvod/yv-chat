@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 
-import type { CurrentAccount } from '../../services/parsers'
-import type { Conversation, DirectoryUser } from '../../services/messaging/types'
+import type { CurrentAccount } from '../../domain/accounts/account'
+import type { Conversation, DirectoryUser } from '../../domain/messaging/models'
 import NewConversationForm from './NewConversationForm.vue'
 
 const props = defineProps<{
@@ -16,8 +16,6 @@ const emit = defineEmits<{
   select: [conversationId: string]
   direct: [userId: string]
   group: [title: string, userIds: string[]]
-  manageUsers: []
-  logout: []
 }>()
 const creatingNew = ref(false)
 
@@ -43,7 +41,6 @@ function createGroup(title: string, userIds: string[]): void {
     <div class="brand-row">
       <span class="brand-mark small">Y</span>
       <strong>yv-chat</strong>
-      <button v-if="user.isAdmin" class="admin-button" type="button" aria-label="Управление пользователями" @click="emit('manageUsers')">♙</button>
       <button class="new-chat-button" type="button" aria-label="Новый диалог" @click="creatingNew = true">
         +
       </button>
@@ -87,7 +84,6 @@ function createGroup(title: string, userIds: string[]): void {
         <strong>{{ user.displayName }}</strong>
         <small>@{{ user.username }}</small>
       </span>
-      <button class="icon-button" type="button" aria-label="Выйти" @click="emit('logout')">↗</button>
     </footer>
   </aside>
 </template>

@@ -4,6 +4,67 @@
 
 В работу одновременно берётся одна фича. Для неё создаётся подробный `docs/workplan.md`; после реализации, проверок и отдельного коммита пункт переносится в `Completed`. Архитектурные правила не считаются задачами и не дублируются здесь без конкретного проверяемого результата.
 
+## Frontend application и administration
+
+### BL-038 — Native-feeling PWA shell и frontend Clean Architecture
+
+Статус: **in progress** (`WP-020`).
+
+Результат: frontend имеет явные `domain/application/infrastructure/presentation`
+boundaries, Nuxt pages/layouts вместо монолитного `app.vue` и responsive shell,
+который ощущается как цельное desktop/mobile приложение.
+
+- routes `/login`, `/activate`, `/chat`, `/settings`, `/admin/users` и guards;
+- desktop navigation rail + mobile bottom navigation с safe-area/touch targets;
+- light/dark/system design tokens, persisted non-secret preference;
+- restrained motion и обязательный `prefers-reduced-motion` fallback;
+- semantic haptics port с Vibration capability/no-op adapter;
+- автоматический bounded device label вместо login input;
+- URL-fragment invite consumption без попадания secret в HTTP/referrer;
+- app-scoped auth/application state без SSR cross-request singleton;
+- runtime DTO parsers и отсутствие raw HTTP/browser APIs в components;
+- mobile/desktop visual QA, Vitest, lint/typecheck/build.
+
+### BL-039 — Admin account lifecycle и password recovery
+
+Результат: администратор управляет пользователями через отдельную страницу, но
+не получает и не задаёт чужой постоянный пароль.
+
+- bounded paginated user list/search с role/state/session summary;
+- deactivate/block и explicit reactivate с self/admin safety invariants;
+- admin-triggered password reset: все target sessions/devices revoked atomically;
+- отдельный purpose-bound one-time reset token хранится только hashed, имеет TTL,
+  single-use/revocation/concurrency constraints и не смешивается с activation;
+- reset URL использует fragment/transient client memory; пользователь сам задаёт
+  новый Argon2id password, admin его не видит;
+- one-time invitation URL вместо неудобного raw code, explicit copy/hide/expiry;
+- audit events без token/password и negative authorization/CSRF/guessing tests;
+- Alembic migration, repository/use cases, split Dishka providers и pytest.
+
+### BL-040 — User settings, devices и security center
+
+Результат: settings page управляет профилем, темой, haptics и безопасностью
+текущего аккаунта через существующие и новые typed use cases.
+
+- profile/display name и user-editable device display name;
+- current/other active devices с browser/OS/device class/IP/approximate metadata;
+- revoke one, revoke all others, change password и security reset;
+- theme/haptics/motion/notification/privacy preferences;
+- session/token hashes и raw subscription/crypto material никогда не выводятся;
+- best-effort device metadata не используется как authorization factor.
+
+### BL-041 — Visual system, accessibility и PWA polish
+
+Результат: приложение имеет единый визуальный язык, install/update UX и
+доступность, а не набор несвязанных экранов.
+
+- semantic color/spacing/typography/elevation/motion tokens;
+- focus-visible, keyboard navigation, ARIA/live regions и contrast checks;
+- skeleton/empty/error/offline states без layout shift;
+- PWA icons/splash/theme colors для light/dark и standalone safe areas;
+- install/update prompts и migration-compatible service worker lifecycle;
+- visual regression screenshots для основных mobile/desktop состояний.
+
 ## Messaging foundation
 
 ### BL-009 — Receipts, unread state, typing и presence

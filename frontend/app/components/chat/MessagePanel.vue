@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue'
 
-import type { MessageCodec } from '../../services/messaging/syntheticCodec'
-import type { Conversation, OpaqueMessage } from '../../services/messaging/types'
+import type { MessageCodec } from '../../application/ports/message-codec'
+import type { Conversation, OpaqueMessage } from '../../domain/messaging/models'
 
 const props = defineProps<{
   conversation: Conversation | null
@@ -12,6 +12,7 @@ const props = defineProps<{
   codec: MessageCodec
   sendMessage: (plaintext: string) => Promise<boolean>
 }>()
+const emit = defineEmits<{ back: [] }>()
 
 const draft = ref('')
 const timeline = ref<HTMLElement | null>(null)
@@ -45,6 +46,7 @@ watch(
 <template>
   <section v-if="conversation" class="message-panel">
     <header class="conversation-header">
+      <button class="mobile-back" type="button" aria-label="К списку диалогов" @click="emit('back')">‹</button>
       <div>
         <h2>{{ conversationName(conversation) }}</h2>
         <p>{{ conversation.conversationType === 'group' ? `${conversation.members.length} участников` : 'Личный диалог' }}</p>

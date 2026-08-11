@@ -22,6 +22,18 @@
 
 ## Resolved
 
+### BUG-012 — Invite fragment попадал в Vue Router warning как CSS selector
+
+- Статус: `verified`.
+- Найдено в: `WP-020`, local browser smoke `/activate#token=<secret>`.
+- Severity: `high`.
+- Условия воспроизведения: открыть activation URL с one-time secret в fragment при стандартном Vue Router scroll behavior.
+- Ожидаемое поведение: fragment не отправляется серверу, немедленно очищается из address bar и не появляется в console/logs.
+- Фактическое поведение: до mount activation page router пытался использовать полный `#token=...` как CSS selector и включал его в development warning.
+- Причина: default hash scroll logic не различал navigation anchors и credential-bearing fragments.
+- Исправление: custom Nuxt `router.options.ts` перехватывает `#token=` и возвращает top position без selector lookup; page затем потребляет и очищает fragment.
+- Проверка: новый browser tab очистил URL до `/activate`; его dev logs содержат только Vite/Vue informational entries и не содержат token/warning.
+
 ### BUG-011 — Appleboy SCP transport завершался до remote deploy без диагностируемой причины
 
 - Статус: `verified`.

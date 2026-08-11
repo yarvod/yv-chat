@@ -1,19 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { useMessenger } from '../app/composables/useMessenger'
-import {
-  conversationService,
-  directoryService,
-  messageService,
-  syncService,
-} from '../app/services/messaging/api'
-
-vi.mock('../app/services/messaging/api', () => ({
-  conversationService: { list: vi.fn(), createDirect: vi.fn(), createGroup: vi.fn() },
-  directoryService: { list: vi.fn() },
-  messageService: { list: vi.fn(), send: vi.fn() },
-  syncService: { list: vi.fn() },
-}))
+import type { MessagingGateway } from '../app/application/ports/messaging-gateway'
+import type { HapticsPort } from '../app/application/ports/haptics'
+import type { ClientIdGenerator } from '../app/application/ports/client-id-generator'
+import { syntheticMessageCodec } from '../app/infrastructure/crypto/synthetic-message-codec'
+import { useMessenger } from '../app/presentation/composables/useMessenger'
 
 const conversation = {
   conversationId: 'conversation-1',
@@ -37,46 +28,46 @@ const message = {
   ciphertextBase64: 'aGVsbG8=',
 }
 
+let gateway: MessagingGateway
+const haptics: HapticsPort = { isEnabled: () => true, setEnabled: vi.fn(), perform: vi.fn() }
+const clientIdGenerator: ClientIdGenerator = { create: () => 'client-generated-id' }
+
 beforeEach(() => {
-  vi.resetAllMocks()
-  vi.mocked(directoryService.list).mockResolvedValue([])
-  vi.mocked(conversationService.list).mockResolvedValue([conversation])
-  vi.mocked(messageService.list).mockResolvedValueOnce([]).mockResolvedValueOnce([message])
-  vi.mocked(syncService.list)
-    .mockResolvedValueOnce({
-      events: [],
-      nextCursor: 4,
-      streamCursor: 4,
-      hasMore: false,
-      resetRequired: false,
-    })
-    .mockResolvedValueOnce({
-      events: [{
-        eventId: 'event-5',
-        cursor: 5,
-        eventType: 'message_created',
-        conversationId: 'conversation-1',
-        messageId: 'message-1',
-        createdAt: '2026-08-11T12:00:01Z',
-      }],
-      nextCursor: 5,
-      streamCursor: 5,
-      hasMore: false,
-      resetRequired: false,
-    })
+  gateway = {
+    listDirectory: vi.fn().mockResolvedValue([]),
+    listConversations: vi.fn().mockResolvedValue([conversation]),
+    createDirect: vi.fn(),
+    createGroup: vi.fn(),
+    listMessages: vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([message]),
+    sendMessage: vi.fn(),
+    listSync: vi.fn()
+      .mockResolvedValueOnce({ events: [], nextCursor: 4, streamCursor: 4, hasMore: false, resetRequired: false })
+      .mockResolvedValueOnce({
+        events: [{
+          eventId: 'event-5', cursor: 5, eventType: 'message_created',
+          conversationId: 'conversation-1', messageId: 'message-1', createdAt: '2026-08-11T12:00:01Z',
+        }],
+        nextCursor: 5, streamCursor: 5, hasMore: false, resetRequired: false,
+      }),
+  }
 })
 
 describe('messenger orchestration', () => {
   it('captures a cursor baseline before snapshot and catches up newer messages', async () => {
-    const messenger = useMessenger('alice-id', vi.fn())
+    const messenger = useMessenger('alice-id', vi.fn(), {
+      gateway,
+      codec: syntheticMessageCodec,
+      haptics,
+      clientIdGenerator,
+    })
 
     await messenger.load()
     await messenger.poll()
 
-    expect(vi.mocked(syncService.list).mock.invocationCallOrder[0])
-      .toBeLessThan(vi.mocked(conversationService.list).mock.invocationCallOrder[0] ?? 0)
-    expect(syncService.list).toHaveBeenNthCalledWith(2, 4)
-    expect(messageService.list).toHaveBeenLastCalledWith('conversation-1', 0)
+    expect(vi.mocked(gateway.listSync).mock.invocationCallOrder[0])
+      .toBeLessThan(vi.mocked(gateway.listConversations).mock.invocationCallOrder[0] ?? 0)
+    expect(gateway.listSync).toHaveBeenNthCalledWith(2, 4)
+    expect(gateway.listMessages).toHaveBeenLastCalledWith('conversation-1', 0)
     expect(messenger.state.messages).toEqual([message])
     expect(messenger.state.syncCursor).toBe(5)
   })

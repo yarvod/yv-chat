@@ -1,86 +1,113 @@
 # Workplan
 
-Этот файл содержит только одну текущую фичу. Перед началом следующей фичи завершённая работа фиксируется коммитом, а новый пункт переносится сюда из `backlog.md`.
+Этот файл содержит только одну текущую фичу. Перед началом следующей фичи
+завершённая работа фиксируется отдельным коммитом, а новый пункт переносится
+сюда из `backlog.md`.
 
-## WP-019 — Первый production rollout, host Nginx и TLS
+## WP-020 — Native-feeling PWA shell и frontend Clean Architecture
 
-Статус: **complete**
-Backlog item: `BL-029`
-Цель: развернуть проверенный messaging MVP на `chat.yoowee.ru` через изолированный Compose project `yv-chat`, подключить его к существующему host Nginx и подтвердить, что соседние сервисы на `ru1` не изменились.
+Статус: **in progress**
+Backlog item: `BL-038`
+Цель: превратить разросшийся route-less frontend в installable responsive
+application shell с явными dependency boundaries, отдельными страницами,
+автоматическим device label, темами, motion и capability-safe haptics.
 
 ### Результат
 
-GitHub Actions публикует immutable backend/frontend images и выкатывает их в `/home/devuser/yv-chat`; server-only `.env` создан непосредственно на VPS с mode `0600`. Host Nginx проксирует только `chat.yoowee.ru` в loopback gateway `127.0.0.1:18080`, HTTPS-сертификат валиден, HTTP перенаправляет на HTTPS, а public API/PWA проходят smoke-проверку без изменения чужих containers, ports и virtual hosts.
+`app.vue` остаётся composition/render shell без auth/business orchestration.
+Nuxt pages разделяют login, activation, messenger, settings и admin routes;
+layouts дают desktop sidebar и mobile bottom navigation. Presentation вызывает
+typed application operations, application зависит от domain и ports, browser/
+HTTP implementations живут в infrastructure. UI одинаково пригоден для узкого
+mobile viewport, installed standalone PWA и desktop browser.
 
 ### Invariants
 
-1. До rollout снимается и сохраняется только несекретный baseline существующих Compose projects, container names/status, listeners и Nginx virtual hosts.
-2. Не читаются и не копируются `.env`, credentials или private keys соседних сервисов.
-3. Production secrets генерируются непосредственно на `ru1`; их значения не попадают в terminal output, logs, Git, Actions artifacts или документацию.
-4. `/home/devuser/yv-chat/.env` принадлежит `devuser` и имеет mode `0600`.
-5. Stack использует только explicit Compose project `yv-chat`; запрещены broad `down`, `--remove-orphans`, `system prune` и операции над чужими resources.
-6. Единственный host bind stack — `127.0.0.1:18080`; PostgreSQL/API/frontend не публикуются наружу.
-7. Перед изменением host Nginx новый stack обязан пройти loopback health/API smoke.
-8. Nginx-конфиг добавляется отдельным server block для exact `chat.yoowee.ru`; существующие конфиги не переписываются.
-9. Конфиг проверяется `nginx -t` до reload; reload выполняется только после успешной проверки.
-10. HSTS включается только после подтверждения валидного HTTPS и корректного redirect.
-11. WebSocket upgrade/timeouts, request body limit и trusted proxy boundary согласованы с backend/ingress.
-12. После rollout сравнивается baseline: соседние container names/status/listeners остаются неизменными.
-13. Первая admin credential хранится только как одноразовый server-side файл mode `0600`; после передачи администратору bootstrap env удаляется из `.env`.
-14. Если GitHub Actions/SSH/sudo prerequisite отсутствует, rollout останавливается до privileged mutation; работоспособные соседние сервисы имеют приоритет.
+1. Dependency direction frontend: `presentation → application → domain`, а
+   `infrastructure` реализует application ports и подключается в composition root.
+2. Vue pages/components не вызывают raw `fetch`, `localStorage`, User-Agent API,
+   Vibration API или crypto primitives.
+3. Transport DTO остаётся `unknown` до runtime parsing; transport DTO, domain
+   model и presentation view model не смешиваются.
+4. Browser session credential по-прежнему только в secure HttpOnly cookie;
+   local storage разрешён только для несекретных theme/haptics preferences.
+5. Login не показывает поле имени устройства. Bounded best-effort label строится
+   автоматически из browser/OS/device-class metadata и не используется как auth
+   factor. Позже пользователь сможет переименовать device в settings.
+6. Invite secret читается из URL fragment, который не уходит в HTTP request,
+   немедленно удаляется из address bar и держится только в памяти формы.
+7. Haptics — semantic application port (`selection/success/warning/error/sent`):
+   browser adapter использует `navigator.vibrate` только при capability + consent,
+   иначе выполняет no-op. UI не обещает прямой iOS Taptic Engine API.
+8. Theme `system/light/dark` применяется до interactive render насколько позволяет
+   Nuxt bootstrap, сохраняется как несекретная preference и реагирует на system
+   color-scheme changes.
+9. Motion не блокирует interaction и полностью отключается при
+   `prefers-reduced-motion: reduce`.
+10. Mobile navigation учитывает safe-area insets; touch targets не меньше 44px;
+    desktop layout не превращается в растянутую mobile колонку.
+11. Synthetic message codec остаётся явно помеченным как **не E2EE**; visual
+    redesign не может создавать ложное ощущение cryptographic readiness.
+12. SSR/shared module state не должен смешивать auth между requests. Для
+    browser-only local-first/E2EE PWA используется explicit client rendering, а
+    state создаётся через Nuxt app-scoped composition.
 
 ### План
 
-- [x] Проверить local branch/remote, GitHub Actions prerequisites и наличие deployment secret names без чтения значений.
-- [x] Снять read-only production baseline: Docker projects/containers, listeners, Nginx config и текущие public endpoints.
-- [x] Добавить отдельный versioned host Nginx template с HTTP challenge/redirect и HTTPS reverse proxy.
-- [x] Добавить безопасный server bootstrap script: создать `.env`/bootstrap credential без вывода secret values и проверить permissions.
-- [x] Дополнить deployment runbook first-run, TLS, rollback и post-deploy comparison.
-- [x] Прогнать repository CI и deploy static checks; окончательный Nginx syntax test выполнить с issued certificate до reload.
-- [x] Опубликовать feature branch и пропустить изменения через GitHub CI до `main`.
-- [x] Создать server-only secrets и deploy directory; не изменять host Nginx до loopback smoke.
-- [x] Выполнить immutable Compose rollout, migration и loopback health/API/PWA smoke.
-- [x] Установить отдельный Nginx vhost, получить certificate, проверить config и reload.
-- [x] Проверить public HTTPS/redirect/security headers и основной onboarding/login flow.
-- [x] Сравнить соседние services с baseline, зафиксировать результат в docs и отдельном commit.
+- [x] Создать frontend domain/application/infrastructure/presentation modules и
+  composition root, мигрировать auth contract без cyclic dependencies.
+- [x] Сделать `app.vue` тонким, добавить route middleware, layouts и pages:
+  `/login`, `/activate`, `/chat`, `/settings`, `/admin/users`.
+- [x] Удалить ручной `device_name` input и внедрить typed DeviceInfo port/browser
+  adapter с bounded fallback label.
+- [x] Добавить ThemePreferences и Haptics ports/adapters, settings state и UI.
+- [x] Добавить responsive native shell, desktop rail/mobile tabs, light/dark
+  tokens, focus states, restrained transitions и reduced-motion fallback.
+- [x] Генерировать invitation URL `/activate#token=...`, копировать его только по
+  user gesture и очищать transient secret при уходе со страницы.
+- [x] Перенести существующий chat/admin UI на routes без изменения backend API и
+  сохранить session-expired/offline behavior.
+- [x] Обновить Vitest: auto device label, auth redirects, fragment consumption,
+  theme persistence/system changes, haptics capability/no-op и admin visibility.
+- [ ] Прогнать ESLint, Vitest, Nuxt typecheck/build и browser QA на mobile/desktop.
+- [ ] Проверить production CSP/PWA route fallback и задеплоить отдельным commit.
 
 ### Не входит в scope
 
-- real E2EE (`BL-012`–`BL-014`): текущий synthetic envelope остаётся явно non-secure;
-- attachment storage/upload (`BL-016`, `BL-017`);
-- backup/restore (`BL-031`);
-- WebSocket notifications (`BL-011`);
-- изменение или перезапуск существующих unrelated services на `ru1`.
+- admin password reset persistence/API (`BL-039`);
+- WebSocket/presence/receipts (`BL-009`, `BL-011`);
+- IndexedDB archive/outbox (`BL-022`, `BL-023`);
+- cryptographic protocol implementation (`BL-012`–`BL-014`);
+- encrypted attachments/push/calls.
 
 ### Проверка готовности
 
-- GitHub verify/build/deploy jobs зелёные для immutable commit tag;
-- `docker compose -p yv-chat ... ps` показывает четыре healthy services;
-- на host опубликован только `127.0.0.1:18080`, порт PostgreSQL отсутствует в public listeners;
-- `curl http://127.0.0.1:18080/healthz` и `/api/v1/health` успешны;
-- `http://chat.yoowee.ru` перенаправляет на валидный `https://chat.yoowee.ru`;
-- PWA/API работают через HTTPS, browser console не содержит runtime errors;
-- Nginx передаёт trusted proxy headers и WebSocket upgrade, security headers присутствуют;
-- baseline diff не показывает stopped/recreated/renamed unrelated containers или потерянные listeners;
-- `.env` и bootstrap credential имеют mode `0600`, secret scan Git/workflow artifacts чистый;
-- полный repository CI проходит, docs обновлены и feature завершена отдельным commit.
+- `app.vue` содержит только root layout/page mounting;
+- прямые browser/HTTP adapters не импортируются Vue components;
+- login request получает автоматически вычисленный bounded device label;
+- fragment invite не появляется в server URL, rendered DOM после submit или logs;
+- light/dark/system и reduced-motion проверены automated tests;
+- unsupported haptics никогда не ломает действие;
+- 390px mobile и ≥1280px desktop screenshots не имеют overflow/перекрытий;
+- unauthenticated/authenticated/admin route guards работают после reload;
+- frontend lint/test/typecheck/build и полный repository CI зелёные.
 
 ### Проверено
 
-- local branch `codex/bootstrap-and-workflow` линейно опережает `origin/main`; worktree до WP-019 был чистым;
-- root read-only audit: один Compose project `infra`/8 running containers, Docker subnets `172.17.0.0/16` и `172.18.0.0/16`, port `18080` свободен;
-- `nginx -T` успешен с двумя pre-existing duplicate `yoowee.ru` warnings; существующие configs не изменены;
-- Certbot установлен, действующие соседние certificates не читались глубже public metadata;
-- bootstrap-script в isolated temp directory создал только ожидаемые variables и оба файла mode `0600`, secret values не выводились;
-- production `.env` и `.bootstrap-admin.env` созданы непосредственно на `ru1` как `devuser:devuser`, mode `0600`; содержимое не читалось;
-- `make ci` с isolated `UV_CACHE_DIR`: 120 pytest passed, 6 PostgreSQL integration tests skipped без local `TEST_DATABASE_URL`, 11 Vitest; Ruff/format/import contracts/mypy/ESLint/Nuxt typecheck/build/Compose/deploy checks прошли.
-- первый production workflow `31451233832` безопасно остановился на verify до build/deploy; BUG-010 локализован как отсутствующий Alembic upgrade для fresh verification DB и исправлен отдельным migration step.
-- второй workflow `31451487597` прошёл verify и оба GHCR builds, но opaque Appleboy SCP transport остановился до server mutation; BUG-011 заменяет его native pinned SSH/SCP и добавляет pre-build credential/access validation.
-- третий workflow `31451932579` подтвердил, что `DEPLOY_KEY` существует и парсится, но `sshd` закрыл authentication для `devuser`; firewall/ufw/fail2ban не блокируют runner. Safe failure annotation дополнена public SHA256 fingerprint для exact authorized-key repair без чтения private secret.
-- diagnostic fingerprint `SHA256:xVq4eZp0lE0gNxyt++gL+w4XHRrMFGlUrPR5qN6IxPo` не совпал с существующими server/local public keys; поиск exact public key продолжается только по уже публичным/private-safe источникам без публикации secret-derived material.
-- владелец заменил `DEPLOY_KEY`; production workflow `31452613018` для `dffae45` прошёл `deployment-config`, repository verify, оба immutable GHCR build и deploy за 3m20s;
-- Compose project `yv-chat` запущен четырьмя healthy containers; наружу опубликован только gateway `127.0.0.1:18080`, loopback `/healthz` и `/api/v1/health` отвечают;
-- отдельный `chat.yoowee.ru` vhost установлен после успешного `nginx -t`; Let's Encrypt certificate выдан до 2026-11-09, HTTP возвращает `301`, HTTPS содержит HSTS/CSP/anti-framing/referrer headers;
-- production PWA загружается по HTTPS; credential-safe acceptance внутри VPS подтвердил login `200`, `/me` `200`, CSRF-protected revoke-others `200` и logout `204`, после чего все smoke sessions отозваны;
-- `.env` и `.initial-admin-credential` принадлежат `devuser:devuser` и имеют mode `0600`; их содержимое не читалось и не выводилось;
-- все восемь pre-existing `infra-*` containers остались `Up`, их published ports не изменялись; Nginx сохраняет только две ранее известные duplicate-name warnings для unrelated `yoowee.ru` configs.
+- старый `services/` удалён; auth/admin/messaging models, ports, use cases,
+  runtime parsers и concrete gateways разнесены по слоям, composition выполняет
+  один Nuxt plugin;
+- `app.vue` содержит только `NuxtLayout/NuxtPage`, пять product routes и три
+  guards разделяют guest/auth/admin navigation;
+- login UI не принимает device name; `Login` получает label только через
+  `DeviceInfoPort`, тест фиксирует `Safari · iOS · Телефон` и bounded fallback;
+- system/light/dark и haptics enabled/disabled/unsupported behavior покрыты
+  Vitest; send/login/theme используют semantic intents;
+- invitation строится как `/activate#token=...`, browser smoke подтверждает
+  немедленную очистку URL; BUG-012 исключает echo secret в router warning;
+- desktop 1280×720 browser screenshot проверен в light theme без overflow;
+- physical 390px screenshot ожидает разблокировки локального Mac; CSS включает
+  single-pane conversation/list mode, bottom tabs, 44px targets и safe-area;
+- `UV_CACHE_DIR=/tmp/yv-chat-uv-cache make ci`: Ruff/format/import contracts,
+  mypy, 120 pytest passed, 6 PostgreSQL tests skipped без `TEST_DATABASE_URL`,
+  15 Vitest, ESLint, Nuxt typecheck/build, Compose/deploy checks прошли.

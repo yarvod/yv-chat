@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 
-import { accountAdminService } from '../../services/accounts/api'
-import type { Invitation, ManagedUser } from '../../services/accounts/types'
-import { ApiError } from '../../services/api'
+import { ApplicationError } from '../../application/errors'
+import type { Invitation, ManagedUser } from '../../domain/accounts/managed-user'
 
+withDefaults(defineProps<{ embedded?: boolean }>(), { embedded: false })
 const emit = defineEmits<{ close: [] }>()
+const { $frontend } = useNuxtApp()
 const users = ref<ManagedUser[]>([])
 const username = ref('')
 const displayName = ref('')
@@ -13,12 +14,14 @@ const invitation = ref<Invitation | null>(null)
 const loading = ref(true)
 const busy = ref(false)
 const message = ref<string | null>(null)
+const invitationLink = ref<string | null>(null)
+const copied = ref(false)
 
 async function load(): Promise<void> {
   loading.value = true
   message.value = null
   try {
-    users.value = await accountAdminService.list()
+    users.value = await $frontend.listManagedUsers.execute()
   } catch {
     message.value = 'Не удалось загрузить пользователей.'
   } finally {
@@ -31,15 +34,17 @@ async function invite(): Promise<void> {
   message.value = null
   invitation.value = null
   try {
-    invitation.value = await accountAdminService.invite(
+    invitation.value = await $frontend.inviteUser.execute(
       username.value.trim().toLowerCase(),
       displayName.value.trim(),
     )
+    invitationLink.value = $frontend.buildInvitationLink.execute(invitation.value.activationSecret)
+    copied.value = false
     username.value = ''
     displayName.value = ''
     await load()
   } catch (error) {
-    message.value = error instanceof ApiError && error.status === 409
+    message.value = error instanceof ApplicationError && error.status === 409
       ? 'Это имя пользователя уже занято.'
       : 'Не удалось создать приглашение.'
   } finally {
@@ -49,21 +54,33 @@ async function invite(): Promise<void> {
 
 function close(): void {
   invitation.value = null
+  invitationLink.value = null
   emit('close')
+}
+
+async function copyInvitation(): Promise<void> {
+  if (!invitationLink.value) return
+  try {
+    await $frontend.clipboard.writeText(invitationLink.value)
+    copied.value = true
+    $frontend.haptics.perform('success')
+  } catch {
+    message.value = 'Не удалось скопировать ссылку. Выделите её вручную.'
+  }
 }
 
 onMounted(load)
 </script>
 
 <template>
-  <div class="modal-backdrop" role="presentation" @click.self="close">
-    <section class="admin-panel" role="dialog" aria-modal="true" aria-labelledby="admin-title">
+  <div :class="embedded ? 'admin-page-wrap' : 'modal-backdrop'" role="presentation" @click.self="!embedded && close()">
+    <section class="admin-panel" :class="{ 'admin-panel--embedded': embedded }" :role="embedded ? undefined : 'dialog'" :aria-modal="embedded ? undefined : 'true'" aria-labelledby="admin-title">
       <header class="admin-header">
         <div>
           <p class="eyebrow">Администрирование</p>
           <h2 id="admin-title">Пользователи</h2>
         </div>
-        <button class="icon-button" type="button" aria-label="Закрыть" @click="close">×</button>
+        <button v-if="!embedded" class="icon-button" type="button" aria-label="Закрыть" @click="close">×</button>
       </header>
 
       <form class="invite-form" @submit.prevent="invite">
@@ -83,11 +100,11 @@ onMounted(load)
       <p v-if="message" class="form-message" role="alert">{{ message }}</p>
 
       <section v-if="invitation" class="invitation-result" aria-live="polite">
-        <strong>Код для @{{ invitation.username }}</strong>
-        <p>Показывается только сейчас. Передайте его пользователю безопасным каналом.</p>
-        <code>{{ invitation.activationSecret }}</code>
+        <strong>Одноразовая ссылка для @{{ invitation.username }}</strong>
+        <p>Секрет находится после # и не отправляется серверу при открытии ссылки.</p>
+        <code>{{ invitationLink }}</code>
         <small>Действует до {{ new Date(invitation.expiresAt).toLocaleString() }}</small>
-        <button class="text-button" type="button" @click="invitation = null">Скрыть код</button>
+        <div class="inline-actions"><button class="button button--primary button--compact" type="button" @click="copyInvitation">{{ copied ? 'Скопировано' : 'Скопировать ссылку' }}</button><button class="text-button" type="button" @click="invitation = null; invitationLink = null">Скрыть</button></div>
       </section>
 
       <div class="managed-users" aria-live="polite">

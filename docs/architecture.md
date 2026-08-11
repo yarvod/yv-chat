@@ -206,17 +206,89 @@ Schema change всегда включает domain/application impact, ORM mappi
 ## 6. Frontend architecture
 
 ```text
-pages / components
-        ↓
-composables / stores
-        ↓
-client application services
-   ┌────┼──────────┬─────────┐
-   ▼    ▼          ▼         ▼
- API  Crypto    IndexedDB   OPFS/Push
+presentation (Nuxt pages/layouts/components/composables)
+                         ↓
+application (operations/state coordinators/ports)
+                         ↓
+domain (account, device, conversation, message models/invariants)
+
+infrastructure (HTTP, browser capabilities, IndexedDB, OPFS, crypto, push)
+                         └──────── implements application ports
+
+plugins / composition root → creates app-scoped implementations and injects ports
 ```
 
 Vue components отвечают за rendering и interaction. Они не реализуют crypto primitives, raw fetch, IndexedDB migrations, OPFS access, sync reconciliation или push protocol.
+
+Рекомендуемая физическая структура развивается по реальным capabilities, а не
+по одному giant service-файлу:
+
+```text
+app/
+├── domain/
+│   ├── accounts/
+│   ├── devices/
+│   └── messaging/
+├── application/
+│   ├── auth/              # operations + app state
+│   ├── accounts/          # admin/profile operations
+│   ├── messaging/         # sync/send orchestration
+│   └── ports/             # http-agnostic browser/storage/capability contracts
+├── infrastructure/
+│   ├── http/              # DTO, parsers, same-origin adapters
+│   ├── browser/           # device info, theme, haptics, clipboard
+│   └── persistence/       # IndexedDB/OPFS adapters when implemented
+├── presentation/
+│   └── composables/       # Vue/Nuxt bindings to application operations
+├── layouts/
+├── pages/
+├── components/
+└── plugins/               # Nuxt app-scoped composition root
+```
+
+`domain` не импортирует Vue/Nuxt/browser API. `application` может импортировать
+domain и объявляет узкие ports. Infrastructure импортирует contracts/models,
+но presentation не создаёт concrete adapters самостоятельно. Nuxt plugin —
+единственный composition boundary; state не хранится module-global singleton,
+который мог бы пересекать SSR requests.
+
+Проект является browser-first installed PWA с будущими IndexedDB/OPFS и WASM
+crypto dependencies, поэтому client rendering задаётся явно. Route middleware
+опирается только на app-scoped auth state: logged-out routes не открывают private
+screens, admin UI скрывается для обычного пользователя, но backend authorization
+всегда остаётся authoritative.
+
+Transport flow разделён явно:
+
+```text
+HTTP response (`unknown`)
+→ infrastructure runtime parser / transport DTO
+→ application result
+→ domain model or bounded view state
+→ presentation
+```
+
+Theme, haptics, clipboard и device detection — browser capabilities, а не
+component helpers. Для них допустимы маленькие ports, потому что уже существуют
+реальные production/non-browser-test implementations. Theme/haptics preferences
+не являются secrets и могут храниться в `localStorage`; auth credentials,
+passwords, activation/reset tokens и crypto material там запрещены.
+
+Device label вычисляется автоматически и остаётся только best-effort metadata:
+browser family + OS family + device class, bounded до API limit. User-Agent и
+Client Hints не дают authorization claims и не являются доказательством модели
+устройства. Exact model может быть неизвестна; settings позволяют дать понятное
+display name вручную уже после входа.
+
+Semantic haptic intent (`selection`, `success`, `warning`, `error`, `sent`)
+отделён от конкретного механизма. Web adapter может использовать
+`navigator.vibrate` при поддержке и включённой preference, иначе обязан быть
+no-op. Web/PWA не утверждает, что получил прямой доступ к Apple Taptic Engine.
+
+Invite/reset secret разрешён в URL только после `#`: fragment не отправляется
+серверу. Activation/reset page извлекает его один раз, немедленно вызывает
+`history.replaceState` для очистки address bar и хранит значение только в памяти
+до submit/unmount. Query parameters для credentials запрещены.
 
 TypeScript strict. Не использовать необоснованные `any`, `@ts-ignore`, broad casts или non-null assertions. API response остаётся untrusted до parsing/validation на boundary.
 

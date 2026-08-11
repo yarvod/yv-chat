@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { ApiError, apiRequest } from '../app/services/api'
-import { parseCurrentAccount } from '../app/services/parsers'
+import { ApplicationError } from '../app/application/errors'
+import { ApiClient } from '../app/infrastructure/http/api-client'
+import { parseCurrentAccount } from '../app/infrastructure/http/runtime-parsers'
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -12,7 +13,7 @@ describe('api boundary', () => {
       new Response(null, { status: 204 }),
     )
 
-    await apiRequest('/api/v1/auth/logout', { method: 'POST' })
+    await new ApiClient().request('/api/v1/auth/logout', { method: 'POST' })
 
     const [, init] = fetchMock.mock.calls[0] ?? []
     expect(init?.credentials).toBe('include')
@@ -20,6 +21,6 @@ describe('api boundary', () => {
   })
 
   it('rejects malformed account JSON at the boundary', () => {
-    expect(() => parseCurrentAccount({ username: 'alice' })).toThrow(ApiError)
+    expect(() => parseCurrentAccount({ username: 'alice' })).toThrow(ApplicationError)
   })
 })
