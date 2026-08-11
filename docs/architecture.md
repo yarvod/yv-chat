@@ -904,6 +904,12 @@ Android launcher может удерживать icon уже установле�
 media resource, тогда как app shell, standard icons и crypto WASM остаются в
 согласованном Workbox release.
 
+Ожидающий Service Worker активируется по явному действию пользователя через
+глобальное уведомление об обновлении. Активация не удаляет IndexedDB, device-local
+ключ или локальный архив. Миграции локальной схемы обязаны оставаться совместимыми
+с установленной версией до активации нового app shell; очистка site data не является
+штатным способом обновления, потому что она уничтожит локальные ключи и архив.
+
 Root `html/body` не является scroll container и использует
 `overscroll-behavior: none`: это выключает Chrome pull-to-refresh, но не запрещает
 `overflow: auto` у bounded conversation list и timeline. На narrow viewport mobile

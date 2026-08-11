@@ -57,6 +57,14 @@ describe('PWA install assets', () => {
     expect(config).toContain("globIgnores: ['splash/**/*.png']")
   })
 
+  it('offers activation of a waiting service worker without erasing local state', () => {
+    const app = readFileSync(resolve(process.cwd(), 'app/app.vue'), 'utf8')
+    expect(app).toContain('$pwa?.needRefresh')
+    expect(app).toContain('$pwa.updateServiceWorker(true)')
+    expect(app).toContain('Локальные чаты и ключи сохранятся')
+    expect(app).not.toContain('indexedDB.deleteDatabase')
+  })
+
   it('keeps standard artwork transparent and the maskable canvas fully opaque', async () => {
     const transparent = await sharp(resolve(process.cwd(), 'public/icons/icon-v2-512.png'))
       .ensureAlpha()

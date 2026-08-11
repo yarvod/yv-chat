@@ -478,6 +478,34 @@ legend { padding: 0 6px; color: var(--muted); font-size: .8rem; }
   margin-inline-start: 0.5rem;
 }
 
+.app-root {
+  min-height: 100%;
+}
+
+.pwa-update-notice {
+  position: fixed;
+  z-index: 100;
+  inset-block-start: max(0.75rem, env(safe-area-inset-top));
+  inset-inline: 50% auto;
+  display: flex;
+  width: min(36rem, calc(100vw - 2rem));
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  padding: 0.75rem 0.8rem 0.75rem 1rem;
+  transform: translateX(-50%);
+  border: 1px solid color-mix(in srgb, var(--primary) 40%, var(--border));
+  border-radius: 16px;
+  background: var(--surface-solid);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  font-size: 0.82rem;
+}
+
+.pwa-update-notice button {
+  flex: none;
+}
+
 @media (max-width: 430px) {
   .auth-hero { min-height: 27dvh; }
   .auth-stage { min-height: 73dvh; }
@@ -488,6 +516,7 @@ legend { padding: 0 6px; color: var(--muted); font-size: .8rem; }
   .managed-user-row { grid-template-columns: 40px minmax(0, 1fr); }
   .managed-user-row .status-pill { grid-column: 2; }
   .managed-user-actions { grid-column: 1 / -1; }
+  .pwa-update-notice { align-items: stretch; flex-direction: column; }
 }
 
 @media (prefers-reduced-motion: reduce) {
