@@ -38,6 +38,13 @@ export interface OpaqueMessage {
   deletedAt: string | null
 }
 
+export interface MessageHistoryPage {
+  messages: readonly OpaqueMessage[]
+  hasMore: boolean
+  oldestSequence: number | null
+  newestSequence: number | null
+}
+
 export type MessageDeletionReason = 'manual' | 'expired'
 
 export interface DeleteMessageResult {

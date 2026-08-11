@@ -46,6 +46,7 @@ import { BrowserLocation } from '../infrastructure/browser/browser-location'
 import { BrowserPageVisibility } from '../infrastructure/browser/page-visibility'
 import { BrowserScheduler } from '../infrastructure/browser/scheduler'
 import { BrowserThemePreferences } from '../infrastructure/browser/theme-preferences'
+import { IndexedDbMessageArchive } from '../infrastructure/storage/indexeddb-message-archive'
 import { SyntheticMessageProtocol } from '../infrastructure/crypto/synthetic-message-protocol'
 import { UnavailableMlsMessageProtocol } from '../infrastructure/crypto/unavailable-mls-message-protocol'
 import { HttpAdminAccountsGateway } from '../infrastructure/http/admin-accounts-gateway'
@@ -82,6 +83,7 @@ export default defineNuxtPlugin(() => {
     [new SyntheticMessageProtocol(), new UnavailableMlsMessageProtocol()],
     1,
   )
+  const messageArchive = new IndexedDbMessageArchive()
   themePreferences.apply(themePreference)
 
   return {
@@ -95,6 +97,7 @@ export default defineNuxtPlugin(() => {
         markConversationDelivered: new MarkConversationDelivered(deliveryStateGateway),
         pageVisibility,
         messageProtection,
+        messageArchive,
         deviceInfo,
         haptics,
         themePreferences,

@@ -10,6 +10,12 @@ from messenger.application.errors import (
     ConversationNotFoundError,
     InvalidMessageEnvelopeError,
     MessageIdempotencyConflictError,
+    MessageNotFoundError,
+)
+from messenger.application.messaging.get_message import GetMessage, GetMessageQuery
+from messenger.application.messaging.list_message_history import (
+    ListMessageHistory,
+    ListMessageHistoryQuery,
 )
 from messenger.application.messaging.list_messages import ListMessages, ListMessagesQuery
 from messenger.application.messaging.policy import MessageEnvelopePolicy
@@ -19,7 +25,7 @@ from messenger.application.messaging.send_message import (
     SendOpaqueMessageCommand,
 )
 from messenger.application.sync import SyncEventType, SyncPolicy
-from messenger.domain.entities import Conversation, Device, MessageDeletionReason, User
+from messenger.domain.entities import Conversation, Device, Message, MessageDeletionReason, User
 from tests.application.fakes import (
     FakeMessagingUnitOfWorkFactory,
     FixedClock,
@@ -50,7 +56,7 @@ def messaging_state() -> tuple[IdentityState, User, User, User, Device, Conversa
 
 
 async def test_send_persists_only_opaque_envelope_metadata() -> None:
-    state, alice, _, _, device, conversation = messaging_state()
+    state, alice, _, charlie, device, conversation = messaging_state()
     use_case = SendOpaqueMessage(
         unit_of_work=FakeMessagingUnitOfWorkFactory(state),
         clock=FixedClock(NOW + timedelta(seconds=1)),
@@ -121,6 +127,116 @@ async def test_send_persists_only_opaque_envelope_metadata() -> None:
         ListMessagesQuery(alice.id, conversation.id, after_sequence=1, limit=10)
     )
     assert [message.id for message in page] == [second.message_id]
+    get_message = GetMessage(unit_of_work=FakeMessagingUnitOfWorkFactory(state))
+    assert (
+        await get_message.execute(GetMessageQuery(alice.id, conversation.id, result.message_id))
+        == stored
+    )
+    with pytest.raises(MessageNotFoundError):
+        await get_message.execute(GetMessageQuery(alice.id, conversation.id, uuid4()))
+    other_conversation = Conversation.create_direct(
+        created_by=alice.id,
+        other_user_id=charlie.id,
+        now=NOW,
+    )
+    state.conversations[other_conversation.id] = other_conversation
+    with pytest.raises(MessageNotFoundError):
+        await get_message.execute(
+            GetMessageQuery(alice.id, other_conversation.id, result.message_id)
+        )
+    with pytest.raises(ConversationNotFoundError):
+        await get_message.execute(GetMessageQuery(charlie.id, conversation.id, result.message_id))
+
+
+async def test_history_pages_latest_and_before_without_gaps_or_duplicates() -> None:
+    state, alice, _, _, device, conversation = messaging_state()
+    for sequence in range(1, 206):
+        message = Message.create(
+            conversation_id=conversation.id,
+            client_message_id=uuid4(),
+            sender_user_id=alice.id,
+            sender_device_id=device.id,
+            protocol_version=1,
+            sequence=sequence,
+            ciphertext=f"opaque-{sequence}".encode(),
+            now=NOW + timedelta(seconds=sequence),
+            retention=timedelta(days=30),
+        )
+        state.messages[message.id] = message
+    use_case = ListMessageHistory(unit_of_work=FakeMessagingUnitOfWorkFactory(state))
+
+    latest = await use_case.execute(ListMessageHistoryQuery(alice.id, conversation.id, limit=100))
+    older = await use_case.execute(
+        ListMessageHistoryQuery(
+            alice.id,
+            conversation.id,
+            before_sequence=latest.oldest_sequence,
+            limit=100,
+        )
+    )
+    oldest = await use_case.execute(
+        ListMessageHistoryQuery(
+            alice.id,
+            conversation.id,
+            before_sequence=older.oldest_sequence,
+            limit=100,
+        )
+    )
+
+    assert [item.sequence for item in latest.messages] == list(range(106, 206))
+    assert [item.sequence for item in older.messages] == list(range(6, 106))
+    assert [item.sequence for item in oldest.messages] == list(range(1, 6))
+    assert latest.has_more is True
+    assert older.has_more is True
+    assert oldest.has_more is False
+    assert latest.oldest_sequence == 106
+    assert latest.newest_sequence == 205
+
+
+async def test_history_rejects_invalid_bounds_and_non_member() -> None:
+    state, alice, _, charlie, _, conversation = messaging_state()
+    use_case = ListMessageHistory(unit_of_work=FakeMessagingUnitOfWorkFactory(state))
+    with pytest.raises(InvalidMessageEnvelopeError):
+        await use_case.execute(
+            ListMessageHistoryQuery(alice.id, conversation.id, before_sequence=0)
+        )
+    with pytest.raises(InvalidMessageEnvelopeError):
+        await use_case.execute(ListMessageHistoryQuery(alice.id, conversation.id, limit=101))
+    with pytest.raises(ConversationNotFoundError):
+        await use_case.execute(ListMessageHistoryQuery(charlie.id, conversation.id))
+
+
+async def test_history_has_more_does_not_assume_contiguous_sequences() -> None:
+    state, alice, _, _, device, conversation = messaging_state()
+    for sequence in (1, 3, 7):
+        message = Message.create(
+            conversation_id=conversation.id,
+            client_message_id=uuid4(),
+            sender_user_id=alice.id,
+            sender_device_id=device.id,
+            protocol_version=1,
+            sequence=sequence,
+            ciphertext=f"opaque-{sequence}".encode(),
+            now=NOW + timedelta(seconds=sequence),
+            retention=timedelta(days=30),
+        )
+        state.messages[message.id] = message
+    use_case = ListMessageHistory(unit_of_work=FakeMessagingUnitOfWorkFactory(state))
+
+    latest = await use_case.execute(ListMessageHistoryQuery(alice.id, conversation.id, limit=2))
+    older = await use_case.execute(
+        ListMessageHistoryQuery(
+            alice.id,
+            conversation.id,
+            before_sequence=latest.oldest_sequence,
+            limit=2,
+        )
+    )
+
+    assert [item.sequence for item in latest.messages] == [3, 7]
+    assert latest.has_more is True
+    assert [item.sequence for item in older.messages] == [1]
+    assert older.has_more is False
 
 
 async def test_send_rejects_non_member_and_foreign_or_revoked_device() -> None:

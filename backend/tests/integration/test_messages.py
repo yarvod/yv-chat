@@ -19,6 +19,10 @@ from messenger.application.messaging.list_delivery_states import (
     ListParticipantDeliveryStates,
     ListParticipantDeliveryStatesQuery,
 )
+from messenger.application.messaging.list_message_history import (
+    ListMessageHistory,
+    ListMessageHistoryQuery,
+)
 from messenger.application.messaging.list_read_states import (
     ListConversationReadStates,
     ListConversationReadStatesQuery,
@@ -195,6 +199,22 @@ async def run_flow(database_url: str) -> None:
                 )
             ),
         )
+        read_state_factory = SqlAlchemyMessagingUnitOfWorkFactory(session_factory)
+        history = await ListMessageHistory(unit_of_work=read_state_factory).execute(
+            ListMessageHistoryQuery(alice.id, conversation.id, limit=2)
+        )
+        assert [item.sequence for item in history.messages] == [2, 3]
+        assert history.has_more is True
+        older_history = await ListMessageHistory(unit_of_work=read_state_factory).execute(
+            ListMessageHistoryQuery(
+                alice.id,
+                conversation.id,
+                before_sequence=history.oldest_sequence,
+                limit=2,
+            )
+        )
+        assert [item.sequence for item in older_history.messages] == [1]
+        assert older_history.has_more is False
         with pytest.raises(ConversationNotFoundError):
             await send.execute(
                 SendOpaqueMessageCommand(
@@ -206,8 +226,6 @@ async def run_flow(database_url: str) -> None:
                     b"forbidden",
                 )
             )
-
-        read_state_factory = SqlAlchemyMessagingUnitOfWorkFactory(session_factory)
         list_read_states = ListConversationReadStates(unit_of_work=read_state_factory)
         bob_before = await list_read_states.execute(ListConversationReadStatesQuery(bob.id))
         assert len(bob_before) == 1

@@ -5,6 +5,7 @@ import {
   type SealedCryptoStateDraft,
   type StoredSealedCryptoState,
 } from '../crypto/crypto-vault'
+import { requestResult, transactionDone } from './indexeddb-operations'
 
 const DATABASE_NAME = 'yv-chat-crypto-v1'
 const DATABASE_VERSION = 1
@@ -31,21 +32,6 @@ interface SealedStateRecord {
   iv: ArrayBuffer
   ciphertext: ArrayBuffer
   updatedAt: number
-}
-
-function requestResult<T>(request: IDBRequest<T>): Promise<T> {
-  return new Promise((resolve, reject) => {
-    request.addEventListener('success', () => resolve(request.result), { once: true })
-    request.addEventListener('error', () => reject(request.error), { once: true })
-  })
-}
-
-function transactionDone(transaction: IDBTransaction): Promise<void> {
-  return new Promise((resolve, reject) => {
-    transaction.addEventListener('complete', () => resolve(), { once: true })
-    transaction.addEventListener('abort', () => reject(transaction.error), { once: true })
-    transaction.addEventListener('error', () => reject(transaction.error), { once: true })
-  })
 }
 
 function validWrappingKey(value: unknown): value is CryptoKey {

@@ -767,6 +767,25 @@ class FakeMessageRepository:
             key=lambda message: (message.sequence, message.id),
         )[:limit]
 
+    async def list_before(
+        self,
+        *,
+        conversation_id: UUID,
+        before_sequence: int | None,
+        limit: int,
+    ) -> list[Message]:
+        matching = sorted(
+            (
+                message
+                for message in self._state.messages.values()
+                if message.conversation_id == conversation_id
+                and (before_sequence is None or message.sequence < before_sequence)
+            ),
+            key=lambda message: (message.sequence, message.id),
+            reverse=True,
+        )[:limit]
+        return list(reversed(matching))
+
     async def update(self, message: Message) -> None:
         if message.id not in self._state.messages:
             raise RuntimeError("locked message disappeared during update")

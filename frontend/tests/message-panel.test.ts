@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils'
+import { mount, type VueWrapper } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 
 import MessagePanel from '../app/components/chat/MessagePanel.vue'
@@ -363,5 +363,74 @@ describe('message panel', () => {
     })
     await wrapper.get('.scroll-to-latest').trigger('click')
     expect(scrollTo).toHaveBeenCalledWith({ top: 1_200, behavior: 'smooth' })
+  })
+
+  it('prepends older history while preserving the visual scroll anchor', async () => {
+    const latestMessage = {
+      messageId: 'message-2',
+      clientMessageId: 'client-2',
+      conversationId: 'conversation-1',
+      senderUserId: 'bob-id',
+      senderDeviceId: 'bob-device',
+      protocolVersion: 1,
+      sequence: 2,
+      createdAt: '2026-08-11T12:01:00Z',
+      expiresAt: '2026-09-10T12:01:00Z',
+      ciphertextBase64: 'aGVsbG8=',
+      deletionReason: null,
+      deletedAt: null,
+      contentState: 'available' as const,
+      displayBody: 'latest',
+      contentSecure: false,
+    }
+    const olderMessage = {
+      ...latestMessage,
+      messageId: 'message-1',
+      clientMessageId: 'client-1',
+      sequence: 1,
+      createdAt: '2026-08-11T12:00:00Z',
+      displayBody: 'older',
+    }
+    const wrapperRef: { current: VueWrapper | null } = { current: null }
+    let scrollHeight = 1_200
+    const loadOlder = vi.fn(async () => {
+      scrollHeight = 1_400
+      const mounted = wrapperRef.current
+      if (!mounted) throw new Error('message panel is not mounted')
+      await mounted.setProps({ messages: [olderMessage, latestMessage], historyHasMore: false })
+    })
+    const wrapper = mount(MessagePanel, {
+      props: {
+        conversation,
+        messages: [latestMessage],
+        historyHasMore: true,
+        actorUserId: 'alice-id',
+        sending: false,
+        protectionSecure: false,
+        protectionLabel: 'Тестовый режим без E2EE',
+        sendMessage: vi.fn(),
+        loadOlder,
+        deleteMessage: vi.fn(),
+        deletingMessageId: null,
+        typingActorIds: [],
+        onlineActorIds: [],
+        deliveryStates: [],
+        connectionState: 'connected',
+        setTyping: vi.fn(),
+      },
+    })
+    wrapperRef.current = wrapper
+    const timeline = wrapper.get('.message-timeline').element as HTMLElement
+    Object.defineProperties(timeline, {
+      scrollHeight: { configurable: true, get: () => scrollHeight },
+      clientHeight: { configurable: true, value: 400 },
+      scrollTop: { configurable: true, value: 200, writable: true },
+      scrollTo: { configurable: true, value: vi.fn() },
+    })
+
+    await wrapper.get('.load-older').trigger('click')
+    await vi.waitFor(() => expect(loadOlder).toHaveBeenCalledOnce())
+    await vi.waitFor(() => expect(timeline.scrollTop).toBe(400))
+    expect(wrapper.text()).toContain('older')
   })
 })

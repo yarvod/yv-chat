@@ -3,6 +3,7 @@ import type {
   Conversation,
   DeleteMessageResult,
   DirectoryUser,
+  MessageHistoryPage,
   OpaqueMessage,
   SyncPage,
 } from '../../domain/messaging/models'
@@ -13,6 +14,8 @@ import {
   parseDeleteMessageResult,
   parseDirectory,
   parseMessages,
+  parseMessageHistoryPage,
+  parseOpaqueMessage,
   parseSyncPage,
 } from './messaging-parsers'
 
@@ -42,6 +45,25 @@ export class HttpMessagingGateway implements MessagingGateway {
   async listMessages(conversationId: string, afterSequence = 0): Promise<OpaqueMessage[]> {
     const query = new URLSearchParams({ after_sequence: String(afterSequence), limit: '100' })
     return parseMessages(await this.apiClient.request(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages?${query}`))
+  }
+
+  async listMessageHistory(
+    conversationId: string,
+    beforeSequence?: number,
+    limit = 100,
+  ): Promise<MessageHistoryPage> {
+    const query = new URLSearchParams({ limit: String(limit) })
+    if (beforeSequence !== undefined) query.set('before_sequence', String(beforeSequence))
+    return parseMessageHistoryPage(await this.apiClient.request(
+      `/api/v1/conversations/${encodeURIComponent(conversationId)}/messages/history?${query}`,
+    ))
+  }
+
+  async getMessage(conversationId: string, messageId: string): Promise<OpaqueMessage> {
+    return parseOpaqueMessage(await this.apiClient.request(
+      `/api/v1/conversations/${encodeURIComponent(conversationId)}`
+      + `/messages/${encodeURIComponent(messageId)}`,
+    ))
   }
 
   async sendMessage(

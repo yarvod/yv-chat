@@ -28,6 +28,8 @@ from messenger.application.devices.list_sessions import ListMySessions
 from messenger.application.devices.rename import RenameMyDevice
 from messenger.application.devices.revoke import RevokeMyDevice
 from messenger.application.devices.revoke_others import RevokeOtherSessions
+from messenger.application.messaging.get_message import GetMessage
+from messenger.application.messaging.list_message_history import ListMessageHistory
 from messenger.application.messaging.list_messages import ListMessages
 from messenger.application.messaging.send_message import SendOpaqueMessage
 from messenger.application.ports.conversations import ConversationUnitOfWorkFactory
@@ -71,7 +73,9 @@ async def test_production_graph_resolves_every_application_operation() -> None:
         LeaveConversation,
         ChangeConversationMemberRole,
         SendOpaqueMessage,
+        GetMessage,
         ListMessages,
+        ListMessageHistory,
         ListSyncEvents,
         Login,
         AuthenticateSession,

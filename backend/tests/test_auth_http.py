@@ -48,7 +48,9 @@ from messenger.application.devices.revoke import RevokeMyDevice
 from messenger.application.devices.revoke_others import RevokeOtherSessions
 from messenger.application.messaging.cleanup_messages import CleanupExpiredMessages
 from messenger.application.messaging.delete_message import DeleteMessageForEveryone
+from messenger.application.messaging.get_message import GetMessage
 from messenger.application.messaging.list_delivery_states import ListParticipantDeliveryStates
+from messenger.application.messaging.list_message_history import ListMessageHistory
 from messenger.application.messaging.list_messages import ListMessages
 from messenger.application.messaging.list_read_states import ListConversationReadStates
 from messenger.application.messaging.mark_delivered import MarkConversationDelivered
@@ -284,8 +286,10 @@ class HttpTestProvider(Provider):
     )
     send_opaque_message = provide(SendOpaqueMessage, scope=Scope.REQUEST)
     delete_message_for_everyone = provide(DeleteMessageForEveryone, scope=Scope.REQUEST)
+    get_message = provide(GetMessage, scope=Scope.REQUEST)
     cleanup_expired_messages = provide(CleanupExpiredMessages, scope=Scope.REQUEST)
     list_messages = provide(ListMessages, scope=Scope.REQUEST)
+    list_message_history = provide(ListMessageHistory, scope=Scope.REQUEST)
     list_conversation_read_states = provide(
         ListConversationReadStates,
         scope=Scope.REQUEST,

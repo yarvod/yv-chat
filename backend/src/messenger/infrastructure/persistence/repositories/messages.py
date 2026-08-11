@@ -109,6 +109,26 @@ class SqlAlchemyMessageRepository:
         ).all()
         return [map_message(model) for model in models]
 
+    async def list_before(
+        self,
+        *,
+        conversation_id: UUID,
+        before_sequence: int | None,
+        limit: int,
+    ) -> list[Message]:
+        conditions = [MessageModel.conversation_id == conversation_id]
+        if before_sequence is not None:
+            conditions.append(MessageModel.sequence < before_sequence)
+        models = (
+            await self._session.scalars(
+                select(MessageModel)
+                .where(*conditions)
+                .order_by(MessageModel.sequence.desc(), MessageModel.id.desc())
+                .limit(limit)
+            )
+        ).all()
+        return [map_message(model) for model in reversed(models)]
+
     async def update(self, message: Message) -> None:
         model = await self._session.get(MessageModel, message.id)
         if model is None:

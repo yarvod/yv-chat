@@ -4,67 +4,62 @@
 завершённая работа фиксируется отдельным коммитом, а новый пункт переносится
 сюда из `backlog.md`.
 
-## WP-041 — Native messenger viewport and conversation experience
+## WP-042 — Bounded message history and encrypted local archive
 
 Статус: **completed**
-Backlog: `BL-041`
-Цель: PWA ведёт себя как привычный нативный messenger на desktop/mobile: внешний
-document не растёт от timeline, список/шапка/composer остаются на месте, работа с
-длинной перепиской, клавиатурой и новыми сообщениями не ломает позицию пользователя.
+Backlog: `BL-022`
+Цель: разговор с историей длиннее одной HTTP-страницы открывается с последних
+сообщений, позволяет стабильно догружать старые страницы и восстанавливает
+локально сохранённый ciphertext без хранения расшифрованного текста.
 
 ### Инварианты
 
-1. Authenticated shell занимает ровно visual viewport. На chat page скроллятся
-   только conversation list и timeline; rail/header/composer не уезжают при любом
-   количестве сообщений.
-2. На desktop одновременно видны bounded sidebar и conversation pane. На mobile
-   работает master/detail flow с URL-backed выбранным conversation и системным Back.
-3. Global mobile tabs закреплены снизу только на top-level pages/list; в открытом
-   разговоре они скрываются, освобождая место keyboard-safe composer.
-4. Timeline автоматически держится снизу только если пользователь уже находился
-   рядом с концом или сам отправил сообщение. Чтение истории не сбрасывается новым
-   входящим событием; появляется явная кнопка возврата вниз.
-5. Composer поддерживает bounded multiline auto-grow, Enter=send, Shift+Enter=newline,
-   IME composition и safe-area/software-keyboard viewport без manual resize.
-6. Conversation rows и message groups дают привычную hierarchy: поиск, avatar,
-   timestamp, presence/unread, day separators, compact sender/time/delivery metadata.
-7. Vue components остаются presentation-only; timeline grouping/formatting вынесены
-   в typed presentation model, network/domain/crypto границы не смешиваются с UI.
-8. Focus-visible, ARIA/live semantics, 44px touch targets, light/dark tokens и
-   reduced-motion сохраняются. Telegram/WhatsApp служат interaction reference, но
-   branding и точные visual assets не копируются.
-9. Install metadata содержит стабильный app id/scope/start URL, отдельные `any` и
-   `maskable` PNG 192/512, Apple touch icons и matching portrait launch screens.
-   Критический знак maskable asset остаётся внутри W3C safe-zone, фон непрозрачен.
-10. Большие Apple launch PNG выбираются media query и не входят все разом в
-    Workbox precache; app shell/icon/WASM продолжают обновляться согласованно.
+1. PostgreSQL остаётся authoritative source в пределах server retention. Новый
+   history contract возвращает bounded latest/before pages в стабильном ascending
+   порядке и повторно проверяет active user/membership authorization.
+2. Existing forward `after_sequence` API и cursor sync сохраняют совместимость.
+   `before_sequence` всегда exclusive; server вычисляет `has_more` через bounded
+   `limit + 1`, а не по непрерывности sequence после TTL purge.
+3. Клиент открывает latest page, а не первые 100 сообщений. `load older` не создаёт
+   пропусков/дублей и сохраняет visual scroll anchor.
+4. Local archive реализует application port и отдельный IndexedDB adapter. В нём
+   сохраняются только transport `OpaqueMessage`, зашифрованные AES-256-GCM под
+   non-extractable browser-installation key с AAD, связывающим owner/conversation/
+   sequence/schema.
+5. `TimelineMessage.displayBody`, plaintext, message keys, session credentials и
+   crypto private state никогда не сериализуются в archive records или логи.
+6. Archive bounded per conversation; client reactive window также bounded. При
+   переходе в старую историю пользователь может явно вернуться к latest page.
+7. Corrupt/tampered/swapped records удаляются или игнорируются fail-closed. Отказ,
+   eviction или запрет IndexedDB не ломает online messaging и отражается понятным
+   non-blocking storage status.
+8. Realtime/sync additions, duplicate retries и tombstones обновляют archive
+   idempotently через authorized single-message fetch; read/delivery cursor
+   продвигается только до реально полученного newest sequence.
+9. Изменение покрывается application, HTTP, PostgreSQL repository, IndexedDB,
+   orchestration и Vue interaction tests, включая >100 pre-existing messages.
 
 ### План
 
-- [x] Зафиксировать viewport/navigation/timeline/composer acceptance contract.
-- [x] Перевести app/chat shell на bounded height + internal overflow containers.
-- [x] Добавить URL-backed mobile master/detail и скрытие global tabs в conversation.
-- [x] Улучшить conversation list search/metadata и reusable typed icons.
-- [x] Добавить grouped timeline, non-jumping scroll и scroll-to-latest affordance.
-- [x] Добавить bounded auto-growing keyboard/IME-aware composer.
-- [x] Покрыть pure presentation model, Vue interactions и CSS layout contracts.
-- [x] Выполнить physical browser QA mobile/desktop short+long states и полный CI.
-- [x] Сверить install assets с W3C/Chromium/Apple requirements и создать brand masters.
-- [x] Добавить exact-size standard/maskable/touch icons и portrait Apple launch screens.
-- [x] Добавить manifest identity, standalone theme/head metadata и bounded precache.
-- [x] Проверить размеры PNG, generated manifest/head и production PWA build.
-- [x] Обновить architecture/backlog/bugs при необходимости; commit/push — финал.
+- [x] Добавить backend latest/before history Query/Result DTO и repository port.
+- [x] Реализовать SQLAlchemy/fake adapters и versioned HTTP history response.
+- [x] Покрыть stable ordering, authorization, gaps, bounds и >100 history tests.
+- [x] Добавить typed frontend history DTO/parser/gateway method.
+- [x] Добавить `MessageArchive` port и AES-GCM IndexedDB adapter с bounded retention.
+- [x] Подключить cached hydration, network reconciliation и idempotent archive writes.
+- [x] Добавить load-older/latest state и bounded reactive timeline orchestration.
+- [x] Добавить UI controls с сохранением scroll anchor и accessible status.
+- [x] Проверить storage corruption/unavailability, duplicates, tombstones и reload.
+- [x] Обновить architecture/backlog/bugs, прогнать полный CI и commit/push.
 
 ### Definition of Done
 
-- document height равен viewport на chat при 0 и при множестве сообщений;
-- sidebar и timeline имеют независимый overflow, header/composer не меняют координаты;
-- mobile list/conversation восстанавливаются из URL и browser Back;
-- входящее сообщение не прыгает вниз во время чтения истории;
-- textarea растёт только до заданного max и корректно отправляет с hardware keyboard;
-- mobile 390×844, keyboard-sized viewport и desktop split layout проверены физически;
-- generated manifest содержит отдельные `any`/`maskable` 192/512 icons, а каждый
-  touch/splash asset существует с заявленным размером;
-- Apple launch screens не раздувают offline precache, install shell совпадает с
-  brand background/theme и сохраняет safe-area viewport;
-- frontend tests/lint/typecheck/build и полный repository CI зелёные.
+- conversation с 205 сообщениями сначала показывает sequences `106..205`, затем
+  догружает `6..105` и `1..5` без пропусков/дублей и с устойчивой позицией scroll;
+- reload может показать зашифрованную local page до завершения network reconcile;
+- raw IndexedDB inspection не содержит `displayBody`/plaintext и ключ не extractable;
+- altered ciphertext/AAD не превращается в UI plaintext и не ломает network fallback;
+- active timeline/archive имеют явные bounds и не растут бесконечно;
+- старый `after_sequence` endpoint и reconnect/cursor sync tests остаются зелёными;
+- backend Ruff/format/mypy/pytest, frontend lint/typecheck/Vitest/build и repository
+  config/security gates проходят.

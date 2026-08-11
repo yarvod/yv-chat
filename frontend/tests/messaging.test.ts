@@ -10,6 +10,7 @@ import { SyntheticMessageProtocol } from '../app/infrastructure/crypto/synthetic
 import { UnavailableMlsMessageProtocol } from '../app/infrastructure/crypto/unavailable-mls-message-protocol'
 import {
   parseConversation,
+  parseMessageHistoryPage,
   parseOpaqueMessage,
   parseSyncPage,
 } from '../app/infrastructure/http/messaging-parsers'
@@ -175,6 +176,35 @@ describe('messaging boundaries', () => {
       ciphertext_base64: null,
       deletion_reason: null,
       deleted_at: null,
+    })).toThrow(ApplicationError)
+  })
+
+  it('requires history metadata to match the returned ascending page', () => {
+    const envelope = {
+      message_id: 'message-2',
+      client_message_id: 'client-2',
+      conversation_id: 'conversation-1',
+      sender_user_id: 'alice-id',
+      sender_device_id: 'device-1',
+      protocol_version: 1,
+      sequence: 2,
+      created_at: '2026-08-11T12:00:00Z',
+      expires_at: '2026-09-10T12:00:00Z',
+      ciphertext_base64: 'b3BhcXVl',
+      deletion_reason: null,
+      deleted_at: null,
+    }
+    expect(parseMessageHistoryPage({
+      messages: [envelope],
+      has_more: true,
+      oldest_sequence: 2,
+      newest_sequence: 2,
+    })).toMatchObject({ hasMore: true, oldestSequence: 2, newestSequence: 2 })
+    expect(() => parseMessageHistoryPage({
+      messages: [envelope],
+      has_more: false,
+      oldest_sequence: 1,
+      newest_sequence: 2,
     })).toThrow(ApplicationError)
   })
 

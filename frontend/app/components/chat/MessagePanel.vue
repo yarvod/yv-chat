@@ -10,14 +10,20 @@ import type {
 import { buildTimelineLayout } from '../../presentation/chat/timeline-layout'
 import AppIcon from '../ui/AppIcon.vue'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   conversation: Conversation | null
   messages: readonly TimelineMessage[]
+  historyHasMore?: boolean
+  historyHasNewer?: boolean
+  loadingOlder?: boolean
+  archiveStatus?: 'ready' | 'unavailable'
   actorUserId: string
   sending: boolean
   protectionSecure: boolean
   protectionLabel: string
   sendMessage: (plaintext: string) => Promise<boolean>
+  loadOlder?: () => Promise<void>
+  returnToLatest?: () => Promise<void>
   deleteMessage: (messageId: string) => Promise<boolean>
   deletingMessageId: string | null
   typingActorIds: readonly string[]
@@ -25,7 +31,14 @@ const props = defineProps<{
   deliveryStates: readonly ParticipantDeliveryState[]
   connectionState: RealtimeConnectionState
   setTyping: (conversationId: string, active: boolean) => void
-}>()
+}>(), {
+  historyHasMore: false,
+  historyHasNewer: false,
+  loadingOlder: false,
+  archiveStatus: 'ready',
+  loadOlder: async () => undefined,
+  returnToLatest: async () => undefined,
+})
 const emit = defineEmits<{ back: [] }>()
 
 const draft = ref('')
@@ -145,6 +158,24 @@ function scrollToLatest(behavior: ScrollBehavior = 'smooth'): void {
   showScrollToLatest.value = false
 }
 
+async function loadOlderPreservingAnchor(): Promise<void> {
+  const element = timeline.value
+  if (!element || props.loadingOlder) return
+  const previousHeight = element.scrollHeight
+  const previousTop = element.scrollTop
+  await props.loadOlder()
+  await nextTick()
+  element.scrollTop = previousTop + Math.max(0, element.scrollHeight - previousHeight)
+}
+
+async function goToLatest(): Promise<void> {
+  if (props.historyHasNewer) {
+    await props.returnToLatest()
+    await nextTick()
+  }
+  scrollToLatest('smooth')
+}
+
 function resizeComposer(): void {
   const element = composerInput.value
   if (!element) return
@@ -161,14 +192,23 @@ function handleComposerKeydown(event: KeyboardEvent): void {
 }
 
 watch(
-  () => props.messages.length,
-  async (length, previousLength) => {
+  () => ({
+    length: props.messages.length,
+    oldest: props.messages[0]?.messageId ?? null,
+    newest: props.messages.at(-1)?.messageId ?? null,
+  }),
+  async (current, previous) => {
+    const previousLength = previous?.length ?? 0
+    const prepended = previous !== undefined
+      && current.oldest !== previous.oldest
+      && current.newest === previous.newest
+    if (prepended) return
     const shouldFollow = previousLength === 0
       || isNearLatest()
       || props.messages.at(-1)?.senderUserId === props.actorUserId
     await nextTick()
     if (shouldFollow) scrollToLatest(previousLength === 0 ? 'auto' : 'smooth')
-    else if (length > previousLength) showScrollToLatest.value = true
+    else if (current.length > previousLength) showScrollToLatest.value = true
   },
 )
 
@@ -225,11 +265,25 @@ onBeforeUnmount(() => {
       />
     </header>
 
-    <p v-if="!protectionSecure" class="security-warning" role="status">
-      {{ protectionLabel }}. Не отправляйте чувствительные данные.
-    </p>
+    <div v-if="!protectionSecure || archiveStatus === 'unavailable'" class="timeline-notices">
+      <p v-if="!protectionSecure" class="security-warning" role="status">
+        {{ protectionLabel }}. Не отправляйте чувствительные данные.
+      </p>
+      <p v-if="archiveStatus === 'unavailable'" class="storage-warning" role="status">
+        Локальная история недоступна. Online-синхронизация продолжает работать.
+      </p>
+    </div>
 
     <div ref="timeline" class="message-timeline" aria-live="polite" @scroll.passive="handleTimelineScroll">
+      <button
+        v-if="historyHasMore && messages.length > 0"
+        class="load-older"
+        type="button"
+        :disabled="loadingOlder"
+        @click="loadOlderPreservingAnchor"
+      >
+        {{ loadingOlder ? 'Загружаем историю…' : 'Показать более ранние сообщения' }}
+      </button>
       <div v-if="messages.length === 0" class="empty-timeline">
         <span>✦</span>
         <h3>Начните разговор</h3>
@@ -292,14 +346,14 @@ onBeforeUnmount(() => {
     </div>
 
     <button
-      v-if="showScrollToLatest"
+      v-if="showScrollToLatest || historyHasNewer"
       class="scroll-to-latest"
       type="button"
       aria-label="Перейти к новым сообщениям"
-      @click="scrollToLatest()"
+      @click="goToLatest"
     >
       <AppIcon name="back" />
-      <span aria-hidden="true">Новые</span>
+      <span aria-hidden="true">{{ historyHasNewer ? 'К последним' : 'Новые' }}</span>
     </button>
 
     <form class="composer" @submit.prevent="submit">

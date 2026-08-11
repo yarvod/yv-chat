@@ -4,24 +4,8 @@
 
 ## Active
 
-### BUG-030 — Существующая история длиннее 100 сообщений загружается не полностью
-
-- Статус: `open`.
-- Найдено в: storage/history audit, `WP-041`.
-- Severity: `high`.
-- Условия воспроизведения: открыть после login conversation, в котором до текущего
-  client sync baseline уже существует более 100 сообщений.
-- Ожидаемое поведение: UI сначала получает bounded latest page, а более старую
-  историю догружает стабильными cursor pages без unbounded DOM/RAM.
-- Фактическое поведение: gateway запрашивает только первые 100 rows с
-  `after_sequence=0`; bootstrap не продолжает pagination, а уже существующие rows
-  после сотой не обязательно представлены новыми sync events.
-- Причина: текущий transport реализует forward catch-up cursor, но ещё не имеет
-  latest/before history page contract и encrypted local archive.
-- Исправление: запланировано в `BL-022`: reverse/latest cursor page, incremental
-  load-older, bounded/virtual timeline и encrypted IndexedDB archive.
-- Проверка: будущий integration test с >100 pre-existing messages, reload, reconnect
-  и stable ordering/duplicate retry.
+Активных воспроизводимых дефектов сейчас нет; незавершённые продуктовые возможности
+остаются в `backlog.md` и не маскируются как bugs.
 
 ## Формат записи
 
@@ -38,6 +22,27 @@
 - Проверка: тест или команда, подтверждающая fix.
 
 ## Resolved
+
+### BUG-030 — Существующая история длиннее 100 сообщений загружалась не полностью
+
+- Статус: `verified`.
+- Найдено в: storage/history audit, `WP-041`.
+- Severity: `high`.
+- Условия воспроизведения: открыть после login conversation, в котором до текущего
+  client sync baseline уже существует более 100 сообщений.
+- Ожидаемое поведение: UI сначала получает bounded latest page, а более старую
+  историю догружает стабильными cursor pages без unbounded DOM/RAM.
+- Фактическое поведение: gateway запрашивал только первые 100 rows с
+  `after_sequence=0`; bootstrap не продолжал pagination, а уже существующие rows
+  после сотой не обязательно были представлены новыми sync events.
+- Причина: transport имел только forward catch-up cursor и не имел latest/before
+  history page contract или encrypted local message archive.
+- Исправление: `WP-042` добавил отдельный latest/before use case/repository/HTTP
+  contract, encrypted IndexedDB archive, incremental load-older, 300-message UI
+  window и явный return-to-latest flow.
+- Проверка: application + HTTP regressions с 205 pre-existing envelopes получают
+  `106..205`, `6..105`, `1..5`; frontend orchestration повторяет те же страницы без
+  пропусков/дублей, IndexedDB tests проверяют encryption, tamper и bounded retention.
 
 ### BUG-032 — CI сравнивал platform-dependent WASM binary byte-for-byte
 

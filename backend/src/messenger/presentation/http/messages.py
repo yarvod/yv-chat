@@ -20,6 +20,11 @@ from messenger.application.messaging.delete_message import (
     DeleteMessageForEveryone,
     DeleteMessageForEveryoneCommand,
 )
+from messenger.application.messaging.get_message import GetMessage, GetMessageQuery
+from messenger.application.messaging.list_message_history import (
+    ListMessageHistory,
+    ListMessageHistoryQuery,
+)
 from messenger.application.messaging.list_messages import ListMessages, ListMessagesQuery
 from messenger.application.messaging.send_message import (
     SendOpaqueMessage,
@@ -27,7 +32,7 @@ from messenger.application.messaging.send_message import (
 )
 from messenger.application.sessions.authenticate import AuthenticateSession
 from messenger.bootstrap.settings import AppSettings
-from messenger.domain.entities import MessageDeletionReason
+from messenger.domain.entities import Message, MessageDeletionReason
 from messenger.presentation.http.auth import authenticate_request
 from messenger.presentation.http.security import require_csrf
 
@@ -71,6 +76,13 @@ class DeleteMessageResponse(BaseModel):
     advanced: bool
 
 
+class MessageHistoryPageResponse(BaseModel):
+    messages: list[OpaqueMessageResponse]
+    has_more: bool
+    oldest_sequence: int | None
+    newest_sequence: int | None
+
+
 def decode_ciphertext(encoded: str) -> bytes:
     try:
         return base64.b64decode(encoded, validate=True)
@@ -79,6 +91,27 @@ def decode_ciphertext(encoded: str) -> bytes:
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="invalid message envelope",
         ) from error
+
+
+def serialize_message(message: Message) -> OpaqueMessageResponse:
+    return OpaqueMessageResponse(
+        message_id=message.id,
+        client_message_id=message.client_message_id,
+        conversation_id=message.conversation_id,
+        sender_user_id=message.sender_user_id,
+        sender_device_id=message.sender_device_id,
+        protocol_version=message.protocol_version,
+        sequence=message.sequence,
+        created_at=message.created_at,
+        expires_at=message.expires_at,
+        ciphertext_base64=(
+            base64.b64encode(message.ciphertext).decode()
+            if message.ciphertext is not None
+            else None
+        ),
+        deletion_reason=message.deletion_reason,
+        deleted_at=message.deleted_at,
+    )
 
 
 @router.post("", response_model=SendOpaqueMessageResponse, status_code=status.HTTP_201_CREATED)
@@ -153,6 +186,71 @@ async def delete_message_for_everyone(
     return DeleteMessageResponse.model_validate(result, from_attributes=True)
 
 
+@router.get("/history", response_model=MessageHistoryPageResponse)
+async def list_message_history(
+    conversation_id: UUID,
+    request: Request,
+    response: Response,
+    settings: FromDishka[AppSettings],
+    authenticate_session: FromDishka[AuthenticateSession],
+    use_case: FromDishka[ListMessageHistory],
+    before_sequence: int | None = None,
+    limit: int = 50,
+) -> MessageHistoryPageResponse:
+    principal = await authenticate_request(request, response, settings, authenticate_session)
+    try:
+        page = await use_case.execute(
+            ListMessageHistoryQuery(
+                actor_user_id=principal.user_id,
+                conversation_id=conversation_id,
+                before_sequence=before_sequence,
+                limit=limit,
+            )
+        )
+    except ConversationNotFoundError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="conversation not found",
+        ) from error
+    except InvalidMessageEnvelopeError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="invalid message history page",
+        ) from error
+    return MessageHistoryPageResponse(
+        messages=[serialize_message(message) for message in page.messages],
+        has_more=page.has_more,
+        oldest_sequence=page.oldest_sequence,
+        newest_sequence=page.newest_sequence,
+    )
+
+
+@router.get("/{message_id}", response_model=OpaqueMessageResponse)
+async def get_opaque_message(
+    conversation_id: UUID,
+    message_id: UUID,
+    request: Request,
+    response: Response,
+    settings: FromDishka[AppSettings],
+    authenticate_session: FromDishka[AuthenticateSession],
+    use_case: FromDishka[GetMessage],
+) -> OpaqueMessageResponse:
+    principal = await authenticate_request(request, response, settings, authenticate_session)
+    try:
+        message = await use_case.execute(
+            GetMessageQuery(
+                actor_user_id=principal.user_id,
+                conversation_id=conversation_id,
+                message_id=message_id,
+            )
+        )
+    except ConversationNotFoundError as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "conversation not found") from error
+    except MessageNotFoundError as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "message not found") from error
+    return serialize_message(message)
+
+
 @router.get("", response_model=list[OpaqueMessageResponse])
 async def list_opaque_messages(
     conversation_id: UUID,
@@ -184,24 +282,4 @@ async def list_opaque_messages(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="invalid message page",
         ) from error
-    return [
-        OpaqueMessageResponse(
-            message_id=message.id,
-            client_message_id=message.client_message_id,
-            conversation_id=message.conversation_id,
-            sender_user_id=message.sender_user_id,
-            sender_device_id=message.sender_device_id,
-            protocol_version=message.protocol_version,
-            sequence=message.sequence,
-            created_at=message.created_at,
-            expires_at=message.expires_at,
-            ciphertext_base64=(
-                base64.b64encode(message.ciphertext).decode()
-                if message.ciphertext is not None
-                else None
-            ),
-            deletion_reason=message.deletion_reason,
-            deleted_at=message.deleted_at,
-        )
-        for message in messages
-    ]
+    return [serialize_message(message) for message in messages]

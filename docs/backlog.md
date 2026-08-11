@@ -232,16 +232,23 @@ policy остаются).
 
 ### BL-022 — IndexedDB encrypted local archive
 
+Статус: **частично выполнено** (`WP-042` завершил bounded latest/before history,
+AES-GCM encrypted message archive и bounded reactive window; conversation index,
+durable sync/read cursors, attachment metadata и update migration gate остаются).
+
 Результат: startup сначала показывает локальную историю, затем применяет sync delta.
 
-- versioned stores для conversation index, encrypted messages, cursor, receipts, protocol state и attachment metadata;
-- bounded latest/before pagination и load-older без пропусков для conversation с
+- [ ] versioned stores для conversation index, cursor, receipts, protocol state и attachment metadata;
+- [x] отдельный versioned encrypted-message store с bounded per-conversation retention;
+- [x] bounded latest/before pagination и load-older без пропусков для conversation с
   более чем 100 уже существующими сообщениями;
-- virtual/bounded timeline rendering, чтобы DOM и reactive RAM не росли без лимита;
-- device-local non-extractable storage key где поддерживается;
-- plaintext только в RAM на время rendering/processing;
-- versioned IndexedDB migrations и service-worker compatibility tests;
-- понятный UX при очищенном/недоступном browser storage.
+- [x] bounded timeline window, чтобы DOM и reactive RAM не росли без лимита;
+- [x] device-local non-extractable AES-256-GCM storage key;
+- [x] plaintext только в RAM на время rendering/processing; archive adapter явно
+  проецирует `TimelineMessage` обратно в transport DTO до encryption;
+- [ ] IndexedDB upgrade migrations и service-worker compatibility tests;
+- [x] понятный non-blocking UX при недоступном browser storage;
+- [ ] encrypted conversation snapshot позволяет полностью network-independent startup.
 
 ### BL-023 — Offline outbox и conflict recovery
 

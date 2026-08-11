@@ -210,7 +210,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .workspace-message { position: absolute; z-index: 3; top: 78px; right: 18px; left: 18px; margin: 0; padding: 11px 14px; border: 1px solid color-mix(in srgb, var(--warning) 35%, var(--border)); border-radius: 12px; color: var(--warning); background: color-mix(in srgb, var(--warning) 9%, var(--surface-solid)); font-size: .84rem; box-shadow: var(--shadow); }
 .workspace-message button { margin-left: 10px; border: 0; color: var(--primary); background: transparent; text-decoration: underline; }
 .message-panel { position: relative; display: grid; min-height: 0; height: 100%; grid-template-rows: auto auto minmax(0, 1fr) auto; overflow: hidden; background: radial-gradient(circle at 70% 15%, var(--glow), transparent 34%), var(--bg); }
-.conversation-header { display: flex; min-height: 74px; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 22px; border-bottom: 1px solid var(--border); background: var(--surface); backdrop-filter: blur(18px); }
+.conversation-header { grid-row: 1; display: flex; min-height: 74px; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 22px; border-bottom: 1px solid var(--border); background: var(--surface); backdrop-filter: blur(18px); }
 .conversation-header-avatar { display: grid; flex: 0 0 auto; width: 44px; height: 44px; place-items: center; border-radius: 50%; color: var(--primary); background: color-mix(in srgb, var(--primary) 13%, var(--surface-raised)); font-weight: 850; }
 .conversation-header-copy { min-width: 0; flex: 1; }
 .conversation-header h2 { margin: 0; font-size: 1.05rem; }
@@ -221,8 +221,13 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .connection-dot--stopped { background: var(--danger); box-shadow: 0 0 0 5px color-mix(in srgb, var(--danger) 12%, transparent); }
 @keyframes connection-pulse { 50% { opacity: .4; transform: scale(.82); } }
 .mobile-back { display: none; width: 40px; height: 40px; place-items: center; flex: 0 0 auto; padding: 0; border: 0; border-radius: 50%; color: var(--text); background: transparent; font-size: 1.15rem; }
-.security-warning { margin: 0; padding: 8px 18px; color: var(--warning); background: color-mix(in srgb, var(--warning) 9%, var(--surface-solid)); text-align: center; font-size: .73rem; }
-.message-timeline { display: flex; min-height: 0; flex-direction: column; gap: 3px; overflow-y: auto; overscroll-behavior: contain; scroll-behavior: smooth; scrollbar-gutter: stable; padding: 18px clamp(16px, 5vw, 72px) 20px; }
+.timeline-notices { grid-row: 2; display: grid; }
+.security-warning, .storage-warning { margin: 0; padding: 8px 18px; text-align: center; font-size: .73rem; }
+.security-warning { color: var(--warning); background: color-mix(in srgb, var(--warning) 9%, var(--surface-solid)); }
+.storage-warning { color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, var(--surface-solid)); }
+.message-timeline { grid-row: 3; display: flex; min-height: 0; flex-direction: column; gap: 3px; overflow-y: auto; overscroll-behavior: contain; scroll-behavior: smooth; scrollbar-gutter: stable; padding: 18px clamp(16px, 5vw, 72px) 20px; }
+.load-older { align-self: center; min-height: 40px; margin: 2px 0 12px; padding: 0 14px; border: 1px solid var(--border); border-radius: 999px; color: var(--primary); background: var(--surface-solid); font-size: .76rem; font-weight: 750; }
+.load-older:disabled { cursor: wait; opacity: .65; }
 .timeline-day { position: sticky; z-index: 1; top: 8px; display: grid; place-items: center; margin: 8px 0 12px; pointer-events: none; }
 .timeline-day span { padding: 6px 11px; border: 1px solid var(--border); border-radius: 999px; color: var(--text-soft); background: color-mix(in srgb, var(--surface-solid) 88%, transparent); box-shadow: 0 4px 14px rgb(0 0 0 / 8%); font-size: .7rem; font-weight: 700; backdrop-filter: blur(14px); }
 .empty-timeline { margin: auto; color: var(--muted); text-align: center; }
@@ -244,7 +249,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .message-actions button:disabled { cursor: wait; opacity: .6; }
 .scroll-to-latest { position: absolute; z-index: 4; right: clamp(16px, 4vw, 48px); bottom: 82px; display: flex; min-height: 40px; align-items: center; gap: 6px; padding: 0 13px; border: 1px solid var(--border); border-radius: 999px; color: var(--primary); background: var(--surface-solid); box-shadow: 0 8px 28px rgb(0 0 0 / 20%); font-size: .75rem; font-weight: 750; }
 .scroll-to-latest .app-icon { width: 15px; height: 15px; transform: rotate(-90deg); }
-.composer { display: grid; grid-template-columns: minmax(0, 1fr) 46px; align-items: end; gap: 9px; padding: 10px clamp(12px, 4vw, 44px) max(12px, env(safe-area-inset-bottom)); border-top: 1px solid var(--border); background: var(--surface); backdrop-filter: blur(18px); }
+.composer { grid-row: 4; display: grid; grid-template-columns: minmax(0, 1fr) 46px; align-items: end; gap: 9px; padding: 10px clamp(12px, 4vw, 44px) max(12px, env(safe-area-inset-bottom)); border-top: 1px solid var(--border); background: var(--surface); backdrop-filter: blur(18px); }
 .composer textarea { min-height: 46px; height: 46px; max-height: 128px; padding: 12px 15px; resize: none; border-radius: 22px; line-height: 1.35; }
 .send-button { display: grid; width: 46px; height: 46px; place-items: center; padding: 0; border: 0; border-radius: 50%; color: var(--primary-ink); background: var(--primary); font-size: 1.05rem; font-weight: 850; transition: transform .15s ease; }
 .send-button:active { transform: scale(.93); }

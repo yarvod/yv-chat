@@ -1,6 +1,10 @@
 import { computed, reactive, readonly } from 'vue'
 
 import { ApplicationError } from '../../application/errors'
+import {
+  ConversationHistory,
+  type ConversationHistoryWindow,
+} from '../../application/messaging/conversation-history'
 import type { ClientIdGenerator } from '../../application/ports/client-id-generator'
 import type { ListConversationReadStates } from '../../application/messaging/list-conversation-read-states'
 import type { DeleteMessageForEveryone } from '../../application/messaging/delete-message-for-everyone'
@@ -8,11 +12,9 @@ import type { ListParticipantDeliveryStates } from '../../application/messaging/
 import type { MarkConversationDelivered } from '../../application/messaging/mark-conversation-delivered'
 import type { MarkConversationRead } from '../../application/messaging/mark-conversation-read'
 import type { ProtocolMessageProtection } from '../../application/messaging/message-protection'
-import {
-  prepareTimelineMessage,
-  type TimelineMessage,
-} from '../../application/messaging/timeline-message'
+import type { TimelineMessage } from '../../application/messaging/timeline-message'
 import type { HapticsPort } from '../../application/ports/haptics'
+import type { MessageArchive } from '../../application/ports/message-archive'
 import type { MessagingGateway } from '../../application/ports/messaging-gateway'
 import type { PageVisibility } from '../../application/ports/page-visibility'
 import type {
@@ -30,6 +32,10 @@ interface MessengerState {
   directory: DirectoryUser[]
   activeConversationId: string | null
   messages: TimelineMessage[]
+  historyHasMore: boolean
+  historyHasNewer: boolean
+  loadingOlder: boolean
+  archiveStatus: 'ready' | 'unavailable'
   readStates: ConversationReadState[]
   deliveryStates: ParticipantDeliveryState[]
   syncCursor: number
@@ -39,12 +45,9 @@ interface MessengerState {
   message: string | null
 }
 
-function sortMessages(messages: TimelineMessage[]): TimelineMessage[] {
-  return [...messages].sort((left, right) => left.sequence - right.sequence)
-}
-
 export interface MessengerDependencies {
   gateway: MessagingGateway
+  messageArchive: MessageArchive
   messageProtection: ProtocolMessageProtection
   haptics: HapticsPort
   clientIdGenerator: ClientIdGenerator
@@ -65,6 +68,7 @@ export function useMessenger(
     const { $frontend } = useNuxtApp()
     return {
       gateway: $frontend.messagingGateway,
+      messageArchive: $frontend.messageArchive,
       messageProtection: $frontend.messageProtection,
       haptics: $frontend.haptics,
       clientIdGenerator: $frontend.clientIdGenerator,
@@ -78,6 +82,7 @@ export function useMessenger(
   })()
   const {
     gateway,
+    messageArchive,
     messageProtection,
     haptics,
     clientIdGenerator,
@@ -94,6 +99,10 @@ export function useMessenger(
     directory: [],
     activeConversationId: null,
     messages: [],
+    historyHasMore: false,
+    historyHasNewer: false,
+    loadingOlder: false,
+    archiveStatus: 'ready',
     readStates: [],
     deliveryStates: [],
     syncCursor: 0,
@@ -102,6 +111,12 @@ export function useMessenger(
     deletingMessageId: null,
     message: null,
   })
+  const history = new ConversationHistory(
+    actorUserId,
+    gateway,
+    messageArchive,
+    messageProtection,
+  )
   let polling = false
   const readAdvances = new Map<string, number>()
   const deliveryAdvances = new Map<string, number>()
@@ -191,25 +206,108 @@ export function useMessenger(
     }
   }
 
-  async function loadMessages(conversationId: string, afterSequence = 0): Promise<void> {
-    const incoming = await gateway.listMessages(conversationId, afterSequence)
-    const prepared = await Promise.all(
-      incoming.map(message => prepareTimelineMessage(message, messageProtection)),
-    )
+  function applyHistoryWindow(window: ConversationHistoryWindow): void {
+    state.messages = window.messages
+    state.historyHasMore = window.hasMore
+    state.historyHasNewer = window.hasNewer
+  }
+
+  function syncArchiveStatus(): void {
+    state.archiveStatus = history.archiveStatus
+  }
+
+  async function loadLatestHistory(conversationId: string): Promise<void> {
+    let window: ConversationHistoryWindow
+    try {
+      window = await history.loadLatest(conversationId, cached => {
+        syncArchiveStatus()
+        if (state.activeConversationId !== conversationId) return
+        applyHistoryWindow(cached)
+        state.phase = 'ready'
+      })
+    } finally {
+      syncArchiveStatus()
+    }
     if (state.activeConversationId !== conversationId) return
-    const known = new Map(state.messages.map(item => [item.messageId, item]))
-    for (const item of prepared) known.set(item.messageId, item)
-    state.messages = sortMessages([...known.values()])
+    applyHistoryWindow(window)
     await advanceDelivery(conversationId)
     await advanceActiveReadIfVisible()
+  }
+
+  async function loadForwardMessages(conversationId: string): Promise<void> {
+    let window: ConversationHistoryWindow
+    try {
+      window = await history.loadForward(
+        conversationId,
+        state.messages,
+        state.historyHasMore,
+      )
+    } finally {
+      syncArchiveStatus()
+    }
+    if (state.activeConversationId !== conversationId) return
+    applyHistoryWindow(window)
+    await advanceDelivery(conversationId)
+    await advanceActiveReadIfVisible()
+  }
+
+  async function loadOlder(): Promise<void> {
+    const conversationId = state.activeConversationId
+    const beforeSequence = state.messages[0]?.sequence
+    if (
+      !conversationId
+      || beforeSequence === undefined
+      || !state.historyHasMore
+      || state.loadingOlder
+    ) return
+    state.loadingOlder = true
+    try {
+      const window = await history.loadBefore(
+        conversationId,
+        beforeSequence,
+        state.messages,
+        state.historyHasNewer,
+        cached => {
+          if (state.activeConversationId === conversationId) applyHistoryWindow(cached)
+        },
+      )
+      if (state.activeConversationId !== conversationId) return
+      applyHistoryWindow(window)
+      state.phase = 'ready'
+      state.message = null
+    } catch (error) {
+      fail(error)
+    } finally {
+      syncArchiveStatus()
+      state.loadingOlder = false
+    }
+  }
+
+  async function returnToLatest(): Promise<void> {
+    const conversationId = state.activeConversationId
+    if (!conversationId) return
+    state.message = null
+    try {
+      await loadLatestHistory(conversationId)
+      state.phase = 'ready'
+    } catch (error) {
+      fail(error)
+    }
+  }
+
+  function resetHistoryWindow(): void {
+    state.messages = []
+    state.historyHasMore = false
+    state.historyHasNewer = false
+    state.loadingOlder = false
   }
 
   async function reloadConversations(): Promise<void> {
     state.conversations = await gateway.listConversations()
     if (!state.conversations.some(item => item.conversationId === state.activeConversationId)) {
       state.activeConversationId = state.conversations[0]?.conversationId ?? null
-      state.messages = []
-      if (state.activeConversationId) await loadMessages(state.activeConversationId)
+      resetHistoryWindow()
+      if (state.activeConversationId) await loadLatestHistory(state.activeConversationId)
     }
   }
 
@@ -229,8 +327,8 @@ export function useMessenger(
       state.readStates = readStates
       state.deliveryStates = deliveryStates
       state.activeConversationId = conversations[0]?.conversationId ?? null
-      state.messages = []
-      if (state.activeConversationId) await loadMessages(state.activeConversationId)
+      resetHistoryWindow()
+      if (state.activeConversationId) await loadLatestHistory(state.activeConversationId)
       state.syncCursor = syncBaseline.streamCursor
       state.phase = 'ready'
     } catch (error) {
@@ -241,10 +339,10 @@ export function useMessenger(
   async function selectConversation(conversationId: string): Promise<void> {
     if (conversationId === state.activeConversationId) return
     state.activeConversationId = conversationId
-    state.messages = []
+    resetHistoryWindow()
     state.message = null
     try {
-      await loadMessages(conversationId)
+      await loadLatestHistory(conversationId)
       state.phase = 'ready'
     } catch (error) {
       fail(error)
@@ -302,8 +400,8 @@ export function useMessenger(
         protectedMessage.protocolVersion,
         protectedMessage.ciphertextBase64,
       )
-      const lastSequence = state.messages.at(-1)?.sequence ?? 0
-      await loadMessages(conversationId, lastSequence)
+      if (state.historyHasNewer) await loadLatestHistory(conversationId)
+      else await loadForwardMessages(conversationId)
       haptics.perform('sent')
       state.phase = 'ready'
       return true
@@ -335,6 +433,11 @@ export function useMessenger(
             }
           : message
       ))
+      const tombstone = state.messages.find(message => message.messageId === result.messageId)
+      if (tombstone) {
+        await history.persist(conversationId, [tombstone])
+        syncArchiveStatus()
+      }
       state.phase = 'ready'
       return true
     } catch (error) {
@@ -353,7 +456,10 @@ export function useMessenger(
       let hasMore = true
       let conversationsChanged = false
       let activeMessagesChanged = false
-      let activeTimelineReset = false
+      const deletedMessageEvents = new Map<
+        string,
+        { conversationId: string, messageId: string }
+      >()
       let readStatesChanged = false
       let deliveryStatesChanged = false
       while (hasMore && pages < 10) {
@@ -361,8 +467,8 @@ export function useMessenger(
         if (page.resetRequired) {
           await reloadConversations()
           if (state.activeConversationId) {
-            state.messages = []
-            await loadMessages(state.activeConversationId)
+            resetHistoryWindow()
+            await loadLatestHistory(state.activeConversationId)
           }
           state.syncCursor = page.streamCursor
           state.phase = 'ready'
@@ -374,10 +480,12 @@ export function useMessenger(
             event.eventType === 'message_created'
             && event.conversationId === state.activeConversationId
           )
-          activeTimelineReset ||= (
-            event.eventType === 'message_deleted'
-            && event.conversationId === state.activeConversationId
-          )
+          if (event.eventType === 'message_deleted' && event.messageId !== null) {
+            deletedMessageEvents.set(event.messageId, {
+              conversationId: event.conversationId,
+              messageId: event.messageId,
+            })
+          }
           readStatesChanged ||= event.eventType === 'message_created'
             || event.eventType === 'message_deleted'
             || event.eventType === 'read_receipt'
@@ -389,11 +497,26 @@ export function useMessenger(
         pages += 1
       }
       if (conversationsChanged) await reloadConversations()
-      if (activeTimelineReset && state.activeConversationId) {
-        state.messages = []
-        await loadMessages(state.activeConversationId)
-      } else if (activeMessagesChanged && state.activeConversationId) {
-        await loadMessages(state.activeConversationId, state.messages.at(-1)?.sequence ?? 0)
+      for (const event of deletedMessageEvents.values()) {
+        let tombstone: TimelineMessage
+        try {
+          tombstone = await history.fetchTombstone(event.conversationId, event.messageId)
+        } finally {
+          syncArchiveStatus()
+        }
+        if (
+          event.conversationId === state.activeConversationId
+          && state.messages.some(message => message.messageId === event.messageId)
+        ) {
+          state.messages = state.messages.map(message => (
+            message.messageId === event.messageId ? tombstone : message
+          ))
+        }
+      }
+      if (activeMessagesChanged && state.activeConversationId) {
+        if (!state.historyHasNewer) {
+          await loadForwardMessages(state.activeConversationId)
+        }
       }
       if (readStatesChanged) await reloadReadStates()
       if (deliveryStatesChanged) await reloadDeliveryStates()
@@ -429,6 +552,8 @@ export function useMessenger(
     createGroup,
     send,
     deleteMessage,
+    loadOlder,
+    returnToLatest,
     markActiveRead,
   }
 }

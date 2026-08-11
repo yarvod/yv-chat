@@ -41,6 +41,14 @@ class MessageRepository(Protocol):
         limit: int,
     ) -> list[Message]: ...
 
+    async def list_before(
+        self,
+        *,
+        conversation_id: UUID,
+        before_sequence: int | None,
+        limit: int,
+    ) -> list[Message]: ...
+
     async def update(self, message: Message) -> None: ...
 
     async def list_expired_active(

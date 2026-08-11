@@ -6,6 +6,7 @@ import type {
   ConversationType,
   DeleteMessageResult,
   DirectoryUser,
+  MessageHistoryPage,
   OpaqueMessage,
   MessageDeletionReason,
   SyncEvent,
@@ -109,6 +110,38 @@ export function parseDeleteMessageResult(value: unknown): DeleteMessageResult {
 export function parseMessages(value: unknown): OpaqueMessage[] {
   if (!Array.isArray(value)) throw new ApplicationError(200, 'invalid-response', 'invalid messages')
   return value.map(parseOpaqueMessage)
+}
+
+export function parseMessageHistoryPage(value: unknown): MessageHistoryPage {
+  const item = record(value)
+  const hasMore = booleanField(item, 'has_more')
+  const oldestSequence = item.oldest_sequence === null
+    ? null
+    : integerField(item, 'oldest_sequence')
+  const newestSequence = item.newest_sequence === null
+    ? null
+    : integerField(item, 'newest_sequence')
+  const messages = arrayField(item, 'messages').map(parseOpaqueMessage)
+  const stableAscending = messages.every((message, index) => (
+    message.sequence > 0
+    && (index === 0 || (messages[index - 1]?.sequence ?? 0) < message.sequence)
+  ))
+  if (
+    !stableAscending
+    || (messages.length === 0 && (oldestSequence !== null || newestSequence !== null || hasMore))
+    || (messages.length > 0 && (
+      oldestSequence !== messages[0]?.sequence
+      || newestSequence !== messages.at(-1)?.sequence
+    ))
+  ) {
+    throw new ApplicationError(200, 'invalid-response', 'invalid message history bounds')
+  }
+  return {
+    messages,
+    hasMore,
+    oldestSequence,
+    newestSequence,
+  }
 }
 
 function parseSyncEvent(value: unknown): SyncEvent {

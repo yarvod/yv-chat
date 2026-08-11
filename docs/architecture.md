@@ -806,7 +806,9 @@ server ciphertext = delivery/sync mailbox within TTL
 device encrypted archive = long-term local history after sync
 ```
 
-IndexedDB хранит conversation index, encrypted local messages, sync cursor, read state, crypto state, attachment metadata и outbox. Большие encrypted media blobs предпочтительно хранятся в OPFS/origin-private storage.
+Целевая схема IndexedDB хранит conversation index, encrypted local messages, sync
+cursor, read state, crypto state, attachment metadata и outbox. Большие encrypted
+media blobs предпочтительно хранятся в OPFS/origin-private storage.
 
 Device-local archive не является безусловным backup: site data/PWA может быть удалена. Новый device получает только server retention window; старая история переносится отдельным authenticated encrypted device-to-device flow.
 
@@ -861,13 +863,37 @@ read IndexedDB → render immediately
 
 Outbox имеет `pending/sending/sent/failed`, persistent idempotency key и reconcile после reconnect. Service Worker/IndexedDB migrations versioned и совместимы при update.
 
-Состояние на `WP-041`: сообщения выбранного разговора живут только в reactive RAM,
-а HTTP gateway получает максимум 100 записей `after_sequence`. IndexedDB уже хранит
-sealed device crypto/MLS state, но не conversation archive, message cursor или
-outbox. Workbox кэширует executable app shell/assets, не пользовательскую историю.
-Поэтому `BL-022` (encrypted local archive), `BL-023` (offline outbox) и bounded
-history pagination/virtualization обязательны до заявления о полноценном local-first
-или комфортной работе с произвольно длинной историей.
+Состояние после `WP-042`: backend имеет отдельный authorized latest/exclusive-before
+history use case и SQL adapter. Page возвращается ascending, `has_more` вычисляется
+bounded чтением `limit + 1`, поэтому TTL gaps не считаются концом истории. Старый
+forward `after_sequence` contract сохранён для realtime catch-up.
+
+Browser history orchestration сосредоточена в application service
+`ConversationHistory`: он выбирает network/cache fallback, не позволяет stale
+локальному cursor перескочить через ещё не загруженную server page и ограничивает
+reactive window. Сам archive — отдельный application port; infrastructure разделена
+на IndexedDB adapter `yv-chat-messages-v1`, crypto/validation codec и общие typed
+transaction primitives. Для каждого account в browser installation создаётся
+non-extractable AES-256-GCM key. Каждый transport envelope шифруется с random 96-bit
+IV и AAD `schema + owner + conversation + sequence`; scope/sequence mismatch,
+изменённый ciphertext и malformed payload fail closed. Adapter сериализует только
+явную проекцию `OpaqueMessage`: `TimelineMessage.displayBody` и другой decrypted UI
+state не попадают в storage. Archive ограничен 2000 envelopes на conversation.
+
+Клиент сначала пробует encrypted cached latest page, затем reconciles её с server
+latest page. `load older` использует exclusive cursor и сохраняет scroll anchor.
+Reactive/DOM window ограничен 300 envelopes; при уходе в более ранний диапазон UI
+показывает явный возврат к latest. IndexedDB denial/corruption отключает archive на
+текущую сессию и показывает non-blocking warning, не ломая online sync.
+Durable `message_deleted` event не вызывает грубый timeline reset: клиент через
+отдельный authorized `GetMessage` use case получает конкретный tombstone, заменяет
+loaded item и идемпотентно перезаписывает encrypted archive record, в том числе для
+неактивного conversation. Foreign conversation/message binding возвращает 404.
+
+Это ещё не полный local-first: conversation index, durable sync/read cursor, outbox,
+attachment metadata, IndexedDB upgrade compatibility и secure device-to-device
+history transfer остаются в `BL-022`–`BL-024`. Workbox по-прежнему кэширует executable
+app shell/assets, а не пользовательскую историю.
 
 WebSocket обслуживает foreground realtime и передаёт только wake-up hints. Web Push будит background Service Worker. Sync восстанавливает correctness. Current implementation сохраняет редкий HTTP fallback poll, поэтому недоступный WebSocket ухудшает latency, но не correctness.
 
