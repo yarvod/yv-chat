@@ -6,7 +6,7 @@
 
 ### BUG-039 — Device crypto warning не объясняет причину и безопасное восстановление
 
-- Статус: `fix in progress`.
+- Статус: `fixed`, ожидает user retest конкретного device.
 - Найдено в: production user report после `WP-045`.
 - Severity: `high` для security UX; crypto path корректно остаётся fail closed.
 - Условия воспроизведения: authenticated startup получает Worker/vault/registration
@@ -17,10 +17,11 @@
   готов / Повторить», хотя retry не исправляет потерянный local key.
 - Причина: lifecycle state сохранял только `unavailable`, отбрасывая typed
   `DeviceCryptoError`/network category.
-- Исправление: сохранять bounded issue category; transient network/runtime/storage
+- Исправление: commit `249e3dc` сохраняет bounded issue category; transient network/runtime/storage
   оставлять retryable, а missing/corrupt/conflicting identity направлять через
   explicit logout → новый login/device без silent key replacement.
-- Проверка: Vitest classification + production retest после deploy.
+- Проверка: 126 Vitest; production deploy `249e3dc` healthy, окончательная причина
+  пользовательского device будет видна после полного reopen установленной PWA.
 
 Physical Pixel acceptance для `BUG-033`/`BUG-034` ожидает пользовательского retest
 после production deploy и uninstall/reinstall старой установки.

@@ -101,7 +101,7 @@ Telegram/WhatsApp без копирования их бренда.
 
 ### BL-042 — Управление группой и составом участников
 
-Статус: **in progress** (`WP-046`).
+Статус: **completed** (`WP-046`, commit `8fb3720`).
 
 Результат: owner/admin управляет названием и активным составом группы через
 responsive group-info UI, а backend остаётся единственной границей авторизации.
@@ -232,10 +232,15 @@ versioned package и isolated Worker runtime; `WP-040` — server one-time deliv
 
 ### BL-043 — Telegram-like photo/file experience поверх encrypted attachments
 
-Статус: **planned** (после `WP-046`, объединяет product UX с `BL-016`/`BL-017`).
+Статус: **planned** (`WP-048` после MLS v2 `WP-047`; объединяет product UX с
+`BL-016`/`BL-017`).
 
 Результат: пользователь удобно отправляет изображения и произвольные файлы, но
 backend видит только opaque encrypted bytes и bounded routing metadata.
+
+File key и encrypted metadata доставляются только внутри MLS v2 application
+message. Synthetic v1 не может быть временным key envelope, потому что тогда server
+получит ключ расшифрования и требование E2EE будет нарушено.
 
 - attachment button, picker и drag/drop/paste там, где это поддерживает platform;
 - image preview генерируется локально до encryption, файл показывает имя/type/size;
