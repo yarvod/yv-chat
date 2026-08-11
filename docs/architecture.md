@@ -222,6 +222,17 @@ TypeScript strict. Не использовать необоснованные `a
 
 Auth credential никогда не хранится в `localStorage`/IndexedDB: browser session находится в `Secure`, `HttpOnly`, `SameSite=Strict`, `Path=/`, no-`Domain` cookie.
 
+Реализованный frontend transport состоит из трёх явных boundaries:
+
+```text
+Vue app → useAuth state machine → auth service → same-origin API adapter
+                                              └→ runtime response parsers
+```
+
+API adapter всегда использует относительный `/api/v1/...` URL и `credentials: include`. Для state-changing HTTP вызовов он читает только публичный CSRF cookie `__Host-yv_csrf` и передаёт его в `X-CSRF-Token`; opaque session cookie остаётся недоступной JavaScript. Ошибки HTTP, сети и malformed JSON различаются typed error kind. Runtime parsers допускают в reactive state только явно проверенные account fields. Password очищается из component state до ожидания network response и не попадает в persistent storage или rendered error.
+
+Auth composable моделирует только конечные состояния `booting`, `signed-out`, `submitting`, `authenticated`, `offline`. `401` означает signed-out/revoked credential, network failure даёт retry без ложного logout, а logout очищает client state даже при потере соединения. Следующие conversation/sync services используют тот же transport и собственные typed parsers вместо raw `fetch` в components.
+
 ## 7. Identity, devices и sessions
 
 `User` и `Device` — разные сущности. Один пользователь имеет несколько browser installations/physical devices. Device-specific state включает session, crypto identity, push subscription и last-seen metadata.

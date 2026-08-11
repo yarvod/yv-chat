@@ -4,10 +4,6 @@
 
 В работу одновременно берётся одна фича. Для неё создаётся подробный `docs/workplan.md`; после реализации, проверок и отдельного коммита пункт переносится в `Completed`. Архитектурные правила не считаются задачами и не дублируются здесь без конкретного проверяемого результата.
 
-## In progress
-
-Текущий пункт и его Definition of Done находятся в `docs/workplan.md`.
-
 ## Messaging foundation
 
 ### BL-009 — Receipts, unread state, typing и presence
@@ -127,16 +123,6 @@
 - документированный ориентир диска/резерва.
 
 ## Local-first PWA
-
-### BL-020 — Frontend API/service foundation и auth UI
-
-Результат: PWA имеет typed service layer и полноценные login/current-session/logout screens.
-
-- network access за одним API adapter, runtime parsing untrusted responses;
-- session bootstrap без чтения HttpOnly credential;
-- CSRF token handling и generic login errors;
-- loading/offline/revoked-session states;
-- strict TypeScript без `any`/`@ts-ignore` shortcuts.
 
 ### BL-021 — Conversations и messaging UI
 
@@ -304,6 +290,10 @@
 - решение о native wrapper только при подтверждённой необходимости.
 
 ## Completed
+
+### BL-020 — Frontend API/service foundation и auth UI
+
+Typed same-origin API adapter централизует `credentials: include`, CSRF для state-changing requests, HTTP/network/invalid-response errors и runtime parsing untrusted JSON. Auth service и `useAuth` state machine реализуют session bootstrap, login/logout, revoked/offline/retry states; Vue shell не видит session credential, очищает password сразу после submit и разделяет transport/application/UI concerns. Critical-path Vitest, lint, typecheck, production build и clean Docker/HTTP smoke проходят.
 
 ### BL-008 — Cursor sync и offline catch-up
 

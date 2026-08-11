@@ -6,7 +6,7 @@
 
 ## Статус
 
-Готовы закрытый account/session lifecycle, conversation API, bounded opaque message transport и durable per-user cursor sync для offline catch-up. Transport сохраняет только ciphertext и **не является реализацией E2EE**; следующий этап — read/unread state и ephemeral presence/typing поверх sync-correct core.
+Готовы закрытый account/session lifecycle, conversation API, bounded opaque message transport, durable per-user cursor sync и frontend session/login/logout shell. Transport сохраняет только ciphertext и **не является реализацией E2EE**; следующий этап — usable conversations/messaging UI поверх sync-correct core.
 
 Текущая фича и подробный план находятся в [docs/workplan.md](docs/workplan.md). Полный продуктовый backlog — в [docs/backlog.md](docs/backlog.md), архитектура и правила её развития — в [docs/architecture.md](docs/architecture.md), найденные дефекты — в [docs/bugs.md](docs/bugs.md).
 
