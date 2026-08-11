@@ -19,6 +19,8 @@ Bug: `BUG-048`
 - [x] Добавить regression для repeated blocked bootstrap: одна generation, один commit.
 - [x] После terminal blocked сохранить новый durable request ID, чтобы следующая
   reconciliation могла проверить уже появившиеся identity/KeyPackages.
+- [x] Не считать legacy device без зарегистрированной MLS identity обязательным leaf;
+  добавлять его следующим roster Commit после provisioning.
 - [x] Прогнать backend/full CI, PostgreSQL integration и diff/security review.
 - [ ] Commit/push, production deploy и проверить отсутствие новых 500.
 - [ ] Вернуть `WP-048` encrypted attachments в active workplan после hotfix commit.
@@ -30,5 +32,7 @@ Bug: `BUG-048`
 - production перестаёт логировать unique violation и UI получает bounded block reason;
 - после устранения block reason клиент создаёт новую операцию и автоматически
   продолжает bootstrap, не нарушая идемпотентность старой попытки;
+- старые non-revoked device rows без MLS identity не блокируют переписку уже
+  подготовленных устройств и не получают ciphertext до собственного enrollment;
 - `missing_identity` объяснён как состояние непрошедшего provisioning другого active
   device, а не как повреждение миграцией.

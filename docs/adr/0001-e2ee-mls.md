@@ -97,8 +97,8 @@ yv-chat User
 
 yv-chat Conversation
   └── one MLS group
-        ├── direct: leaves of all active devices of both users
-        └── group: leaves of all active devices of all active members
+        ├── direct: leaves of all active MLS-capable devices of both users
+        └── group: leaves of all active MLS-capable devices of all active members
 
 FastAPI/PostgreSQL
   ├── Authentication Service adapter: public device credential binding
@@ -130,6 +130,14 @@ device expected members, создаёт один Add Commit и отдельны�
 остаётся `pending-crypto` и application send заблокирован. Частичная группа не
 выдаётся за готовую. Optional stale/offline device eviction требует отдельной visible
 policy, а не silent omission.
+
+`MLS-capable device` здесь означает active device с уже зарегистрированной immutable
+crypto identity. Legacy device, которое ни разу не запускало MLS-capable PWA, ещё не
+является leaf и не блокирует весь conversation: после первого provisioning оно
+попадает в exact expected device set следующего roster Commit. Уже enrolled device
+никогда не исключается только из-за offline/stale состояния или отсутствующего
+KeyPackage; такой required device оставляет generation blocked до replenishment либо
+явного revoke.
 
 При миграции existing synthetic conversation server фиксирует одну cutover sequence
 и crypto generation под row lock. После accepted MLS bootstrap records с

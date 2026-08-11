@@ -73,7 +73,19 @@ class BeginConversationCrypto:
                 await uow.devices.list_active_for_users(active_user_ids),
                 key=lambda item: item.id.int,
             )
-            active_device_ids = {item.id for item in active_devices}
+            identity_ids = {
+                identity.device_id
+                for identity in await uow.identities.get_by_device_ids(
+                    {item.id for item in active_devices}
+                )
+            }
+            current_device_has_identity = command.device_id in identity_ids
+            required_devices = (
+                [item for item in active_devices if item.id in identity_ids]
+                if current_device_has_identity
+                else active_devices
+            )
+            active_device_ids = {item.id for item in required_devices}
             current_required = (
                 await uow.required_devices.list_by_generation(current.id)
                 if current is not None
@@ -130,18 +142,11 @@ class BeginConversationCrypto:
                     key_package_id=None,
                     snapshot_at=now,
                 )
-                for item in active_devices
+                for item in required_devices
             )
             if not any(item.is_coordinator for item in required):
                 raise OwnedDeviceNotFoundError("current device is unavailable")
-            identity_ids = {
-                identity.device_id
-                for identity in await uow.identities.get_by_device_ids(
-                    {item.device_id for item in required}
-                )
-            }
-            missing_identity = any(item.device_id not in identity_ids for item in required)
-            if missing_identity:
+            if not current_device_has_identity:
                 generation = generation.block(ConversationCryptoBlockReason.MISSING_IDENTITY, now)
             else:
                 added_device_ids = (

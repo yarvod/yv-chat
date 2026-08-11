@@ -21,8 +21,12 @@
   reconciliation может продолжить bootstrap, если недостающий device уже прошёл
   provisioning, вместо бесконечного повтора исторического blocked результата.
 - Отдельное ожидаемое состояние: `missing_identity` не является миграционной
-  потерей ключей. Оно означает, что хотя бы одно active device участника ещё не
-  зарегистрировало собственную MLS identity после обновления PWA.
+  потерей ключей. Production-аудит конкретного legacy conversation показал 11
+  non-revoked devices, из которых только 3 уже имели MLS identity. Legacy devices
+  без identity теперь не входят в required MLS roster и не блокируют capable
+  devices; после первого provisioning они добавляются следующим roster Commit.
+  `missing_identity` сохраняется как fail-closed состояние только для current device,
+  которое пытается координировать bootstrap до собственного provisioning.
 
 ### BUG-047 — Layout мог уничтожить MLS runtime во время cache-first восстановления
 
