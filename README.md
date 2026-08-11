@@ -28,6 +28,8 @@
 
 Полные инженерные и security-инварианты закреплены в [AGENTS.md](AGENTS.md).
 
+Production topology, GHCR workflow и безопасный runbook находятся в [docs/deployment.md](docs/deployment.md).
+
 ## Локальный запуск
 
 ```bash

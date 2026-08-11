@@ -6,7 +6,7 @@
 
 Активных известных дефектов нет.
 
-Последняя сверка: `WP-017` — новых открытых воспроизводимых дефектов нет.
+Последняя сверка: `WP-018` — новых открытых воспроизводимых дефектов нет.
 
 ## Формат записи
 
@@ -23,6 +23,18 @@
 - Проверка: тест или команда, подтверждающая fix.
 
 ## Resolved
+
+### BUG-009 — Gateway loopback port не активировался на internal-only network
+
+- Статус: `verified`.
+- Найдено в: `WP-018`, production-like Docker smoke.
+- Severity: `critical`.
+- Условия воспроизведения: gateway подключён только к Compose network с `internal: true`, хотя `HostConfig.PortBindings` содержит `127.0.0.1:18082`.
+- Ожидаемое поведение: host loopback принимает HTTP и только gateway имеет published port.
+- Фактическое поведение: container был healthy, но Docker не создавал активный `NetworkSettings.Ports` binding; host curl получал connection refused.
+- Причина: internal-only network не предоставляла gateway edge path для published port в проверяемом Docker runtime.
+- Исправление: gateway подключён к отдельной non-internal edge network и одновременно к internal private network; остальные services остаются только private.
+- Проверка: production Compose `ps` показывает `127.0.0.1:18082->80/tcp`, оба health endpoints отвечают, API/frontend/PostgreSQL ports не опубликованы.
 
 ### BUG-008 — Frontend называл любой неожиданный HTTP error потерей сети
 

@@ -477,6 +477,8 @@ Operational signals: HTTP 5xx, failed logins, active WebSockets, push failures, 
 
 Production images non-root, reproducible и не содержат secrets. GitHub Actions строит/publishes images; слабый VPS выполняет pull, intentional migration, rollout и healthcheck.
 
+Production runtime изолирован explicit Compose project `yv-chat`. На host публикуется только loopback `127.0.0.1:18080` gateway; gateway подключён к отдельной edge network и к internal private network, а PostgreSQL/API/Nuxt не имеют host ports и находятся только в private network. Host Nginx остаётся общим ingress для уже работающих сервисов и проксирует только `chat.yoowee.ru` в этот loopback upstream. Workflow использует immutable `sha-<commit>` GHCR tags, выполняет migration новым backend image до health-checked rollout и не запускает Docker build на VPS. Runtime `.env` существует только на сервере с mode `0600`; deploy artifacts не содержат secrets. Полный runbook: [deployment.md](deployment.md).
+
 ## 18. Documentation-driven workflow
 
 Каждая фича проходит один и тот же lifecycle:

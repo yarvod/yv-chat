@@ -208,16 +208,6 @@
 - CSP, `X-Content-Type-Options`, `Referrer-Policy` и минимальное раскрытие backend;
 - PostgreSQL не опубликован наружу.
 
-### BL-030 — Production images, GHCR и deployment workflow
-
-Результат: GitHub Actions строит reproducible images и выполняет контролируемый deploy.
-
-- frozen `uv.lock`/npm lock builds, non-root minimal images;
-- backend/frontend image build и push в GHCR;
-- protected branch/environment, runtime secrets и intentional Alembic step;
-- healthcheck, compatibility-aware rollout и rollback plan;
-- без тяжёлой сборки на VPS 1–2 GB RAM.
-
 ### BL-031 — Backup/restore и retention-compatible policy
 
 Результат: потеря VPS не уничтожает durable account/membership state, а TTL не превращается в вечный архив.
@@ -280,6 +270,10 @@
 - решение о native wrapper только при подтверждённой необходимости.
 
 ## Completed
+
+### BL-030 — Production images, GHCR и deployment workflow
+
+Immutable `sha-<commit>` backend/frontend images строятся и публикуются в GHCR только GitHub Actions; VPS выполняет scoped pull, PostgreSQL wait, intentional Alembic migration и health-checked rollout. Production Compose имеет отдельные edge/internal networks, единственный loopback bind `127.0.0.1:18080`, pinned PostgreSQL/Nginx digests, non-root app images, resource limits и project-scoped volumes. Remote script требует server-only `.env` mode `0600`, использует temporary Docker auth и пытается вернуть previous image tag при failed healthcheck. Runbook фиксирует GitHub environment, secrets, first-run и rollback.
 
 ### BL-037 — Admin invitations и activation UI
 

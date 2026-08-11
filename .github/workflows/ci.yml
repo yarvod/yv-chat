@@ -89,3 +89,5 @@ jobs:
         run: docker compose -f compose.dev.yml config --quiet
       - name: Validate integrated Compose
         run: docker compose config --quiet
+      - name: Validate production deployment artifacts
+        run: make compose-check deploy-check

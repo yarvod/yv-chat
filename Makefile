@@ -1,7 +1,7 @@
 .PHONY: dev down logs backend-install backend-dev backend-lint backend-format \
 	backend-typecheck backend-test frontend-install frontend-dev frontend-lint \
 	frontend-typecheck frontend-test frontend-build migrate migration-sql bootstrap-admin \
-	test ci compose-check
+	test ci compose-check deploy-check
 
 dev:
 	@echo "Run 'make backend-dev' and 'make frontend-dev' in separate terminals."
@@ -62,5 +62,18 @@ test: backend-test frontend-test
 compose-check:
 	docker compose -f compose.dev.yml config --quiet
 	docker compose config --quiet
+	BACKEND_IMAGE=ghcr.io/example/yv-chat-backend \
+	FRONTEND_IMAGE=ghcr.io/example/yv-chat-frontend \
+	IMAGE_TAG=sha-test \
+	POSTGRES_DB=yv_chat \
+	POSTGRES_USER=yv_chat \
+	POSTGRES_PASSWORD=test-only \
+	DATABASE_URL=postgresql+asyncpg://yv_chat:test-only@postgres:5432/yv_chat \
+	docker compose -p yv-chat -f compose.prod.yml config --quiet
 
-ci: backend-lint backend-typecheck backend-test frontend-lint frontend-typecheck frontend-test frontend-build compose-check
+deploy-check:
+	sh -n deploy/remote-deploy.sh
+	grep -q '127.0.0.1:$${YV_CHAT_BIND_PORT:-18080}:80' compose.prod.yml
+	! grep -Eq 'docker system prune|docker compose down|--remove-orphans' deploy/remote-deploy.sh
+
+ci: backend-lint backend-typecheck backend-test frontend-lint frontend-typecheck frontend-test frontend-build compose-check deploy-check

@@ -1,0 +1,139 @@
+name: Deploy production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: yv-chat-production
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql+asyncpg://messenger:deploy-ci-only@127.0.0.1:5432/messenger
+      TEST_DATABASE_URL: postgresql+asyncpg://messenger:deploy-ci-only@127.0.0.1:5432/messenger
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: messenger
+          POSTGRES_USER: messenger
+          POSTGRES_PASSWORD: deploy-ci-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U messenger -d messenger"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.8.0"
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install locked dependencies
+        run: |
+          cd backend
+          uv sync --frozen
+          cd ../frontend
+          npm ci
+      - name: Verify repository
+        run: make ci
+      - name: Audit frontend production dependencies
+        working-directory: frontend
+        run: npm audit --audit-level=high
+
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      image_prefix: ${{ steps.images.outputs.image_prefix }}
+      image_tag: ${{ steps.images.outputs.image_tag }}
+    steps:
+      - id: images
+        name: Resolve immutable image coordinates
+        shell: bash
+        run: |
+          echo "image_prefix=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+          echo "image_tag=sha-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: [verify, prepare]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: backend
+            context: backend
+          - component: frontend
+            context: frontend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push ${{ matrix.component }}
+        uses: docker/build-push-action@v7
+        with:
+          context: ./${{ matrix.context }}
+          push: true
+          tags: |
+            ${{ needs.prepare.outputs.image_prefix }}-${{ matrix.component }}:${{ needs.prepare.outputs.image_tag }}
+            ${{ needs.prepare.outputs.image_prefix }}-${{ matrix.component }}:latest
+          cache-from: type=gha,scope=${{ matrix.component }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.component }}
+          provenance: mode=max
+          sbom: true
+
+  deploy:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      DEPLOY_ROOT: /home/${{ secrets.DEPLOY_USER }}/yv-chat
+      BACKEND_IMAGE: ${{ needs.prepare.outputs.image_prefix }}-backend
+      FRONTEND_IMAGE: ${{ needs.prepare.outputs.image_prefix }}-frontend
+      IMAGE_TAG: ${{ needs.prepare.outputs.image_tag }}
+      GHCR_USER: ${{ github.actor }}
+      GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Copy versioned deployment artifacts
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || '22' }}
+          source: compose.prod.yml,deploy/nginx/gateway.conf,deploy/remote-deploy.sh
+          target: ${{ env.DEPLOY_ROOT }}
+          overwrite: true
+      - name: Migrate and roll out isolated stack
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || '22' }}
+          envs: DEPLOY_ROOT,BACKEND_IMAGE,FRONTEND_IMAGE,IMAGE_TAG,GHCR_USER,GHCR_TOKEN
+          script_stop: true
+          script: |
+            chmod 700 "$DEPLOY_ROOT/deploy/remote-deploy.sh"
+            "$DEPLOY_ROOT/deploy/remote-deploy.sh"
