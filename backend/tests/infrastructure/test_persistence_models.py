@@ -15,9 +15,11 @@ FORBIDDEN_COLUMNS = {
 }
 
 
-def test_identity_metadata_contains_expected_tables() -> None:
+def test_persistence_metadata_contains_expected_tables() -> None:
     assert set(Base.metadata.tables) == {
         "activation_tokens",
+        "conversation_members",
+        "conversations",
         "devices",
         "security_events",
         "sessions",
@@ -98,3 +100,28 @@ def test_security_event_schema_is_typed_bounded_and_has_no_freeform_payload() ->
         "ix_security_events_expires_at",
         "ix_security_events_user_created_at",
     }.issubset({index.name for index in security_events.indexes})
+
+
+def test_conversation_schema_enforces_direct_pair_and_membership_lifecycle() -> None:
+    conversations = Base.metadata.tables["conversations"]
+    members = Base.metadata.tables["conversation_members"]
+    conversation_checks = {
+        constraint.name
+        for constraint in conversations.constraints
+        if isinstance(constraint, CheckConstraint)
+    }
+
+    assert {
+        "ck_conversations_direct_pair_ordered",
+        "ck_conversations_shape_matches_type",
+        "ck_conversations_title_length",
+    }.issubset(conversation_checks)
+    assert (
+        next(
+            index for index in conversations.indexes if index.name == "uq_conversations_direct_pair"
+        ).unique
+        is True
+    )
+    assert "ix_conversation_members_user_active" in {index.name for index in members.indexes}
+    assert "plaintext" not in conversations.columns
+    assert "message_key" not in conversations.columns

@@ -67,3 +67,7 @@ class SelfDeactivationError(ApplicationError):
 
 class AccountActivationRequiredError(ApplicationError):
     """An invited account must complete activation before it can become active."""
+
+
+class DuplicateDirectConversationError(ApplicationError):
+    """A direct conversation already exists for the unordered user pair."""

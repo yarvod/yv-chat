@@ -5,8 +5,12 @@ from collections.abc import AsyncIterator
 from dishka import Provider, Scope, provide
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from messenger.application.ports.conversations import ConversationUnitOfWorkFactory
 from messenger.application.ports.identity import IdentityUnitOfWorkFactory
 from messenger.bootstrap.settings import AppSettings
+from messenger.infrastructure.persistence.conversation_uow import (
+    SqlAlchemyConversationUnitOfWorkFactory,
+)
 from messenger.infrastructure.persistence.database import create_engine, create_session_factory
 from messenger.infrastructure.persistence.identity_uow import SqlAlchemyIdentityUnitOfWorkFactory
 
@@ -35,3 +39,10 @@ class PersistenceProvider(Provider):
         session_factory: async_sessionmaker[AsyncSession],
     ) -> IdentityUnitOfWorkFactory:
         return SqlAlchemyIdentityUnitOfWorkFactory(session_factory)
+
+    @provide(scope=Scope.APP)
+    def conversation_unit_of_work_factory(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> ConversationUnitOfWorkFactory:
+        return SqlAlchemyConversationUnitOfWorkFactory(session_factory)

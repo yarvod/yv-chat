@@ -6,7 +6,7 @@
 
 ## In progress
 
-Активная фича отсутствует: `BL-003D` завершена, следующей будет выбрана `BL-004`.
+Текущий пункт и его Definition of Done находятся в `docs/workplan.md`.
 
 ## Next — identity и account management
 
@@ -21,16 +21,6 @@
 - security events и tests для revoked/expired/current session cases.
 
 ## Messaging foundation
-
-### BL-004 — Conversation domain и persistence
-
-Результат: существуют direct/group conversations с явным membership lifecycle.
-
-- `Conversation`, `ConversationMember`, type/role/joined/left invariants;
-- direct conversation uniqueness и group creator/role rules;
-- SQLAlchemy mappings, indexes, constraints и Alembic migration;
-- repositories/UoW без generic CRUD и без ORM leakage;
-- PostgreSQL concurrency tests для membership/duplicate direct conversation.
 
 ### BL-005 — Conversation API и authorization
 
@@ -366,6 +356,10 @@
 - решение о native wrapper только при подтверждённой необходимости.
 
 ## Completed
+
+### BL-004 — Conversation domain и persistence
+
+Direct/group aggregate и membership lifecycle реализованы отдельно от transport: domain invariants, узкие repository/UoW ports, SQLAlchemy adapters, Dishka binding и Alembic `0006`. Unordered direct pair защищена unique index под реальной PostgreSQL concurrency; schema не содержит message plaintext/key columns.
 
 ### BL-003D — Admin user management и activation HTTP API
 

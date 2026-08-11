@@ -110,12 +110,15 @@ application/
 ├── sessions/          # login/authenticate/logout + session policy
 ├── devices/           # list/rename/revoke/event queries
 ├── security_events/   # cross-capability retention policy
-└── ports/identity/    # user/token/device/session/event/UoW protocols
+└── ports/
+    ├── identity/      # user/token/device/session/event/UoW protocols
+    └── conversations/ # aggregate repository and transaction protocols
 
 infrastructure/persistence/
 ├── models/            # one ORM model per module
 ├── repositories/      # one adapter per aggregate + pure mappers
 ├── identity_uow.py    # transaction assembly only
+├── conversation_uow.py
 └── database.py        # engine/session factory
 
 bootstrap/providers/
@@ -283,7 +286,11 @@ User ──< Device ──< Session
                                            └──< SyncEvent/Tombstone
 ```
 
-Conversation имеет type `direct|group`, creator и membership lifecycle. Все reads/writes проверяют membership server-side. Client-supplied `user_id`, role, device, conversation или resource ID никогда не считается доказательством доступа.
+Conversation имеет type `direct|group`, creator и membership lifecycle. Реализованный aggregate не зависит от FastAPI/SQLAlchemy и валидирует timezone-aware timestamps, уникальность members, direct shape и ровно одного active creator-owner группы. Membership не удаляется при выходе: фиксируется `left_at`, чтобы последующие sync/audit операции могли отличить бывшего участника от никогда не состоявшего.
+
+Persistence хранит unordered direct pair в канонических `direct_user_low_id`/`direct_user_high_id`; unique index `uq_conversations_direct_pair` закрывает race двух одновременных create. `conversation_members` имеет составной primary key `(conversation_id, user_id)`, bounded role и `left_at >= joined_at`. Удаление conversation каскадирует membership, а ссылки на users используют `RESTRICT`. Repository возвращает domain aggregate с явно загруженными members; ORM наружу infrastructure не выходит.
+
+Transport/use cases добавляются отдельным этапом. Все reads/writes обязаны проверять active membership server-side. Client-supplied `user_id`, role, device, conversation или resource ID никогда не считается доказательством доступа.
 
 Database constraints защищают concurrency invariants: normalized unique usernames, idempotency keys, stable sequences, ownership pairs и uniqueness там, где одной application-проверки недостаточно.
 

@@ -2,60 +2,57 @@
 
 Этот файл содержит только одну текущую фичу. Перед началом следующей фичи завершённая работа фиксируется коммитом, а новый пункт переносится сюда из `backlog.md`.
 
-## WP-008 — Admin user management и activation HTTP API
+## WP-009 — Conversation domain и persistence
 
 Статус: **completed**  
-Backlog item: `BL-003D`  
-Цель: открыть закрытый invitation/activation lifecycle через versioned API и дать администратору безопасное управление пользователями без public registration.
+Backlog item: `BL-004`  
+Цель: создать транзакционно надёжную основу direct/group conversations и membership lifecycle без transport/UI зависимостей.
 
-### Пользовательский результат
+### Результат
 
-Активный администратор видит пользователей, создаёт приглашение, один раз получает activation secret, повторно выпускает secret для ещё не активированного аккаунта и деактивирует/реактивирует ранее активных пользователей. Приглашённый пользователь активирует аккаунт по одноразовому secret и задаёт пароль.
+Domain моделирует direct/group conversation и membership roles/invariants. PostgreSQL хранит conversations/members, не допускает duplicate direct pair при concurrency, а application получает узкие repository/UoW ports без ORM leakage.
 
-### Security invariants
+### Invariants
 
-1. Public registration отсутствует: новую identity создаёт только authenticated active admin.
-2. Admin authorization выполняется application use case, а не только route/UI.
-3. Activation secret возвращается только при create/reissue, хранится только digest и не попадает в list DTO/logs.
-4. Reissue атомарно инвалидирует предыдущие неиспользованные secrets пользователя.
-5. Activation errors снаружи bounded/generic и не раскрывают digest, SQL или account internals.
-6. Деактивация атомарно отзывает все sessions/devices target user.
-7. Администратор не может деактивировать себя; invited account без password нельзя активировать через PATCH.
-8. Обычный пользователь получает `403` независимо от guessed target ID.
-9. Authenticated writes требуют exact Origin + CSRF; activation требует exact Origin, но до session cookie не требует CSRF.
-10. DTO/OpenAPI не содержат password/session/activation hashes.
+1. Direct conversation содержит ровно двух различных пользователей и не имеет title.
+2. Для unordered пары пользователей существует не более одной direct conversation.
+3. Group имеет bounded title и creator-owner membership.
+4. Membership user уникален внутри conversation; `left_at >= joined_at`.
+5. Direct members не имеют group privilege roles.
+6. Creator/direct pair IDs ссылаются на существующих users; conversation delete каскадно удаляет memberships, user delete не используется как shortcut.
+7. Domain/application не импортируют SQLAlchemy; ORM не выходит repository.
+8. Transaction boundary принадлежит conversation application operation.
+9. List/get queries не возвращают conversations, где membership пользователя завершён.
+10. Schema не содержит plaintext message fields — messaging envelope появится отдельной фичей.
 
-### План реализации
+### План
 
-- [x] Добавить managed-user records и узкие repository operations.
-- [x] Добавить domain transitions display-name/deactivate/reactivate.
-- [x] Реализовать list users и update user state с atomic session revoke.
-- [x] Реализовать activation-secret reissue с invalidation старых credentials.
-- [x] Подключить create-invitation/activate-account через Dishka providers.
-- [x] Добавить `/api/v1/admin/users` list/create/update/reissue endpoints.
-- [x] Добавить `/api/v1/auth/activate` без public registration semantics.
-- [x] Добавить typed HTTP error mapping без internal leakage.
-- [x] Добавить unit/HTTP authorization, ownership, CSRF/Origin и secret-schema tests.
-- [x] Добавить PostgreSQL concurrency tests для reissue/activation/session revoke.
-- [x] Проверить migration compatibility, full CI и Docker/OpenAPI smoke.
-- [x] Синхронизировать README/backlog/architecture/bugs и сделать отдельный commit.
+- [x] Добавить Conversation/ConversationMember entities и enums.
+- [x] Добавить creation/membership invariants и domain tests.
+- [x] Добавить conversation repository/UoW ports.
+- [x] Добавить SQLAlchemy models, constraints и indexes.
+- [x] Добавить Alembic migration `0006`.
+- [x] Реализовать ORM↔domain mapping и repository queries.
+- [x] Добавить ConversationUnitOfWork и Dishka persistence binding.
+- [x] Добавить metadata tests без forbidden plaintext columns.
+- [x] Добавить PostgreSQL concurrent duplicate-direct test.
+- [x] Проверить fresh/roundtrip migration, full CI и Docker head.
+- [x] Обновить docs и сделать отдельный commit.
 
 ### Не входит в scope
 
-- изменение admin role;
-- password reset/change;
-- удаление user row;
-- frontend admin UI;
-- email/SMS delivery activation secret.
+- conversation HTTP API;
+- message rows/ciphertext;
+- sync/WebSocket;
+- E2EE protocol state;
+- frontend conversations UI.
 
 ### Проверка готовности
 
-- normal user не может list/create/update/reissue users;
-- create/reissue показывает plaintext secret ровно в response и не хранит его;
-- старый secret после reissue не активирует account;
-- concurrent activation успешна ровно один раз;
-- deactivate отзывает все target sessions, не затрагивая admin;
-- invited user нельзя активировать простым `is_active=true`;
-- response/OpenAPI не раскрывают hashes/credentials;
-- PostgreSQL integration, full CI и image smoke проходят;
-- изменения зафиксированы отдельным коммитом.
+- domain отклоняет self-direct, invalid member count/roles/title/timestamps;
+- DB сериализует duplicate unordered direct pair;
+- repository возвращает domain aggregate без ORM;
+- active-membership list исключает left conversations;
+- migration base→head и 0005↔0006 roundtrip проходят;
+- CI/integration/Docker smoke зелёные;
+- отдельный commit создан.
