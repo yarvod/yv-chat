@@ -1,7 +1,7 @@
 import { ApplicationError } from '../../application/errors'
 
 export interface ApiRequest {
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   body?: unknown
 }
 

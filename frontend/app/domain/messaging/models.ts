@@ -35,7 +35,18 @@ export interface OpaqueMessage {
   ciphertextBase64: string
 }
 
-export type SyncEventType = 'conversation_updated' | 'message_created'
+export interface ConversationReadState {
+  conversationId: string
+  lastReadSequence: number
+  latestSequence: number
+  unreadCount: number
+}
+
+export type SyncEventType =
+  | 'conversation_updated'
+  | 'message_created'
+  | 'message_deleted'
+  | 'read_receipt'
 
 export interface SyncEvent {
   eventId: string
@@ -43,6 +54,8 @@ export interface SyncEvent {
   eventType: SyncEventType
   conversationId: string
   messageId: string | null
+  actorUserId: string | null
+  readSequence: number | null
   createdAt: string
 }
 

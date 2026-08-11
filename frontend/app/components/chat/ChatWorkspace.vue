@@ -12,6 +12,7 @@ const messenger = useMessenger(props.user.userId, () => emit('sessionExpired'))
 const { $frontend } = useNuxtApp()
 const realtime = $frontend.createRealtimeSync()
 const mobilePane = ref<'list' | 'conversation'>('list')
+let unsubscribeVisibility: (() => void) | null = null
 
 function selectConversation(conversationId: string): void {
   void messenger.selectConversation(conversationId)
@@ -20,11 +21,15 @@ function selectConversation(conversationId: string): void {
 
 onMounted(async () => {
   await messenger.load()
+  unsubscribeVisibility = $frontend.pageVisibility.subscribe(() => {
+    void messenger.markActiveRead()
+  })
   realtime.start(messenger.poll, () => emit('sessionExpired'))
 })
 
 onBeforeUnmount(() => {
   realtime.stop()
+  unsubscribeVisibility?.()
 })
 </script>
 
@@ -35,6 +40,7 @@ onBeforeUnmount(() => {
       :conversations="messenger.state.conversations"
       :directory="messenger.state.directory"
       :active-conversation-id="messenger.state.activeConversationId"
+      :read-states="messenger.state.readStates"
       :creating="messenger.state.creating"
       @select="selectConversation"
       @direct="messenger.createDirect"

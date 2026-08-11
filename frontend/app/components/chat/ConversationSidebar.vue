@@ -2,7 +2,11 @@
 import { ref } from 'vue'
 
 import type { CurrentAccount } from '../../domain/accounts/account'
-import type { Conversation, DirectoryUser } from '../../domain/messaging/models'
+import type {
+  Conversation,
+  ConversationReadState,
+  DirectoryUser,
+} from '../../domain/messaging/models'
 import NewConversationForm from './NewConversationForm.vue'
 
 const props = defineProps<{
@@ -10,6 +14,7 @@ const props = defineProps<{
   conversations: readonly Conversation[]
   directory: readonly DirectoryUser[]
   activeConversationId: string | null
+  readStates: readonly ConversationReadState[]
   creating: boolean
 }>()
 const emit = defineEmits<{
@@ -23,6 +28,10 @@ function conversationName(conversation: Conversation): string {
   if (conversation.conversationType === 'group') return conversation.title ?? 'Группа'
   return conversation.members.find(member => member.userId !== props.user.userId)?.displayName
     ?? 'Личный диалог'
+}
+
+function unreadCount(conversationId: string): number {
+  return props.readStates.find(item => item.conversationId === conversationId)?.unreadCount ?? 0
 }
 
 function createDirect(userId: string): void {
@@ -66,9 +75,16 @@ function createGroup(title: string, userIds: string[]): void {
         @click="emit('select', conversation.conversationId)"
       >
         <span class="conversation-avatar">{{ conversationName(conversation).slice(0, 1).toUpperCase() }}</span>
-        <span>
+        <span class="conversation-copy">
           <strong>{{ conversationName(conversation) }}</strong>
           <small>{{ conversation.conversationType === 'group' ? `${conversation.members.length} участников` : 'Личный диалог' }}</small>
+        </span>
+        <span
+          v-if="unreadCount(conversation.conversationId) > 0"
+          class="unread-badge"
+          :aria-label="`${unreadCount(conversation.conversationId)} непрочитанных`"
+        >
+          {{ unreadCount(conversation.conversationId) > 99 ? '99+' : unreadCount(conversation.conversationId) }}
         </span>
       </button>
       <div v-if="conversations.length === 0" class="empty-conversations">

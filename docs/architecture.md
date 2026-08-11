@@ -458,7 +458,30 @@ GET /api/v1/sync?after=<cursor>
 
 Реализованный durable stream использует независимый monotonic cursor каждого пользователя: `sync_streams(user_id, last_cursor)` и recipient-specific `sync_events(user_id, cursor)`. Atomic PostgreSQL upsert выделяет cursor, сохраняя event order внутри user stream и стабильный user lock order между recipients. Visibility фиксируется при записи события, поэтому удалённый member получает финальный `conversation_updated`, хотя последующий conversation GET уже возвращает not-found.
 
-Message row и все `message_created` recipient events коммитятся одним Messaging UoW; exact retry не создаёт повторных events. Sync payload содержит только stable event/conversation/message IDs и timestamps, без ciphertext/plaintext/key data. Cleanup удаляет expired events, но сохраняет stream high-water mark; `/api/v1/sync` сравнивает `after`, oldest retained cursor и stream cursor и выставляет `reset_required`, когда нужен полный resource resync.
+Message row, sender read cursor и recipient-specific `message_created` +
+`read_receipt` events коммитятся одним Messaging UoW; отправка означает, что sender
+прочитал timeline до выделенной sequence, поэтому собственное сообщение не становится
+ложно unread. Exact retry не создаёт повторных rows/events. Sync payload содержит
+только stable event/conversation/message/actor IDs, read sequence и timestamps, без
+ciphertext/plaintext/key data. Cleanup удаляет expired events, но сохраняет stream
+high-water mark; `/api/v1/sync` сравнивает `after`, oldest retained cursor и stream
+cursor и выставляет `reset_required`, когда нужен полный resource resync.
+
+Shared read state хранится в `conversation_read_states` по ключу
+`(user_id, conversation_id)`, то есть принадлежит аккаунту, а не отдельному device.
+Отсутствующая row означает cursor `0`; persisted cursor всегда positive, ссылается на
+существующую server sequence и может только увеличиваться. `MarkConversationRead`
+сериализуется conversation row lock, atomic upsert защищён PK/check/FK и lower/equal
+retry является no-op без нового receipt. Batch repository одним set-based query
+возвращает `last_read_sequence`, фактический `latest_sequence` и count реально
+существующих message rows после cursor — без N+1 и без арифметики `latest - read`,
+которая сломалась бы после TTL gaps.
+
+Frontend получает read summaries через отдельный typed gateway и application use
+cases. `useMessenger` помечает только active conversation, только до последней
+фактически загруженной authoritative sequence и только когда page visibility сообщает
+foreground. Повторные submits дедуплицируются; потерянный/duplicate WebSocket hint
+всегда восстанавливается `/sync` и повторным read-state reload.
 
 `/api/v1/realtime` принимает WebSocket только после exact Origin и opaque-cookie
 handshake. Handshake может выполнить throttled session touch, но не вращает cookie
@@ -468,9 +491,10 @@ credential rotation не превращает старый socket credential в 
 Process-local `InMemoryRealtimeHub` держит bounded queue на connection и удаляет
 slow consumer. После durable commit application публикует только `event_id`,
 `conversation_id`, optional `message_id` и typed `new_message`,
-`conversation_updated` либо `message_deleted`; failure notifier логируется без
-content и не меняет committed result. Это сознательно single-process решение без
-Redis. Ephemeral typing/presence/read receipts появятся вместе с их domain model.
+`conversation_updated`, `message_deleted` либо durable `read_receipt`; failure notifier
+логируется без content и не меняет committed result. Это сознательно single-process
+решение без Redis. Ephemeral typing/presence появятся отдельными application policies
+с bounded expiry и не станут durable truth.
 
 Правильность любой realtime-фичи проверяется при отключённом WebSocket. Duplicate WebSocket/Push/sync delivery применяется идемпотентно.
 

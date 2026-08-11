@@ -20,7 +20,7 @@ from messenger.application.realtime import notifications_from_sync
 from messenger.application.realtime.publish import publish_best_effort
 from messenger.application.sync import SyncEventType, SyncPolicy
 from messenger.application.sync.emission import events_for_users
-from messenger.domain.entities import Message
+from messenger.domain.entities import ConversationReadState, Message
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,13 +105,41 @@ class SendOpaqueMessage:
                 now=self._clock.now(),
             )
             await unit_of_work.messages.add(message)
+            current_read_state = await unit_of_work.read_states.get(
+                user_id=command.actor_user_id,
+                conversation_id=conversation.id,
+            )
+            sender_read_state = (
+                current_read_state.advance(message.sequence, message.created_at)
+                if current_read_state is not None
+                else ConversationReadState.create(
+                    user_id=command.actor_user_id,
+                    conversation_id=conversation.id,
+                    sequence=message.sequence,
+                    now=message.created_at,
+                )
+            )
+            await unit_of_work.read_states.upsert(sender_read_state)
+            recipients = {member.user_id for member in conversation.members if member.is_active}
             sync_events = events_for_users(
-                {member.user_id for member in conversation.members if member.is_active},
+                recipients,
                 event_type=SyncEventType.MESSAGE_CREATED,
                 conversation_id=conversation.id,
                 message_id=message.id,
                 now=message.created_at,
                 policy=self._sync_policy,
+            )
+            sync_events.extend(
+                events_for_users(
+                    recipients,
+                    event_type=SyncEventType.READ_RECEIPT,
+                    conversation_id=conversation.id,
+                    message_id=None,
+                    actor_user_id=command.actor_user_id,
+                    read_sequence=message.sequence,
+                    now=message.created_at,
+                    policy=self._sync_policy,
+                )
             )
             await unit_of_work.sync_events.append(sync_events)
             await unit_of_work.commit()

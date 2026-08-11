@@ -2,10 +2,18 @@ import { computed, reactive, readonly } from 'vue'
 
 import { ApplicationError } from '../../application/errors'
 import type { ClientIdGenerator } from '../../application/ports/client-id-generator'
+import type { ListConversationReadStates } from '../../application/messaging/list-conversation-read-states'
+import type { MarkConversationRead } from '../../application/messaging/mark-conversation-read'
 import type { MessageCodec } from '../../application/ports/message-codec'
 import type { HapticsPort } from '../../application/ports/haptics'
 import type { MessagingGateway } from '../../application/ports/messaging-gateway'
-import type { Conversation, DirectoryUser, OpaqueMessage } from '../../domain/messaging/models'
+import type { PageVisibility } from '../../application/ports/page-visibility'
+import type {
+  Conversation,
+  ConversationReadState,
+  DirectoryUser,
+  OpaqueMessage,
+} from '../../domain/messaging/models'
 
 type MessengerPhase = 'loading' | 'ready' | 'offline' | 'error'
 
@@ -15,6 +23,7 @@ interface MessengerState {
   directory: DirectoryUser[]
   activeConversationId: string | null
   messages: OpaqueMessage[]
+  readStates: ConversationReadState[]
   syncCursor: number
   sending: boolean
   creating: boolean
@@ -30,6 +39,9 @@ export interface MessengerDependencies {
   codec: MessageCodec
   haptics: HapticsPort
   clientIdGenerator: ClientIdGenerator
+  listConversationReadStates: ListConversationReadStates
+  markConversationRead: MarkConversationRead
+  pageVisibility: PageVisibility
 }
 
 export function useMessenger(
@@ -44,21 +56,34 @@ export function useMessenger(
       codec: $frontend.messageCodec,
       haptics: $frontend.haptics,
       clientIdGenerator: $frontend.clientIdGenerator,
+      listConversationReadStates: $frontend.listConversationReadStates,
+      markConversationRead: $frontend.markConversationRead,
+      pageVisibility: $frontend.pageVisibility,
     }
   })()
-  const { gateway, codec, haptics, clientIdGenerator } = dependencies
+  const {
+    gateway,
+    codec,
+    haptics,
+    clientIdGenerator,
+    listConversationReadStates,
+    markConversationRead,
+    pageVisibility,
+  } = dependencies
   const state = reactive<MessengerState>({
     phase: 'loading',
     conversations: [],
     directory: [],
     activeConversationId: null,
     messages: [],
+    readStates: [],
     syncCursor: 0,
     sending: false,
     creating: false,
     message: null,
   })
   let polling = false
+  const readAdvances = new Map<string, number>()
 
   const activeConversation = computed(() => (
     state.conversations.find(item => item.conversationId === state.activeConversationId) ?? null
@@ -75,12 +100,48 @@ export function useMessenger(
       : 'Не удалось обновить данные мессенджера.'
   }
 
+  function replaceReadState(next: ConversationReadState): void {
+    state.readStates = [
+      ...state.readStates.filter(item => item.conversationId !== next.conversationId),
+      next,
+    ]
+  }
+
+  async function reloadReadStates(): Promise<void> {
+    state.readStates = await listConversationReadStates.execute()
+  }
+
+  async function advanceActiveReadIfVisible(): Promise<void> {
+    const conversationId = state.activeConversationId
+    const sequence = state.messages.at(-1)?.sequence ?? 0
+    if (!conversationId || sequence <= 0 || !pageVisibility.isVisible()) return
+    const persisted = state.readStates.find(item => item.conversationId === conversationId)
+      ?.lastReadSequence ?? 0
+    const submitted = readAdvances.get(conversationId) ?? 0
+    if (sequence <= Math.max(persisted, submitted)) return
+    readAdvances.set(conversationId, sequence)
+    try {
+      const result = await markConversationRead.execute(conversationId, sequence)
+      const current = state.readStates.find(item => item.conversationId === conversationId)
+      replaceReadState({
+        conversationId,
+        lastReadSequence: result.lastReadSequence,
+        latestSequence: Math.max(current?.latestSequence ?? 0, sequence),
+        unreadCount: 0,
+      })
+    } catch (error) {
+      readAdvances.delete(conversationId)
+      throw error
+    }
+  }
+
   async function loadMessages(conversationId: string, afterSequence = 0): Promise<void> {
     const incoming = await gateway.listMessages(conversationId, afterSequence)
     if (state.activeConversationId !== conversationId) return
     const known = new Map(state.messages.map(item => [item.messageId, item]))
     for (const item of incoming) known.set(item.messageId, item)
     state.messages = sortMessages([...known.values()])
+    await advanceActiveReadIfVisible()
   }
 
   async function reloadConversations(): Promise<void> {
@@ -97,12 +158,14 @@ export function useMessenger(
     state.message = null
     try {
       const syncBaseline = await gateway.listSync(0)
-      const [directory, conversations] = await Promise.all([
+      const [directory, conversations, readStates] = await Promise.all([
         gateway.listDirectory(),
         gateway.listConversations(),
+        listConversationReadStates.execute(),
       ])
       state.directory = directory
       state.conversations = conversations
+      state.readStates = readStates
       state.activeConversationId = conversations[0]?.conversationId ?? null
       state.messages = []
       if (state.activeConversationId) await loadMessages(state.activeConversationId)
@@ -192,6 +255,7 @@ export function useMessenger(
       let hasMore = true
       let conversationsChanged = false
       let activeMessagesChanged = false
+      let readStatesChanged = false
       while (hasMore && pages < 10) {
         const page = await gateway.listSync(state.syncCursor)
         if (page.resetRequired) {
@@ -210,6 +274,9 @@ export function useMessenger(
             event.eventType === 'message_created'
             && event.conversationId === state.activeConversationId
           )
+          readStatesChanged ||= event.eventType === 'message_created'
+            || event.eventType === 'message_deleted'
+            || event.eventType === 'read_receipt'
         }
         state.syncCursor = page.nextCursor
         hasMore = page.hasMore
@@ -219,12 +286,21 @@ export function useMessenger(
       if (activeMessagesChanged && state.activeConversationId) {
         await loadMessages(state.activeConversationId, state.messages.at(-1)?.sequence ?? 0)
       }
+      if (readStatesChanged) await reloadReadStates()
       state.phase = 'ready'
       state.message = null
     } catch (error) {
       fail(error)
     } finally {
       polling = false
+    }
+  }
+
+  async function markActiveRead(): Promise<void> {
+    try {
+      await advanceActiveReadIfVisible()
+    } catch (error) {
+      fail(error)
     }
   }
 
@@ -239,5 +315,6 @@ export function useMessenger(
     createDirect,
     createGroup,
     send,
+    markActiveRead,
   }
 }

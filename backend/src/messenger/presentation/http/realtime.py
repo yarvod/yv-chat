@@ -80,13 +80,18 @@ async def _revalidate(websocket: WebSocket, principal: AuthenticateSessionResult
         )
 
 
-def _notification_payload(notification: RealtimeNotification) -> dict[str, str | None]:
-    return {
+def _notification_payload(notification: RealtimeNotification) -> dict[str, str | int | None]:
+    payload: dict[str, str | int | None] = {
         "type": notification.event_type.value,
         "event_id": str(notification.event_id),
         "conversation_id": str(notification.conversation_id),
         "message_id": str(notification.message_id) if notification.message_id else None,
     }
+    if notification.actor_user_id is not None:
+        payload["actor_user_id"] = str(notification.actor_user_id)
+    if notification.read_sequence is not None:
+        payload["read_sequence"] = notification.read_sequence
+    return payload
 
 
 async def _send_notifications(

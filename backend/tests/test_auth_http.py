@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from dishka import Provider, Scope, make_async_container, provide
 from dishka.integrations.fastapi import FastapiProvider
@@ -38,6 +38,8 @@ from messenger.application.devices.rename import RenameMyDevice
 from messenger.application.devices.revoke import RevokeMyDevice
 from messenger.application.devices.revoke_others import RevokeOtherSessions
 from messenger.application.messaging.list_messages import ListMessages
+from messenger.application.messaging.list_read_states import ListConversationReadStates
+from messenger.application.messaging.mark_read import MarkConversationRead
 from messenger.application.messaging.policy import MessageEnvelopePolicy
 from messenger.application.messaging.send_message import SendOpaqueMessage
 from messenger.application.ports.activation_secrets import ActivationSecretService
@@ -60,7 +62,7 @@ from messenger.application.sync import SyncPolicy
 from messenger.application.sync.list_events import ListSyncEvents
 from messenger.bootstrap.app import create_app
 from messenger.bootstrap.settings import AppEnvironment, AppSettings
-from messenger.domain.entities import Device, Session, User
+from messenger.domain.entities import Conversation, Device, Message, Session, User
 from messenger.infrastructure.auth.password_reset_secrets import (
     SecurePasswordResetSecretService,
 )
@@ -231,6 +233,11 @@ class HttpTestProvider(Provider):
     )
     send_opaque_message = provide(SendOpaqueMessage, scope=Scope.REQUEST)
     list_messages = provide(ListMessages, scope=Scope.REQUEST)
+    list_conversation_read_states = provide(
+        ListConversationReadStates,
+        scope=Scope.REQUEST,
+    )
+    mark_conversation_read = provide(MarkConversationRead, scope=Scope.REQUEST)
     list_sync_events = provide(ListSyncEvents, scope=Scope.REQUEST)
 
 
@@ -477,6 +484,63 @@ async def run_cookie_only_auth() -> None:
 
 async def test_session_does_not_accept_bearer_or_query_credentials() -> None:
     await run_cookie_only_auth()
+
+
+async def test_read_state_transport_requires_csrf_and_returns_actual_unread_count() -> None:
+    application, state, _ = build_test_application()
+    transport = ASGITransport(app=application)
+    async with AsyncClient(transport=transport, base_url="https://test") as client:
+        login_response = await login(client)
+        assert login_response.status_code == 200
+        alice = next(iter(state.users.values()))
+        device_id = UUID(login_response.json()["device_id"])
+        bob = User.create(username="bob", display_name="Bob", now=NOW)
+        conversation = Conversation.create_direct(
+            created_by=alice.id,
+            other_user_id=bob.id,
+            now=NOW,
+        )
+        message = Message.create(
+            conversation_id=conversation.id,
+            client_message_id=uuid4(),
+            sender_user_id=alice.id,
+            sender_device_id=device_id,
+            protocol_version=1,
+            sequence=1,
+            ciphertext=b"opaque",
+            now=NOW,
+        )
+        state.users[bob.id] = bob
+        state.conversations[conversation.id] = conversation
+        state.messages[message.id] = message
+
+        listed = await client.get("/api/v1/conversation-read-states")
+        assert listed.status_code == 200
+        assert listed.json() == [
+            {
+                "conversation_id": str(conversation.id),
+                "last_read_sequence": 0,
+                "latest_sequence": 1,
+                "unread_count": 1,
+            }
+        ]
+        no_csrf = await client.put(
+            f"/api/v1/conversation-read-states/{conversation.id}",
+            headers={"Origin": "https://test"},
+            json={"sequence": 1},
+        )
+        assert no_csrf.status_code == 403
+        marked = await client.put(
+            f"/api/v1/conversation-read-states/{conversation.id}",
+            headers={
+                "Origin": "https://test",
+                "X-CSRF-Token": client.cookies["__Host-yv_csrf"],
+            },
+            json={"sequence": 1},
+        )
+        assert marked.status_code == 200
+        assert marked.json()["last_read_sequence"] == 1
+        assert marked.json()["advanced"] is True
 
 
 async def run_client_ip_flow(trusted: bool) -> str | None:

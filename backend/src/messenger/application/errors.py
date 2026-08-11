@@ -107,3 +107,7 @@ class MessageIdempotencyConflictError(ApplicationError):
 
 class RealtimeSubscriptionClosedError(ApplicationError):
     """A realtime connection was removed because its bounded inbox closed."""
+
+
+class InvalidReadSequenceError(ApplicationError):
+    """A read cursor does not identify an existing authorized message."""

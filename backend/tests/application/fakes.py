@@ -27,7 +27,12 @@ from messenger.application.ports.identity import (
     UserAuthenticationRecord,
     UserRepository,
 )
-from messenger.application.ports.messages import MessageRepository, MessagingUnitOfWork
+from messenger.application.ports.messages import (
+    ConversationReadStateRepository,
+    ConversationReadSummary,
+    MessageRepository,
+    MessagingUnitOfWork,
+)
 from messenger.application.ports.password_reset_secrets import GeneratedPasswordResetSecret
 from messenger.application.ports.session_credentials import GeneratedSessionCredential
 from messenger.application.ports.sync import SyncRepository, SyncUnitOfWork
@@ -37,6 +42,7 @@ from messenger.application.sync.events import SyncStreamPage
 from messenger.domain.entities import (
     ActivationToken,
     Conversation,
+    ConversationReadState,
     Device,
     Message,
     PasswordResetToken,
@@ -59,6 +65,7 @@ class IdentityState:
     security_events: dict[UUID, SecurityEvent] = field(default_factory=dict)
     conversations: dict[UUID, Conversation] = field(default_factory=dict)
     messages: dict[UUID, Message] = field(default_factory=dict)
+    read_states: dict[tuple[UUID, UUID], ConversationReadState] = field(default_factory=dict)
     sync_events: list[SyncEvent] = field(default_factory=list)
     sync_cursors: dict[UUID, int] = field(default_factory=dict)
     commits: int = 0
@@ -567,6 +574,17 @@ class FakeMessageRepository:
         ]
         return max(sequences, default=0) + 1
 
+    async def exists_at_sequence(
+        self,
+        *,
+        conversation_id: UUID,
+        sequence: int,
+    ) -> bool:
+        return any(
+            message.conversation_id == conversation_id and message.sequence == sequence
+            for message in self._state.messages.values()
+        )
+
     async def list_after(
         self,
         *,
@@ -582,6 +600,49 @@ class FakeMessageRepository:
             ),
             key=lambda message: (message.sequence, message.id),
         )[:limit]
+
+
+class FakeConversationReadStateRepository:
+    def __init__(self, state: IdentityState) -> None:
+        self._state = state
+
+    async def get(
+        self,
+        *,
+        user_id: UUID,
+        conversation_id: UUID,
+    ) -> ConversationReadState | None:
+        return self._state.read_states.get((user_id, conversation_id))
+
+    async def upsert(self, state: ConversationReadState) -> None:
+        current = self._state.read_states.get((state.user_id, state.conversation_id))
+        if current is None or state.last_read_sequence > current.last_read_sequence:
+            self._state.read_states[(state.user_id, state.conversation_id)] = state
+
+    async def list_summaries(
+        self,
+        *,
+        user_id: UUID,
+        conversation_ids: set[UUID],
+    ) -> list[ConversationReadSummary]:
+        summaries: list[ConversationReadSummary] = []
+        for conversation_id in sorted(conversation_ids, key=lambda value: value.int):
+            read = self._state.read_states.get((user_id, conversation_id))
+            last_read = read.last_read_sequence if read else 0
+            messages = [
+                message
+                for message in self._state.messages.values()
+                if message.conversation_id == conversation_id
+            ]
+            summaries.append(
+                ConversationReadSummary(
+                    conversation_id=conversation_id,
+                    last_read_sequence=last_read,
+                    latest_sequence=max((message.sequence for message in messages), default=0),
+                    unread_count=sum(message.sequence > last_read for message in messages),
+                )
+            )
+        return summaries
 
 
 class FakeSyncRepository:
@@ -606,6 +667,8 @@ class FakeSyncRepository:
                     event_type=event.event_type,
                     conversation_id=event.conversation_id,
                     message_id=event.message_id,
+                    actor_user_id=event.actor_user_id,
+                    read_sequence=event.read_sequence,
                     created_at=event.created_at,
                     expires_at=event.expires_at,
                 )
@@ -643,6 +706,9 @@ class FakeMessagingUnitOfWork:
     def __init__(self, state: IdentityState) -> None:
         self._state = state
         self.messages: MessageRepository = FakeMessageRepository(state)
+        self.read_states: ConversationReadStateRepository = FakeConversationReadStateRepository(
+            state
+        )
         self.conversations: ConversationRepository = FakeConversationRepository(state)
         self.users: UserRepository = FakeUserRepository(state)
         self.devices: DeviceRepository = FakeDeviceRepository(state)

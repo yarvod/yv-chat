@@ -18,6 +18,13 @@ class MessageRepository(Protocol):
 
     async def next_sequence(self, conversation_id: UUID) -> int: ...
 
+    async def exists_at_sequence(
+        self,
+        *,
+        conversation_id: UUID,
+        sequence: int,
+    ) -> bool: ...
+
     async def list_after(
         self,
         *,

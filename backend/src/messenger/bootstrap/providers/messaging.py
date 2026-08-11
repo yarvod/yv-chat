@@ -3,6 +3,8 @@
 from dishka import Provider, Scope, provide
 
 from messenger.application.messaging.list_messages import ListMessages
+from messenger.application.messaging.list_read_states import ListConversationReadStates
+from messenger.application.messaging.mark_read import MarkConversationRead
 from messenger.application.messaging.policy import MessageEnvelopePolicy
 from messenger.application.messaging.send_message import SendOpaqueMessage
 from messenger.application.sync.list_events import ListSyncEvents
@@ -21,3 +23,5 @@ class MessagingUseCaseProvider(Provider):
     send_opaque_message = provide(SendOpaqueMessage, scope=Scope.REQUEST)
     list_messages = provide(ListMessages, scope=Scope.REQUEST)
     list_sync_events = provide(ListSyncEvents, scope=Scope.REQUEST)
+    list_conversation_read_states = provide(ListConversationReadStates, scope=Scope.REQUEST)
+    mark_conversation_read = provide(MarkConversationRead, scope=Scope.REQUEST)

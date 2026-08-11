@@ -51,6 +51,20 @@ class SqlAlchemyMessageRepository:
         )
         return (maximum or 0) + 1
 
+    async def exists_at_sequence(
+        self,
+        *,
+        conversation_id: UUID,
+        sequence: int,
+    ) -> bool:
+        message_id = await self._session.scalar(
+            select(MessageModel.id).where(
+                MessageModel.conversation_id == conversation_id,
+                MessageModel.sequence == sequence,
+            )
+        )
+        return message_id is not None
+
     async def list_after(
         self,
         *,

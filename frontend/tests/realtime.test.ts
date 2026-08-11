@@ -86,7 +86,30 @@ describe('realtime sync', () => {
       eventId: 'event',
       conversationId: 'conversation',
       messageId: 'message',
+      actorUserId: null,
+      readSequence: null,
     })
+    expect(parseRealtimeFrame({
+      type: 'read_receipt',
+      event_id: 'read-event',
+      conversation_id: 'conversation',
+      message_id: null,
+      actor_user_id: 'alice',
+      read_sequence: 8,
+    })).toEqual({
+      type: 'read_receipt',
+      eventId: 'read-event',
+      conversationId: 'conversation',
+      messageId: null,
+      actorUserId: 'alice',
+      readSequence: 8,
+    })
+    expect(() => parseRealtimeFrame({
+      type: 'read_receipt',
+      event_id: 'event',
+      conversation_id: 'conversation',
+      message_id: null,
+    })).toThrow(ApplicationError)
     expect(() => parseRealtimeFrame({ type: 'typing', user_id: 'arbitrary' }))
       .toThrow(ApplicationError)
   })

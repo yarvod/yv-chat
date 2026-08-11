@@ -17,7 +17,7 @@ from messenger.application.messaging.send_message import (
     SendOpaqueMessage,
     SendOpaqueMessageCommand,
 )
-from messenger.application.sync import SyncPolicy
+from messenger.application.sync import SyncEventType, SyncPolicy
 from messenger.domain.entities import Conversation, Device, User
 from tests.application.fakes import (
     FakeMessagingUnitOfWorkFactory,
@@ -98,6 +98,17 @@ async def test_send_persists_only_opaque_envelope_metadata() -> None:
     assert stored.created_at == NOW + timedelta(seconds=1)
     assert "ciphertext" not in result.__dataclass_fields__
     assert second.sequence == 2
+    assert state.read_states[(alice.id, conversation.id)].last_read_sequence == 2
+    assert [event.event_type for event in state.sync_events] == [
+        SyncEventType.MESSAGE_CREATED,
+        SyncEventType.READ_RECEIPT,
+        SyncEventType.MESSAGE_CREATED,
+        SyncEventType.READ_RECEIPT,
+        SyncEventType.MESSAGE_CREATED,
+        SyncEventType.READ_RECEIPT,
+        SyncEventType.MESSAGE_CREATED,
+        SyncEventType.READ_RECEIPT,
+    ]
     page = await ListMessages(unit_of_work=FakeMessagingUnitOfWorkFactory(state)).execute(
         ListMessagesQuery(alice.id, conversation.id, after_sequence=1, limit=10)
     )

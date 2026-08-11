@@ -83,12 +83,29 @@ export function parseMessages(value: unknown): OpaqueMessage[] {
 
 function parseSyncEvent(value: unknown): SyncEvent {
   const item = record(value)
+  const eventType = enumField<SyncEventType>(item, 'event_type', [
+    'conversation_updated',
+    'message_created',
+    'message_deleted',
+    'read_receipt',
+  ])
+  const messageId = nullableStringField(item, 'message_id')
+  const actorUserId = nullableStringField(item, 'actor_user_id')
+  const readSequence = item.read_sequence === null ? null : integerField(item, 'read_sequence')
+  const valid = eventType === 'conversation_updated'
+    ? messageId === null && actorUserId === null && readSequence === null
+    : eventType === 'read_receipt'
+      ? messageId === null && actorUserId !== null && readSequence !== null && readSequence > 0
+      : messageId !== null && actorUserId === null && readSequence === null
+  if (!valid) throw new ApplicationError(200, 'invalid-response', 'invalid sync event shape')
   return {
     eventId: stringField(item, 'event_id'),
     cursor: integerField(item, 'cursor'),
-    eventType: enumField<SyncEventType>(item, 'event_type', ['conversation_updated', 'message_created']),
+    eventType,
     conversationId: stringField(item, 'conversation_id'),
-    messageId: nullableStringField(item, 'message_id'),
+    messageId,
+    actorUserId,
+    readSequence,
     createdAt: stringField(item, 'created_at'),
   }
 }

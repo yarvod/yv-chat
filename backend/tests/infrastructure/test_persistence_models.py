@@ -19,6 +19,7 @@ def test_persistence_metadata_contains_expected_tables() -> None:
     assert set(Base.metadata.tables) == {
         "activation_tokens",
         "conversation_members",
+        "conversation_read_states",
         "conversations",
         "devices",
         "messages",
@@ -165,9 +166,30 @@ def test_sync_schema_has_per_user_cursor_and_opaque_routing_fields_only() -> Non
 
     assert set(streams.columns.keys()) == {"user_id", "last_cursor"}
     assert {column.name for column in events.primary_key} == {"user_id", "cursor"}
-    assert {"event_id", "event_type", "conversation_id", "message_id"}.issubset(
-        events.columns.keys()
-    )
+    assert {
+        "event_id",
+        "event_type",
+        "conversation_id",
+        "message_id",
+        "actor_user_id",
+        "read_sequence",
+    }.issubset(events.columns.keys())
     assert {"ciphertext", "plaintext", "text", "message_key", "payload"}.isdisjoint(
         events.columns.keys()
     )
+
+
+def test_read_state_schema_is_user_scoped_and_monotonic() -> None:
+    read_states = Base.metadata.tables["conversation_read_states"]
+    check_names = {
+        constraint.name
+        for constraint in read_states.constraints
+        if isinstance(constraint, CheckConstraint)
+    }
+
+    assert {column.name for column in read_states.primary_key} == {
+        "user_id",
+        "conversation_id",
+    }
+    assert "ck_conversation_read_states_last_read_sequence_positive" in check_names
+    assert "ix_read_states_conversation" in {index.name for index in read_states.indexes}

@@ -77,10 +77,15 @@ Implementation и desktop browser smoke завершены; physical 390px scree
 
 ### BL-009 — Receipts, unread state, typing и presence
 
+Статус: **in progress** (`WP-024` завершил shared read cursor/unread slice;
+delivered-per-device, typing и presence остаются).
+
 Результат: read state согласуется между устройствами, а ephemeral indicators не становятся durable truth.
 
-- delivered/read receipt model и per-user/per-conversation cursors;
-- unread counters, согласованные на нескольких devices;
+- [x] shared per-user/per-conversation read cursor и durable `read_receipt`;
+- [x] server-derived unread counters, согласованные на нескольких devices;
+- [x] foreground-only mark-read до реально загруженной server sequence;
+- [ ] delivered cursor/receipt на уровне device;
 - typing events с expiry без долговременной истории;
 - best-effort online presence из active WebSockets с heartbeat timeout;
 - deduplication и tests после reconnect.
@@ -97,7 +102,8 @@ Implementation и desktop browser smoke завершены; physical 390px scree
 
 ### BL-011 — Authenticated WebSocket notifications
 
-Статус: **in progress** (`WP-023`, authenticated durable wake-up foundation).
+Статус: **in progress** (`WP-023` foundation + `WP-024` durable read receipt;
+typing, presence и device-revoked hints остаются).
 
 Результат: WebSocket ускоряет доставку, но не заменяет sync.
 

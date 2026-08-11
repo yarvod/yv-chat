@@ -10,6 +10,14 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from messenger.application.errors import ConversationNotFoundError
+from messenger.application.messaging.list_read_states import (
+    ListConversationReadStates,
+    ListConversationReadStatesQuery,
+)
+from messenger.application.messaging.mark_read import (
+    MarkConversationRead,
+    MarkConversationReadCommand,
+)
 from messenger.application.messaging.policy import MessageEnvelopePolicy
 from messenger.application.messaging.send_message import (
     SendOpaqueMessage,
@@ -33,6 +41,7 @@ from messenger.infrastructure.persistence.models import (
     ActivationTokenModel,
     ConversationMemberModel,
     ConversationModel,
+    ConversationReadStateModel,
     DeviceModel,
     MessageModel,
     SecurityEventModel,
@@ -67,6 +76,7 @@ async def reset_tables(session_factory: async_sessionmaker[AsyncSession]) -> Non
         await session.execute(delete(SyncEventModel))
         await session.execute(delete(SyncStreamModel))
         await session.execute(delete(MessageModel))
+        await session.execute(delete(ConversationReadStateModel))
         await session.execute(delete(ConversationMemberModel))
         await session.execute(delete(ConversationModel))
         await session.execute(delete(SecurityEventModel))
@@ -174,6 +184,38 @@ async def run_flow(database_url: str) -> None:
                 )
             )
 
+        read_state_factory = SqlAlchemyMessagingUnitOfWorkFactory(session_factory)
+        list_read_states = ListConversationReadStates(unit_of_work=read_state_factory)
+        bob_before = await list_read_states.execute(ListConversationReadStatesQuery(bob.id))
+        assert len(bob_before) == 1
+        assert bob_before[0].last_read_sequence == 0
+        assert bob_before[0].latest_sequence == 3
+        assert bob_before[0].unread_count == 3
+
+        mark_read = MarkConversationRead(
+            unit_of_work=read_state_factory,
+            clock=FixedClock(NOW + timedelta(seconds=2)),
+            sync_policy=SyncPolicy(),
+            realtime_notifier=RecordingRealtimeNotifier(),
+        )
+        first_read = await mark_read.execute(
+            MarkConversationReadCommand(bob.id, conversation.id, 2)
+        )
+        duplicate_read = await mark_read.execute(
+            MarkConversationReadCommand(bob.id, conversation.id, 2)
+        )
+        lower_read, highest_read = await asyncio.gather(
+            mark_read.execute(MarkConversationReadCommand(bob.id, conversation.id, 1)),
+            mark_read.execute(MarkConversationReadCommand(bob.id, conversation.id, 3)),
+        )
+        assert first_read.advanced is True
+        assert duplicate_read.advanced is False
+        assert lower_read.advanced is False
+        assert highest_read.advanced is True
+        bob_after = await list_read_states.execute(ListConversationReadStatesQuery(bob.id))
+        assert bob_after[0].last_read_sequence == 3
+        assert bob_after[0].unread_count == 0
+
         async with session_factory() as session:
             stored = await session.get(MessageModel, result.message_id)
             count = await session.scalar(select(func.count(MessageModel.id)))
@@ -190,14 +232,20 @@ async def run_flow(database_url: str) -> None:
                     SyncEventModel.user_id == charlie.id
                 )
             )
+            alice_read_state = await session.get(
+                ConversationReadStateModel,
+                (alice.id, conversation.id),
+            )
         assert stored is not None
         assert stored.ciphertext == ciphertext
         assert stored.sender_user_id == alice.id
         assert stored.sender_device_id == alice_session.device_id
         assert count == 3
         assert {item.sequence for item in concurrent} == {2, 3}
-        assert alice_event_count == bob_event_count == 3
+        assert alice_event_count == bob_event_count == 8
         assert charlie_event_count == 0
+        assert alice_read_state is not None
+        assert alice_read_state.last_read_sequence == 3
     finally:
         await reset_tables(session_factory)
         await engine.dispose()

@@ -22,6 +22,25 @@
 
 ## Resolved
 
+### BUG-014 — Собственные отправленные сообщения учитывались как unread
+
+- Статус: `verified`.
+- Найдено в: `WP-024`, проверка server-derived unread semantics.
+- Severity: `medium`.
+- Условия воспроизведения: отправить сообщение через API и запросить read summary до
+  отдельного foreground mark-read от клиента.
+- Ожидаемое поведение: sender уже видел timeline при отправке, поэтому его новое
+  сообщение не увеличивает собственный unread counter.
+- Фактическое поведение: первоначальный batch count считал все message rows после
+  cursor, а send use case не продвигал cursor отправителя.
+- Причина: send и read-state были реализованы как независимые application operations
+  без server invariant «send implies read through allocated sequence».
+- Исправление: `SendOpaqueMessage` в той же transaction монотонно обновляет shared
+  sender cursor и добавляет durable `read_receipt` каждому active recipient; exact
+  retry остаётся без новых events.
+- Проверка: application и PostgreSQL integration tests подтверждают sender cursor,
+  exact retry, concurrent sequence allocation и recipient event counts.
+
 ### BUG-013 — Скрытый haptics checkbox расширял mobile settings viewport
 
 - Статус: `verified`.

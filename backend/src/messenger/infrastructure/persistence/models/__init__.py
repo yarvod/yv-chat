@@ -6,6 +6,9 @@ from messenger.infrastructure.persistence.models.conversation import (
     ConversationMemberModel,
     ConversationModel,
 )
+from messenger.infrastructure.persistence.models.conversation_read_state import (
+    ConversationReadStateModel,
+)
 from messenger.infrastructure.persistence.models.device import DeviceModel
 from messenger.infrastructure.persistence.models.message import MessageModel
 from messenger.infrastructure.persistence.models.password_reset_token import PasswordResetTokenModel
@@ -19,6 +22,7 @@ __all__ = [
     "Base",
     "ConversationMemberModel",
     "ConversationModel",
+    "ConversationReadStateModel",
     "DeviceModel",
     "MessageModel",
     "PasswordResetTokenModel",

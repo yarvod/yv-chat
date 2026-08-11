@@ -3,6 +3,9 @@
 from messenger.infrastructure.persistence.repositories.activation_tokens import (
     SqlAlchemyActivationTokenRepository,
 )
+from messenger.infrastructure.persistence.repositories.conversation_read_states import (
+    SqlAlchemyConversationReadStateRepository,
+)
 from messenger.infrastructure.persistence.repositories.conversations import (
     SqlAlchemyConversationRepository,
 )
@@ -21,6 +24,7 @@ from messenger.infrastructure.persistence.repositories.users import SqlAlchemyUs
 __all__ = [
     "SqlAlchemyActivationTokenRepository",
     "SqlAlchemyConversationRepository",
+    "SqlAlchemyConversationReadStateRepository",
     "SqlAlchemyDeviceRepository",
     "SqlAlchemyMessageRepository",
     "SqlAlchemyPasswordResetTokenRepository",

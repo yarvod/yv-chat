@@ -3,6 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MessagingGateway } from '../app/application/ports/messaging-gateway'
 import type { HapticsPort } from '../app/application/ports/haptics'
 import type { ClientIdGenerator } from '../app/application/ports/client-id-generator'
+import { ListConversationReadStates } from '../app/application/messaging/list-conversation-read-states'
+import { MarkConversationRead } from '../app/application/messaging/mark-conversation-read'
+import type { ConversationReadStateGateway } from '../app/application/ports/conversation-read-state-gateway'
+import type { PageVisibility } from '../app/application/ports/page-visibility'
 import { syntheticMessageCodec } from '../app/infrastructure/crypto/synthetic-message-codec'
 import { useMessenger } from '../app/presentation/composables/useMessenger'
 
@@ -31,8 +35,29 @@ const message = {
 let gateway: MessagingGateway
 const haptics: HapticsPort = { isEnabled: () => true, setEnabled: vi.fn(), perform: vi.fn() }
 const clientIdGenerator: ClientIdGenerator = { create: () => 'client-generated-id' }
+let visible = true
+const pageVisibility: PageVisibility = {
+  isVisible: () => visible,
+  subscribe: () => () => undefined,
+}
+let readStateGateway: ConversationReadStateGateway
 
 beforeEach(() => {
+  visible = true
+  readStateGateway = {
+    list: vi.fn().mockResolvedValue([{
+      conversationId: 'conversation-1',
+      lastReadSequence: 0,
+      latestSequence: 0,
+      unreadCount: 0,
+    }]),
+    mark: vi.fn().mockResolvedValue({
+      conversationId: 'conversation-1',
+      lastReadSequence: 1,
+      updatedAt: '2026-08-11T12:00:02Z',
+      advanced: true,
+    }),
+  }
   gateway = {
     listDirectory: vi.fn().mockResolvedValue([]),
     listConversations: vi.fn().mockResolvedValue([conversation]),
@@ -45,7 +70,8 @@ beforeEach(() => {
       .mockResolvedValueOnce({
         events: [{
           eventId: 'event-5', cursor: 5, eventType: 'message_created',
-          conversationId: 'conversation-1', messageId: 'message-1', createdAt: '2026-08-11T12:00:01Z',
+          conversationId: 'conversation-1', messageId: 'message-1',
+          actorUserId: null, readSequence: null, createdAt: '2026-08-11T12:00:01Z',
         }],
         nextCursor: 5, streamCursor: 5, hasMore: false, resetRequired: false,
       }),
@@ -59,6 +85,9 @@ describe('messenger orchestration', () => {
       codec: syntheticMessageCodec,
       haptics,
       clientIdGenerator,
+      listConversationReadStates: new ListConversationReadStates(readStateGateway),
+      markConversationRead: new MarkConversationRead(readStateGateway),
+      pageVisibility,
     })
 
     await messenger.load()
@@ -70,5 +99,29 @@ describe('messenger orchestration', () => {
     expect(gateway.listMessages).toHaveBeenLastCalledWith('conversation-1', 0)
     expect(messenger.state.messages).toEqual([message])
     expect(messenger.state.syncCursor).toBe(5)
+    expect(readStateGateway.mark).toHaveBeenCalledWith('conversation-1', 1)
+  })
+
+  it('does not mark a background timeline until the page becomes visible', async () => {
+    visible = false
+    vi.mocked(gateway.listMessages).mockReset().mockResolvedValue([message])
+    vi.mocked(gateway.listSync).mockReset().mockResolvedValue({
+      events: [], nextCursor: 0, streamCursor: 0, hasMore: false, resetRequired: false,
+    })
+    const messenger = useMessenger('alice-id', vi.fn(), {
+      gateway,
+      codec: syntheticMessageCodec,
+      haptics,
+      clientIdGenerator,
+      listConversationReadStates: new ListConversationReadStates(readStateGateway),
+      markConversationRead: new MarkConversationRead(readStateGateway),
+      pageVisibility,
+    })
+
+    await messenger.load()
+    expect(readStateGateway.mark).not.toHaveBeenCalled()
+    visible = true
+    await messenger.markActiveRead()
+    expect(readStateGateway.mark).toHaveBeenCalledWith('conversation-1', 1)
   })
 })

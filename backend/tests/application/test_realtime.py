@@ -28,6 +28,8 @@ def notification(user_id: UUID) -> RealtimeNotification:
         event_type=RealtimeEventType.NEW_MESSAGE,
         conversation_id=uuid4(),
         message_id=uuid4(),
+        actor_user_id=None,
+        read_sequence=None,
     )
 
 

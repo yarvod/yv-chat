@@ -19,6 +19,8 @@ import { SecurityReset } from '../application/accounts/security-reset'
 import { SetManagedUserActive } from '../application/accounts/set-user-active'
 import { UpdateProfile } from '../application/accounts/update-profile'
 import { RealtimeSyncService } from '../application/messaging/realtime-sync-service'
+import { ListConversationReadStates } from '../application/messaging/list-conversation-read-states'
+import { MarkConversationRead } from '../application/messaging/mark-conversation-read'
 import { LoadCurrentAccount } from '../application/auth/load-current-account'
 import { Login } from '../application/auth/login'
 import { Logout } from '../application/auth/logout'
@@ -27,6 +29,7 @@ import { BrowserClientIdGenerator } from '../infrastructure/browser/client-id-ge
 import { BrowserDeviceInfo } from '../infrastructure/browser/device-info'
 import { BrowserHaptics } from '../infrastructure/browser/haptics'
 import { BrowserLocation } from '../infrastructure/browser/browser-location'
+import { BrowserPageVisibility } from '../infrastructure/browser/page-visibility'
 import { BrowserScheduler } from '../infrastructure/browser/scheduler'
 import { BrowserThemePreferences } from '../infrastructure/browser/theme-preferences'
 import { syntheticMessageCodec } from '../infrastructure/crypto/synthetic-message-codec'
@@ -35,6 +38,7 @@ import { HttpAccountSecurityGateway } from '../infrastructure/http/account-secur
 import { ApiClient } from '../infrastructure/http/api-client'
 import { HttpAuthGateway } from '../infrastructure/http/auth-gateway'
 import { HttpMessagingGateway } from '../infrastructure/http/messaging-gateway'
+import { HttpConversationReadStateGateway } from '../infrastructure/http/conversation-read-state-gateway'
 import { BrowserRealtimeGateway } from '../infrastructure/realtime/browser-realtime-gateway'
 
 export default defineNuxtPlugin(() => {
@@ -43,12 +47,14 @@ export default defineNuxtPlugin(() => {
   const adminAccountsGateway = new HttpAdminAccountsGateway(apiClient)
   const accountSecurityGateway = new HttpAccountSecurityGateway(apiClient)
   const messagingGateway = new HttpMessagingGateway(apiClient)
+  const readStateGateway = new HttpConversationReadStateGateway(apiClient)
   const deviceInfo = new BrowserDeviceInfo()
   const haptics = new BrowserHaptics()
   const realtimeGateway = new BrowserRealtimeGateway()
   const scheduler = new BrowserScheduler()
   const themePreferences = new BrowserThemePreferences()
   const browserLocation = new BrowserLocation()
+  const pageVisibility = new BrowserPageVisibility()
   const themePreference = themePreferences.load()
   themePreferences.apply(themePreference)
 
@@ -56,6 +62,9 @@ export default defineNuxtPlugin(() => {
     provide: {
       frontend: {
         messagingGateway,
+        listConversationReadStates: new ListConversationReadStates(readStateGateway),
+        markConversationRead: new MarkConversationRead(readStateGateway),
+        pageVisibility,
         messageCodec: syntheticMessageCodec,
         deviceInfo,
         haptics,

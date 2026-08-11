@@ -88,8 +88,11 @@ async def test_send_opaque_message_and_reject_invalid_or_non_member_envelopes() 
         assert [event["event_type"] for event in sync.json()["events"]] == [
             "conversation_updated",
             "message_created",
+            "read_receipt",
         ]
-        assert sync.json()["events"][-1]["message_id"] == sent.json()["message_id"]
+        assert sync.json()["events"][-2]["message_id"] == sent.json()["message_id"]
+        assert sync.json()["events"][-1]["actor_user_id"] == str(alice.id)
+        assert sync.json()["events"][-1]["read_sequence"] == 1
 
         page = await alice_client.get(
             f"/api/v1/conversations/{conversation_id}/messages?after_sequence=0&limit=10"

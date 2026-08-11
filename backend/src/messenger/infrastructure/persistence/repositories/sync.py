@@ -43,6 +43,8 @@ class SqlAlchemySyncRepository:
                     event_type=event.event_type.value,
                     conversation_id=event.conversation_id,
                     message_id=event.message_id,
+                    actor_user_id=event.actor_user_id,
+                    read_sequence=event.read_sequence,
                     created_at=event.created_at,
                     expires_at=event.expires_at,
                 )
@@ -91,6 +93,8 @@ def map_sync_event(model: SyncEventModel) -> SyncEvent:
         event_type=SyncEventType(model.event_type),
         conversation_id=model.conversation_id,
         message_id=model.message_id,
+        actor_user_id=model.actor_user_id,
+        read_sequence=model.read_sequence,
         created_at=model.created_at,
         expires_at=model.expires_at,
     )
