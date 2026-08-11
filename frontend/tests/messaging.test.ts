@@ -1,7 +1,13 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { ApplicationError } from '../app/application/errors'
-import { syntheticMessageCodec } from '../app/infrastructure/crypto/synthetic-message-codec'
+import {
+  MessageProtectionError,
+  ProtocolMessageProtection,
+} from '../app/application/messaging/message-protection'
+import { prepareTimelineMessage } from '../app/application/messaging/timeline-message'
+import { SyntheticMessageProtocol } from '../app/infrastructure/crypto/synthetic-message-protocol'
+import { UnavailableMlsMessageProtocol } from '../app/infrastructure/crypto/unavailable-mls-message-protocol'
 import {
   parseConversation,
   parseOpaqueMessage,
@@ -61,10 +67,83 @@ describe('messaging boundaries', () => {
     })).toThrow(ApplicationError)
   })
 
-  it('labels the temporary codec as insecure and round-trips unicode', () => {
+  it('labels the temporary protocol as insecure and round-trips unicode asynchronously', async () => {
     const plaintext = 'Привет 👋'
-    expect(syntheticMessageCodec.secure).toBe(false)
-    expect(syntheticMessageCodec.decode(syntheticMessageCodec.encode(plaintext))).toBe(plaintext)
+    const protection = new ProtocolMessageProtection(
+      [new SyntheticMessageProtocol(), new UnavailableMlsMessageProtocol()],
+      1,
+    )
+    const encrypted = await protection.protectText({
+      conversationId: 'conversation-1',
+      clientMessageId: 'client-1',
+      plaintext,
+    })
+    expect(protection.secure).toBe(false)
+    expect(encrypted.protocolVersion).toBe(1)
+    await expect(protection.unprotectText(1, {
+      conversationId: 'conversation-1',
+      clientMessageId: 'client-1',
+      ciphertextBase64: encrypted.ciphertextBase64,
+    })).resolves.toEqual({ plaintext, secure: false })
+  })
+
+  it('fails closed for MLS, unknown versions and corrupt v1 without synthetic fallback', async () => {
+    const synthetic = new SyntheticMessageProtocol()
+    const decode = vi.spyOn(synthetic, 'unprotectText')
+    const protection = new ProtocolMessageProtection(
+      [synthetic, new UnavailableMlsMessageProtocol()],
+      1,
+    )
+    const input = {
+      conversationId: 'conversation-1',
+      clientMessageId: 'client-1',
+      ciphertextBase64: 'not-used',
+    }
+
+    await expect(protection.unprotectText(2, input)).rejects.toMatchObject({
+      kind: 'provider-unavailable',
+    })
+    expect(decode).not.toHaveBeenCalled()
+    await expect(protection.unprotectText(99, input)).rejects.toBeInstanceOf(
+      MessageProtectionError,
+    )
+    expect(decode).not.toHaveBeenCalled()
+    await expect(protection.unprotectText(1, {
+      ...input,
+      ciphertextBase64: '%%%invalid-base64%%%',
+    })).rejects.toMatchObject({ kind: 'corrupt-envelope' })
+    await expect(protection.unprotectText(1, {
+      ...input,
+      ciphertextBase64: 'aGVs bG8=',
+    })).rejects.toMatchObject({ kind: 'corrupt-envelope' })
+  })
+
+  it('rejects ambiguous adapter registration and never decrypts tombstones', async () => {
+    expect(() => new ProtocolMessageProtection(
+      [new SyntheticMessageProtocol(), new SyntheticMessageProtocol()],
+      1,
+    )).toThrow('duplicate message protocol adapter')
+
+    const synthetic = new SyntheticMessageProtocol()
+    const decode = vi.spyOn(synthetic, 'unprotectText')
+    const protection = new ProtocolMessageProtection([synthetic], 1)
+    const timeline = await prepareTimelineMessage({
+      messageId: 'message-deleted',
+      clientMessageId: 'client-deleted',
+      conversationId: 'conversation-1',
+      senderUserId: 'alice-id',
+      senderDeviceId: 'device-1',
+      protocolVersion: 1,
+      sequence: 3,
+      createdAt: '2026-08-11T12:00:03Z',
+      ciphertextBase64: null,
+      expiresAt: '2026-09-10T12:00:03Z',
+      deletionReason: 'manual',
+      deletedAt: '2026-08-11T12:01:00Z',
+    }, protection)
+
+    expect(timeline.contentState).toBe('deleted')
+    expect(decode).not.toHaveBeenCalled()
   })
 
   it('parses active envelopes and tombstones as disjoint shapes', () => {

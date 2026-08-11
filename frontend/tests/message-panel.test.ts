@@ -2,7 +2,6 @@ import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 
 import MessagePanel from '../app/components/chat/MessagePanel.vue'
-import { syntheticMessageCodec } from '../app/infrastructure/crypto/synthetic-message-codec'
 
 const conversation = {
   conversationId: 'conversation-1',
@@ -41,7 +40,8 @@ describe('message panel', () => {
         messages: [],
         actorUserId: 'alice-id',
         sending: false,
-        codec: syntheticMessageCodec,
+        protectionSecure: false,
+        protectionLabel: 'Тестовый режим без E2EE',
         sendMessage,
         deleteMessage: vi.fn(),
         deletingMessageId: null,
@@ -52,7 +52,8 @@ describe('message panel', () => {
       },
     })
 
-    expect(wrapper.text()).toContain('не защищены E2EE')
+    expect(wrapper.text()).toContain('Тестовый режим без E2EE')
+    expect(wrapper.text()).toContain('Не отправляйте чувствительные данные')
     await wrapper.get('textarea').setValue('  hello  ')
     await wrapper.get('form').trigger('submit')
 
@@ -69,7 +70,8 @@ describe('message panel', () => {
         messages: [],
         actorUserId: 'alice-id',
         sending: false,
-        codec: syntheticMessageCodec,
+        protectionSecure: false,
+        protectionLabel: 'Тестовый режим без E2EE',
         sendMessage: vi.fn(),
         deleteMessage: vi.fn(),
         deletingMessageId: null,
@@ -97,6 +99,9 @@ describe('message panel', () => {
       expiresAt: '2026-09-10T12:00:01Z',
       deletionReason: null,
       deletedAt: null,
+      contentState: 'available' as const,
+      displayBody: 'hello',
+      contentSecure: false,
     }
     const wrapper = mount(MessagePanel, {
       props: {
@@ -104,7 +109,8 @@ describe('message panel', () => {
         messages: [ownMessage],
         actorUserId: 'alice-id',
         sending: false,
-        codec: syntheticMessageCodec,
+        protectionSecure: false,
+        protectionLabel: 'Тестовый режим без E2EE',
         sendMessage: vi.fn(),
         deleteMessage: vi.fn(),
         deletingMessageId: null,
@@ -148,10 +154,14 @@ describe('message panel', () => {
           ciphertextBase64: 'aGVsbG8=',
           deletionReason: null,
           deletedAt: null,
+          contentState: 'available' as const,
+          displayBody: 'hello',
+          contentSecure: false,
         }],
         actorUserId: 'alice-id',
         sending: false,
-        codec: syntheticMessageCodec,
+        protectionSecure: false,
+        protectionLabel: 'Тестовый режим без E2EE',
         sendMessage: vi.fn(),
         deleteMessage,
         deletingMessageId: null,
@@ -174,9 +184,51 @@ describe('message panel', () => {
         ciphertextBase64: null,
         deletionReason: 'manual',
         deletedAt: '2026-08-11T12:01:00Z',
+        contentState: 'deleted',
+        displayBody: null,
+        contentSecure: false,
       }],
     })
     expect(wrapper.text()).toContain('Сообщение удалено для всех')
     expect(wrapper.find('.message-actions').exists()).toBe(false)
+  })
+
+  it('renders a safe unavailable state without exposing ciphertext', () => {
+    const wrapper = mount(MessagePanel, {
+      props: {
+        conversation,
+        messages: [{
+          messageId: 'message-mls',
+          clientMessageId: 'client-mls',
+          conversationId: 'conversation-1',
+          senderUserId: 'bob-id',
+          senderDeviceId: 'bob-device',
+          protocolVersion: 2,
+          sequence: 2,
+          createdAt: '2026-08-11T12:00:02Z',
+          expiresAt: '2026-09-10T12:00:02Z',
+          ciphertextBase64: 'c2Vuc2l0aXZlLW9wYXF1ZS1ieXRlcw==',
+          deletionReason: null,
+          deletedAt: null,
+          contentState: 'unavailable',
+          displayBody: 'Защищённое сообщение недоступно на этом устройстве.',
+          contentSecure: false,
+        }],
+        actorUserId: 'alice-id',
+        sending: false,
+        protectionSecure: false,
+        protectionLabel: 'Тестовый режим без E2EE',
+        sendMessage: vi.fn(),
+        deleteMessage: vi.fn(),
+        deletingMessageId: null,
+        typingActorIds: [],
+        onlineActorIds: [],
+        deliveryStates: [],
+        setTyping: vi.fn(),
+      },
+    })
+
+    expect(wrapper.text()).toContain('Защищённое сообщение недоступно')
+    expect(wrapper.text()).not.toContain('c2Vuc2l0aXZlLW9wYXF1ZS1ieXRlcw')
   })
 })

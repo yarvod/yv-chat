@@ -18,15 +18,16 @@ import { RevokeOtherSessions } from '../application/accounts/revoke-other-sessio
 import { SecurityReset } from '../application/accounts/security-reset'
 import { SetManagedUserActive } from '../application/accounts/set-user-active'
 import { UpdateProfile } from '../application/accounts/update-profile'
-import { RealtimeSyncService } from '../application/messaging/realtime-sync-service'
 import { DeleteMessageForEveryone } from '../application/messaging/delete-message-for-everyone'
-import { TypingIndicatorService } from '../application/messaging/typing-indicator-service'
+import { ProtocolMessageProtection } from '../application/messaging/message-protection'
 import { PresenceIndicatorService } from '../application/messaging/presence-indicator-service'
-import type { TypingTransport } from '../application/ports/typing-transport'
+import { RealtimeSyncService } from '../application/messaging/realtime-sync-service'
 import { ListConversationReadStates } from '../application/messaging/list-conversation-read-states'
 import { ListParticipantDeliveryStates } from '../application/messaging/list-participant-delivery-states'
 import { MarkConversationDelivered } from '../application/messaging/mark-conversation-delivered'
 import { MarkConversationRead } from '../application/messaging/mark-conversation-read'
+import { TypingIndicatorService } from '../application/messaging/typing-indicator-service'
+import type { TypingTransport } from '../application/ports/typing-transport'
 import { LoadCurrentAccount } from '../application/auth/load-current-account'
 import { Login } from '../application/auth/login'
 import { Logout } from '../application/auth/logout'
@@ -39,7 +40,8 @@ import { BrowserLocation } from '../infrastructure/browser/browser-location'
 import { BrowserPageVisibility } from '../infrastructure/browser/page-visibility'
 import { BrowserScheduler } from '../infrastructure/browser/scheduler'
 import { BrowserThemePreferences } from '../infrastructure/browser/theme-preferences'
-import { syntheticMessageCodec } from '../infrastructure/crypto/synthetic-message-codec'
+import { SyntheticMessageProtocol } from '../infrastructure/crypto/synthetic-message-protocol'
+import { UnavailableMlsMessageProtocol } from '../infrastructure/crypto/unavailable-mls-message-protocol'
 import { HttpAdminAccountsGateway } from '../infrastructure/http/admin-accounts-gateway'
 import { HttpAccountSecurityGateway } from '../infrastructure/http/account-security-gateway'
 import { ApiClient } from '../infrastructure/http/api-client'
@@ -66,6 +68,10 @@ export default defineNuxtPlugin(() => {
   const browserLocation = new BrowserLocation()
   const pageVisibility = new BrowserPageVisibility()
   const themePreference = themePreferences.load()
+  const messageProtection = new ProtocolMessageProtection(
+    [new SyntheticMessageProtocol(), new UnavailableMlsMessageProtocol()],
+    1,
+  )
   themePreferences.apply(themePreference)
 
   return {
@@ -78,7 +84,7 @@ export default defineNuxtPlugin(() => {
         listParticipantDeliveryStates: new ListParticipantDeliveryStates(deliveryStateGateway),
         markConversationDelivered: new MarkConversationDelivered(deliveryStateGateway),
         pageVisibility,
-        messageCodec: syntheticMessageCodec,
+        messageProtection,
         deviceInfo,
         haptics,
         themePreferences,

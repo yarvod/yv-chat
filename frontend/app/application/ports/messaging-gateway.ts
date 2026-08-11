@@ -12,7 +12,12 @@ export interface MessagingGateway {
   createDirect(otherUserId: string): Promise<Conversation>
   createGroup(title: string, memberUserIds: string[]): Promise<Conversation>
   listMessages(conversationId: string, afterSequence?: number): Promise<OpaqueMessage[]>
-  sendMessage(conversationId: string, clientMessageId: string, ciphertextBase64: string): Promise<void>
+  sendMessage(
+    conversationId: string,
+    clientMessageId: string,
+    protocolVersion: number,
+    ciphertextBase64: string,
+  ): Promise<void>
   deleteMessage(conversationId: string, messageId: string): Promise<DeleteMessageResult>
   listSync(after: number): Promise<SyncPage>
 }

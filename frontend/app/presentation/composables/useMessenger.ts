@@ -7,7 +7,11 @@ import type { DeleteMessageForEveryone } from '../../application/messaging/delet
 import type { ListParticipantDeliveryStates } from '../../application/messaging/list-participant-delivery-states'
 import type { MarkConversationDelivered } from '../../application/messaging/mark-conversation-delivered'
 import type { MarkConversationRead } from '../../application/messaging/mark-conversation-read'
-import type { MessageCodec } from '../../application/ports/message-codec'
+import type { ProtocolMessageProtection } from '../../application/messaging/message-protection'
+import {
+  prepareTimelineMessage,
+  type TimelineMessage,
+} from '../../application/messaging/timeline-message'
 import type { HapticsPort } from '../../application/ports/haptics'
 import type { MessagingGateway } from '../../application/ports/messaging-gateway'
 import type { PageVisibility } from '../../application/ports/page-visibility'
@@ -15,7 +19,6 @@ import type {
   Conversation,
   ConversationReadState,
   DirectoryUser,
-  OpaqueMessage,
   ParticipantDeliveryState,
 } from '../../domain/messaging/models'
 
@@ -26,7 +29,7 @@ interface MessengerState {
   conversations: Conversation[]
   directory: DirectoryUser[]
   activeConversationId: string | null
-  messages: OpaqueMessage[]
+  messages: TimelineMessage[]
   readStates: ConversationReadState[]
   deliveryStates: ParticipantDeliveryState[]
   syncCursor: number
@@ -36,13 +39,13 @@ interface MessengerState {
   message: string | null
 }
 
-function sortMessages(messages: OpaqueMessage[]): OpaqueMessage[] {
+function sortMessages(messages: TimelineMessage[]): TimelineMessage[] {
   return [...messages].sort((left, right) => left.sequence - right.sequence)
 }
 
 export interface MessengerDependencies {
   gateway: MessagingGateway
-  codec: MessageCodec
+  messageProtection: ProtocolMessageProtection
   haptics: HapticsPort
   clientIdGenerator: ClientIdGenerator
   listConversationReadStates: ListConversationReadStates
@@ -62,7 +65,7 @@ export function useMessenger(
     const { $frontend } = useNuxtApp()
     return {
       gateway: $frontend.messagingGateway,
-      codec: $frontend.messageCodec,
+      messageProtection: $frontend.messageProtection,
       haptics: $frontend.haptics,
       clientIdGenerator: $frontend.clientIdGenerator,
       listConversationReadStates: $frontend.listConversationReadStates,
@@ -75,7 +78,7 @@ export function useMessenger(
   })()
   const {
     gateway,
-    codec,
+    messageProtection,
     haptics,
     clientIdGenerator,
     listConversationReadStates,
@@ -190,9 +193,12 @@ export function useMessenger(
 
   async function loadMessages(conversationId: string, afterSequence = 0): Promise<void> {
     const incoming = await gateway.listMessages(conversationId, afterSequence)
+    const prepared = await Promise.all(
+      incoming.map(message => prepareTimelineMessage(message, messageProtection)),
+    )
     if (state.activeConversationId !== conversationId) return
     const known = new Map(state.messages.map(item => [item.messageId, item]))
-    for (const item of incoming) known.set(item.messageId, item)
+    for (const item of prepared) known.set(item.messageId, item)
     state.messages = sortMessages([...known.values()])
     await advanceDelivery(conversationId)
     await advanceActiveReadIfVisible()
@@ -285,10 +291,16 @@ export function useMessenger(
     state.message = null
     try {
       const clientMessageId = clientIdGenerator.create()
+      const protectedMessage = await messageProtection.protectText({
+        conversationId,
+        clientMessageId,
+        plaintext: normalized,
+      })
       await gateway.sendMessage(
         conversationId,
         clientMessageId,
-        codec.encode(normalized),
+        protectedMessage.protocolVersion,
+        protectedMessage.ciphertextBase64,
       )
       const lastSequence = state.messages.at(-1)?.sequence ?? 0
       await loadMessages(conversationId, lastSequence)
@@ -317,6 +329,9 @@ export function useMessenger(
               ciphertextBase64: null,
               deletionReason: result.deletionReason,
               deletedAt: result.deletedAt,
+              contentState: 'deleted' as const,
+              displayBody: null,
+              contentSecure: false,
             }
           : message
       ))
@@ -403,7 +418,10 @@ export function useMessenger(
     state: readonly(state),
     activeConversation,
     actorUserId,
-    codec,
+    protection: {
+      secure: messageProtection.secure,
+      label: messageProtection.label,
+    },
     load,
     poll,
     selectConversation,

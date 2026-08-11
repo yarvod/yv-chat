@@ -1,19 +1,19 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 
-import type { MessageCodec } from '../../application/ports/message-codec'
+import type { TimelineMessage } from '../../application/messaging/timeline-message'
 import type {
   Conversation,
-  OpaqueMessage,
   ParticipantDeliveryState,
 } from '../../domain/messaging/models'
 
 const props = defineProps<{
   conversation: Conversation | null
-  messages: readonly OpaqueMessage[]
+  messages: readonly TimelineMessage[]
   actorUserId: string
   sending: boolean
-  codec: MessageCodec
+  protectionSecure: boolean
+  protectionLabel: string
   sendMessage: (plaintext: string) => Promise<boolean>
   deleteMessage: (messageId: string) => Promise<boolean>
   deletingMessageId: string | null
@@ -54,13 +54,13 @@ function conversationName(conversation: Conversation): string {
     ?? 'Личный диалог'
 }
 
-function senderName(message: OpaqueMessage): string {
+function senderName(message: TimelineMessage): string {
   if (message.senderUserId === props.actorUserId) return 'Вы'
   return props.conversation?.members.find(member => member.userId === message.senderUserId)?.displayName
     ?? 'Участник'
 }
 
-function deliveryLabel(message: OpaqueMessage): string | null {
+function deliveryLabel(message: TimelineMessage): string | null {
   if (
     message.senderUserId !== props.actorUserId
     || message.deletedAt !== null
@@ -82,7 +82,7 @@ function deliveryLabel(message: OpaqueMessage): string | null {
   return delivered > 0 ? `Доставлено: ${delivered}/${recipients.length}` : 'Отправлено'
 }
 
-function canDelete(message: OpaqueMessage): boolean {
+function canDelete(message: TimelineMessage): boolean {
   if (message.deletedAt !== null || !props.conversation) return false
   if (message.senderUserId === props.actorUserId) return true
   if (props.conversation.conversationType !== 'group') return false
@@ -143,8 +143,8 @@ onBeforeUnmount(() => {
       <span class="connection-dot" title="Синхронизация активна" />
     </header>
 
-    <p v-if="!codec.secure" class="security-warning" role="status">
-      {{ codec.label }}. Не отправляйте чувствительные данные.
+    <p v-if="!protectionSecure" class="security-warning" role="status">
+      {{ protectionLabel }}. Не отправляйте чувствительные данные.
     </p>
 
     <div ref="timeline" class="message-timeline" aria-live="polite">
@@ -160,11 +160,14 @@ onBeforeUnmount(() => {
         :class="{ own: message.senderUserId === actorUserId }"
       >
         <strong>{{ senderName(message) }}</strong>
-        <p v-if="message.ciphertextBase64 !== null">
-          {{ codec.decode(message.ciphertextBase64) }}
+        <p v-if="message.contentState === 'available'">
+          {{ message.displayBody }}
         </p>
-        <p v-else class="message-tombstone">
+        <p v-else-if="message.contentState === 'deleted'" class="message-tombstone">
           {{ message.deletionReason === 'expired' ? 'Срок хранения сообщения истёк' : 'Сообщение удалено для всех' }}
+        </p>
+        <p v-else class="message-unavailable" role="status">
+          {{ message.displayBody }}
         </p>
         <div v-if="canDelete(message)" class="message-actions">
           <template v-if="deleteCandidateId === message.messageId">

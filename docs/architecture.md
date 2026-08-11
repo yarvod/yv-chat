@@ -314,7 +314,12 @@ durable hint или reconnect вызывает тот же cursor catch-up; по
 coalesce, но не заменяют `/sync`. `ChatWorkspace` только запускает/останавливает
 service вместе со своим lifecycle.
 
-Messaging UI разделён на typed transport parsers/services, `useMessenger` orchestration и небольшие chat components. Authenticated `GET /api/v1/users` проходит через отдельный `ListUserDirectory` use case и `UserRepository.list_active`; наружу выходят только `user_id`, `username`, `display_name`. SQLAlchemy, admin status, activation/password/session fields не пересекают boundary.
+Messaging UI разделён на typed transport parsers/services, application-level
+message protection, `useMessenger` orchestration и небольшие chat components.
+Authenticated `GET /api/v1/users` проходит через отдельный `ListUserDirectory` use
+case и `UserRepository.list_active`; наружу выходят только `user_id`, `username`,
+`display_name`. SQLAlchemy, admin status, activation/password/session fields не
+пересекают boundary.
 
 Frontend initial catch-up использует race-free порядок:
 
@@ -326,7 +331,23 @@ capture stream cursor baseline
 
 Событие, появившееся до baseline, уже покрывается последующим snapshot; событие после baseline будет применено poll. `reset_required` аналогично фиксирует server cursor до full resource reload. Timeline объединяет messages по stable ID и сортирует только по authoritative server `sequence`.
 
-До crypto ADR доступен только development/MVP synthetic codec protocol v1: UTF-8 payload кодируется base64 для opaque transport compatibility, но это **не шифрование и не E2EE**. Boundary уже имеет `MessageCodec.encode/decode`, UI показывает постоянное предупреждение, persistent plaintext отсутствует. Этот adapter удаляется при `BL-012`–`BL-014`; production secure milestone не может быть объявлен с ним.
+Frontend message protection boundary асинхронный, чтобы Rust/WASM adapter не менял
+application/UI contract. `ProtocolMessageProtection` выбирает adapter только по
+точному `protocol_version`: unknown versions запрещены, duplicate registrations
+ошибочны, а reserved MLS v2 до подключения проверенного provider завершается
+`provider-unavailable`. Silent fallback v2/unknown/corrupt envelope в v1 отсутствует.
+Transport получает outgoing version из protection result и не содержит скрытую
+константу версии.
+
+Текущий development/MVP synthetic protocol v1 кодирует UTF-8 в canonical base64
+для совместимости с opaque transport, но это **не шифрование и не E2EE**. UI
+показывает постоянное предупреждение. Adapter возвращает typed corruption error при
+malformed base64/UTF-8. Application готовит отдельный `TimelineMessage`: Vue видит
+только `available/deleted/unavailable`, bounded display text и protection metadata,
+не импортирует crypto adapter и не декодирует ciphertext. Decrypted content живёт
+только в reactive in-memory timeline; transport/domain DTO и persistence остаются
+opaque. Synthetic adapter удаляется при `BL-013`–`BL-014`; secure production
+milestone нельзя объявить, пока outgoing protocol равен v1.
 
 ## 7. Identity, devices и sessions
 
@@ -598,12 +619,20 @@ binding review. Upstream experimental WASM binding не выдаётся за pr
 До выполнения `BL-013/014` synthetic protocol v1 остаётся явно insecure и не имеет
 silent downgrade/fallback права.
 
-UI вызывает intent-level crypto adapter. Plaintext существует в RAM только пока
-нужен. Persistent local archive дополнительно шифруется device-local storage key.
-MLS/WebCrypto/IndexedDB находятся за dedicated adapter/worker boundary; worker и
-non-extractable wrapping key уменьшают accidental exposure, но не защищают от
-arbitrary same-origin XSS. Потеря всех device states не восстанавливается password
-reset: это visible identity reset и потеря недоступной server history.
+UI не вызывает concrete crypto adapter: application-facing async operations
+`protectText/unprotectText` получают intent DTO с conversation/client-message
+binding и возвращают versioned result. Exact-version router fail closed; tombstone
+обходит decrypt полностью, а unavailable/corrupt content становится безопасным
+per-message placeholder без raw bytes/error. По мере реализации boundary расширяется
+на `encryptAttachment/decryptAttachment` и MLS membership operations, сохраняя то же
+направление зависимостей.
+
+Plaintext существует в RAM только пока нужен. Persistent local archive дополнительно
+шифруется device-local storage key. MLS/WebCrypto/IndexedDB находятся за dedicated
+adapter/worker boundary; worker и non-extractable wrapping key уменьшают accidental
+exposure, но не защищают от arbitrary same-origin XSS. Потеря всех device states не
+восстанавливается password reset: это visible identity reset и потеря недоступной
+server history.
 
 ## 11. Attachments и media storage
 

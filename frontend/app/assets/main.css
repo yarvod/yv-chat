@@ -216,6 +216,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .message-bubble p { margin: 0; overflow-wrap: anywhere; line-height: 1.47; white-space: pre-wrap; }
 .message-bubble small { display: block; margin-top: 5px; color: var(--muted); text-align: right; font-size: .67rem; }
 .message-tombstone { color: var(--muted); font-style: italic; }
+.message-unavailable { color: var(--danger); font-style: italic; }
 .message-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; color: var(--muted); font-size: .72rem; }
 .message-actions button { min-height: 30px; border: 1px solid var(--border); border-radius: 999px; padding: 4px 9px; background: transparent; color: inherit; cursor: pointer; }
 .message-actions button:disabled { cursor: wait; opacity: .6; }

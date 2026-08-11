@@ -11,7 +11,9 @@ import { MarkConversationDelivered } from '../app/application/messaging/mark-con
 import type { ConversationReadStateGateway } from '../app/application/ports/conversation-read-state-gateway'
 import type { ConversationDeliveryStateGateway } from '../app/application/ports/conversation-delivery-state-gateway'
 import type { PageVisibility } from '../app/application/ports/page-visibility'
-import { syntheticMessageCodec } from '../app/infrastructure/crypto/synthetic-message-codec'
+import { ProtocolMessageProtection } from '../app/application/messaging/message-protection'
+import { SyntheticMessageProtocol } from '../app/infrastructure/crypto/synthetic-message-protocol'
+import { UnavailableMlsMessageProtocol } from '../app/infrastructure/crypto/unavailable-mls-message-protocol'
 import { useMessenger } from '../app/presentation/composables/useMessenger'
 
 const conversation = {
@@ -50,6 +52,13 @@ const pageVisibility: PageVisibility = {
 let readStateGateway: ConversationReadStateGateway
 let deliveryStateGateway: ConversationDeliveryStateGateway
 
+function createMessageProtection(): ProtocolMessageProtection {
+  return new ProtocolMessageProtection(
+    [new SyntheticMessageProtocol(), new UnavailableMlsMessageProtocol()],
+    1,
+  )
+}
+
 beforeEach(() => {
   visible = true
   readStateGateway = {
@@ -80,7 +89,10 @@ beforeEach(() => {
     listConversations: vi.fn().mockResolvedValue([conversation]),
     createDirect: vi.fn(),
     createGroup: vi.fn(),
-    listMessages: vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([message]),
+    listMessages: vi.fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([message])
+      .mockResolvedValue([]),
     sendMessage: vi.fn(),
     deleteMessage: vi.fn().mockResolvedValue({
       messageId: 'message-1',
@@ -108,7 +120,7 @@ describe('messenger orchestration', () => {
   it('captures a cursor baseline before snapshot and catches up newer messages', async () => {
     const messenger = useMessenger('alice-id', vi.fn(), {
       gateway,
-      codec: syntheticMessageCodec,
+      messageProtection: createMessageProtection(),
       haptics,
       clientIdGenerator,
       listConversationReadStates: new ListConversationReadStates(readStateGateway),
@@ -126,10 +138,22 @@ describe('messenger orchestration', () => {
       .toBeLessThan(vi.mocked(gateway.listConversations).mock.invocationCallOrder[0] ?? 0)
     expect(gateway.listSync).toHaveBeenNthCalledWith(2, 4)
     expect(gateway.listMessages).toHaveBeenLastCalledWith('conversation-1', 0)
-    expect(messenger.state.messages).toEqual([message])
+    expect(messenger.state.messages).toEqual([{
+      ...message,
+      contentState: 'available',
+      displayBody: 'hello',
+      contentSecure: false,
+    }])
     expect(messenger.state.syncCursor).toBe(5)
     expect(readStateGateway.mark).toHaveBeenCalledWith('conversation-1', 1)
     expect(deliveryStateGateway.mark).toHaveBeenCalledWith('conversation-1', 1)
+    expect(await messenger.send('  hello  ')).toBe(true)
+    expect(gateway.sendMessage).toHaveBeenCalledWith(
+      'conversation-1',
+      'client-generated-id',
+      1,
+      'aGVsbG8=',
+    )
     expect(await messenger.deleteMessage('message-1')).toBe(true)
     expect(gateway.deleteMessage).toHaveBeenCalledWith('conversation-1', 'message-1')
     expect(messenger.state.messages[0]?.ciphertextBase64).toBeNull()
@@ -144,7 +168,7 @@ describe('messenger orchestration', () => {
     })
     const messenger = useMessenger('alice-id', vi.fn(), {
       gateway,
-      codec: syntheticMessageCodec,
+      messageProtection: createMessageProtection(),
       haptics,
       clientIdGenerator,
       listConversationReadStates: new ListConversationReadStates(readStateGateway),
