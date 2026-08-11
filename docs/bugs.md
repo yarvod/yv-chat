@@ -22,6 +22,61 @@
 
 ## Resolved
 
+### BUG-028 — Presence терялся при новом диалоге уже подключённых пользователей
+
+- Статус: `verified`.
+- Найдено в: multi-client production QA, `WP-039`.
+- Severity: `medium`.
+- Условия воспроизведения: Alice и Bob открывают WebSocket до существования общего
+  conversation, затем один из них создаёт direct conversation.
+- Ожидаемое поведение: оба клиента после durable conversation update видят актуальный
+  online state; одно устройство пользователя не выключает остальные.
+- Фактическое поведение: initial snapshot был пуст, а `conversation_updated` запускал
+  только cursor catch-up. Новый conversation не получал presence до reconnect; UI
+  дополнительно всегда рисовал зелёный connection dot независимо от socket state.
+- Причина: presence snapshot отправлялся только один раз после `hello`; visual
+  connection indicator не был связан с lifecycle `onOpen/onClose`.
+- Исправление: transport отправляет новый authorized snapshot после
+  `conversation_updated`, typed realtime service публикует
+  connecting/connected/reconnecting/stopped, UI отображает эти состояния.
+- Проверка: backend HTTP/WebSocket regressions покрывают creation-after-connect и две
+  сессии одного пользователя; frontend tests проверяют lifecycle и честный label.
+
+### BUG-026 — Mobile navigation следовала за высотой document
+
+- Статус: `verified`.
+- Найдено в: user mobile QA, `WP-039`.
+- Severity: `medium`.
+- Условия воспроизведения: сравнить короткую и длинную authenticated page при ширине
+  до 840 px.
+- Ожидаемое поведение: bottom navigation остаётся у нижней границы visual viewport и
+  учитывает safe area.
+- Фактическое поведение: `.mobile-tabs` имела `position: relative` и была второй grid
+  row, поэтому bar следовала за document flow и меняла положение с длиной page.
+- Причина: shell резервировал nav как content row вместо viewport UI.
+- Исправление: fixed `inset-inline/bottom` bar с общей `--mobile-tabs-height` и
+  зарезервированным content inset.
+- Проверка: Vitest фиксирует CSS contract; physical viewport `390×844` показал
+  одинаковые `top=782/bottom=844` для короткой страницы, длинной страницы и после
+  scroll на 600 px.
+
+### BUG-025 — Client VPN fake-IP обрывал TLS до origin
+
+- Статус: `verified`.
+- Найдено в: user Firefox screenshot и production diagnosis перед `WP-038`.
+- Severity: `high`.
+- Условия воспроизведения: client proxy/DNS возвращает для `chat.yoowee.ru`
+  `198.18.0.111`, но не устанавливает tunnel к реальному origin.
+- Ожидаемое поведение: client достигает public origin и завершает validated TLS.
+- Фактическое поведение: Firefox показывает `PR_END_OF_FILE_ERROR`; TLS ClientHello
+  не получает корректный ответ.
+- Причина: `198.18.0.0/15` — synthetic benchmarking/fake-IP range, а VPS origin имеет
+  другой public address; сбой происходит до host Nginx.
+- Исправление: client VPN/proxy должен корректно tunnel domain либо исключить его из
+  fake-IP DNS; certificate validation не отключается.
+- Проверка: server loopback SNI согласовал TLS 1.3 с certificate `chat.yoowee.ru`,
+  origin health ответил `200`, а server/public DNS отличался от client fake-IP.
+
 ### BUG-027 — Production container gateway нарушал общий host ingress
 
 - Статус: `verified`.

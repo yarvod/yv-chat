@@ -245,6 +245,110 @@ def test_typing_is_authorized_ephemeral_and_not_written_to_sync() -> None:
             assert forbidden.value.code == 4403
 
 
+def test_new_conversation_refreshes_presence_for_already_connected_users() -> None:
+    application, state, clock = build_test_application()
+    alice = next(user for user in state.users.values() if user.username == "alice")
+    bob = User.create(username="bob", display_name="Bob", now=clock.instant)
+    state.users[bob.id] = bob
+    state.password_hashes[bob.id] = "$argon2id$fake-hash"
+
+    with (
+        TestClient(application, base_url="https://test") as alice_client,
+        TestClient(application, base_url="https://test") as bob_client,
+    ):
+        login_as(alice_client, "alice")
+        login_as(bob_client, "bob")
+        with (
+            alice_client.websocket_connect(
+                "/api/v1/realtime",
+                headers=authenticated_headers(alice_client),
+            ) as alice_socket,
+            bob_client.websocket_connect(
+                "/api/v1/realtime",
+                headers=authenticated_headers(bob_client),
+            ) as bob_socket,
+        ):
+            assert alice_socket.receive_json() == {"type": "hello"}
+            assert bob_socket.receive_json() == {"type": "hello"}
+            csrf = alice_client.cookies["__Host-yv_csrf"]
+            created = alice_client.post(
+                "/api/v1/conversations/direct",
+                headers={"Origin": "https://test", "X-CSRF-Token": csrf},
+                json={"other_user_id": str(bob.id)},
+            )
+            assert created.status_code == 201
+            conversation_id = created.json()["conversation_id"]
+
+            for socket, online_user_id in (
+                (alice_socket, bob.id),
+                (bob_socket, alice.id),
+            ):
+                durable = socket.receive_json()
+                assert durable["type"] == "conversation_updated"
+                assert durable["conversation_id"] == conversation_id
+                presence = socket.receive_json()
+                assert presence["type"] == "presence"
+                assert presence["conversation_id"] == conversation_id
+                assert presence["actor_user_id"] == str(online_user_id)
+                assert presence["online"] is True
+
+
+def test_one_device_disconnect_does_not_mark_multi_device_user_offline() -> None:
+    application, state, clock = build_test_application()
+    alice = next(user for user in state.users.values() if user.username == "alice")
+    bob = User.create(username="bob", display_name="Bob", now=clock.instant)
+    state.users[bob.id] = bob
+    state.password_hashes[bob.id] = "$argon2id$fake-hash"
+    conversation = Conversation.create_direct(
+        created_by=alice.id,
+        other_user_id=bob.id,
+        now=clock.instant,
+    )
+    state.conversations[conversation.id] = conversation
+
+    with (
+        TestClient(application, base_url="https://test") as alice_first_client,
+        TestClient(application, base_url="https://test") as alice_second_client,
+        TestClient(application, base_url="https://test") as bob_client,
+    ):
+        login_as(alice_first_client, "alice")
+        login_as(alice_second_client, "alice")
+        login_as(bob_client, "bob")
+        with (
+            bob_client.websocket_connect(
+                "/api/v1/realtime",
+                headers=authenticated_headers(bob_client),
+            ) as bob_socket,
+            alice_first_client.websocket_connect(
+                "/api/v1/realtime",
+                headers=authenticated_headers(alice_first_client),
+            ) as alice_first_socket,
+            alice_second_client.websocket_connect(
+                "/api/v1/realtime",
+                headers=authenticated_headers(alice_second_client),
+            ) as alice_second_socket,
+        ):
+            assert bob_socket.receive_json() == {"type": "hello"}
+            assert alice_first_socket.receive_json() == {"type": "hello"}
+            assert bob_socket.receive_json()["online"] is True
+            assert alice_first_socket.receive_json()["actor_user_id"] == str(bob.id)
+            assert alice_second_socket.receive_json() == {"type": "hello"}
+            assert alice_second_socket.receive_json()["actor_user_id"] == str(bob.id)
+
+            alice_first_socket.close()
+            for active in (True, False):
+                alice_second_socket.send_json(
+                    {
+                        "type": "typing",
+                        "conversation_id": str(conversation.id),
+                        "active": active,
+                    }
+                )
+                next_frame = bob_socket.receive_json()
+                assert next_frame["type"] == "typing"
+                assert next_frame["active"] is active
+
+
 def test_typing_frame_rejects_client_claimed_actor_or_expiry() -> None:
     application, _, _ = build_test_application()
     with TestClient(application, base_url="https://test") as client:

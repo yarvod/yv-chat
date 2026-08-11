@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 
 import type { TimelineMessage } from '../../application/messaging/timeline-message'
+import type { RealtimeConnectionState } from '../../application/messaging/realtime-sync-service'
 import type {
   Conversation,
   ParticipantDeliveryState,
@@ -20,6 +21,7 @@ const props = defineProps<{
   typingActorIds: readonly string[]
   onlineActorIds: readonly string[]
   deliveryStates: readonly ParticipantDeliveryState[]
+  connectionState: RealtimeConnectionState
   setTyping: (conversationId: string, active: boolean) => void
 }>()
 const emit = defineEmits<{ back: [] }>()
@@ -47,6 +49,13 @@ const presenceLabel = computed(() => {
     ? `${props.onlineActorIds.length} в сети`
     : `${props.conversation.members.length} участников`
 })
+
+const connectionLabel = computed(() => ({
+  connecting: 'Подключаем синхронизацию',
+  connected: 'Синхронизация активна',
+  reconnecting: 'Переподключаем синхронизацию',
+  stopped: 'Синхронизация остановлена',
+})[props.connectionState])
 
 function conversationName(conversation: Conversation): string {
   if (conversation.conversationType === 'group') return conversation.title ?? 'Группа'
@@ -140,7 +149,12 @@ onBeforeUnmount(() => {
         </p>
         <p v-else>{{ presenceLabel }}</p>
       </div>
-      <span class="connection-dot" title="Синхронизация активна" />
+      <span
+        class="connection-dot"
+        :class="`connection-dot--${connectionState}`"
+        :title="connectionLabel"
+        :aria-label="connectionLabel"
+      />
     </header>
 
     <p v-if="!protectionSecure" class="security-warning" role="status">

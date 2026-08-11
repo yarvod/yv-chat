@@ -4,52 +4,47 @@
 завершённая работа фиксируется отдельным коммитом, а новый пункт переносится
 сюда из `backlog.md`.
 
-## WP-038 — Single host-Nginx production ingress
+## WP-039 — Mobile shell and multi-client realtime correctness
 
 Статус: **completed**
-Bug: `BUG-027`
-Цель: production использует единственный уже установленный host Nginx + system
-Certbot. Контейнерный Nginx остаётся только в local integrated Compose; production
-host напрямую проксирует loopback-only frontend/API ports.
+Bugs: `BUG-025`, `BUG-026`, `BUG-028`
+Цель: mobile PWA держит navigation у visual viewport, UI честно показывает состояние
+WebSocket, а уже подключённые пользователи получают корректный presence при создании
+нового диалога и при нескольких устройствах одного аккаунта.
 
-### Security and availability invariants
+### Инварианты
 
-1. Только host Nginx слушает public `80/443`; yv-chat API/frontend публикуются строго
-   на `127.0.0.1`, PostgreSQL/cleanup наружу не публикуются.
-2. `/api/` и `/api/v1/realtime` идут напрямую в API; `/` — во frontend. WebSocket
-   upgrade, original Host, scheme и trusted `X-Forwarded-For` chain сохраняются.
-3. API доверяет только фактическому Docker bridge peer host-proxy, проверенному на
-   production после rollout; arbitrary client XFF не становится authoritative.
-4. Production Compose не содержит gateway service/image. Project-owned non-internal
-   ingress network нужна только для Docker loopback port publishing. Local
-   `compose.yml` сохраняет Nginx для integrated development smoke.
-5. Deploy не выполняет `down`, `--remove-orphans` или prune; старый gateway удаляется
-   только explicit scoped command после успешной прямой проверки обоих upstreams.
-6. Host vhost меняется через temp file + `nginx -t` + atomic install/reload с backup
-   rollback. Certbot certificate paths не меняются.
-7. `infra-*` container IDs/start times и их host vhost остаются неизменны. Устаревший
-   duplicate `sites-enabled/yoowee.ru` отключается только при сохранении рабочего
-   `/etc/nginx/conf.d/esp.conf` route.
-8. Rollback возвращает previous chat vhost и production Compose gateway без изменения
-   database/media volumes.
+1. Mobile tabs имеют fixed viewport position, учитывают safe-area и не перекрывают
+   scrollable content; desktop rail/layout не меняются.
+2. Зелёный connection indicator означает только фактический WebSocket `open`, а не
+   сам факт отображения страницы. Connecting/reconnecting/stopped различаются.
+3. WebSocket остаётся wake-up/ephemeral каналом; durable cursor sync сохраняет роль
+   источника истины и запускается при `hello`/durable hint/reconnect.
+4. Новый conversation, созданный после подключения обоих пользователей, инициирует
+   новый authorized presence snapshot без раскрытия посторонних user IDs.
+5. Disconnect одной сессии не публикует offline, пока у пользователя остаётся другая
+   активная WebSocket subscription.
+6. Origin/cookie authentication, heartbeat/revalidation и typing authorization не
+   ослабляются; session credential не появляется в URL, JS state или логах.
+7. TLS troubleshooting отличает origin failure от client VPN fake-IP и никогда не
+   предлагает отключать certificate validation.
 
 ### План
 
-- [x] Проверить host listeners, оба домена, container baseline и duplicate vhost.
-- [x] Отключить только устаревший duplicate `yoowee.ru` symlink с rollback checks.
-- [x] Перевести production Compose на loopback API/frontend ports без gateway.
-- [x] Обновить host HTTPS/HTTP vhost, deploy script/workflow contracts и runbook.
-- [x] Выполнить local config/tests и server preflight на свободные ports.
-- [x] Scoped production rollout: containers → trusted peer → host vhost → remove gateway.
-- [x] Проверить parallel clients/WebSocket routing, TLS, root/chat и infra invariants.
-- [x] Full CI и docs/bugs sync; отдельный commit/push выполняются после diff review.
+- [x] Воспроизвести document-flow mobile navigation и восстановить fixed/safe-area CSS.
+- [x] Передать typed WebSocket connection state из application service в UI.
+- [x] После `conversation_updated` отправлять новый authorized online snapshot.
+- [x] Добавить regressions для new-conversation race и multi-device disconnect.
+- [x] Добавить frontend tests для connection state и mobile CSS contract.
+- [x] Выполнить physical short/long mobile viewport smoke.
+- [x] Обновить bugs/deployment/architecture и выполнить полный CI; commit/push —
+  финальный шаг focused change.
 
 ### Definition of Done
 
-- `docker compose -f compose.prod.yml config` не содержит production gateway;
-- host `ss` показывает единственный Nginx owner public 80/443;
-- chat frontend/API/WebSocket работают через разные loopback upstreams;
-- API видит и доверяет только проверенный bridge peer, spoofed XFF tests остаются green;
-- `yoowee.ru` и `chat.yoowee.ru` доступны, duplicate warning исчез;
-- все pre-existing `infra-*` containers имеют прежние IDs и остаются `Up`;
-- CI/deploy checks и live acceptance зелёные.
+- короткая и длинная mobile page держат tabs на одинаковом `bottom: 0`;
+- content имеет отдельный inset высотой tabs + safe-area;
+- UI не показывает зелёный realtime dot до `onopen` и после disconnect;
+- два already-online пользователя видят presence после создания direct conversation;
+- закрытие одной из двух сессий одного пользователя не создаёт ложный offline event;
+- backend/frontend relevant tests, typecheck/lint/build и full CI зелёные.

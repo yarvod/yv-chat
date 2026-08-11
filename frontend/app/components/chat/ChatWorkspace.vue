@@ -5,6 +5,7 @@ import { useMessenger } from '../../composables/useMessenger'
 import type { CurrentAccount } from '../../domain/accounts/account'
 import type { TypingIndicator } from '../../application/messaging/typing-indicator-service'
 import type { PresenceIndicator } from '../../application/messaging/presence-indicator-service'
+import type { RealtimeConnectionState } from '../../application/messaging/realtime-sync-service'
 import ConversationSidebar from './ConversationSidebar.vue'
 import MessagePanel from './MessagePanel.vue'
 
@@ -17,6 +18,7 @@ const typing = $frontend.createTypingIndicators(realtime)
 const presence = $frontend.createPresenceIndicators()
 const typingIndicators = ref<readonly TypingIndicator[]>([])
 const presenceIndicators = ref<readonly PresenceIndicator[]>([])
+const connectionState = ref<RealtimeConnectionState>('connecting')
 const mobilePane = ref<'list' | 'conversation'>('list')
 let unsubscribeVisibility: (() => void) | null = null
 let unsubscribeTyping: (() => void) | null = null
@@ -55,6 +57,9 @@ onMounted(async () => {
     () => {
       typing.clearRemote()
       presence.clear()
+    },
+    state => {
+      connectionState.value = state
     },
   )
 })
@@ -106,6 +111,7 @@ onBeforeUnmount(() => {
         :typing-actor-ids="activeTypingActorIds"
         :online-actor-ids="activeOnlineActorIds"
         :delivery-states="messenger.state.deliveryStates"
+        :connection-state="connectionState"
         :set-typing="typing.setLocal.bind(typing)"
         @back="mobilePane = 'list'"
       />

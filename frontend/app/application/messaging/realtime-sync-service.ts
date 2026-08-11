@@ -5,6 +5,8 @@ import type { EphemeralRealtimeFrame } from '../../domain/messaging/realtime'
 const FALLBACK_SYNC_INTERVAL_MS = 30_000
 const RECONNECT_DELAYS_MS = [1_000, 2_000, 5_000, 10_000, 30_000] as const
 
+export type RealtimeConnectionState = 'connecting' | 'connected' | 'reconnecting' | 'stopped'
+
 export class RealtimeSyncService {
   private connection: RealtimeConnection | null = null
   private reconnectTask: ScheduledTask | null = null
@@ -17,6 +19,7 @@ export class RealtimeSyncService {
   private unauthorized: (() => void) | null = null
   private onEphemeral: ((frame: EphemeralRealtimeFrame) => void) | null = null
   private resetEphemeral: (() => void) | null = null
+  private onConnectionState: ((state: RealtimeConnectionState) => void) | null = null
 
   constructor(
     private readonly gateway: RealtimeGateway,
@@ -28,6 +31,7 @@ export class RealtimeSyncService {
     unauthorized: () => void,
     onEphemeral: (frame: EphemeralRealtimeFrame) => void = () => undefined,
     resetEphemeral: () => void = () => undefined,
+    onConnectionState: (state: RealtimeConnectionState) => void = () => undefined,
   ): void {
     if (this.active) return
     this.active = true
@@ -35,6 +39,8 @@ export class RealtimeSyncService {
     this.unauthorized = unauthorized
     this.onEphemeral = onEphemeral
     this.resetEphemeral = resetEphemeral
+    this.onConnectionState = onConnectionState
+    this.onConnectionState('connecting')
     this.fallbackTask = this.scheduler.repeat(
       FALLBACK_SYNC_INTERVAL_MS,
       () => void this.requestCatchUp(),
@@ -56,6 +62,8 @@ export class RealtimeSyncService {
     this.resetEphemeral?.()
     this.resetEphemeral = null
     this.catchUpQueued = false
+    this.onConnectionState?.('stopped')
+    this.onConnectionState = null
   }
 
   private connect(): void {
@@ -64,6 +72,7 @@ export class RealtimeSyncService {
       this.connection = this.gateway.connect({
         onOpen: () => {
           this.reconnectAttempt = 0
+          this.onConnectionState?.('connected')
         },
         onFrame: frame => {
           if (frame.type === 'typing' || frame.type === 'presence') {
@@ -82,11 +91,13 @@ export class RealtimeSyncService {
             unauthorized?.()
             return
           }
+          this.onConnectionState?.('reconnecting')
           this.scheduleReconnect()
         },
       })
     } catch {
       this.connection = null
+      this.onConnectionState?.('reconnecting')
       this.scheduleReconnect()
     }
   }

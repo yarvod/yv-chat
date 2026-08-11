@@ -365,6 +365,13 @@ containers сохранили состояние (`WP-038`).
 
 ## Completed
 
+### BL-FIX-039 — Mobile shell and multi-client realtime correctness
+
+Fixed bottom navigation reserves a safe-area-aware viewport slot, realtime indicator
+reflects actual WebSocket lifecycle, conversation updates refresh authorized presence,
+and multi-device disconnect preserves online state while another subscription exists.
+TLS runbook also distinguishes origin health from client VPN fake-IP failures.
+
 ### BL-012 — E2EE protocol ADR и security review
 
 [ADR-0001](adr/0001-e2ee-mls.md) принимает MLS 1.0/RFC 9420 для direct и group,

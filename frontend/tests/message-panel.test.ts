@@ -48,6 +48,7 @@ describe('message panel', () => {
         typingActorIds: [],
         onlineActorIds: ['bob-id'],
         deliveryStates: [],
+        connectionState: 'connected',
         setTyping,
       },
     })
@@ -78,11 +79,13 @@ describe('message panel', () => {
         typingActorIds: ['bob-id'],
         onlineActorIds: ['bob-id'],
         deliveryStates: [],
+        connectionState: 'reconnecting',
         setTyping: vi.fn(),
       },
     })
 
     expect(wrapper.text()).toContain('Bob печатает')
+    expect(wrapper.get('.connection-dot').attributes('title')).toBe('Переподключаем синхронизацию')
   })
 
   it('shows delivered only after a recipient aggregate reaches the own message', async () => {
@@ -121,6 +124,7 @@ describe('message panel', () => {
           userId: 'bob-id',
           deliveredSequence: 2,
         }],
+        connectionState: 'connected',
         setTyping: vi.fn(),
       },
     })
@@ -168,6 +172,7 @@ describe('message panel', () => {
         typingActorIds: [],
         onlineActorIds: [],
         deliveryStates: [],
+        connectionState: 'connected',
         setTyping: vi.fn(),
       },
     })
@@ -224,6 +229,7 @@ describe('message panel', () => {
         typingActorIds: [],
         onlineActorIds: [],
         deliveryStates: [],
+        connectionState: 'connected',
         setTyping: vi.fn(),
       },
     })

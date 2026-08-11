@@ -585,12 +585,18 @@ transport cleanup. Authorized snapshot пересекает active conversation 
 Transition отправляется отдельно для каждой общей conversation, без session/device/IP
 metadata и без DB/sync write. Если новая session появляется во время offline publish,
 transport выполняет post-publish reconciliation и повторяет online, сохраняя верное
-итоговое best-effort состояние.
+итоговое best-effort состояние. После durable `conversation_updated` transport заново
+вычисляет authorized snapshot для конкретного получателя: это закрывает race, когда
+оба пользователя были online до создания общего conversation, и не превращает
+presence в global directory.
 
 Frontend хранит presence keyed по conversation+user в отдельном application service.
 Initial snapshot и последующие transitions применяются идемпотентно; socket close
 немедленно очищает весь ephemeral state. Presence frame не запускает `/sync`, не
 продлевает auth session и используется только для UI-индикатора, не авторизации.
+Отдельный typed connection lifecycle
+`connecting/connected/reconnecting/stopped` управляет visual connection indicator;
+зелёное состояние устанавливается только фактическим WebSocket `onopen`.
 
 Правильность любой realtime-фичи проверяется при отключённом WebSocket. Duplicate WebSocket/Push/sync delivery применяется идемпотентно.
 

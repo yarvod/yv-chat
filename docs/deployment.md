@@ -179,6 +179,23 @@ Expected state:
 - yv-chat PostgreSQL/API/frontend healthy and cleanup running;
 - neighboring `infra-*` container IDs/statuses remain unchanged.
 
+### Browser TLS failure and VPN/proxy fake IP
+
+Если browser показывает `PR_END_OF_FILE_ERROR`, `ERR_SSL_PROTOCOL_ERROR` или TLS
+handshake timeout, отделите origin failure от client network interception:
+
+1. На сервере проверьте `nginx -t`, listener `:443`, SNI certificate и origin health.
+2. Сравните public `A/AAAA` с адресом проблемного client. Synthetic адрес из
+   `198.18.0.0/15` часто означает fake-IP DNS режима Clash/Mihomo/sing-box и не
+   является адресом VPS.
+3. Если proxy выдал fake-IP, но не построил tunnel, исправьте domain routing или
+   добавьте `chat.yoowee.ru` в direct/fake-IP exclusion на affected device.
+4. Очистите client DNS cache/reconnect proxy и повторите HTTPS health.
+
+Нельзя отключать TLS verification, принимать подменный certificate или менять
+server certificate ради client-side fake-IP. Docker container/bridge IP — отдельные
+внутренние адреса и никогда не должны попадать в public DNS.
+
 ## Rollback
 
 The remote script records the last successful tag in `.deployed-image-tag`. Failed

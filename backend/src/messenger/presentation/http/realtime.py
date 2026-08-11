@@ -17,7 +17,7 @@ from messenger.application.errors import (
     SessionNotAuthenticatedError,
 )
 from messenger.application.ports.realtime import RealtimeHub, RealtimeSubscription
-from messenger.application.realtime import RealtimeNotification
+from messenger.application.realtime import RealtimeEventType, RealtimeNotification
 from messenger.application.realtime.presence import (
     ListPresenceSnapshot,
     ListPresenceSnapshotQuery,
@@ -154,11 +154,17 @@ async def _send_notifications(
     websocket: WebSocket,
     subscription: RealtimeSubscription,
     send_lock: asyncio.Lock,
+    principal: AuthenticateSessionResult,
 ) -> None:
     while True:
         notification = await subscription.receive()
         async with send_lock:
             await websocket.send_json(_notification_payload(notification))
+        if notification.event_type is RealtimeEventType.CONVERSATION_UPDATED:
+            snapshot = await _presence_snapshot(websocket, principal)
+            async with send_lock:
+                for payload in snapshot:
+                    await websocket.send_json(payload)
 
 
 async def _publish_typing(
@@ -297,7 +303,7 @@ async def realtime_notifications(
     for payload in await _presence_snapshot(websocket, principal):
         await websocket.send_json(payload)
     tasks = {
-        asyncio.create_task(_send_notifications(websocket, subscription, send_lock)),
+        asyncio.create_task(_send_notifications(websocket, subscription, send_lock, principal)),
         asyncio.create_task(_receive_client_frames(websocket, heartbeat_state, principal)),
         asyncio.create_task(
             _monitor_connection(
