@@ -19,6 +19,7 @@ def test_persistence_metadata_contains_expected_tables() -> None:
     assert set(Base.metadata.tables) == {
         "activation_tokens",
         "conversation_members",
+        "conversation_delivery_states",
         "conversation_read_states",
         "conversations",
         "devices",
@@ -173,6 +174,7 @@ def test_sync_schema_has_per_user_cursor_and_opaque_routing_fields_only() -> Non
         "message_id",
         "actor_user_id",
         "read_sequence",
+        "delivery_sequence",
     }.issubset(events.columns.keys())
     assert {"ciphertext", "plaintext", "text", "message_key", "payload"}.isdisjoint(
         events.columns.keys()
@@ -193,3 +195,19 @@ def test_read_state_schema_is_user_scoped_and_monotonic() -> None:
     }
     assert "ck_conversation_read_states_last_read_sequence_positive" in check_names
     assert "ix_read_states_conversation" in {index.name for index in read_states.indexes}
+
+
+def test_delivery_state_schema_is_device_scoped_and_monotonic() -> None:
+    delivery_states = Base.metadata.tables["conversation_delivery_states"]
+    check_names = {
+        constraint.name
+        for constraint in delivery_states.constraints
+        if isinstance(constraint, CheckConstraint)
+    }
+
+    assert {column.name for column in delivery_states.primary_key} == {
+        "device_id",
+        "conversation_id",
+    }
+    assert "ck_conversation_delivery_states_last_delivered_sequence_positive" in check_names
+    assert "ix_delivery_states_conversation" in {index.name for index in delivery_states.indexes}

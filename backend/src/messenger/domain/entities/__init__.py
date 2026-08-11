@@ -7,6 +7,7 @@ from messenger.domain.entities.conversation import (
     ConversationMemberRole,
     ConversationType,
 )
+from messenger.domain.entities.conversation_delivery_state import ConversationDeliveryState
 from messenger.domain.entities.conversation_read_state import ConversationReadState
 from messenger.domain.entities.device import Device
 from messenger.domain.entities.message import Message
@@ -22,6 +23,7 @@ __all__ = [
     "ConversationMemberRole",
     "ConversationType",
     "ConversationReadState",
+    "ConversationDeliveryState",
     "Message",
     "PasswordResetToken",
     "Device",

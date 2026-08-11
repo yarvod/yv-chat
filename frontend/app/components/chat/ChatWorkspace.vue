@@ -102,6 +102,7 @@ onBeforeUnmount(() => {
         :send-message="messenger.send"
         :typing-actor-ids="activeTypingActorIds"
         :online-actor-ids="activeOnlineActorIds"
+        :delivery-states="messenger.state.deliveryStates"
         :set-typing="typing.setLocal.bind(typing)"
         @back="mobilePane = 'list'"
       />

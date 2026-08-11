@@ -88,15 +88,24 @@ function parseSyncEvent(value: unknown): SyncEvent {
     'message_created',
     'message_deleted',
     'read_receipt',
+    'delivery_receipt',
   ])
   const messageId = nullableStringField(item, 'message_id')
   const actorUserId = nullableStringField(item, 'actor_user_id')
   const readSequence = item.read_sequence === null ? null : integerField(item, 'read_sequence')
+  const deliverySequence = item.delivery_sequence === null
+    ? null
+    : integerField(item, 'delivery_sequence')
   const valid = eventType === 'conversation_updated'
-    ? messageId === null && actorUserId === null && readSequence === null
+    ? messageId === null && actorUserId === null && readSequence === null && deliverySequence === null
     : eventType === 'read_receipt'
-      ? messageId === null && actorUserId !== null && readSequence !== null && readSequence > 0
-      : messageId !== null && actorUserId === null && readSequence === null
+      ? messageId === null && actorUserId !== null && readSequence !== null
+        && readSequence > 0 && deliverySequence === null
+      : eventType === 'delivery_receipt'
+        ? messageId === null && actorUserId !== null && readSequence === null
+          && deliverySequence !== null && deliverySequence > 0
+        : messageId !== null && actorUserId === null && readSequence === null
+          && deliverySequence === null
   if (!valid) throw new ApplicationError(200, 'invalid-response', 'invalid sync event shape')
   return {
     eventId: stringField(item, 'event_id'),
@@ -106,6 +115,7 @@ function parseSyncEvent(value: unknown): SyncEvent {
     messageId,
     actorUserId,
     readSequence,
+    deliverySequence,
     createdAt: stringField(item, 'created_at'),
   }
 }

@@ -6,6 +6,9 @@ from messenger.infrastructure.persistence.models.conversation import (
     ConversationMemberModel,
     ConversationModel,
 )
+from messenger.infrastructure.persistence.models.conversation_delivery_state import (
+    ConversationDeliveryStateModel,
+)
 from messenger.infrastructure.persistence.models.conversation_read_state import (
     ConversationReadStateModel,
 )
@@ -22,6 +25,7 @@ __all__ = [
     "Base",
     "ConversationMemberModel",
     "ConversationModel",
+    "ConversationDeliveryStateModel",
     "ConversationReadStateModel",
     "DeviceModel",
     "MessageModel",

@@ -20,7 +20,7 @@ from messenger.application.realtime import notifications_from_sync
 from messenger.application.realtime.publish import publish_best_effort
 from messenger.application.sync import SyncEventType, SyncPolicy
 from messenger.application.sync.emission import events_for_users
-from messenger.domain.entities import ConversationReadState, Message
+from messenger.domain.entities import ConversationDeliveryState, ConversationReadState, Message
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,6 +120,21 @@ class SendOpaqueMessage:
                 )
             )
             await unit_of_work.read_states.upsert(sender_read_state)
+            current_delivery_state = await unit_of_work.delivery_states.get(
+                device_id=command.actor_device_id,
+                conversation_id=conversation.id,
+            )
+            sender_delivery_state = (
+                current_delivery_state.advance(message.sequence, message.created_at)
+                if current_delivery_state is not None
+                else ConversationDeliveryState.create(
+                    device_id=command.actor_device_id,
+                    conversation_id=conversation.id,
+                    sequence=message.sequence,
+                    now=message.created_at,
+                )
+            )
+            await unit_of_work.delivery_states.upsert(sender_delivery_state)
             recipients = {member.user_id for member in conversation.members if member.is_active}
             sync_events = events_for_users(
                 recipients,
@@ -137,6 +152,18 @@ class SendOpaqueMessage:
                     message_id=None,
                     actor_user_id=command.actor_user_id,
                     read_sequence=message.sequence,
+                    now=message.created_at,
+                    policy=self._sync_policy,
+                )
+            )
+            sync_events.extend(
+                events_for_users(
+                    recipients,
+                    event_type=SyncEventType.DELIVERY_RECEIPT,
+                    conversation_id=conversation.id,
+                    message_id=None,
+                    actor_user_id=command.actor_user_id,
+                    delivery_sequence=message.sequence,
                     now=message.created_at,
                     policy=self._sync_policy,
                 )

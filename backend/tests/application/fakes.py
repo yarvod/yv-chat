@@ -28,10 +28,12 @@ from messenger.application.ports.identity import (
     UserRepository,
 )
 from messenger.application.ports.messages import (
+    ConversationDeliveryStateRepository,
     ConversationReadStateRepository,
     ConversationReadSummary,
     MessageRepository,
     MessagingUnitOfWork,
+    ParticipantDeliverySummary,
 )
 from messenger.application.ports.password_reset_secrets import GeneratedPasswordResetSecret
 from messenger.application.ports.session_credentials import GeneratedSessionCredential
@@ -42,6 +44,7 @@ from messenger.application.sync.events import SyncStreamPage
 from messenger.domain.entities import (
     ActivationToken,
     Conversation,
+    ConversationDeliveryState,
     ConversationReadState,
     Device,
     Message,
@@ -65,6 +68,9 @@ class IdentityState:
     security_events: dict[UUID, SecurityEvent] = field(default_factory=dict)
     conversations: dict[UUID, Conversation] = field(default_factory=dict)
     messages: dict[UUID, Message] = field(default_factory=dict)
+    delivery_states: dict[tuple[UUID, UUID], ConversationDeliveryState] = field(
+        default_factory=dict
+    )
     read_states: dict[tuple[UUID, UUID], ConversationReadState] = field(default_factory=dict)
     sync_events: list[SyncEvent] = field(default_factory=list)
     sync_cursors: dict[UUID, int] = field(default_factory=dict)
@@ -645,6 +651,49 @@ class FakeConversationReadStateRepository:
         return summaries
 
 
+class FakeConversationDeliveryStateRepository:
+    def __init__(self, state: IdentityState) -> None:
+        self._state = state
+
+    async def get(
+        self,
+        *,
+        device_id: UUID,
+        conversation_id: UUID,
+    ) -> ConversationDeliveryState | None:
+        return self._state.delivery_states.get((device_id, conversation_id))
+
+    async def upsert(self, state: ConversationDeliveryState) -> None:
+        key = (state.device_id, state.conversation_id)
+        current = self._state.delivery_states.get(key)
+        if current is None or state.last_delivered_sequence > current.last_delivered_sequence:
+            self._state.delivery_states[key] = state
+
+    async def list_participant_summaries(
+        self,
+        *,
+        conversation_ids: set[UUID],
+    ) -> list[ParticipantDeliverySummary]:
+        sequences: dict[tuple[UUID, UUID], int] = {}
+        for state in self._state.delivery_states.values():
+            if state.conversation_id not in conversation_ids:
+                continue
+            device = self._state.devices.get(state.device_id)
+            if device is None or device.revoked_at is not None:
+                continue
+            conversation = self._state.conversations.get(state.conversation_id)
+            if conversation is None or conversation.active_member(device.user_id) is None:
+                continue
+            key = (state.conversation_id, device.user_id)
+            sequences[key] = max(sequences.get(key, 0), state.last_delivered_sequence)
+        return [
+            ParticipantDeliverySummary(conversation_id, user_id, sequence)
+            for (conversation_id, user_id), sequence in sorted(
+                sequences.items(), key=lambda item: (item[0][0].int, item[0][1].int)
+            )
+        ]
+
+
 class FakeSyncRepository:
     def __init__(self, state: IdentityState) -> None:
         self._state = state
@@ -669,6 +718,7 @@ class FakeSyncRepository:
                     message_id=event.message_id,
                     actor_user_id=event.actor_user_id,
                     read_sequence=event.read_sequence,
+                    delivery_sequence=event.delivery_sequence,
                     created_at=event.created_at,
                     expires_at=event.expires_at,
                 )
@@ -706,6 +756,9 @@ class FakeMessagingUnitOfWork:
     def __init__(self, state: IdentityState) -> None:
         self._state = state
         self.messages: MessageRepository = FakeMessageRepository(state)
+        self.delivery_states: ConversationDeliveryStateRepository = (
+            FakeConversationDeliveryStateRepository(state)
+        )
         self.read_states: ConversationReadStateRepository = FakeConversationReadStateRepository(
             state
         )

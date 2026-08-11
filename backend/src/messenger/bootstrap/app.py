@@ -13,6 +13,7 @@ from messenger.bootstrap.settings import AppSettings
 from messenger.presentation.http.admin_users import router as admin_users_router
 from messenger.presentation.http.auth import router as auth_router
 from messenger.presentation.http.conversations import router as conversations_router
+from messenger.presentation.http.delivery_states import router as delivery_states_router
 from messenger.presentation.http.devices import router as devices_router
 from messenger.presentation.http.health import router as health_router
 from messenger.presentation.http.me import router as me_router
@@ -54,7 +55,7 @@ def create_app(
         CORSMiddleware,
         allow_origins=resolved_settings.allowed_origins,
         allow_credentials=True,
-        allow_methods=["GET", "POST", "PATCH", "DELETE"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
         allow_headers=[resolved_settings.csrf_header_name, "Content-Type"],
     )
     application.include_router(health_router)
@@ -68,5 +69,6 @@ def create_app(
     application.include_router(sync_router)
     application.include_router(realtime_router)
     application.include_router(read_states_router)
+    application.include_router(delivery_states_router)
     setup_dishka(container=resolved_container, app=application)
     return application

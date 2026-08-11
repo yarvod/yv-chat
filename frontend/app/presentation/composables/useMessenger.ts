@@ -3,6 +3,8 @@ import { computed, reactive, readonly } from 'vue'
 import { ApplicationError } from '../../application/errors'
 import type { ClientIdGenerator } from '../../application/ports/client-id-generator'
 import type { ListConversationReadStates } from '../../application/messaging/list-conversation-read-states'
+import type { ListParticipantDeliveryStates } from '../../application/messaging/list-participant-delivery-states'
+import type { MarkConversationDelivered } from '../../application/messaging/mark-conversation-delivered'
 import type { MarkConversationRead } from '../../application/messaging/mark-conversation-read'
 import type { MessageCodec } from '../../application/ports/message-codec'
 import type { HapticsPort } from '../../application/ports/haptics'
@@ -13,6 +15,7 @@ import type {
   ConversationReadState,
   DirectoryUser,
   OpaqueMessage,
+  ParticipantDeliveryState,
 } from '../../domain/messaging/models'
 
 type MessengerPhase = 'loading' | 'ready' | 'offline' | 'error'
@@ -24,6 +27,7 @@ interface MessengerState {
   activeConversationId: string | null
   messages: OpaqueMessage[]
   readStates: ConversationReadState[]
+  deliveryStates: ParticipantDeliveryState[]
   syncCursor: number
   sending: boolean
   creating: boolean
@@ -41,6 +45,8 @@ export interface MessengerDependencies {
   clientIdGenerator: ClientIdGenerator
   listConversationReadStates: ListConversationReadStates
   markConversationRead: MarkConversationRead
+  listParticipantDeliveryStates: ListParticipantDeliveryStates
+  markConversationDelivered: MarkConversationDelivered
   pageVisibility: PageVisibility
 }
 
@@ -58,6 +64,8 @@ export function useMessenger(
       clientIdGenerator: $frontend.clientIdGenerator,
       listConversationReadStates: $frontend.listConversationReadStates,
       markConversationRead: $frontend.markConversationRead,
+      listParticipantDeliveryStates: $frontend.listParticipantDeliveryStates,
+      markConversationDelivered: $frontend.markConversationDelivered,
       pageVisibility: $frontend.pageVisibility,
     }
   })()
@@ -68,6 +76,8 @@ export function useMessenger(
     clientIdGenerator,
     listConversationReadStates,
     markConversationRead,
+    listParticipantDeliveryStates,
+    markConversationDelivered,
     pageVisibility,
   } = dependencies
   const state = reactive<MessengerState>({
@@ -77,6 +87,7 @@ export function useMessenger(
     activeConversationId: null,
     messages: [],
     readStates: [],
+    deliveryStates: [],
     syncCursor: 0,
     sending: false,
     creating: false,
@@ -84,6 +95,7 @@ export function useMessenger(
   })
   let polling = false
   const readAdvances = new Map<string, number>()
+  const deliveryAdvances = new Map<string, number>()
 
   const activeConversation = computed(() => (
     state.conversations.find(item => item.conversationId === state.activeConversationId) ?? null
@@ -109,6 +121,41 @@ export function useMessenger(
 
   async function reloadReadStates(): Promise<void> {
     state.readStates = await listConversationReadStates.execute()
+  }
+
+  async function reloadDeliveryStates(): Promise<void> {
+    state.deliveryStates = await listParticipantDeliveryStates.execute()
+  }
+
+  function replaceDeliveryState(next: ParticipantDeliveryState): void {
+    state.deliveryStates = [
+      ...state.deliveryStates.filter(item => (
+        item.conversationId !== next.conversationId || item.userId !== next.userId
+      )),
+      next,
+    ]
+  }
+
+  async function advanceDelivery(conversationId: string): Promise<void> {
+    const sequence = state.messages.at(-1)?.sequence ?? 0
+    if (sequence <= 0) return
+    const persisted = state.deliveryStates.find(item => (
+      item.conversationId === conversationId && item.userId === actorUserId
+    ))?.deliveredSequence ?? 0
+    const submitted = deliveryAdvances.get(conversationId) ?? 0
+    if (sequence <= Math.max(persisted, submitted)) return
+    deliveryAdvances.set(conversationId, sequence)
+    try {
+      const result = await markConversationDelivered.execute(conversationId, sequence)
+      replaceDeliveryState({
+        conversationId,
+        userId: actorUserId,
+        deliveredSequence: result.lastDeliveredSequence,
+      })
+    } catch (error) {
+      deliveryAdvances.delete(conversationId)
+      throw error
+    }
   }
 
   async function advanceActiveReadIfVisible(): Promise<void> {
@@ -141,6 +188,7 @@ export function useMessenger(
     const known = new Map(state.messages.map(item => [item.messageId, item]))
     for (const item of incoming) known.set(item.messageId, item)
     state.messages = sortMessages([...known.values()])
+    await advanceDelivery(conversationId)
     await advanceActiveReadIfVisible()
   }
 
@@ -158,14 +206,16 @@ export function useMessenger(
     state.message = null
     try {
       const syncBaseline = await gateway.listSync(0)
-      const [directory, conversations, readStates] = await Promise.all([
+      const [directory, conversations, readStates, deliveryStates] = await Promise.all([
         gateway.listDirectory(),
         gateway.listConversations(),
         listConversationReadStates.execute(),
+        listParticipantDeliveryStates.execute(),
       ])
       state.directory = directory
       state.conversations = conversations
       state.readStates = readStates
+      state.deliveryStates = deliveryStates
       state.activeConversationId = conversations[0]?.conversationId ?? null
       state.messages = []
       if (state.activeConversationId) await loadMessages(state.activeConversationId)
@@ -256,6 +306,7 @@ export function useMessenger(
       let conversationsChanged = false
       let activeMessagesChanged = false
       let readStatesChanged = false
+      let deliveryStatesChanged = false
       while (hasMore && pages < 10) {
         const page = await gateway.listSync(state.syncCursor)
         if (page.resetRequired) {
@@ -277,6 +328,8 @@ export function useMessenger(
           readStatesChanged ||= event.eventType === 'message_created'
             || event.eventType === 'message_deleted'
             || event.eventType === 'read_receipt'
+          deliveryStatesChanged ||= event.eventType === 'message_created'
+            || event.eventType === 'delivery_receipt'
         }
         state.syncCursor = page.nextCursor
         hasMore = page.hasMore
@@ -287,6 +340,7 @@ export function useMessenger(
         await loadMessages(state.activeConversationId, state.messages.at(-1)?.sequence ?? 0)
       }
       if (readStatesChanged) await reloadReadStates()
+      if (deliveryStatesChanged) await reloadDeliveryStates()
       state.phase = 'ready'
       state.message = null
     } catch (error) {

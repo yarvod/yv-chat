@@ -2,7 +2,11 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 
 import type { MessageCodec } from '../../application/ports/message-codec'
-import type { Conversation, OpaqueMessage } from '../../domain/messaging/models'
+import type {
+  Conversation,
+  OpaqueMessage,
+  ParticipantDeliveryState,
+} from '../../domain/messaging/models'
 
 const props = defineProps<{
   conversation: Conversation | null
@@ -13,6 +17,7 @@ const props = defineProps<{
   sendMessage: (plaintext: string) => Promise<boolean>
   typingActorIds: readonly string[]
   onlineActorIds: readonly string[]
+  deliveryStates: readonly ParticipantDeliveryState[]
   setTyping: (conversationId: string, active: boolean) => void
 }>()
 const emit = defineEmits<{ back: [] }>()
@@ -50,6 +55,24 @@ function senderName(message: OpaqueMessage): string {
   if (message.senderUserId === props.actorUserId) return 'Вы'
   return props.conversation?.members.find(member => member.userId === message.senderUserId)?.displayName
     ?? 'Участник'
+}
+
+function deliveryLabel(message: OpaqueMessage): string | null {
+  if (message.senderUserId !== props.actorUserId || !props.conversation) return null
+  const recipients = props.conversation.members.filter(member => (
+    member.userId !== props.actorUserId && member.leftAt === null
+  ))
+  const delivered = recipients.filter(member => (
+    props.deliveryStates.some(state => (
+      state.conversationId === message.conversationId
+      && state.userId === member.userId
+      && state.deliveredSequence >= message.sequence
+    ))
+  )).length
+  if (props.conversation.conversationType === 'direct') {
+    return delivered > 0 ? 'Доставлено' : 'Отправлено'
+  }
+  return delivered > 0 ? `Доставлено: ${delivered}/${recipients.length}` : 'Отправлено'
 }
 
 async function submit(): Promise<void> {
@@ -114,7 +137,10 @@ onBeforeUnmount(() => {
       >
         <strong>{{ senderName(message) }}</strong>
         <p>{{ codec.decode(message.ciphertextBase64) }}</p>
-        <small>#{{ message.sequence }} · {{ new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}</small>
+        <small>
+          #{{ message.sequence }} · {{ new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
+          <template v-if="deliveryLabel(message)"> · {{ deliveryLabel(message) }}</template>
+        </small>
       </article>
     </div>
 

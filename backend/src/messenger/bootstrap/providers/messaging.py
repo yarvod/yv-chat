@@ -2,8 +2,10 @@
 
 from dishka import Provider, Scope, provide
 
+from messenger.application.messaging.list_delivery_states import ListParticipantDeliveryStates
 from messenger.application.messaging.list_messages import ListMessages
 from messenger.application.messaging.list_read_states import ListConversationReadStates
+from messenger.application.messaging.mark_delivered import MarkConversationDelivered
 from messenger.application.messaging.mark_read import MarkConversationRead
 from messenger.application.messaging.policy import MessageEnvelopePolicy
 from messenger.application.messaging.send_message import SendOpaqueMessage
@@ -31,6 +33,8 @@ class MessagingUseCaseProvider(Provider):
     list_sync_events = provide(ListSyncEvents, scope=Scope.REQUEST)
     list_conversation_read_states = provide(ListConversationReadStates, scope=Scope.REQUEST)
     mark_conversation_read = provide(MarkConversationRead, scope=Scope.REQUEST)
+    list_participant_delivery_states = provide(ListParticipantDeliveryStates, scope=Scope.REQUEST)
+    mark_conversation_delivered = provide(MarkConversationDelivered, scope=Scope.REQUEST)
     publish_typing = provide(PublishTyping, scope=Scope.REQUEST)
     list_presence_snapshot = provide(ListPresenceSnapshot, scope=Scope.REQUEST)
     publish_presence = provide(PublishPresence, scope=Scope.REQUEST)

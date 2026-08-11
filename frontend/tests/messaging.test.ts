@@ -4,6 +4,7 @@ import { ApplicationError } from '../app/application/errors'
 import { syntheticMessageCodec } from '../app/infrastructure/crypto/synthetic-message-codec'
 import { parseConversation, parseSyncPage } from '../app/infrastructure/http/messaging-parsers'
 import { parseConversationReadStates } from '../app/infrastructure/http/conversation-read-state-parsers'
+import { parseParticipantDeliveryStates } from '../app/infrastructure/http/conversation-delivery-state-parsers'
 
 const conversation = {
   conversation_id: 'conversation-1',
@@ -46,6 +47,7 @@ describe('messaging boundaries', () => {
         message_id: null,
         actor_user_id: null,
         read_sequence: 2,
+        delivery_sequence: null,
         created_at: '2026-08-11T12:00:00Z',
       }],
       next_cursor: 1,
@@ -78,6 +80,23 @@ describe('messaging boundaries', () => {
       last_read_sequence: 0,
       latest_sequence: 0,
       unread_count: -1,
+    }])).toThrow(ApplicationError)
+  })
+
+  it('parses positive delivery summaries and rejects zero cursors', () => {
+    expect(parseParticipantDeliveryStates([{
+      conversation_id: 'conversation-1',
+      user_id: 'bob-id',
+      delivered_sequence: 4,
+    }])).toEqual([{
+      conversationId: 'conversation-1',
+      userId: 'bob-id',
+      deliveredSequence: 4,
+    }])
+    expect(() => parseParticipantDeliveryStates([{
+      conversation_id: 'conversation-1',
+      user_id: 'bob-id',
+      delivered_sequence: 0,
     }])).toThrow(ApplicationError)
   })
 })

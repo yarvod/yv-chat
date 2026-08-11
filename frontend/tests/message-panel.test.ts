@@ -45,6 +45,7 @@ describe('message panel', () => {
         sendMessage,
         typingActorIds: [],
         onlineActorIds: ['bob-id'],
+        deliveryStates: [],
         setTyping,
       },
     })
@@ -70,10 +71,53 @@ describe('message panel', () => {
         sendMessage: vi.fn(),
         typingActorIds: ['bob-id'],
         onlineActorIds: ['bob-id'],
+        deliveryStates: [],
         setTyping: vi.fn(),
       },
     })
 
     expect(wrapper.text()).toContain('Bob печатает')
+  })
+
+  it('shows delivered only after a recipient aggregate reaches the own message', async () => {
+    const ownMessage = {
+      messageId: 'message-1',
+      clientMessageId: 'client-1',
+      conversationId: 'conversation-1',
+      senderUserId: 'alice-id',
+      senderDeviceId: 'alice-device',
+      protocolVersion: 1,
+      sequence: 3,
+      createdAt: '2026-08-11T12:00:01Z',
+      ciphertextBase64: 'aGVsbG8=',
+    }
+    const wrapper = mount(MessagePanel, {
+      props: {
+        conversation,
+        messages: [ownMessage],
+        actorUserId: 'alice-id',
+        sending: false,
+        codec: syntheticMessageCodec,
+        sendMessage: vi.fn(),
+        typingActorIds: [],
+        onlineActorIds: [],
+        deliveryStates: [{
+          conversationId: 'conversation-1',
+          userId: 'bob-id',
+          deliveredSequence: 2,
+        }],
+        setTyping: vi.fn(),
+      },
+    })
+
+    expect(wrapper.text()).toContain('Отправлено')
+    await wrapper.setProps({
+      deliveryStates: [{
+        conversationId: 'conversation-1',
+        userId: 'bob-id',
+        deliveredSequence: 3,
+      }],
+    })
+    expect(wrapper.text()).toContain('Доставлено')
   })
 })

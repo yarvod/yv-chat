@@ -22,6 +22,38 @@
 
 ## Resolved
 
+### BUG-019 — Alembic revision не помещался в `alembic_version.version_num`
+
+- Статус: `verified`.
+- Найдено в: `WP-027`, offline SQL review migration `0013`.
+- Severity: `high`.
+- Условия воспроизведения: применить первоначальный revision ID
+  `0013_conversation_delivery_states` к стандартной Alembic version table с
+  `VARCHAR(32)`.
+- Ожидаемое поведение: migration фиксирует новый head атомарно.
+- Фактическое поведение: 33-символьный ID не помещался бы в version column и
+  откатил production migration.
+- Причина: descriptive revision ID не был проверен против физического ограничения
+  Alembic version table.
+- Исправление: ID сокращён до `0013_delivery_states`; добавлен static graph test на
+  single head, unique IDs и максимум 32 символа.
+- Проверка: pytest migration invariant и Alembic upgrade/downgrade SQL generation.
+
+### BUG-018 — CORS preflight не разрешал существующие PUT endpoints
+
+- Статус: `verified`.
+- Найдено в: `WP-027`, HTTP transport audit при добавлении delivery acknowledgement.
+- Severity: `medium`.
+- Условия воспроизведения: обращаться к read/delivery PUT endpoint из разрешённого
+  dev origin с CSRF header, вызывающим browser preflight.
+- Ожидаемое поведение: explicit CORS policy разрешает тот же method, который
+  зарегистрирован versioned API.
+- Фактическое поведение: `allow_methods` содержал GET/POST/PATCH/DELETE, но не PUT.
+- Причина: read-state route появился после первоначального bootstrap allowlist.
+- Исправление: PUT добавлен в explicit method allowlist; same-origin production
+  policy и CSRF/Origin authorization не ослаблены.
+- Проверка: backend HTTP suite и FastAPI composition/type checks.
+
 ### BUG-017 — Reconnect мог оставить peer в ложном offline после race
 
 - Статус: `verified`.

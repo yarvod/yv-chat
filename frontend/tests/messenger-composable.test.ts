@@ -5,7 +5,10 @@ import type { HapticsPort } from '../app/application/ports/haptics'
 import type { ClientIdGenerator } from '../app/application/ports/client-id-generator'
 import { ListConversationReadStates } from '../app/application/messaging/list-conversation-read-states'
 import { MarkConversationRead } from '../app/application/messaging/mark-conversation-read'
+import { ListParticipantDeliveryStates } from '../app/application/messaging/list-participant-delivery-states'
+import { MarkConversationDelivered } from '../app/application/messaging/mark-conversation-delivered'
 import type { ConversationReadStateGateway } from '../app/application/ports/conversation-read-state-gateway'
+import type { ConversationDeliveryStateGateway } from '../app/application/ports/conversation-delivery-state-gateway'
 import type { PageVisibility } from '../app/application/ports/page-visibility'
 import { syntheticMessageCodec } from '../app/infrastructure/crypto/synthetic-message-codec'
 import { useMessenger } from '../app/presentation/composables/useMessenger'
@@ -41,6 +44,7 @@ const pageVisibility: PageVisibility = {
   subscribe: () => () => undefined,
 }
 let readStateGateway: ConversationReadStateGateway
+let deliveryStateGateway: ConversationDeliveryStateGateway
 
 beforeEach(() => {
   visible = true
@@ -54,6 +58,15 @@ beforeEach(() => {
     mark: vi.fn().mockResolvedValue({
       conversationId: 'conversation-1',
       lastReadSequence: 1,
+      updatedAt: '2026-08-11T12:00:02Z',
+      advanced: true,
+    }),
+  }
+  deliveryStateGateway = {
+    list: vi.fn().mockResolvedValue([]),
+    mark: vi.fn().mockResolvedValue({
+      conversationId: 'conversation-1',
+      lastDeliveredSequence: 1,
       updatedAt: '2026-08-11T12:00:02Z',
       advanced: true,
     }),
@@ -72,6 +85,7 @@ beforeEach(() => {
           eventId: 'event-5', cursor: 5, eventType: 'message_created',
           conversationId: 'conversation-1', messageId: 'message-1',
           actorUserId: null, readSequence: null, createdAt: '2026-08-11T12:00:01Z',
+          deliverySequence: null,
         }],
         nextCursor: 5, streamCursor: 5, hasMore: false, resetRequired: false,
       }),
@@ -87,6 +101,8 @@ describe('messenger orchestration', () => {
       clientIdGenerator,
       listConversationReadStates: new ListConversationReadStates(readStateGateway),
       markConversationRead: new MarkConversationRead(readStateGateway),
+      listParticipantDeliveryStates: new ListParticipantDeliveryStates(deliveryStateGateway),
+      markConversationDelivered: new MarkConversationDelivered(deliveryStateGateway),
       pageVisibility,
     })
 
@@ -100,6 +116,7 @@ describe('messenger orchestration', () => {
     expect(messenger.state.messages).toEqual([message])
     expect(messenger.state.syncCursor).toBe(5)
     expect(readStateGateway.mark).toHaveBeenCalledWith('conversation-1', 1)
+    expect(deliveryStateGateway.mark).toHaveBeenCalledWith('conversation-1', 1)
   })
 
   it('does not mark a background timeline until the page becomes visible', async () => {
@@ -115,11 +132,14 @@ describe('messenger orchestration', () => {
       clientIdGenerator,
       listConversationReadStates: new ListConversationReadStates(readStateGateway),
       markConversationRead: new MarkConversationRead(readStateGateway),
+      listParticipantDeliveryStates: new ListParticipantDeliveryStates(deliveryStateGateway),
+      markConversationDelivered: new MarkConversationDelivered(deliveryStateGateway),
       pageVisibility,
     })
 
     await messenger.load()
     expect(readStateGateway.mark).not.toHaveBeenCalled()
+    expect(deliveryStateGateway.mark).toHaveBeenCalledWith('conversation-1', 1)
     visible = true
     await messenger.markActiveRead()
     expect(readStateGateway.mark).toHaveBeenCalledWith('conversation-1', 1)

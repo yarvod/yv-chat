@@ -90,6 +90,7 @@ describe('realtime sync', () => {
       messageId: 'message',
       actorUserId: null,
       readSequence: null,
+      deliverySequence: null,
     })
     expect(parseRealtimeFrame({
       type: 'presence',
@@ -119,6 +120,24 @@ describe('realtime sync', () => {
       messageId: null,
       actorUserId: 'alice',
       readSequence: 8,
+      deliverySequence: null,
+    })
+    expect(parseRealtimeFrame({
+      type: 'delivery_receipt',
+      event_id: 'delivery-event',
+      conversation_id: 'conversation',
+      message_id: null,
+      actor_user_id: 'bob',
+      read_sequence: null,
+      delivery_sequence: 9,
+    })).toEqual({
+      type: 'delivery_receipt',
+      eventId: 'delivery-event',
+      conversationId: 'conversation',
+      messageId: null,
+      actorUserId: 'bob',
+      readSequence: null,
+      deliverySequence: 9,
     })
     expect(() => parseRealtimeFrame({
       type: 'read_receipt',

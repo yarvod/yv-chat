@@ -3,6 +3,7 @@ export type DurableRealtimeEventType =
   | 'conversation_updated'
   | 'message_deleted'
   | 'read_receipt'
+  | 'delivery_receipt'
 
 export interface TypingRealtimeFrame {
   type: 'typing'
@@ -33,6 +34,7 @@ export type RealtimeFrame =
       messageId: string | null
       actorUserId: string | null
       readSequence: number | null
+      deliverySequence: number | null
     }
   | TypingRealtimeFrame
   | PresenceRealtimeFrame

@@ -99,15 +99,20 @@ async def test_send_persists_only_opaque_envelope_metadata() -> None:
     assert "ciphertext" not in result.__dataclass_fields__
     assert second.sequence == 2
     assert state.read_states[(alice.id, conversation.id)].last_read_sequence == 2
+    assert state.delivery_states[(device.id, conversation.id)].last_delivered_sequence == 2
     assert [event.event_type for event in state.sync_events] == [
         SyncEventType.MESSAGE_CREATED,
         SyncEventType.READ_RECEIPT,
+        SyncEventType.DELIVERY_RECEIPT,
         SyncEventType.MESSAGE_CREATED,
         SyncEventType.READ_RECEIPT,
+        SyncEventType.DELIVERY_RECEIPT,
         SyncEventType.MESSAGE_CREATED,
         SyncEventType.READ_RECEIPT,
+        SyncEventType.DELIVERY_RECEIPT,
         SyncEventType.MESSAGE_CREATED,
         SyncEventType.READ_RECEIPT,
+        SyncEventType.DELIVERY_RECEIPT,
     ]
     page = await ListMessages(unit_of_work=FakeMessagingUnitOfWorkFactory(state)).execute(
         ListMessagesQuery(alice.id, conversation.id, after_sequence=1, limit=10)

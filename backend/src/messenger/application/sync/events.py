@@ -11,6 +11,7 @@ class SyncEventType(StrEnum):
     MESSAGE_CREATED = "message_created"
     MESSAGE_DELETED = "message_deleted"
     READ_RECEIPT = "read_receipt"
+    DELIVERY_RECEIPT = "delivery_receipt"
 
 
 def _validate_shape(
@@ -18,17 +19,37 @@ def _validate_shape(
     message_id: UUID | None,
     actor_user_id: UUID | None,
     read_sequence: int | None,
+    delivery_sequence: int | None,
 ) -> None:
     if event_type is SyncEventType.CONVERSATION_UPDATED:
-        valid = message_id is None and actor_user_id is None and read_sequence is None
+        valid = (
+            message_id is None
+            and actor_user_id is None
+            and read_sequence is None
+            and delivery_sequence is None
+        )
     elif event_type in {SyncEventType.MESSAGE_CREATED, SyncEventType.MESSAGE_DELETED}:
-        valid = message_id is not None and actor_user_id is None and read_sequence is None
-    else:
+        valid = (
+            message_id is not None
+            and actor_user_id is None
+            and read_sequence is None
+            and delivery_sequence is None
+        )
+    elif event_type is SyncEventType.READ_RECEIPT:
         valid = (
             message_id is None
             and actor_user_id is not None
             and read_sequence is not None
             and read_sequence > 0
+            and delivery_sequence is None
+        )
+    else:
+        valid = (
+            message_id is None
+            and actor_user_id is not None
+            and read_sequence is None
+            and delivery_sequence is not None
+            and delivery_sequence > 0
         )
     if not valid:
         raise ValueError("sync event shape does not match event type")
@@ -43,6 +64,7 @@ class PendingSyncEvent:
     message_id: UUID | None
     actor_user_id: UUID | None
     read_sequence: int | None
+    delivery_sequence: int | None
     created_at: datetime
     expires_at: datetime
 
@@ -52,6 +74,7 @@ class PendingSyncEvent:
             self.message_id,
             self.actor_user_id,
             self.read_sequence,
+            self.delivery_sequence,
         )
 
     @classmethod
@@ -64,6 +87,7 @@ class PendingSyncEvent:
         message_id: UUID | None,
         actor_user_id: UUID | None = None,
         read_sequence: int | None = None,
+        delivery_sequence: int | None = None,
         created_at: datetime,
         expires_at: datetime,
     ) -> "PendingSyncEvent":
@@ -75,6 +99,7 @@ class PendingSyncEvent:
             message_id=message_id,
             actor_user_id=actor_user_id,
             read_sequence=read_sequence,
+            delivery_sequence=delivery_sequence,
             created_at=created_at,
             expires_at=expires_at,
         )
@@ -90,6 +115,7 @@ class SyncEvent:
     message_id: UUID | None
     actor_user_id: UUID | None
     read_sequence: int | None
+    delivery_sequence: int | None
     created_at: datetime
     expires_at: datetime
 
@@ -99,6 +125,7 @@ class SyncEvent:
             self.message_id,
             self.actor_user_id,
             self.read_sequence,
+            self.delivery_sequence,
         )
 
 

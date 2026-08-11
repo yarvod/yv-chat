@@ -9,6 +9,7 @@ const DURABLE_TYPES = new Set<DurableRealtimeEventType>([
   'conversation_updated',
   'message_deleted',
   'read_receipt',
+  'delivery_receipt',
 ])
 
 function record(value: unknown): Record<string, unknown> {
@@ -107,11 +108,25 @@ export function parseRealtimeFrame(value: unknown): RealtimeFrame {
         }
         return Number(rawReadSequence)
       })()
+  const rawDeliverySequence = frame.delivery_sequence
+  const deliverySequence = rawDeliverySequence === undefined || rawDeliverySequence === null
+    ? null
+    : (() => {
+        if (!Number.isSafeInteger(rawDeliverySequence) || Number(rawDeliverySequence) <= 0) {
+          throw new ApplicationError(200, 'invalid-response', 'invalid realtime frame')
+        }
+        return Number(rawDeliverySequence)
+      })()
   const isReadReceipt = type === 'read_receipt'
+  const isDeliveryReceipt = type === 'delivery_receipt'
   if (
     isReadReceipt
       ? messageId !== null || actorUserId === null || readSequence === null
-      : actorUserId !== null || readSequence !== null
+        || deliverySequence !== null
+      : isDeliveryReceipt
+        ? messageId !== null || actorUserId === null || readSequence !== null
+          || deliverySequence === null
+        : actorUserId !== null || readSequence !== null || deliverySequence !== null
   ) {
     throw new ApplicationError(200, 'invalid-response', 'invalid realtime frame')
   }
@@ -122,5 +137,6 @@ export function parseRealtimeFrame(value: unknown): RealtimeFrame {
     messageId,
     actorUserId,
     readSequence,
+    deliverySequence,
   }
 }

@@ -10,9 +10,17 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from messenger.application.errors import ConversationNotFoundError
+from messenger.application.messaging.list_delivery_states import (
+    ListParticipantDeliveryStates,
+    ListParticipantDeliveryStatesQuery,
+)
 from messenger.application.messaging.list_read_states import (
     ListConversationReadStates,
     ListConversationReadStatesQuery,
+)
+from messenger.application.messaging.mark_delivered import (
+    MarkConversationDelivered,
+    MarkConversationDeliveredCommand,
 )
 from messenger.application.messaging.mark_read import (
     MarkConversationRead,
@@ -39,6 +47,7 @@ from messenger.infrastructure.persistence.identity_uow import SqlAlchemyIdentity
 from messenger.infrastructure.persistence.messaging_uow import SqlAlchemyMessagingUnitOfWorkFactory
 from messenger.infrastructure.persistence.models import (
     ActivationTokenModel,
+    ConversationDeliveryStateModel,
     ConversationMemberModel,
     ConversationModel,
     ConversationReadStateModel,
@@ -76,6 +85,7 @@ async def reset_tables(session_factory: async_sessionmaker[AsyncSession]) -> Non
         await session.execute(delete(SyncEventModel))
         await session.execute(delete(SyncStreamModel))
         await session.execute(delete(MessageModel))
+        await session.execute(delete(ConversationDeliveryStateModel))
         await session.execute(delete(ConversationReadStateModel))
         await session.execute(delete(ConversationMemberModel))
         await session.execute(delete(ConversationModel))
@@ -115,6 +125,12 @@ async def run_flow(database_url: str) -> None:
         )
         alice_session = await login.execute(
             LoginCommand(username="alice", password=PASSWORD, device_name="Alice device")
+        )
+        bob_phone = await login.execute(
+            LoginCommand(username="bob", password=PASSWORD, device_name="Bob phone")
+        )
+        bob_laptop = await login.execute(
+            LoginCommand(username="bob", password=PASSWORD, device_name="Bob laptop")
         )
         charlie_session = await login.execute(
             LoginCommand(username="charlie", password=PASSWORD, device_name="Charlie device")
@@ -216,6 +232,36 @@ async def run_flow(database_url: str) -> None:
         assert bob_after[0].last_read_sequence == 3
         assert bob_after[0].unread_count == 0
 
+        mark_delivered = MarkConversationDelivered(
+            unit_of_work=read_state_factory,
+            clock=FixedClock(NOW + timedelta(seconds=3)),
+            sync_policy=SyncPolicy(),
+            realtime_notifier=RecordingRealtimeNotifier(),
+        )
+        first_delivery = await mark_delivered.execute(
+            MarkConversationDeliveredCommand(bob.id, bob_phone.device_id, conversation.id, 2)
+        )
+        duplicate_delivery = await mark_delivered.execute(
+            MarkConversationDeliveredCommand(bob.id, bob_phone.device_id, conversation.id, 2)
+        )
+        lower_delivery, highest_delivery = await asyncio.gather(
+            mark_delivered.execute(
+                MarkConversationDeliveredCommand(bob.id, bob_phone.device_id, conversation.id, 1)
+            ),
+            mark_delivered.execute(
+                MarkConversationDeliveredCommand(bob.id, bob_laptop.device_id, conversation.id, 3)
+            ),
+        )
+        assert first_delivery.advanced is True
+        assert duplicate_delivery.advanced is False
+        assert lower_delivery.advanced is False
+        assert highest_delivery.advanced is True
+        delivery_summaries = await ListParticipantDeliveryStates(
+            unit_of_work=read_state_factory
+        ).execute(ListParticipantDeliveryStatesQuery(alice.id))
+        bob_delivery = next(item for item in delivery_summaries if item.user_id == bob.id)
+        assert bob_delivery.delivered_sequence == 3
+
         async with session_factory() as session:
             stored = await session.get(MessageModel, result.message_id)
             count = await session.scalar(select(func.count(MessageModel.id)))
@@ -242,7 +288,7 @@ async def run_flow(database_url: str) -> None:
         assert stored.sender_device_id == alice_session.device_id
         assert count == 3
         assert {item.sequence for item in concurrent} == {2, 3}
-        assert alice_event_count == bob_event_count == 8
+        assert alice_event_count == bob_event_count == 13
         assert charlie_event_count == 0
         assert alice_read_state is not None
         assert alice_read_state.last_read_sequence == 3

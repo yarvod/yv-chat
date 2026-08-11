@@ -77,19 +77,19 @@ Implementation и desktop browser smoke завершены; physical 390px scree
 
 ### BL-009 — Receipts, unread state, typing и presence
 
-Статус: **in progress** (`WP-024` завершил shared read cursor/unread slice;
+Статус: **implementation complete; verification pending** (`WP-024` завершил shared read cursor/unread slice;
 `WP-025` завершил ephemeral typing; `WP-026` завершил best-effort presence;
-delivered-per-device остаётся).
+`WP-027` завершил delivered-per-device).
 
 Результат: read state согласуется между устройствами, а ephemeral indicators не становятся durable truth.
 
 - [x] shared per-user/per-conversation read cursor и durable `read_receipt`;
 - [x] server-derived unread counters, согласованные на нескольких devices;
 - [x] foreground-only mark-read до реально загруженной server sequence;
-- [ ] delivered cursor/receipt на уровне device;
+- [x] delivered cursor/receipt на уровне device (`WP-027`);
 - [x] typing events с server expiry без долговременной истории (`WP-025`);
 - [x] best-effort multi-device online presence из active WebSockets (`WP-026`);
-- deduplication и tests после reconnect.
+- [x] deduplication и tests после reconnect.
 
 ### BL-010 — Delete-for-everyone и tombstones
 

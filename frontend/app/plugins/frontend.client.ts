@@ -23,6 +23,8 @@ import { TypingIndicatorService } from '../application/messaging/typing-indicato
 import { PresenceIndicatorService } from '../application/messaging/presence-indicator-service'
 import type { TypingTransport } from '../application/ports/typing-transport'
 import { ListConversationReadStates } from '../application/messaging/list-conversation-read-states'
+import { ListParticipantDeliveryStates } from '../application/messaging/list-participant-delivery-states'
+import { MarkConversationDelivered } from '../application/messaging/mark-conversation-delivered'
 import { MarkConversationRead } from '../application/messaging/mark-conversation-read'
 import { LoadCurrentAccount } from '../application/auth/load-current-account'
 import { Login } from '../application/auth/login'
@@ -43,6 +45,7 @@ import { ApiClient } from '../infrastructure/http/api-client'
 import { HttpAuthGateway } from '../infrastructure/http/auth-gateway'
 import { HttpMessagingGateway } from '../infrastructure/http/messaging-gateway'
 import { HttpConversationReadStateGateway } from '../infrastructure/http/conversation-read-state-gateway'
+import { HttpConversationDeliveryStateGateway } from '../infrastructure/http/conversation-delivery-state-gateway'
 import { BrowserRealtimeGateway } from '../infrastructure/realtime/browser-realtime-gateway'
 
 export default defineNuxtPlugin(() => {
@@ -52,6 +55,7 @@ export default defineNuxtPlugin(() => {
   const accountSecurityGateway = new HttpAccountSecurityGateway(apiClient)
   const messagingGateway = new HttpMessagingGateway(apiClient)
   const readStateGateway = new HttpConversationReadStateGateway(apiClient)
+  const deliveryStateGateway = new HttpConversationDeliveryStateGateway(apiClient)
   const deviceInfo = new BrowserDeviceInfo()
   const haptics = new BrowserHaptics()
   const realtimeGateway = new BrowserRealtimeGateway()
@@ -69,6 +73,8 @@ export default defineNuxtPlugin(() => {
         messagingGateway,
         listConversationReadStates: new ListConversationReadStates(readStateGateway),
         markConversationRead: new MarkConversationRead(readStateGateway),
+        listParticipantDeliveryStates: new ListParticipantDeliveryStates(deliveryStateGateway),
+        markConversationDelivered: new MarkConversationDelivered(deliveryStateGateway),
         pageVisibility,
         messageCodec: syntheticMessageCodec,
         deviceInfo,

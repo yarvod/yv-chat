@@ -37,8 +37,10 @@ from messenger.application.devices.list_sessions import ListMySessions
 from messenger.application.devices.rename import RenameMyDevice
 from messenger.application.devices.revoke import RevokeMyDevice
 from messenger.application.devices.revoke_others import RevokeOtherSessions
+from messenger.application.messaging.list_delivery_states import ListParticipantDeliveryStates
 from messenger.application.messaging.list_messages import ListMessages
 from messenger.application.messaging.list_read_states import ListConversationReadStates
+from messenger.application.messaging.mark_delivered import MarkConversationDelivered
 from messenger.application.messaging.mark_read import MarkConversationRead
 from messenger.application.messaging.policy import MessageEnvelopePolicy
 from messenger.application.messaging.send_message import SendOpaqueMessage
@@ -244,6 +246,11 @@ class HttpTestProvider(Provider):
         scope=Scope.REQUEST,
     )
     mark_conversation_read = provide(MarkConversationRead, scope=Scope.REQUEST)
+    list_participant_delivery_states = provide(
+        ListParticipantDeliveryStates,
+        scope=Scope.REQUEST,
+    )
+    mark_conversation_delivered = provide(MarkConversationDelivered, scope=Scope.REQUEST)
     list_sync_events = provide(ListSyncEvents, scope=Scope.REQUEST)
     publish_typing = provide(PublishTyping, scope=Scope.REQUEST)
     list_presence_snapshot = provide(ListPresenceSnapshot, scope=Scope.REQUEST)
@@ -550,6 +557,70 @@ async def test_read_state_transport_requires_csrf_and_returns_actual_unread_coun
         assert marked.status_code == 200
         assert marked.json()["last_read_sequence"] == 1
         assert marked.json()["advanced"] is True
+
+
+async def test_delivery_state_transport_is_device_scoped_and_requires_csrf() -> None:
+    application, state, _ = build_test_application()
+    transport = ASGITransport(app=application)
+    async with AsyncClient(transport=transport, base_url="https://test") as client:
+        login_response = await login(client)
+        assert login_response.status_code == 200
+        alice = next(iter(state.users.values()))
+        device_id = UUID(login_response.json()["device_id"])
+        bob = User.create(username="bob", display_name="Bob", now=NOW)
+        conversation = Conversation.create_direct(
+            created_by=alice.id, other_user_id=bob.id, now=NOW
+        )
+        message = Message.create(
+            conversation_id=conversation.id,
+            client_message_id=uuid4(),
+            sender_user_id=bob.id,
+            sender_device_id=uuid4(),
+            protocol_version=1,
+            sequence=1,
+            ciphertext=b"opaque",
+            now=NOW,
+        )
+        state.users[bob.id] = bob
+        state.conversations[conversation.id] = conversation
+        state.messages[message.id] = message
+
+        preflight = await client.options(
+            f"/api/v1/conversation-delivery-states/{conversation.id}",
+            headers={
+                "Origin": "https://test",
+                "Access-Control-Request-Method": "PUT",
+                "Access-Control-Request-Headers": "X-CSRF-Token, Content-Type",
+            },
+        )
+        assert preflight.status_code == 200
+        assert "PUT" in preflight.headers["access-control-allow-methods"]
+
+        no_csrf = await client.put(
+            f"/api/v1/conversation-delivery-states/{conversation.id}",
+            headers={"Origin": "https://test"},
+            json={"sequence": 1},
+        )
+        assert no_csrf.status_code == 403
+        marked = await client.put(
+            f"/api/v1/conversation-delivery-states/{conversation.id}",
+            headers={
+                "Origin": "https://test",
+                "X-CSRF-Token": client.cookies["__Host-yv_csrf"],
+            },
+            json={"sequence": 1},
+        )
+        assert marked.status_code == 200
+        assert marked.json()["advanced"] is True
+        assert (device_id, conversation.id) in state.delivery_states
+        listed = await client.get("/api/v1/conversation-delivery-states")
+        assert listed.json() == [
+            {
+                "conversation_id": str(conversation.id),
+                "user_id": str(alice.id),
+                "delivered_sequence": 1,
+            }
+        ]
 
 
 async def run_client_ip_flow(trusted: bool) -> str | None:

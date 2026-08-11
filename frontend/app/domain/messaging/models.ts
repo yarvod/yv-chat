@@ -42,11 +42,18 @@ export interface ConversationReadState {
   unreadCount: number
 }
 
+export interface ParticipantDeliveryState {
+  conversationId: string
+  userId: string
+  deliveredSequence: number
+}
+
 export type SyncEventType =
   | 'conversation_updated'
   | 'message_created'
   | 'message_deleted'
   | 'read_receipt'
+  | 'delivery_receipt'
 
 export interface SyncEvent {
   eventId: string
@@ -56,6 +63,7 @@ export interface SyncEvent {
   messageId: string | null
   actorUserId: string | null
   readSequence: number | null
+  deliverySequence: number | null
   createdAt: string
 }
 

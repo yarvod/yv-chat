@@ -111,3 +111,7 @@ class RealtimeSubscriptionClosedError(ApplicationError):
 
 class InvalidReadSequenceError(ApplicationError):
     """A read cursor does not identify an existing authorized message."""
+
+
+class InvalidDeliverySequenceError(ApplicationError):
+    """A delivery cursor does not identify an existing authorized message."""

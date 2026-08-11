@@ -4,67 +4,70 @@
 завершённая работа фиксируется отдельным коммитом, а новый пункт переносится
 сюда из `backlog.md`.
 
-## WP-026 — Best-effort multi-device presence
+## WP-027 — Durable per-device delivery state
 
-Статус: **completed**  
-Backlog items: `BL-009`, `BL-011`  
-Цель: показывать online/offline состояние только как best-effort производную от
-живых authenticated WebSocket connections, корректно учитывая несколько sessions
-одного user и не превращая presence в durable authorization/audit truth.
-
-### Результат
-
-Первое активное socket-соединение пользователя создаёт online transition, последнее
-закрытое — offline. Новый клиент получает authorized snapshot только пользователей,
-с которыми у него есть active conversations. Transitions и snapshot содержат только
-IDs/boolean, не пишутся в БД/sync и очищаются frontend при disconnect.
+Статус: **implemented; runtime PostgreSQL/container verification pending**  
+Backlog item: `BL-009`  
+Цель: хранить монотонный delivery cursor отдельно для каждого device и показывать
+отправителю подтверждение доставки хотя бы на одно устройство каждого получателя.
 
 ### Invariants
 
-1. Presence считается на user level поверх количества live subscriptions; закрытие
-   одного из нескольких devices не создаёт ложный offline.
-2. Online transition только на `0 → 1`, offline только на `1 → 0`; subscribe,
-   unsubscribe и snapshot выполняются под одним hub lock.
-3. Snapshot/audience ограничены active conversation memberships текущего actor;
-   нельзя перечислить глобально online users или подать чужой user ID.
-4. Presence ephemeral: нет DB rows, sync events, push и исторического last-seen.
-5. Heartbeat/revalidation/slow-consumer cleanup гарантируют eventual offline;
-   presence не продлевает opaque auth session.
-6. Payload содержит event/conversation/actor IDs и `online`, без IP/device/session,
-   content, credential или произвольной metadata.
-7. Missed transitions безопасны: каждый reconnect получает новый snapshot, а
-   frontend очищает старое состояние сразу при socket disconnect.
-8. Frontend не запускает `/sync` на presence frames и не использует presence как
-   authorization boundary.
-9. Direct/group UI показывает online только для соответствующего active member;
-   собственный connection не рендерится как peer presence.
-10. Реализация остаётся process-local для single backend process; horizontal scale
-    потребует отдельного ADR, а не скрытого Redis dependency.
+1. Cursor принадлежит `(device_id, conversation_id)`; actor user/device берутся
+   только из opaque session principal.
+2. Device должен быть active, принадлежать actor и иметь active membership.
+3. Ack разрешён только до реально полученной существующей server sequence,
+   монотонен и идемпотентен; guessed future sequence отклоняется.
+4. Device cursor и recipient durable `delivery_receipt` sync events коммитятся
+   одной transaction; realtime остаётся post-commit best-effort.
+5. Sync payload не раскрывает device ID другим participants: только actor user,
+   conversation и delivered sequence.
+6. Participant summary агрегирует `max(sequence)` по active devices пользователя:
+   это «доставлено хотя бы на одно устройство», не «прочитано».
+7. Frontend подтверждает delivery только после успешного получения и принятия
+   bounded message page; read cursor остаётся отдельной foreground operation.
+8. Duplicate WS/sync receipt вызывает idempotent summary reload.
+9. Revoked device не может ack; его historical cursor не является active delivery
+   proof после security revoke.
+10. Delivery не обещает decrypt/read/persist forever и не подменяет E2EE device
+    session acknowledgement, который будет согласован с protocol ADR.
 
 ### План
 
-- [x] Расширить RealtimeHub atomic first/last transition и authorized online query.
-- [x] Добавить presence application audience/snapshot/transition use cases.
-- [x] Подключить lifecycle к WebSocket subscribe/finally и отправить initial snapshot.
-- [x] Добавить typed payload shape и pytest для multi-device, membership isolation,
-  slow consumer, no durable writes и reconnect snapshot.
-- [x] Добавить frontend parser/presence service, disconnect reset и UI indicators.
-- [x] Проверить, что typing/presence не запускают durable catch-up; добавить Vitest.
-- [x] Обновить architecture/backlog/bugs; full CI, container smoke, commit/push.
+- [x] Domain entity, ports/UoW, SQL adapter и Alembic `0013`.
+- [x] Mark/list use cases, Dishka и thin cookie/CSRF HTTP routes.
+- [x] Typed `delivery_receipt` в durable sync/realtime и DB shape constraints.
+- [x] Frontend DTO/gateway/use cases, auto-ack после message page и receipt merge.
+- [x] Message UI status для own messages на основе participant aggregate.
+- [x] Pytest/Vitest negative, retry, multi-device, revoked-device и integration tests.
+- [ ] Architecture/backlog/bugs, full CI, migration rollback, container smoke,
+  commit/push.
+
+### Verification status
+
+- Passed: backend Ruff/format/Mypy/pytest (`162 passed`, PostgreSQL cases skipped
+  without `TEST_DATABASE_URL`), frontend ESLint/typecheck/Vitest (`32 passed`) and
+  production build.
+- Passed: Alembic full upgrade SQL generation and `0013 → 0012` downgrade SQL;
+  static migration graph test prevents overlong revision IDs.
+- Pending: executing upgrade/downgrade and integration suite against real PostgreSQL,
+  plus rebuilt Compose health smoke. A dedicated Docker test container could not be
+  started because the local Docker socket requires an execution approval that was
+  unavailable; production was intentionally not used as a test database.
 
 ### Не входит в этот slice
 
-- persisted `last_seen` social status;
-- cross-process presence/Redis;
-- per-device delivered receipts;
-- push presence/typing;
-- presence-based authorization или risk scoring.
+- cryptographic protocol-level acknowledgement;
+- offline local encrypted archive;
+- read receipt redesign;
+- delete tombstones/TTL;
+- push delivery provider status.
 
 ### Проверка готовности
 
-- два sockets одного user дают один online и offline только после второго close;
-- unrelated user отсутствует в snapshot/events;
-- revoked/expired/slow connection eventually исчезает;
-- reconnect строит snapshot и исправляет пропущенные transitions;
-- no DB/sync mutations;
-- backend/frontend CI и local container smoke проходят.
+- foreign/revoked device и non-member не могут ack;
+- lower/equal retry no-op, concurrent higher cursor wins;
+- sender sees delivered only when recipient aggregate reaches message sequence;
+- one recipient device ack is visible while another device remains behind;
+- no plaintext/device metadata leaks in sync/API;
+- fresh/rollback migration, CI/build/container smoke pass.

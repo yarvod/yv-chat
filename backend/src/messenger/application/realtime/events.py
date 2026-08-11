@@ -13,6 +13,7 @@ class RealtimeEventType(StrEnum):
     CONVERSATION_UPDATED = "conversation_updated"
     MESSAGE_DELETED = "message_deleted"
     READ_RECEIPT = "read_receipt"
+    DELIVERY_RECEIPT = "delivery_receipt"
     TYPING = "typing"
     PRESENCE = "presence"
 
@@ -29,6 +30,7 @@ class RealtimeNotification:
     typing_active: bool | None = None
     expires_at: datetime | None = None
     presence_online: bool | None = None
+    delivery_sequence: int | None = None
 
     def __post_init__(self) -> None:
         if self.event_type is RealtimeEventType.TYPING:
@@ -41,6 +43,7 @@ class RealtimeNotification:
                 and self.expires_at.tzinfo is not None
                 and self.expires_at.utcoffset() is not None
                 and self.presence_online is None
+                and self.delivery_sequence is None
             )
         elif self.event_type is RealtimeEventType.PRESENCE:
             valid = (
@@ -50,6 +53,7 @@ class RealtimeNotification:
                 and self.typing_active is None
                 and self.expires_at is None
                 and self.presence_online is not None
+                and self.delivery_sequence is None
             )
         elif self.event_type is RealtimeEventType.READ_RECEIPT:
             valid = (
@@ -60,6 +64,18 @@ class RealtimeNotification:
                 and self.typing_active is None
                 and self.expires_at is None
                 and self.presence_online is None
+                and self.delivery_sequence is None
+            )
+        elif self.event_type is RealtimeEventType.DELIVERY_RECEIPT:
+            valid = (
+                self.message_id is None
+                and self.actor_user_id is not None
+                and self.read_sequence is None
+                and self.typing_active is None
+                and self.expires_at is None
+                and self.presence_online is None
+                and self.delivery_sequence is not None
+                and self.delivery_sequence > 0
             )
         elif self.event_type is RealtimeEventType.CONVERSATION_UPDATED:
             valid = (
@@ -69,6 +85,7 @@ class RealtimeNotification:
                 and self.typing_active is None
                 and self.expires_at is None
                 and self.presence_online is None
+                and self.delivery_sequence is None
             )
         else:
             valid = (
@@ -78,6 +95,7 @@ class RealtimeNotification:
                 and self.typing_active is None
                 and self.expires_at is None
                 and self.presence_online is None
+                and self.delivery_sequence is None
             )
         if not valid:
             raise ValueError("realtime notification shape does not match event type")
@@ -88,6 +106,7 @@ _SYNC_EVENT_TYPES = {
     SyncEventType.CONVERSATION_UPDATED: RealtimeEventType.CONVERSATION_UPDATED,
     SyncEventType.MESSAGE_DELETED: RealtimeEventType.MESSAGE_DELETED,
     SyncEventType.READ_RECEIPT: RealtimeEventType.READ_RECEIPT,
+    SyncEventType.DELIVERY_RECEIPT: RealtimeEventType.DELIVERY_RECEIPT,
 }
 
 
@@ -103,6 +122,7 @@ def notifications_from_sync(
             message_id=event.message_id,
             actor_user_id=event.actor_user_id,
             read_sequence=event.read_sequence,
+            delivery_sequence=event.delivery_sequence,
         )
         for event in events
     )

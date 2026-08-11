@@ -28,6 +28,7 @@ class SyncEventResponse(BaseModel):
     message_id: UUID | None
     actor_user_id: UUID | None
     read_sequence: int | None
+    delivery_sequence: int | None
     created_at: datetime
 
 
@@ -67,6 +68,7 @@ async def list_sync_events(
                 message_id=event.message_id,
                 actor_user_id=event.actor_user_id,
                 read_sequence=event.read_sequence,
+                delivery_sequence=event.delivery_sequence,
                 created_at=event.created_at,
             )
             for event in result.events

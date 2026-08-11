@@ -3,6 +3,8 @@
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
+import pytest
+
 from messenger.application.sync import PendingSyncEvent, SyncEventType, SyncPolicy
 from messenger.application.sync.list_events import ListSyncEvents, ListSyncEventsQuery
 from messenger.domain.entities import User
@@ -14,6 +16,32 @@ from tests.application.fakes import (
 )
 
 NOW = datetime(2026, 8, 11, 12, 0, tzinfo=UTC)
+
+
+def test_delivery_receipt_requires_actor_and_positive_delivery_sequence() -> None:
+    valid = PendingSyncEvent.create(
+        user_id=uuid4(),
+        event_type=SyncEventType.DELIVERY_RECEIPT,
+        conversation_id=uuid4(),
+        message_id=None,
+        actor_user_id=uuid4(),
+        delivery_sequence=7,
+        created_at=NOW,
+        expires_at=NOW + timedelta(days=1),
+    )
+    assert valid.delivery_sequence == 7
+    for actor_user_id, sequence in ((None, 7), (uuid4(), None), (uuid4(), 0)):
+        with pytest.raises(ValueError):
+            PendingSyncEvent.create(
+                user_id=uuid4(),
+                event_type=SyncEventType.DELIVERY_RECEIPT,
+                conversation_id=uuid4(),
+                message_id=None,
+                actor_user_id=actor_user_id,
+                delivery_sequence=sequence,
+                created_at=NOW,
+                expires_at=NOW + timedelta(days=1),
+            )
 
 
 async def test_sync_pages_are_user_scoped_ordered_and_bounded() -> None:

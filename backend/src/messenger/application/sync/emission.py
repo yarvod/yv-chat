@@ -15,6 +15,7 @@ def events_for_users(
     message_id: UUID | None,
     actor_user_id: UUID | None = None,
     read_sequence: int | None = None,
+    delivery_sequence: int | None = None,
     now: datetime,
     policy: SyncPolicy,
 ) -> list[PendingSyncEvent]:
@@ -26,6 +27,7 @@ def events_for_users(
             message_id=message_id,
             actor_user_id=actor_user_id,
             read_sequence=read_sequence,
+            delivery_sequence=delivery_sequence,
             created_at=now,
             expires_at=now + policy.retention,
         )

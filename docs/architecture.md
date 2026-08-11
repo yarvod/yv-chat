@@ -462,7 +462,7 @@ Message row, sender read cursor и recipient-specific `message_created` +
 `read_receipt` events коммитятся одним Messaging UoW; отправка означает, что sender
 прочитал timeline до выделенной sequence, поэтому собственное сообщение не становится
 ложно unread. Exact retry не создаёт повторных rows/events. Sync payload содержит
-только stable event/conversation/message/actor IDs, read sequence и timestamps, без
+только stable event/conversation/message/actor IDs, read/delivery sequences и timestamps, без
 ciphertext/plaintext/key data. Cleanup удаляет expired events, но сохраняет stream
 high-water mark; `/api/v1/sync` сравнивает `after`, oldest retained cursor и stream
 cursor и выставляет `reset_required`, когда нужен полный resource resync.
@@ -483,6 +483,30 @@ cases. `useMessenger` помечает только active conversation, тол�
 foreground. Повторные submits дедуплицируются; потерянный/duplicate WebSocket hint
 всегда восстанавливается `/sync` и повторным read-state reload.
 
+Delivery state намеренно отделён от read state. Таблица
+`conversation_delivery_states` хранит monotonic cursor по ключу
+`(device_id, conversation_id)`: delivery означает, что конкретная active installation
+успешно получила bounded message page, но не обещает decrypt, foreground/read или
+вечное локальное хранение. `MarkConversationDelivered` берёт user/device только из
+opaque-session principal, проверяет active owned device, active membership и наличие
+server sequence. Future sequence отклоняется, lower/equal retry является no-op.
+
+Публичный participant summary агрегирует `max(last_delivered_sequence)` по active
+devices каждого active member. Поэтому UI трактует его как «доставлено хотя бы на
+одно устройство получателя»; revoked devices и покинувшие conversation участники не
+считаются. API/sync/realtime не раскрывают device ID или metadata другим участникам —
+durable `delivery_receipt` содержит только conversation, actor user и sequence.
+Cursor и recipient-specific events коммитятся в одном Messaging UoW, realtime
+публикуется best-effort после commit. Send также атомарно двигает delivery cursor
+устройства отправителя, не создавая новые rows/events при exact retry.
+
+Frontend использует отдельные DTO/gateway/use cases для delivery, подтверждает
+последнюю sequence после успешного merge message page независимо от visibility и
+дедуплицирует submit по conversation. `delivery_receipt` лишь будит cursor catch-up и
+set-based summary reload; компонент получает готовый aggregate и показывает статус
+только у собственных сообщений. Это transport-level receipt, а не часть ещё не
+выбранного E2EE protocol.
+
 `/api/v1/realtime` принимает WebSocket только после exact Origin и opaque-cookie
 handshake. Handshake может выполнить throttled session touch, но не вращает cookie
 credential; heartbeat/pong не касается session state. Уже установленное соединение
@@ -491,10 +515,11 @@ credential rotation не превращает старый socket credential в 
 Process-local `InMemoryRealtimeHub` держит bounded queue на connection и удаляет
 slow consumer. После durable commit application публикует только `event_id`,
 `conversation_id`, optional `message_id` и typed `new_message`,
-`conversation_updated`, `message_deleted` либо durable `read_receipt`; failure notifier
+`conversation_updated`, `message_deleted`, durable `read_receipt` либо
+`delivery_receipt`; failure notifier
 логируется без content и не меняет committed result. Это сознательно single-process
-решение без Redis. Ephemeral presence появится отдельной application policy с
-bounded expiry и не станет durable truth.
+решение без Redis. Presence идёт отдельным ephemeral path и не становится durable
+truth.
 
 Typing использует отдельный ephemeral path поверх того же authenticated WebSocket.
 Client frame имеет exact форму `typing(conversation_id, active)` и не может задавать

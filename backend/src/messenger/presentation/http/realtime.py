@@ -104,6 +104,8 @@ def _notification_payload(
         payload["actor_user_id"] = str(notification.actor_user_id)
     if notification.read_sequence is not None:
         payload["read_sequence"] = notification.read_sequence
+    if notification.delivery_sequence is not None:
+        payload["delivery_sequence"] = notification.delivery_sequence
     if notification.typing_active is not None:
         payload["active"] = notification.typing_active
     if notification.expires_at is not None:
