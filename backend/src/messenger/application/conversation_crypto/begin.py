@@ -149,8 +149,12 @@ class BeginConversationCrypto:
             if not current_device_has_identity:
                 generation = generation.block(ConversationCryptoBlockReason.MISSING_IDENTITY, now)
             else:
+                # The coordinator already owns the local MLS state that will create
+                # this generation. It never consumes a Welcome/KeyPackage for
+                # itself, including full-roster recovery where every leaf from the
+                # previous READY generation has been revoked.
                 added_device_ids = (
-                    active_device_ids - previous_device_ids
+                    active_device_ids - previous_device_ids - {coordinator.id}
                     if previous_ready is not None
                     else active_device_ids - {coordinator.id}
                 )

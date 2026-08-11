@@ -50,6 +50,8 @@ ALICE_PHONE_ID = UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1")
 ALICE_LAPTOP_ID = UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2")
 BOB_PHONE_ID = UUID("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1")
 BOB_LAPTOP_ID = UUID("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2")
+ALICE_REPLACEMENT_ID = UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3")
+BOB_REPLACEMENT_ID = UUID("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3")
 CONVERSATION_ID = UUID("cccccccc-cccc-4ccc-8ccc-cccccccccccc")
 BOOTSTRAP_REQUEST_ID = UUID("dddddddd-dddd-4ddd-8ddd-dddddddddddd")
 
@@ -366,3 +368,80 @@ async def test_ready_roster_drift_creates_incremental_generation_and_only_claims
     )
     assert [item.generation.generation_number for item in bob_laptop_updates] == [2]
     assert bob_laptop_updates[0].welcome is not None
+
+
+async def test_full_roster_recovery_never_claims_coordinator_own_key_package() -> None:
+    state = bootstrap_state()
+    factory = FakeConversationCryptoUnitOfWorkFactory(state)
+    first = (
+        await BeginConversationCrypto(unit_of_work=factory, clock=FixedClock(NOW)).execute(
+            begin_command()
+        )
+    ).generation
+    await FinalizeConversationCrypto(
+        unit_of_work=factory,
+        clock=FixedClock(NOW + timedelta(seconds=1)),
+    ).execute(
+        FinalizeConversationCryptoCommand(
+            user_id=ALICE_ID,
+            device_id=ALICE_PHONE_ID,
+            conversation_id=CONVERSATION_ID,
+            generation_id=first.id,
+            epoch=1,
+            commit_message=b"initial-commit",
+            ratchet_tree=b"initial-tree",
+            welcomes=(
+                DeviceWelcomeInput(ALICE_LAPTOP_ID, b"welcome-alice-laptop"),
+                DeviceWelcomeInput(BOB_PHONE_ID, b"welcome-bob-phone"),
+            ),
+        )
+    )
+    rotation_time = NOW + timedelta(seconds=2)
+    for device_id in (ALICE_PHONE_ID, ALICE_LAPTOP_ID, BOB_PHONE_ID):
+        state.devices[device_id] = state.devices[device_id].revoke(rotation_time)
+
+    replacement_packages: dict[UUID, DeviceKeyPackage] = {}
+    for user_id, device_id, marker in (
+        (ALICE_ID, ALICE_REPLACEMENT_ID, 10),
+        (BOB_ID, BOB_REPLACEMENT_ID, 11),
+    ):
+        state.devices[device_id] = Device.create(
+            user_id=user_id,
+            name="Replacement device",
+            now=rotation_time,
+            device_id=device_id,
+        )
+        state.device_crypto_identities[device_id] = crypto_identity(user_id, device_id, marker)
+        package = DeviceKeyPackage.create(
+            user_id=user_id,
+            device_id=device_id,
+            key_package=f"replacement-package-{device_id}".encode(),
+            now=rotation_time,
+        )
+        state.device_key_packages[package.id] = package
+        replacement_packages[device_id] = package
+
+    recovered = await BeginConversationCrypto(
+        unit_of_work=factory,
+        clock=FixedClock(NOW + timedelta(seconds=3)),
+    ).execute(
+        BeginConversationCryptoCommand(
+            user_id=ALICE_ID,
+            device_id=ALICE_REPLACEMENT_ID,
+            conversation_id=CONVERSATION_ID,
+            bootstrap_request_id=UUID("ffffffff-ffff-4fff-8fff-ffffffffffff"),
+        )
+    )
+
+    assert recovered.generation.generation_number == 2
+    assert recovered.generation.coordinator_device_id == ALICE_REPLACEMENT_ID
+    assert recovered.generation.status is ConversationCryptoStatus.PENDING
+    by_device = {item.device_id: item for item in recovered.required_devices}
+    assert set(by_device) == {ALICE_REPLACEMENT_ID, BOB_REPLACEMENT_ID}
+    assert by_device[ALICE_REPLACEMENT_ID].is_coordinator is True
+    assert by_device[ALICE_REPLACEMENT_ID].key_package is None
+    assert by_device[BOB_REPLACEMENT_ID].key_package is not None
+    assert (
+        state.device_key_packages[replacement_packages[ALICE_REPLACEMENT_ID].id].is_claimed is False
+    )
+    assert state.device_key_packages[replacement_packages[BOB_REPLACEMENT_ID].id].is_claimed is True

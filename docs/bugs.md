@@ -4,6 +4,24 @@
 
 ## Active
 
+### BUG-051 — Full direct roster rotation caused bootstrap 422
+
+- Статус: `fixed and full-CI verified; production rollout pending`.
+- Severity: `critical`; existing direct conversation became unable to send when every
+  device from the latest READY MLS generation had been revoked and both users logged
+  in from replacement devices.
+- Reproduction: current generation has a revoked coordinator, latest READY roster has
+  no active leaves, both replacement devices have identities and available
+  KeyPackages; `POST /crypto/bootstrap` returns 422.
+- Причина: full-roster recovery selected the current replacement device as coordinator,
+  but also left it in `added_device_ids`; bootstrap then attempted to bind the
+  coordinator's own KeyPackage, violating the domain invariant.
+- Исправление: coordinator is always excluded from Welcome/KeyPackage targets,
+  including recovery from an entirely revoked previous roster; regression covers two
+  replacement devices and proves only the peer package is claimed.
+- Data impact: message ciphertext/history is not modified; failed transactions did not
+  persist partial generations or consume packages.
+
 ### BUG-050 — Direct recipient badge оставался stale после Welcome catch-up
 
 - Статус: `fixed, browser- and production-verified in WP-050`.
