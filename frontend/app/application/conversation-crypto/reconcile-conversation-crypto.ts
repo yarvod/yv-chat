@@ -157,7 +157,7 @@ export class ReconcileConversationCrypto {
       if (
         local.phase !== 'ready'
         || local.generationNumber === null
-        || generation.generationNumber !== local.generationNumber + 1
+        || generation.generationNumber <= local.generationNumber
         || generation.commit === null
       ) throw new DeviceCryptoError('conflict')
       const applied = await this.mls.applyCommit({
@@ -219,7 +219,7 @@ export class ReconcileConversationCrypto {
       }
       const previousReady = local?.phase === 'ready'
         && local.generationNumber !== null
-        && local.generationNumber === generation.generationNumber - 1
+        && local.generationNumber < generation.generationNumber
       const created = previousReady
         ? await this.mls.updateConversation({
             conversationId: command.conversationId,
@@ -291,7 +291,8 @@ export class ReconcileConversationCrypto {
     if (welcome === null) {
       if (
         local?.phase !== 'ready'
-        || local.generationNumber !== generation.generationNumber - 1
+        || local.generationNumber === null
+        || generation.generationNumber <= local.generationNumber
         || generation.commit === null
       ) throw new DeviceCryptoError('conflict')
       const applied = await this.mls.applyCommit({

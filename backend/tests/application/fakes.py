@@ -875,6 +875,7 @@ class FakeConversationCryptoUnitOfWork:
         self.welcomes: ConversationCryptoWelcomeRepository = (
             FakeConversationCryptoWelcomeRepository(state)
         )
+        self.sync_events: SyncRepository = FakeSyncRepository(state)
 
     async def __aenter__(self) -> Self:
         return self

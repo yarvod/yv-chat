@@ -211,6 +211,8 @@ export function useMessenger(
         ? 'Не хватает одноразового ключа одного из устройств'
         : state.conversationCryptoBlockReason === 'missing_identity'
           ? 'Одно из устройств ещё не подготовило криптомодуль'
+          : state.conversationCryptoBlockReason === 'device_roster_changed'
+            ? 'Ожидаем подтверждение от уже подключённого устройства'
           : 'Шифрование личного чата требует восстановления'
     }
     if (state.conversationCryptoPhase === 'checking') return 'Проверяем E2EE личного чата'

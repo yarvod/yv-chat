@@ -289,6 +289,30 @@ describe('messenger orchestration', () => {
     expect(messenger.state.message).toContain('MLS E2EE')
   })
 
+  it('explains that a new device waits for an existing MLS leaf and stays fail-closed', async () => {
+    const direct = { ...conversation, conversationType: 'direct' as const, title: null }
+    vi.mocked(gateway.listConversations).mockResolvedValue([direct])
+    const reconcileConversationCrypto = vi.fn().mockResolvedValue({
+      status: 'blocked' as const,
+      generationId: 'generation-roster-change',
+      generationNumber: 2,
+      blockReason: 'device_roster_changed',
+      epoch: null,
+    })
+    const messenger = useMessenger('alice-id', 'device-new-phone', vi.fn(), {
+      ...messengerDependencies(),
+      reconcileConversationCrypto,
+    })
+
+    await messenger.load()
+
+    expect(messenger.protection.secure.value).toBe(false)
+    expect(messenger.protection.label.value)
+      .toBe('Ожидаем подтверждение от уже подключённого устройства')
+    expect(await messenger.send('must wait for an old leaf')).toBe(false)
+    expect(gateway.sendMessage).not.toHaveBeenCalled()
+  })
+
   it('refreshes a direct security badge after message catch-up completes enrollment', async () => {
     const direct = { ...conversation, conversationType: 'direct' as const, title: null }
     vi.mocked(gateway.listConversations).mockResolvedValue([direct])

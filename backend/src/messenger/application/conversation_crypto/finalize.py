@@ -15,6 +15,11 @@ from messenger.application.errors import (
 )
 from messenger.application.ports.clock import Clock
 from messenger.application.ports.conversation_crypto import ConversationCryptoUnitOfWorkFactory
+from messenger.application.ports.realtime import RealtimeNotifier
+from messenger.application.realtime import notifications_from_sync
+from messenger.application.realtime.publish import publish_best_effort
+from messenger.application.sync import SyncEventType, SyncPolicy
+from messenger.application.sync.emission import events_for_users
 from messenger.domain.entities import (
     ConversationCryptoStatus,
     ConversationCryptoWelcome,
@@ -42,12 +47,27 @@ class FinalizeConversationCryptoCommand:
 
 
 class FinalizeConversationCrypto:
-    def __init__(self, *, unit_of_work: ConversationCryptoUnitOfWorkFactory, clock: Clock) -> None:
+    def __init__(
+        self,
+        *,
+        unit_of_work: ConversationCryptoUnitOfWorkFactory,
+        clock: Clock,
+        sync_policy: SyncPolicy,
+        realtime_notifier: RealtimeNotifier,
+    ) -> None:
         self._unit_of_work = unit_of_work
         self._clock = clock
+        self._sync_policy = sync_policy
+        self._realtime_notifier = realtime_notifier
 
     async def execute(self, command: FinalizeConversationCryptoCommand) -> ConversationCryptoResult:
         async with self._unit_of_work() as uow:
+            conversation = await uow.conversations.get_by_id(
+                command.conversation_id,
+                for_update=True,
+            )
+            if conversation is None or conversation.active_member(command.user_id) is None:
+                raise ConversationNotFoundError("conversation not found")
             device = await uow.devices.get_owned_by_id(
                 user_id=command.user_id,
                 device_id=command.device_id,
@@ -55,9 +75,6 @@ class FinalizeConversationCrypto:
             )
             if device is None or device.revoked_at is not None:
                 raise OwnedDeviceNotFoundError("current device is unavailable")
-            conversation = await uow.conversations.get_by_id(command.conversation_id)
-            if conversation is None or conversation.active_member(command.user_id) is None:
-                raise ConversationNotFoundError("conversation not found")
             generation = await uow.generations.get_by_id(command.generation_id, for_update=True)
             if (
                 generation is None
@@ -117,5 +134,19 @@ class FinalizeConversationCrypto:
             )
             await uow.welcomes.add_many(welcomes)
             await uow.generations.update(finalized)
+            sync_events = events_for_users(
+                {member.user_id for member in conversation.members if member.is_active},
+                event_type=SyncEventType.CONVERSATION_UPDATED,
+                conversation_id=conversation.id,
+                message_id=None,
+                now=now,
+                policy=self._sync_policy,
+            )
+            await uow.sync_events.append(sync_events)
             await uow.commit()
-            return await materialize_generation(uow, finalized)
+            result = await materialize_generation(uow, finalized)
+        await publish_best_effort(
+            self._realtime_notifier,
+            notifications_from_sync(sync_events),
+        )
+        return result

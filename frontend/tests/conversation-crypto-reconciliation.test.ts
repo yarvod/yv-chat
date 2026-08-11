@@ -347,6 +347,33 @@ describe('conversation crypto reconciliation', () => {
     expect(state.value?.phase).toBe('ready')
   })
 
+  it('updates from the latest ready MLS state across an intermediate blocked generation', async () => {
+    const state = new MemoryState()
+    state.value = readyLocalState(coordinatorDeviceId)
+    const pending = { ...incrementalGeneration('pending'), generationNumber: 3 }
+    const ready = { ...incrementalGeneration('ready'), generationNumber: 3 }
+    const server: ConversationCryptoGateway = {
+      getCurrent: vi.fn(),
+      listReadyAfter: vi.fn(async () => []),
+      begin: vi.fn(async () => pending),
+      finalize: vi.fn(async () => ready),
+      acknowledgeWelcome: vi.fn(),
+    }
+    const mls = new FakeMls()
+    const useCase = new ReconcileConversationCrypto(
+      server,
+      state,
+      new FakeDeviceCrypto(),
+      mls,
+      new FixedIds([requestId]),
+    )
+
+    await expect(useCase.execute({ conversationId, deviceId: coordinatorDeviceId }))
+      .resolves.toMatchObject({ status: 'ready', generationNumber: 3 })
+    expect(mls.updateConversation).toHaveBeenCalledOnce()
+    expect(mls.bootstrapConversation).not.toHaveBeenCalled()
+  })
+
   it('applies a ready membership Commit to an existing device without a Welcome', async () => {
     const state = new MemoryState()
     state.value = readyLocalState(memberDeviceId)
@@ -376,6 +403,32 @@ describe('conversation crypto reconciliation', () => {
     })
     expect(mls.joinConversation).not.toHaveBeenCalled()
     expect(state.saveCalls.map(item => item.phase)).toEqual(['commit-applied', 'ready'])
+  })
+
+  it('applies the next ready Commit even when blocked generations created a number gap', async () => {
+    const state = new MemoryState()
+    state.value = readyLocalState(memberDeviceId)
+    const ready = { ...incrementalGeneration('ready'), generationNumber: 3 }
+    const server: ConversationCryptoGateway = {
+      getCurrent: vi.fn(),
+      listReadyAfter: vi.fn(async () => [ready]),
+      begin: vi.fn(async () => ready),
+      finalize: vi.fn(),
+      acknowledgeWelcome: vi.fn(),
+    }
+    const mls = new FakeMls()
+    const useCase = new ReconcileConversationCrypto(
+      server,
+      state,
+      new FakeDeviceCrypto(),
+      mls,
+      new FixedIds([requestId]),
+    )
+
+    await expect(useCase.execute({ conversationId, deviceId: memberDeviceId }))
+      .resolves.toMatchObject({ status: 'ready', generationNumber: 3 })
+    expect(mls.applyCommit).toHaveBeenCalledOnce()
+    expect(mls.joinConversation).not.toHaveBeenCalled()
   })
 
   it('applies ordered missed commits and safely rejoins after a removal gap', async () => {

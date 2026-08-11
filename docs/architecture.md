@@ -840,17 +840,35 @@ Pool refresh также single-flight выполняется перед reconcil
 Conversation MLS coordination использует отдельный Unit of Work и три server-side
 типа opaque records: current generation, immutable required-device snapshot и
 адресный Welcome. `POST /api/v1/conversations/{id}/crypto/bootstrap` блокирует
-conversation/device rows, проверяет active membership, снимает все non-revoked
+conversation/device rows в едином порядке `conversation → actor device → generation /
+packages / required rows`, проверяет active membership, снимает все non-revoked
 devices активных участников и атомарно claim-ит по одному KeyPackage для каждого
 target кроме coordinator. Отсутствие identity/package создаёт `blocked` generation
 без частичного secure group и без расходования package. Retry привязан к
 `(coordinator_device_id, bootstrap_request_id)`; database uniqueness и conversation
-row lock закрывают concurrent duplicate generations.
+row lock закрывают concurrent duplicate generations. Единый порядок блокировок
+обязателен для всех roster mutations: FK-проверка required devices может читать
+несколько device rows, поэтому обратный порядок создаёт PostgreSQL deadlock при
+одновременном reconciliation разных leaves.
 
 При изменении active device roster backend создаёт следующую generation. Он сохраняет
-предыдущие листья без повторного KeyPackage claim, получает новые one-time packages
-только для добавленных устройств и выбирает coordinator из пересечения предыдущего
-и нового roster. Rust/OpenMLS coordinator строит один Commit с remove/add proposals;
+предыдущие листья без повторного KeyPackage claim и получает новые one-time packages
+только для добавленных устройств. Новый device без состояния предыдущей READY
+generation не может назначить себя coordinator и claim-ить собственный KeyPackage:
+его первый запрос создаёт идемпотентную `blocked/device_roster_changed` generation без
+расходования packages и durable `conversation_updated` для всех участников. Первое
+доступное прежнее leaf, которое выполняет reconciliation, supersede-ит announcement,
+становится фактическим coordinator и claim-ит packages новых leaves от собственного
+device identity. Поэтому новый и старый device не обязаны быть online одновременно:
+после публикации KeyPackage новый device может забрать сохранённый Welcome позже;
+если offline все прежние leaves, ждёт только enrollment нового device.
+
+Pending generation создаёт durable/realtime wake-up для coordinator, а успешный
+finalize — для всех active participant users. Delivery остаётся correctness-механизмом
+через sync: потерянный WebSocket hint не теряет roster update. Coordination generation
+numbers могут содержать blocked announcement между двумя READY состояниями; frontend
+применяет следующий Commit по монотонному номеру, но MLS epoch меняется только самим
+Commit. Rust/OpenMLS coordinator строит один Commit с remove/add proposals;
 существующие листья применяют и проверяют Commit, новые получают Welcome. Removed
 leaf не входит в новый required snapshot и реальный WASM тест подтверждает, что он
 не расшифровывает future epoch.

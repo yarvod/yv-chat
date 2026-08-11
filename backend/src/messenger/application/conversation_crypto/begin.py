@@ -12,6 +12,11 @@ from messenger.application.errors import (
 )
 from messenger.application.ports.clock import Clock
 from messenger.application.ports.conversation_crypto import ConversationCryptoUnitOfWorkFactory
+from messenger.application.ports.realtime import RealtimeNotifier
+from messenger.application.realtime import notifications_from_sync
+from messenger.application.realtime.publish import publish_best_effort
+from messenger.application.sync import SyncEventType, SyncPolicy
+from messenger.application.sync.emission import events_for_users
 from messenger.domain.entities import (
     ConversationCryptoBlockReason,
     ConversationCryptoGeneration,
@@ -29,12 +34,32 @@ class BeginConversationCryptoCommand:
 
 
 class BeginConversationCrypto:
-    def __init__(self, *, unit_of_work: ConversationCryptoUnitOfWorkFactory, clock: Clock) -> None:
+    def __init__(
+        self,
+        *,
+        unit_of_work: ConversationCryptoUnitOfWorkFactory,
+        clock: Clock,
+        sync_policy: SyncPolicy,
+        realtime_notifier: RealtimeNotifier,
+    ) -> None:
         self._unit_of_work = unit_of_work
         self._clock = clock
+        self._sync_policy = sync_policy
+        self._realtime_notifier = realtime_notifier
 
     async def execute(self, command: BeginConversationCryptoCommand) -> ConversationCryptoResult:
         async with self._unit_of_work() as uow:
+            # Serialize every roster mutation on the conversation before locking a
+            # device row. Required-device FK checks touch several device rows; the
+            # opposite order lets concurrent leaves deadlock (A owns device A and
+            # conversation, B owns device B and waits for conversation, while A's
+            # FK insert waits for device B).
+            conversation = await uow.conversations.get_by_id(
+                command.conversation_id,
+                for_update=True,
+            )
+            if conversation is None or conversation.active_member(command.user_id) is None:
+                raise ConversationNotFoundError("conversation not found")
             device = await uow.devices.get_owned_by_id(
                 user_id=command.user_id,
                 device_id=command.device_id,
@@ -42,12 +67,6 @@ class BeginConversationCrypto:
             )
             if device is None or device.revoked_at is not None:
                 raise OwnedDeviceNotFoundError("current device is unavailable")
-            conversation = await uow.conversations.get_by_id(
-                command.conversation_id,
-                for_update=True,
-            )
-            if conversation is None or conversation.active_member(command.user_id) is None:
-                raise ConversationNotFoundError("conversation not found")
 
             retry = await uow.generations.get_by_bootstrap_request(
                 coordinator_device_id=command.device_id,
@@ -95,7 +114,13 @@ class BeginConversationCrypto:
             )
             if (
                 current is not None
-                and current.status is not ConversationCryptoStatus.BLOCKED
+                and (
+                    current.status is not ConversationCryptoStatus.BLOCKED
+                    or (
+                        current.block_reason is ConversationCryptoBlockReason.DEVICE_ROSTER_CHANGED
+                        and current.coordinator_device_id == command.device_id
+                    )
+                )
                 and not member_without_capable_device
                 and {item.device_id for item in current_required} == active_device_ids
             ):
@@ -114,13 +139,15 @@ class BeginConversationCrypto:
                 if previous_ready is not None
                 else set()
             )
-            existing_coordinators = [
-                item for item in active_devices if item.id in previous_device_ids
-            ]
-            coordinator = next(
-                (item for item in existing_coordinators if item.id == command.device_id),
-                existing_coordinators[0] if existing_coordinators else device,
+            existing_leaves = [item for item in active_devices if item.id in previous_device_ids]
+            requesting_leaf = next(
+                (item for item in existing_leaves if item.id == command.device_id),
+                None,
             )
+            requires_existing_leaf = (
+                previous_ready is not None and bool(existing_leaves) and requesting_leaf is None
+            )
+            coordinator = requesting_leaf or device
 
             now = self._clock.now()
             if current is not None:
@@ -151,6 +178,16 @@ class BeginConversationCrypto:
                 raise OwnedDeviceNotFoundError("current device is unavailable")
             if not current_device_has_identity or member_without_capable_device:
                 generation = generation.block(ConversationCryptoBlockReason.MISSING_IDENTITY, now)
+            elif requires_existing_leaf:
+                # A newly enrolled device has no state for the previous READY
+                # generation and therefore cannot author its own add-leaf Commit.
+                # Keep packages untouched and wake every participant: the first
+                # previous leaf that reconciles will create the next pending
+                # generation as its actual coordinator.
+                generation = generation.block(
+                    ConversationCryptoBlockReason.DEVICE_ROSTER_CHANGED,
+                    now,
+                )
             else:
                 # The coordinator already owns the local MLS state that will create
                 # this generation. It never consumes a Welcome/KeyPackage for
@@ -185,8 +222,8 @@ class BeginConversationCrypto:
                                 "KeyPackage availability changed during bootstrap"
                             )
                         claimed = key_package.claim(
-                            claimed_by_user_id=command.user_id,
-                            claimed_by_device_id=command.device_id,
+                            claimed_by_user_id=coordinator.user_id,
+                            claimed_by_device_id=coordinator.id,
                             conversation_id=command.conversation_id,
                             request_id=uuid5(generation.id, str(item.device_id)),
                             now=now,
@@ -197,5 +234,33 @@ class BeginConversationCrypto:
 
             await uow.generations.add(generation)
             await uow.required_devices.add_many(required)
+            notification_user_ids = (
+                {coordinator.user_id}
+                if generation.status is ConversationCryptoStatus.PENDING
+                else (
+                    active_user_ids
+                    if generation.block_reason
+                    is ConversationCryptoBlockReason.DEVICE_ROSTER_CHANGED
+                    else set()
+                )
+            )
+            sync_events = (
+                events_for_users(
+                    notification_user_ids,
+                    event_type=SyncEventType.CONVERSATION_UPDATED,
+                    conversation_id=command.conversation_id,
+                    message_id=None,
+                    now=now,
+                    policy=self._sync_policy,
+                )
+                if notification_user_ids
+                else []
+            )
+            await uow.sync_events.append(sync_events)
             await uow.commit()
-            return await materialize_generation(uow, generation)
+            result = await materialize_generation(uow, generation)
+        await publish_best_effort(
+            self._realtime_notifier,
+            notifications_from_sync(sync_events),
+        )
+        return result
