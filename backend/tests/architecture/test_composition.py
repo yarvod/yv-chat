@@ -3,6 +3,9 @@
 from messenger.application.accounts.activate import ActivateAccount
 from messenger.application.accounts.bootstrap_admin import BootstrapAdmin
 from messenger.application.accounts.invite import CreateUserInvitation
+from messenger.application.accounts.list_users import ListManagedUsers
+from messenger.application.accounts.reissue_activation import ReissueActivation
+from messenger.application.accounts.update_user import UpdateManagedUser
 from messenger.application.devices.list_security_events import ListSecurityEvents
 from messenger.application.devices.list_sessions import ListMySessions
 from messenger.application.devices.rename import RenameMyDevice
@@ -26,6 +29,9 @@ async def test_production_graph_resolves_every_application_operation() -> None:
         ActivateAccount,
         BootstrapAdmin,
         CreateUserInvitation,
+        ListManagedUsers,
+        ReissueActivation,
+        UpdateManagedUser,
         Login,
         AuthenticateSession,
         Logout,

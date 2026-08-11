@@ -3,11 +3,20 @@
 from typing import Protocol
 from uuid import UUID
 
-from messenger.application.ports.identity.records import UserAuthenticationRecord
+from messenger.application.ports.identity.records import ManagedUserRecord, UserAuthenticationRecord
 from messenger.domain.entities import User
 
 
 class UserRepository(Protocol):
+    async def list_managed(self) -> list[ManagedUserRecord]: ...
+
+    async def get_managed_by_id(
+        self,
+        user_id: UUID,
+        *,
+        for_update: bool = False,
+    ) -> ManagedUserRecord | None: ...
+
     async def get_by_id(self, user_id: UUID, *, for_update: bool = False) -> User | None: ...
 
     async def get_by_username(self, username: str) -> User | None: ...
@@ -26,3 +35,5 @@ class UserRepository(Protocol):
     async def add_active(self, user: User, password_hash: str) -> None: ...
 
     async def activate(self, user: User, password_hash: str) -> None: ...
+
+    async def update(self, user: User) -> None: ...

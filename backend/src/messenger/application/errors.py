@@ -55,3 +55,15 @@ class OwnedDeviceNotFoundError(ApplicationError):
 
 class CurrentDeviceRevocationError(ApplicationError):
     """The current device must be terminated through logout, not remote revoke."""
+
+
+class ManagedUserNotFoundError(ApplicationError):
+    """The requested managed user does not exist."""
+
+
+class SelfDeactivationError(ApplicationError):
+    """An administrator cannot deactivate the current account through admin API."""
+
+
+class AccountActivationRequiredError(ApplicationError):
+    """An invited account must complete activation before it can become active."""

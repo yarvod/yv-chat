@@ -59,6 +59,8 @@ class ActivateAccount:
             token = await uow.activation_tokens.get_by_hash_for_update(token_hash)
             if token is None:
                 raise InvalidActivationSecretError("activation secret is invalid")
+            if token.revoked_at is not None:
+                raise InvalidActivationSecretError("activation secret is invalid")
             if token.used_at is not None:
                 raise ActivationAlreadyUsedError("activation secret is already used")
             if token.is_expired(now):
@@ -75,7 +77,7 @@ class ActivateAccount:
             consumed_token = token.mark_used(now)
 
             await uow.users.activate(activated_user, password_hash)
-            await uow.activation_tokens.mark_used(consumed_token)
+            await uow.activation_tokens.update_lifecycle(consumed_token)
             await uow.commit()
 
         return ActivateAccountResult(user_id=user.id, activated_at=now)

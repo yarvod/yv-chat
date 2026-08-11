@@ -12,6 +12,14 @@ class UserAuthenticationRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class ManagedUserRecord:
+    """Account state needed by administrator operations without exposing a hash."""
+
+    user: User
+    password_configured: bool
+
+
+@dataclass(frozen=True, slots=True)
 class SessionCredentialMatch:
     session: Session
     matched_previous: bool

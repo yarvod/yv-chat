@@ -4,10 +4,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from uuid import UUID
 
-from messenger.application.errors import (
-    AuthorizationDeniedError,
-    DuplicateUsernameError,
-)
+from messenger.application.accounts.authorization import require_active_admin
+from messenger.application.errors import DuplicateUsernameError
 from messenger.application.ports.activation_secrets import ActivationSecretService
 from messenger.application.ports.clock import Clock
 from messenger.application.ports.identity import IdentityUnitOfWorkFactory
@@ -73,9 +71,7 @@ class CreateUserInvitation:
         )
 
         async with self._unit_of_work() as uow:
-            actor = await uow.users.get_by_id(command.actor_user_id)
-            if actor is None or not actor.is_active or not actor.is_admin:
-                raise AuthorizationDeniedError("active administrator required")
+            await require_active_admin(uow.users, command.actor_user_id)
 
             existing = await uow.users.get_by_username(user.username)
             if existing is not None:

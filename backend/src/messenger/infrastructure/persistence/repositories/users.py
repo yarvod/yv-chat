@@ -7,7 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from messenger.application.errors import DuplicateUsernameError
-from messenger.application.ports.identity import UserAuthenticationRecord
+from messenger.application.ports.identity import ManagedUserRecord, UserAuthenticationRecord
 from messenger.domain.entities import User
 from messenger.infrastructure.persistence.models import UserModel
 from messenger.infrastructure.persistence.repositories.mappers import map_user
@@ -16,6 +16,37 @@ from messenger.infrastructure.persistence.repositories.mappers import map_user
 class SqlAlchemyUserRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
+
+    async def list_managed(self) -> list[ManagedUserRecord]:
+        models = (
+            await self._session.scalars(
+                select(UserModel).order_by(UserModel.username, UserModel.id)
+            )
+        ).all()
+        return [
+            ManagedUserRecord(
+                user=map_user(model),
+                password_configured=model.password_hash is not None,
+            )
+            for model in models
+        ]
+
+    async def get_managed_by_id(
+        self,
+        user_id: UUID,
+        *,
+        for_update: bool = False,
+    ) -> ManagedUserRecord | None:
+        statement = select(UserModel).where(UserModel.id == user_id)
+        if for_update:
+            statement = statement.with_for_update()
+        model = await self._session.scalar(statement)
+        if model is None:
+            return None
+        return ManagedUserRecord(
+            user=map_user(model),
+            password_configured=model.password_hash is not None,
+        )
 
     async def get_by_id(self, user_id: UUID, *, for_update: bool = False) -> User | None:
         statement = select(UserModel).where(UserModel.id == user_id)
@@ -85,5 +116,14 @@ class SqlAlchemyUserRepository:
             raise RuntimeError("locked user disappeared during activation")
         model.password_hash = password_hash
         model.is_active = True
+        model.updated_at = user.updated_at
+        await self._session.flush()
+
+    async def update(self, user: User) -> None:
+        model = await self._session.get(UserModel, user.id)
+        if model is None:
+            raise RuntimeError("locked user disappeared during update")
+        model.display_name = user.display_name
+        model.is_active = user.is_active
         model.updated_at = user.updated_at
         await self._session.flush()

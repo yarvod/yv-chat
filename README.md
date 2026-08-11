@@ -6,7 +6,7 @@
 
 ## Статус
 
-Готовы закрытый lifecycle пользователей, device-bound opaque sessions, защищённый FastAPI transport и управление активными устройствами: list/current marker, rename, revoke одной или всех остальных сессий и bounded security events. Следующий этап — admin user management и activation HTTP API.
+Готовы закрытый admin-controlled lifecycle пользователей, activation HTTP API, device-bound opaque sessions, защищённый FastAPI transport и управление активными устройствами. Следующий этап — conversation domain и persistence как основа messaging MVP.
 
 Текущая фича и подробный план находятся в [docs/workplan.md](docs/workplan.md). Полный продуктовый backlog — в [docs/backlog.md](docs/backlog.md), архитектура и правила её развития — в [docs/architecture.md](docs/architecture.md), найденные дефекты — в [docs/bugs.md](docs/bugs.md).
 

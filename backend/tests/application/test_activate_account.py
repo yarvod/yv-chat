@@ -90,6 +90,18 @@ async def test_valid_secret_activates_once_and_stores_only_password_hash() -> No
             activation_token(expires_at=NOW + timedelta(hours=1), used_at=NOW),
             ActivationAlreadyUsedError,
         ),
+        (
+            ActivationToken(
+                id=TOKEN_ID,
+                user_id=USER_ID,
+                token_hash=TOKEN_DIGEST,
+                created_at=NOW - timedelta(hours=1),
+                expires_at=NOW + timedelta(hours=1),
+                used_at=None,
+                revoked_at=NOW,
+            ),
+            InvalidActivationSecretError,
+        ),
     ],
 )
 async def test_invalid_token_states_never_hash_password(

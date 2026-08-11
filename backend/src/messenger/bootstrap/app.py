@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from messenger.bootstrap.container import create_container
 from messenger.bootstrap.settings import AppSettings
+from messenger.presentation.http.admin_users import router as admin_users_router
 from messenger.presentation.http.auth import router as auth_router
 from messenger.presentation.http.devices import router as devices_router
 from messenger.presentation.http.health import router as health_router
@@ -52,5 +53,6 @@ def create_app(
     application.include_router(health_router)
     application.include_router(auth_router)
     application.include_router(devices_router)
+    application.include_router(admin_users_router)
     setup_dishka(container=resolved_container, app=application)
     return application

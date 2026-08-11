@@ -37,6 +37,7 @@ def map_activation_token(model: ActivationTokenModel) -> ActivationToken:
         expires_at=model.expires_at,
         created_at=model.created_at,
         used_at=model.used_at,
+        revoked_at=model.revoked_at,
     )
 
 

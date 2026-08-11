@@ -6,20 +6,9 @@
 
 ## In progress
 
-Активная фича отсутствует: архитектурный prerequisite `BL-ARCH-001` завершён, следующей снова будет выбрана `BL-003D`.
+Активная фича отсутствует: `BL-003D` завершена, следующей будет выбрана `BL-004`.
 
 ## Next — identity и account management
-
-### BL-003D — Admin user management и activation HTTP API
-
-Результат: администратор управляет закрытым списком пользователей через versioned API, а приглашённый пользователь активируется без public registration.
-
-- `GET/POST/PATCH /api/v1/admin/users` с обязательной admin authorization;
-- выпуск/повторный выпуск one-time activation secret с expiry и invalidation предыдущего;
-- activation endpoint, который принимает secret и новый пароль, но не создаёт произвольного пользователя;
-- deactivate/reactivate policy и отзыв активных sessions при security-sensitive изменении;
-- generic external errors без token/password/SQL leakage;
-- negative tests: normal user, inactive admin, duplicate username, expired/used token.
 
 ### BL-003E — Current account API и security reset
 
@@ -377,6 +366,10 @@
 - решение о native wrapper только при подтверждённой необходимости.
 
 ## Completed
+
+### BL-003D — Admin user management и activation HTTP API
+
+Versioned admin list/invite/update/reissue API, public activation credential endpoint без registration, explicit used/revoked token lifecycle, atomic target-session revoke, Dishka wiring, bounded errors и negative authorization/Origin/CSRF/PostgreSQL concurrency tests.
 
 ### BL-ARCH-001 — Clean Architecture modularization
 

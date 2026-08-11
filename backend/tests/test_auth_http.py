@@ -9,11 +9,17 @@ from dishka.integrations.fastapi import FastapiProvider
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient, Response
 
+from messenger.application.accounts.activate import ActivateAccount
+from messenger.application.accounts.invite import CreateUserInvitation
+from messenger.application.accounts.list_users import ListManagedUsers
+from messenger.application.accounts.reissue_activation import ReissueActivation
+from messenger.application.accounts.update_user import UpdateManagedUser
 from messenger.application.devices.list_security_events import ListSecurityEvents
 from messenger.application.devices.list_sessions import ListMySessions
 from messenger.application.devices.rename import RenameMyDevice
 from messenger.application.devices.revoke import RevokeMyDevice
 from messenger.application.devices.revoke_others import RevokeOtherSessions
+from messenger.application.ports.activation_secrets import ActivationSecretService
 from messenger.application.ports.clock import Clock
 from messenger.application.ports.identity import IdentityUnitOfWorkFactory
 from messenger.application.ports.passwords import PasswordHasher
@@ -31,6 +37,7 @@ from tests.application.fakes import (
     FakePasswordHasher,
     FixedSessionCredentials,
     IdentityState,
+    SequentialActivationSecrets,
 )
 
 NOW = datetime(2026, 8, 11, 12, 0, tzinfo=UTC)
@@ -65,6 +72,7 @@ class HttpTestProvider(Provider):
         clock: Clock,
         passwords: PasswordHasher,
         credentials: SessionCredentialService,
+        activation_secrets: ActivationSecretService,
     ) -> None:
         super().__init__()
         self._settings = settings
@@ -72,6 +80,7 @@ class HttpTestProvider(Provider):
         self._clock = clock
         self._passwords = passwords
         self._credentials = credentials
+        self._activation_secrets = activation_secrets
 
     @provide(scope=Scope.APP)
     def settings(self) -> AppSettings:
@@ -94,6 +103,14 @@ class HttpTestProvider(Provider):
         return self._credentials
 
     @provide(scope=Scope.APP)
+    def activation_secrets(self) -> ActivationSecretService:
+        return self._activation_secrets
+
+    @provide(scope=Scope.APP)
+    def activation_ttl(self) -> timedelta:
+        return timedelta(hours=24)
+
+    @provide(scope=Scope.APP)
     def session_policy(self) -> SessionPolicy:
         return POLICY
 
@@ -109,13 +126,24 @@ class HttpTestProvider(Provider):
     rename_my_device = provide(RenameMyDevice, scope=Scope.REQUEST)
     revoke_my_device = provide(RevokeMyDevice, scope=Scope.REQUEST)
     revoke_other_sessions = provide(RevokeOtherSessions, scope=Scope.REQUEST)
+    activate_account = provide(ActivateAccount, scope=Scope.REQUEST)
+    create_user_invitation = provide(CreateUserInvitation, scope=Scope.REQUEST)
+    list_managed_users = provide(ListManagedUsers, scope=Scope.REQUEST)
+    reissue_activation = provide(ReissueActivation, scope=Scope.REQUEST)
+    update_managed_user = provide(UpdateManagedUser, scope=Scope.REQUEST)
 
 
 def build_test_application(
     *,
     trusted_proxy_cidrs: list[str] | None = None,
+    is_admin: bool = False,
 ) -> tuple[FastAPI, IdentityState, MutableClock]:
-    user = User.create(username="alice", display_name="Alice", now=NOW)
+    user = User.create(
+        username="alice",
+        display_name="Alice",
+        now=NOW,
+        is_admin=is_admin,
+    )
     state = IdentityState(
         users={user.id: user},
         password_hashes={user.id: "$argon2id$fake-hash"},
@@ -143,6 +171,7 @@ def build_test_application(
             clock=clock,
             passwords=passwords,
             credentials=credentials,
+            activation_secrets=SequentialActivationSecrets(),
         ),
         FastapiProvider(),
     )

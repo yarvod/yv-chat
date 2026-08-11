@@ -14,6 +14,7 @@ from messenger.application.ports.identity import (
     DeviceRepository,
     DeviceSessionRecord,
     IdentityUnitOfWork,
+    ManagedUserRecord,
     SecurityEventRepository,
     SessionCredentialMatch,
     SessionRepository,
@@ -40,6 +41,33 @@ class IdentityState:
 class FakeUserRepository:
     def __init__(self, state: IdentityState) -> None:
         self._state = state
+
+    async def list_managed(self) -> list[ManagedUserRecord]:
+        return [
+            ManagedUserRecord(
+                user=user,
+                password_configured=user.id in self._state.password_hashes,
+            )
+            for user in sorted(
+                self._state.users.values(),
+                key=lambda item: (item.username, item.id),
+            )
+        ]
+
+    async def get_managed_by_id(
+        self,
+        user_id: UUID,
+        *,
+        for_update: bool = False,
+    ) -> ManagedUserRecord | None:
+        del for_update
+        user = self._state.users.get(user_id)
+        if user is None:
+            return None
+        return ManagedUserRecord(
+            user=user,
+            password_configured=user_id in self._state.password_hashes,
+        )
 
     async def get_by_id(self, user_id: UUID, *, for_update: bool = False) -> User | None:
         del for_update
@@ -83,6 +111,9 @@ class FakeUserRepository:
         self._state.users[user.id] = user
         self._state.password_hashes[user.id] = password_hash
 
+    async def update(self, user: User) -> None:
+        self._state.users[user.id] = user
+
 
 class FakeActivationTokenRepository:
     def __init__(self, state: IdentityState) -> None:
@@ -97,7 +128,20 @@ class FakeActivationTokenRepository:
             None,
         )
 
-    async def mark_used(self, token: ActivationToken) -> None:
+    async def list_unconsumed_for_user_for_update(
+        self,
+        user_id: UUID,
+    ) -> list[ActivationToken]:
+        return sorted(
+            (
+                token
+                for token in self._state.tokens.values()
+                if token.user_id == user_id and token.used_at is None and token.revoked_at is None
+            ),
+            key=lambda token: token.id,
+        )
+
+    async def update_lifecycle(self, token: ActivationToken) -> None:
         self._state.tokens[token.id] = token
 
 
@@ -281,6 +325,25 @@ class FixedActivationSecrets:
     def digest(self, plaintext: str) -> str:
         del plaintext
         return self._generated.digest
+
+
+class SequentialActivationSecrets:
+    """Deterministic unique credentials for reissue specifications."""
+
+    def __init__(self) -> None:
+        self.generated_plaintexts: list[str] = []
+
+    def generate(self) -> GeneratedActivationSecret:
+        sequence = len(self.generated_plaintexts) + 1
+        plaintext = f"activation-secret-{sequence:032d}"
+        self.generated_plaintexts.append(plaintext)
+        return GeneratedActivationSecret(
+            plaintext=plaintext,
+            digest=self.digest(plaintext),
+        )
+
+    def digest(self, plaintext: str) -> str:
+        return hashlib.sha256(plaintext.encode()).hexdigest()
 
 
 class FixedSessionCredentials:

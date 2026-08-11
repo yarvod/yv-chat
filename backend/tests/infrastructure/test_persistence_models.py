@@ -69,6 +69,7 @@ def test_activation_schema_stores_digest_without_plaintext_secret() -> None:
     assert "token_hash" in activation_tokens.columns
     assert "activation_secret" not in activation_tokens.columns
     assert "token" not in activation_tokens.columns
+    assert "revoked_at" in activation_tokens.columns
     assert activation_tokens.columns["token_hash"].unique is True
 
 

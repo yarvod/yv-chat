@@ -4,6 +4,7 @@ from messenger.application.ports.identity.activation_tokens import ActivationTok
 from messenger.application.ports.identity.devices import DeviceRepository
 from messenger.application.ports.identity.records import (
     DeviceSessionRecord,
+    ManagedUserRecord,
     SessionCredentialMatch,
     UserAuthenticationRecord,
 )
@@ -21,6 +22,7 @@ __all__ = [
     "DeviceSessionRecord",
     "IdentityUnitOfWork",
     "IdentityUnitOfWorkFactory",
+    "ManagedUserRecord",
     "SecurityEventRepository",
     "SessionCredentialMatch",
     "SessionRepository",

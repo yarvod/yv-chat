@@ -101,3 +101,33 @@ class User:
         if timestamp < self.created_at:
             raise DomainValidationError("activation time must not be before created_at")
         return replace(self, is_active=True, updated_at=timestamp)
+
+    def rename(self, display_name: str, now: datetime) -> "User":
+        """Change the user-visible name without changing identity or authorization."""
+        normalized_name = normalize_bounded_text(
+            display_name,
+            field_name="display_name",
+            maximum_length=80,
+        )
+        timestamp = require_aware_datetime(now, "now")
+        if timestamp < self.updated_at:
+            raise DomainValidationError("updated_at cannot move backwards")
+        return replace(self, display_name=normalized_name, updated_at=timestamp)
+
+    def deactivate(self, now: datetime) -> "User":
+        """Disable login while preserving the durable account identity."""
+        timestamp = require_aware_datetime(now, "now")
+        if timestamp < self.updated_at:
+            raise DomainValidationError("updated_at cannot move backwards")
+        if not self.is_active:
+            return self
+        return replace(self, is_active=False, updated_at=timestamp)
+
+    def reactivate(self, now: datetime) -> "User":
+        """Re-enable a previously activated account after application policy checks."""
+        timestamp = require_aware_datetime(now, "now")
+        if timestamp < self.updated_at:
+            raise DomainValidationError("updated_at cannot move backwards")
+        if self.is_active:
+            return self
+        return replace(self, is_active=True, updated_at=timestamp)

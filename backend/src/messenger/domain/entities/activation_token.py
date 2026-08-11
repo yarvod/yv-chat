@@ -21,6 +21,7 @@ class ActivationToken:
     expires_at: datetime
     created_at: datetime
     used_at: datetime | None
+    revoked_at: datetime | None = None
 
     def __post_init__(self) -> None:
         if TOKEN_HASH_PATTERN.fullmatch(self.token_hash) is None:
@@ -33,6 +34,12 @@ class ActivationToken:
             require_aware_datetime(self.used_at, "used_at")
             if self.used_at < self.created_at:
                 raise DomainValidationError("used_at must not be before created_at")
+        if self.revoked_at is not None:
+            require_aware_datetime(self.revoked_at, "revoked_at")
+            if self.revoked_at < self.created_at:
+                raise DomainValidationError("revoked_at must not be before created_at")
+        if self.used_at is not None and self.revoked_at is not None:
+            raise DomainValidationError("activation token cannot be used and revoked")
 
     @classmethod
     def create(
@@ -52,6 +59,7 @@ class ActivationToken:
             expires_at=expires_at,
             created_at=created_at,
             used_at=None,
+            revoked_at=None,
         )
 
     def is_expired(self, now: datetime) -> bool:
@@ -64,6 +72,17 @@ class ActivationToken:
         timestamp = require_aware_datetime(now, "now")
         if self.used_at is not None:
             raise DomainValidationError("activation token is already used")
+        if self.revoked_at is not None:
+            raise DomainValidationError("revoked activation token cannot be used")
         if timestamp < self.created_at:
             raise DomainValidationError("used_at must not be before created_at")
         return replace(self, used_at=timestamp)
+
+    def revoke(self, now: datetime) -> "ActivationToken":
+        """Invalidate an unconsumed credential during controlled reissue."""
+        timestamp = require_aware_datetime(now, "now")
+        if timestamp < self.created_at:
+            raise DomainValidationError("revoked_at must not be before created_at")
+        if self.used_at is not None or self.revoked_at is not None:
+            return self
+        return replace(self, revoked_at=timestamp)

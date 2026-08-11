@@ -63,3 +63,18 @@ def test_loaded_user_rejects_invalid_timestamp_order() -> None:
             created_at=NOW,
             updated_at=NOW - timedelta(seconds=1),
         )
+
+
+def test_managed_transitions_preserve_identity_and_update_timestamp() -> None:
+    user = User.create(username="alice", display_name="Alice", now=NOW)
+    changed_at = NOW + timedelta(minutes=1)
+
+    renamed = user.rename("  Alice Cooper  ", changed_at)
+    deactivated = renamed.deactivate(changed_at)
+    reactivated = deactivated.reactivate(changed_at + timedelta(minutes=1))
+
+    assert renamed.id == user.id
+    assert renamed.username == user.username
+    assert renamed.display_name == "Alice Cooper"
+    assert deactivated.is_active is False
+    assert reactivated.is_active is True

@@ -235,6 +235,22 @@ one-time hashed activation secret
 user sets Argon2id password
 ```
 
+Versioned account lifecycle transport:
+
+```text
+active admin session
+  └── /api/v1/admin/users
+      ├── list bounded account state
+      ├── create invitation → plaintext secret returned once
+      ├── reissue → previous unconsumed secrets revoked atomically
+      └── deactivate → all target sessions/devices revoked atomically
+
+invited user
+  └── /api/v1/auth/activate → one-time secret + new password
+```
+
+Activation-token persistence различает `used_at` и `revoked_at`; состояния взаимоисключающие. List/update DTO не содержат password hash или activation digest. Reactivation через admin API разрешена только account с уже настроенным password; первоначальное приглашение нельзя обойти выставлением `is_active`.
+
 Browser auth использует opaque random credential + server-side state, потому что продукту нужны instant revoke, active-device list и logout-all-others. JWT не добавляется без реальной distributed/resource-server причины.
 
 Сервер хранит только SHA-256 lookup digest 256-bit session credential. Session связана с user + device и имеет:

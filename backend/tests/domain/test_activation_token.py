@@ -25,6 +25,20 @@ def test_token_expires_at_exact_boundary_and_can_be_consumed_before_it() -> None
     assert token.mark_used(NOW + timedelta(minutes=30)).used_at == NOW + timedelta(minutes=30)
 
 
+def test_revoked_token_cannot_be_consumed_and_lifecycle_states_are_exclusive() -> None:
+    token = ActivationToken.create(
+        user_id=USER_ID,
+        token_hash="d" * 64,
+        created_at=NOW,
+        expires_at=NOW + timedelta(hours=1),
+    )
+    revoked = token.revoke(NOW + timedelta(minutes=5))
+
+    assert revoked.revoked_at == NOW + timedelta(minutes=5)
+    with pytest.raises(DomainValidationError, match="revoked"):
+        revoked.mark_used(NOW + timedelta(minutes=6))
+
+
 @pytest.mark.parametrize("token_hash", ["", "not-hex", "A" * 64, "a" * 63])
 def test_token_requires_sha256_lookup_digest(token_hash: str) -> None:
     with pytest.raises(DomainValidationError, match="token_hash"):

@@ -2,58 +2,60 @@
 
 Этот файл содержит только одну текущую фичу. Перед началом следующей фичи завершённая работа фиксируется коммитом, а новый пункт переносится сюда из `backlog.md`.
 
-## WP-007 — Clean Architecture modularization
+## WP-008 — Admin user management и activation HTTP API
 
 Статус: **completed**  
-Backlog item: `BL-ARCH-001`  
-Цель: привести backend к прозрачной Clean Architecture: feature-oriented application modules, узкие ports, отдельные infrastructure adapters, модульный Dishka composition root и idiomatic async pytest tests.
+Backlog item: `BL-003D`  
+Цель: открыть закрытый invitation/activation lifecycle через versioned API и дать администратору безопасное управление пользователями без public registration.
 
-### Архитектурный результат
+### Пользовательский результат
 
-Dependency rule остаётся `presentation → application → domain`, infrastructure реализует application ports, а bootstrap — единственное место, которое знает все concrete types. Каталоги отражают account/session/device capabilities. Крупные файлы-комбайны исчезают; каждый provider/repository/use case имеет одну очевидную ответственность.
+Активный администратор видит пользователей, создаёт приглашение, один раз получает activation secret, повторно выпускает secret для ещё не активированного аккаунта и деактивирует/реактивирует ранее активных пользователей. Приглашённый пользователь активирует аккаунт по одноразовому secret и задаёт пароль.
 
-### Правила рефакторинга
+### Security invariants
 
-1. Domain/application не импортируют FastAPI, Dishka, SQLAlchemy или concrete adapters.
-2. Dishka используется только в composition root и presentation injection boundary.
-3. Providers группируются по settings, adapters, persistence и application capability; единого god-provider нет.
-4. APP scope содержит process resources/stateless adapters/policies, REQUEST scope — use cases; UoW создаётся на одну application operation.
-5. Repository port и adapter разбиты по aggregate responsibility; generic CRUD не появляется.
-6. Use cases разложены по `accounts`, `sessions`, `devices`, а не в плоский junk drawer.
-7. Transport DTO и handlers разделяются по capability; HTTP не получает агрегат всех services.
-8. Tests используют pytest async support/fixtures; ручной `asyncio.run()` в test functions запрещён.
-9. Test doubles остаются typed implementations узких ports и разбиваются по ответственности.
-10. Рефакторинг не меняет versioned HTTP behavior, schema, security/session semantics.
+1. Public registration отсутствует: новую identity создаёт только authenticated active admin.
+2. Admin authorization выполняется application use case, а не только route/UI.
+3. Activation secret возвращается только при create/reissue, хранится только digest и не попадает в list DTO/logs.
+4. Reissue атомарно инвалидирует предыдущие неиспользованные secrets пользователя.
+5. Activation errors снаружи bounded/generic и не раскрывают digest, SQL или account internals.
+6. Деактивация атомарно отзывает все sessions/devices target user.
+7. Администратор не может деактивировать себя; invited account без password нельзя активировать через PATCH.
+8. Обычный пользователь получает `403` независимо от guessed target ID.
+9. Authenticated writes требуют exact Origin + CSRF; activation требует exact Origin, но до session cookie не требует CSRF.
+10. DTO/OpenAPI не содержат password/session/activation hashes.
 
 ### План реализации
 
-- [x] Инвентаризировать зависимости и крупные модули.
-- [x] Разбить identity persistence ports на user/token/device/session/event/UoW modules.
-- [x] Разбить SQLAlchemy repositories и pure mappers на отдельные adapters.
-- [x] Разложить use cases по account/session/device feature packages.
-- [x] Разбить Dishka root на settings/persistence/security/account/session/device providers.
-- [x] Перевести bootstrap admin CLI на общий Dishka composition root.
-- [x] Проверить, что HTTP handlers уже разделены по auth/device capability; дальнейшее дробление DTO не создаёт полезной границы на текущем размере.
-- [x] Добавить pytest-asyncio и удалить ручной `asyncio.run()` из tests.
-- [x] Добавить architecture/import-boundary tests и Dishka graph test.
-- [x] Обновить architecture/README/backlog/bugs.
-- [x] Прогнать full CI, PostgreSQL integration и Docker/OpenAPI smoke.
-- [x] Зафиксировать refactor отдельным commit без feature behavior changes.
+- [x] Добавить managed-user records и узкие repository operations.
+- [x] Добавить domain transitions display-name/deactivate/reactivate.
+- [x] Реализовать list users и update user state с atomic session revoke.
+- [x] Реализовать activation-secret reissue с invalidation старых credentials.
+- [x] Подключить create-invitation/activate-account через Dishka providers.
+- [x] Добавить `/api/v1/admin/users` list/create/update/reissue endpoints.
+- [x] Добавить `/api/v1/auth/activate` без public registration semantics.
+- [x] Добавить typed HTTP error mapping без internal leakage.
+- [x] Добавить unit/HTTP authorization, ownership, CSRF/Origin и secret-schema tests.
+- [x] Добавить PostgreSQL concurrency tests для reissue/activation/session revoke.
+- [x] Проверить migration compatibility, full CI и Docker/OpenAPI smoke.
+- [x] Синхронизировать README/backlog/architecture/bugs и сделать отдельный commit.
 
 ### Не входит в scope
 
-- новые admin/messaging endpoints;
-- изменение database schema;
-- смена auth/session policy;
-- новая framework abstraction поверх Dishka;
-- объединение разных UoW операций в одну request transaction.
+- изменение admin role;
+- password reset/change;
+- удаление user row;
+- frontend admin UI;
+- email/SMS delivery activation secret.
 
 ### Проверка готовности
 
-- production Dishka graph строится и закрывается;
-- ни один application/domain module не импортирует outer frameworks;
-- нет god-provider/god-repository и плоской директории всех use cases;
-- HTTP behavior и OpenAPI paths не изменились;
-- tests не содержат `asyncio.run()`;
-- Ruff, format, mypy, pytest, PostgreSQL integration, frontend/Compose CI и Docker smoke проходят;
-- отдельный focused commit создан до возврата к `BL-003D`.
+- normal user не может list/create/update/reissue users;
+- create/reissue показывает plaintext secret ровно в response и не хранит его;
+- старый secret после reissue не активирует account;
+- concurrent activation успешна ровно один раз;
+- deactivate отзывает все target sessions, не затрагивая admin;
+- invited user нельзя активировать простым `is_active=true`;
+- response/OpenAPI не раскрывают hashes/credentials;
+- PostgreSQL integration, full CI и image smoke проходят;
+- изменения зафиксированы отдельным коммитом.

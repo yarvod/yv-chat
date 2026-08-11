@@ -8,7 +8,16 @@ from dishka.integrations.fastapi import DishkaRoute, FromDishka
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 
-from messenger.application.errors import InvalidCredentialsError, SessionNotAuthenticatedError
+from messenger.application.accounts.activate import ActivateAccount, ActivateAccountCommand
+from messenger.application.errors import (
+    AccountAlreadyActiveError,
+    ActivationAlreadyUsedError,
+    ActivationExpiredError,
+    InvalidActivationSecretError,
+    InvalidCredentialsError,
+    SessionNotAuthenticatedError,
+    WeakPasswordError,
+)
 from messenger.application.sessions.authenticate import (
     AuthenticateSession,
     AuthenticateSessionCommand,
@@ -33,6 +42,16 @@ class LoginRequest(BaseModel):
     device_name: str = Field(min_length=1, max_length=80)
 
 
+class ActivateAccountRequest(BaseModel):
+    activation_secret: str = Field(min_length=32, max_length=512)
+    password: str = Field(min_length=12, max_length=128)
+
+
+class ActivateAccountResponse(BaseModel):
+    user_id: UUID
+    activated_at: datetime
+
+
 class SessionResponse(BaseModel):
     user_id: UUID
     session_id: UUID
@@ -55,6 +74,39 @@ def set_session_cookie(
         samesite="strict",
         path="/",
     )
+
+
+@router.post("/activate", response_model=ActivateAccountResponse)
+async def activate_account(
+    request: Request,
+    payload: ActivateAccountRequest,
+    settings: FromDishka[AppSettings],
+    use_case: FromDishka[ActivateAccount],
+) -> ActivateAccountResponse:
+    require_allowed_origin(request, settings)
+    try:
+        result = await use_case.execute(
+            ActivateAccountCommand(
+                activation_secret=payload.activation_secret,
+                password=payload.password,
+            )
+        )
+    except WeakPasswordError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="password does not meet policy",
+        ) from error
+    except (
+        InvalidActivationSecretError,
+        ActivationExpiredError,
+        ActivationAlreadyUsedError,
+        AccountAlreadyActiveError,
+    ) as error:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="activation failed",
+        ) from error
+    return ActivateAccountResponse.model_validate(result, from_attributes=True)
 
 
 async def authenticate_request(
