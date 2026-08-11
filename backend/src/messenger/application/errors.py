@@ -91,3 +91,7 @@ class ConversationMembershipConflictError(ApplicationError):
 
 class InvalidMessageEnvelopeError(ApplicationError):
     """An opaque message envelope violates supported version or size bounds."""
+
+
+class MessageIdempotencyConflictError(ApplicationError):
+    """A client message ID was reused for different immutable envelope data."""

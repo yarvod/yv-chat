@@ -438,6 +438,46 @@ class FakeMessageRepository:
     async def add(self, message: Message) -> None:
         self._state.messages[message.id] = message
 
+    async def get_by_client_id(
+        self,
+        *,
+        sender_device_id: UUID,
+        client_message_id: UUID,
+    ) -> Message | None:
+        return next(
+            (
+                message
+                for message in self._state.messages.values()
+                if message.sender_device_id == sender_device_id
+                and message.client_message_id == client_message_id
+            ),
+            None,
+        )
+
+    async def next_sequence(self, conversation_id: UUID) -> int:
+        sequences = [
+            message.sequence
+            for message in self._state.messages.values()
+            if message.conversation_id == conversation_id
+        ]
+        return max(sequences, default=0) + 1
+
+    async def list_after(
+        self,
+        *,
+        conversation_id: UUID,
+        after_sequence: int,
+        limit: int,
+    ) -> list[Message]:
+        return sorted(
+            (
+                message
+                for message in self._state.messages.values()
+                if message.conversation_id == conversation_id and message.sequence > after_sequence
+            ),
+            key=lambda message: (message.sequence, message.id),
+        )[:limit]
+
 
 class FakeMessagingUnitOfWork:
     def __init__(self, state: IdentityState) -> None:

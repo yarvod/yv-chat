@@ -1,6 +1,7 @@
 """Opaque message HTTP envelope and authorization tests."""
 
 import base64
+from uuid import uuid4
 
 from httpx import ASGITransport, AsyncClient
 
@@ -50,35 +51,71 @@ async def test_send_opaque_message_and_reject_invalid_or_non_member_envelopes() 
         )
         conversation_id = direct.json()["conversation_id"]
         ciphertext = b"\x00\xffsynthetic-opaque-envelope"
+        client_message_id = uuid4()
 
+        envelope = {
+            "protocol_version": 1,
+            "client_message_id": str(client_message_id),
+            "ciphertext_base64": base64.b64encode(ciphertext).decode(),
+        }
         sent = await alice_client.post(
             f"/api/v1/conversations/{conversation_id}/messages",
             headers=alice_headers,
-            json={
-                "protocol_version": 1,
-                "ciphertext_base64": base64.b64encode(ciphertext).decode(),
-            },
+            json=envelope,
         )
         assert sent.status_code == 201
         assert "ciphertext" not in sent.json()
         stored = state.messages[next(iter(state.messages))]
         assert stored.ciphertext == ciphertext
         assert stored.sender_user_id == alice.id
+        retried = await alice_client.post(
+            f"/api/v1/conversations/{conversation_id}/messages",
+            headers=alice_headers,
+            json=envelope,
+        )
+        assert retried.status_code == 201
+        assert retried.json()["message_id"] == sent.json()["message_id"]
+        assert len(state.messages) == 1
+        conflict = await alice_client.post(
+            f"/api/v1/conversations/{conversation_id}/messages",
+            headers=alice_headers,
+            json={**envelope, "ciphertext_base64": "ZGlmZmVyZW50"},
+        )
+        assert conflict.status_code == 409
+
+        page = await alice_client.get(
+            f"/api/v1/conversations/{conversation_id}/messages?after_sequence=0&limit=10"
+        )
+        assert page.status_code == 200
+        assert [item["sequence"] for item in page.json()] == [1]
+        assert base64.b64decode(page.json()[0]["ciphertext_base64"]) == ciphertext
 
         invalid_base64 = await alice_client.post(
             f"/api/v1/conversations/{conversation_id}/messages",
             headers=alice_headers,
-            json={"protocol_version": 1, "ciphertext_base64": "***"},
+            json={
+                "client_message_id": str(uuid4()),
+                "protocol_version": 1,
+                "ciphertext_base64": "***",
+            },
         )
         unsupported = await alice_client.post(
             f"/api/v1/conversations/{conversation_id}/messages",
             headers=alice_headers,
-            json={"protocol_version": 2, "ciphertext_base64": "b3BhcXVl"},
+            json={
+                "client_message_id": str(uuid4()),
+                "protocol_version": 2,
+                "ciphertext_base64": "b3BhcXVl",
+            },
         )
         non_member = await charlie_client.post(
             f"/api/v1/conversations/{conversation_id}/messages",
             headers=charlie_headers,
-            json={"protocol_version": 1, "ciphertext_base64": "b3BhcXVl"},
+            json={
+                "client_message_id": str(uuid4()),
+                "protocol_version": 1,
+                "ciphertext_base64": "b3BhcXVl",
+            },
         )
         assert invalid_base64.status_code == 422
         assert unsupported.status_code == 422

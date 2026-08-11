@@ -33,6 +33,7 @@ from messenger.application.devices.list_sessions import ListMySessions
 from messenger.application.devices.rename import RenameMyDevice
 from messenger.application.devices.revoke import RevokeMyDevice
 from messenger.application.devices.revoke_others import RevokeOtherSessions
+from messenger.application.messaging.list_messages import ListMessages
 from messenger.application.messaging.policy import MessageEnvelopePolicy
 from messenger.application.messaging.send_message import SendOpaqueMessage
 from messenger.application.ports.activation_secrets import ActivationSecretService
@@ -183,6 +184,7 @@ class HttpTestProvider(Provider):
         scope=Scope.REQUEST,
     )
     send_opaque_message = provide(SendOpaqueMessage, scope=Scope.REQUEST)
+    list_messages = provide(ListMessages, scope=Scope.REQUEST)
 
 
 def build_test_application(

@@ -1,10 +1,12 @@
 """PostgreSQL-backed opaque message persistence and authorization."""
 
+import asyncio
 import os
 from datetime import UTC, datetime, timedelta
+from uuid import uuid4
 
 import pytest
-from sqlalchemy import delete
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from messenger.application.errors import ConversationNotFoundError
@@ -119,14 +121,39 @@ async def run_flow(database_url: str) -> None:
             message_policy=MessageEnvelopePolicy(),
         )
         ciphertext = b"\x00\xffopaque-postgresql-envelope"
-        result = await send.execute(
-            SendOpaqueMessageCommand(
-                alice.id,
-                alice_session.device_id,
-                conversation.id,
-                1,
-                ciphertext,
-            )
+        client_message_id = uuid4()
+        command = SendOpaqueMessageCommand(
+            alice.id,
+            alice_session.device_id,
+            conversation.id,
+            client_message_id,
+            1,
+            ciphertext,
+        )
+        result = await send.execute(command)
+        retried = await send.execute(command)
+        assert retried == result
+        concurrent = await asyncio.gather(
+            send.execute(
+                SendOpaqueMessageCommand(
+                    alice.id,
+                    alice_session.device_id,
+                    conversation.id,
+                    uuid4(),
+                    1,
+                    b"second",
+                )
+            ),
+            send.execute(
+                SendOpaqueMessageCommand(
+                    alice.id,
+                    alice_session.device_id,
+                    conversation.id,
+                    uuid4(),
+                    1,
+                    b"third",
+                )
+            ),
         )
         with pytest.raises(ConversationNotFoundError):
             await send.execute(
@@ -134,6 +161,7 @@ async def run_flow(database_url: str) -> None:
                     charlie.id,
                     charlie_session.device_id,
                     conversation.id,
+                    uuid4(),
                     1,
                     b"forbidden",
                 )
@@ -141,10 +169,13 @@ async def run_flow(database_url: str) -> None:
 
         async with session_factory() as session:
             stored = await session.get(MessageModel, result.message_id)
+            count = await session.scalar(select(func.count(MessageModel.id)))
         assert stored is not None
         assert stored.ciphertext == ciphertext
         assert stored.sender_user_id == alice.id
         assert stored.sender_device_id == alice_session.device_id
+        assert count == 3
+        assert {item.sequence for item in concurrent} == {2, 3}
     finally:
         await reset_tables(session_factory)
         await engine.dispose()

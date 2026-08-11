@@ -2,6 +2,7 @@
 
 from dishka import Provider, Scope, provide
 
+from messenger.application.messaging.list_messages import ListMessages
 from messenger.application.messaging.policy import MessageEnvelopePolicy
 from messenger.application.messaging.send_message import SendOpaqueMessage
 
@@ -12,3 +13,4 @@ class MessagingUseCaseProvider(Provider):
         return MessageEnvelopePolicy()
 
     send_opaque_message = provide(SendOpaqueMessage, scope=Scope.REQUEST)
+    list_messages = provide(ListMessages, scope=Scope.REQUEST)

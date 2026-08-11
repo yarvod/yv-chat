@@ -13,7 +13,9 @@ from messenger.application.errors import (
     AuthorizationDeniedError,
     ConversationNotFoundError,
     InvalidMessageEnvelopeError,
+    MessageIdempotencyConflictError,
 )
+from messenger.application.messaging.list_messages import ListMessages, ListMessagesQuery
 from messenger.application.messaging.send_message import (
     SendOpaqueMessage,
     SendOpaqueMessageCommand,
@@ -31,17 +33,24 @@ router = APIRouter(
 
 
 class SendOpaqueMessageRequest(BaseModel):
+    client_message_id: UUID
     protocol_version: int = Field(ge=1, le=32_767)
     ciphertext_base64: str = Field(min_length=1, max_length=87_384)
 
 
 class SendOpaqueMessageResponse(BaseModel):
     message_id: UUID
+    client_message_id: UUID
     conversation_id: UUID
     sender_user_id: UUID
     sender_device_id: UUID
     protocol_version: int
+    sequence: int
     created_at: datetime
+
+
+class OpaqueMessageResponse(SendOpaqueMessageResponse):
+    ciphertext_base64: str
 
 
 def decode_ciphertext(encoded: str) -> bytes:
@@ -72,6 +81,7 @@ async def send_opaque_message(
                 actor_user_id=principal.user_id,
                 actor_device_id=principal.device_id,
                 conversation_id=conversation_id,
+                client_message_id=payload.client_message_id,
                 protocol_version=payload.protocol_version,
                 ciphertext=decode_ciphertext(payload.ciphertext_base64),
             )
@@ -88,4 +98,56 @@ async def send_opaque_message(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="invalid message envelope",
         ) from error
+    except MessageIdempotencyConflictError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="client message id conflict",
+        ) from error
     return SendOpaqueMessageResponse.model_validate(result, from_attributes=True)
+
+
+@router.get("", response_model=list[OpaqueMessageResponse])
+async def list_opaque_messages(
+    conversation_id: UUID,
+    request: Request,
+    response: Response,
+    settings: FromDishka[AppSettings],
+    authenticate_session: FromDishka[AuthenticateSession],
+    use_case: FromDishka[ListMessages],
+    after_sequence: int = 0,
+    limit: int = 50,
+) -> list[OpaqueMessageResponse]:
+    principal = await authenticate_request(request, response, settings, authenticate_session)
+    try:
+        messages = await use_case.execute(
+            ListMessagesQuery(
+                actor_user_id=principal.user_id,
+                conversation_id=conversation_id,
+                after_sequence=after_sequence,
+                limit=limit,
+            )
+        )
+    except ConversationNotFoundError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="conversation not found",
+        ) from error
+    except InvalidMessageEnvelopeError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="invalid message page",
+        ) from error
+    return [
+        OpaqueMessageResponse(
+            message_id=message.id,
+            client_message_id=message.client_message_id,
+            conversation_id=message.conversation_id,
+            sender_user_id=message.sender_user_id,
+            sender_device_id=message.sender_device_id,
+            protocol_version=message.protocol_version,
+            sequence=message.sequence,
+            created_at=message.created_at,
+            ciphertext_base64=base64.b64encode(message.ciphertext).decode(),
+        )
+        for message in messages
+    ]

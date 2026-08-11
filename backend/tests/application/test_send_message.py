@@ -1,6 +1,7 @@
 """Opaque message send authorization specifications."""
 
 from datetime import UTC, datetime, timedelta
+from uuid import uuid4
 
 import pytest
 
@@ -8,7 +9,9 @@ from messenger.application.errors import (
     AuthorizationDeniedError,
     ConversationNotFoundError,
     InvalidMessageEnvelopeError,
+    MessageIdempotencyConflictError,
 )
+from messenger.application.messaging.list_messages import ListMessages, ListMessagesQuery
 from messenger.application.messaging.policy import MessageEnvelopePolicy
 from messenger.application.messaging.send_message import (
     SendOpaqueMessage,
@@ -40,17 +43,45 @@ def messaging_state() -> tuple[IdentityState, User, User, User, Device, Conversa
 
 async def test_send_persists_only_opaque_envelope_metadata() -> None:
     state, alice, _, _, device, conversation = messaging_state()
-    result = await SendOpaqueMessage(
+    use_case = SendOpaqueMessage(
         unit_of_work=FakeMessagingUnitOfWorkFactory(state),
         clock=FixedClock(NOW + timedelta(seconds=1)),
         message_policy=MessageEnvelopePolicy(),
-    ).execute(
+    )
+    client_message_id = uuid4()
+    command = SendOpaqueMessageCommand(
+        alice.id,
+        device.id,
+        conversation.id,
+        client_message_id,
+        1,
+        b"\x00opaque",
+    )
+    result = await use_case.execute(command)
+    retried = await use_case.execute(command)
+
+    assert retried == result
+    assert len(state.messages) == 1
+    assert result.sequence == 1
+    with pytest.raises(MessageIdempotencyConflictError):
+        await use_case.execute(
+            SendOpaqueMessageCommand(
+                alice.id,
+                device.id,
+                conversation.id,
+                client_message_id,
+                1,
+                b"different",
+            )
+        )
+    second = await use_case.execute(
         SendOpaqueMessageCommand(
             alice.id,
             device.id,
             conversation.id,
+            uuid4(),
             1,
-            b"\x00opaque",
+            b"second",
         )
     )
 
@@ -58,6 +89,11 @@ async def test_send_persists_only_opaque_envelope_metadata() -> None:
     assert stored.ciphertext == b"\x00opaque"
     assert stored.created_at == NOW + timedelta(seconds=1)
     assert "ciphertext" not in result.__dataclass_fields__
+    assert second.sequence == 2
+    page = await ListMessages(unit_of_work=FakeMessagingUnitOfWorkFactory(state)).execute(
+        ListMessagesQuery(alice.id, conversation.id, after_sequence=1, limit=10)
+    )
+    assert [message.id for message in page] == [second.message_id]
 
 
 async def test_send_rejects_non_member_and_foreign_or_revoked_device() -> None:
@@ -75,18 +111,33 @@ async def test_send_rejects_non_member_and_foreign_or_revoked_device() -> None:
                 charlie.id,
                 charlie_device.id,
                 conversation.id,
+                uuid4(),
                 1,
                 b"opaque",
             )
         )
     with pytest.raises(AuthorizationDeniedError):
         await use_case.execute(
-            SendOpaqueMessageCommand(alice.id, charlie.id, conversation.id, 1, b"opaque")
+            SendOpaqueMessageCommand(
+                alice.id,
+                charlie.id,
+                conversation.id,
+                uuid4(),
+                1,
+                b"opaque",
+            )
         )
     state.devices[device.id] = device.revoke(NOW + timedelta(seconds=1))
     with pytest.raises(AuthorizationDeniedError):
         await use_case.execute(
-            SendOpaqueMessageCommand(alice.id, device.id, conversation.id, 1, b"opaque")
+            SendOpaqueMessageCommand(
+                alice.id,
+                device.id,
+                conversation.id,
+                uuid4(),
+                1,
+                b"opaque",
+            )
         )
     assert state.messages == {}
 
@@ -105,6 +156,7 @@ async def test_send_rejects_unsupported_empty_and_oversized_envelopes() -> None:
                     alice.id,
                     device.id,
                     conversation.id,
+                    uuid4(),
                     version,
                     ciphertext,
                 )

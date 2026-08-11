@@ -10,16 +10,6 @@
 
 ## Messaging foundation
 
-### BL-007 — Idempotent message creation и ordering
-
-Результат: retry не создаёт дубли, а concurrent messages получают стабильный server order.
-
-- client-generated request/message ID с database uniqueness;
-- monotonically increasing conversation sequence или эквивалентный устойчивый cursor;
-- атомарная запись message + sync event в одной transaction;
-- pagination со стабильным order/tie-breaking;
-- PostgreSQL tests для concurrent send, duplicate retry и transaction rollback.
-
 ### BL-008 — Cursor sync и offline catch-up
 
 Результат: состояние полностью восстанавливается после сна, reconnect и пропущенных realtime events.
@@ -324,6 +314,10 @@
 - решение о native wrapper только при подтверждённой необходимости.
 
 ## Completed
+
+### BL-007 — Idempotent message creation и ordering
+
+Device-scoped client UUID, exact retry reuse, conflicting retry 409, conversation row-lock sequence allocation, database unique constraints и bounded ascending list-after API. PostgreSQL concurrency test подтверждает разные последовательные значения для одновременных sends; Alembic `0009` backfill сохраняет upgrade существующих rows.
 
 ### BL-006 — Versioned opaque message envelope
 

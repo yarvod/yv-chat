@@ -318,7 +318,7 @@ created_at / expires_at / deleted_at
 
 Колонки `text`, `plaintext`, `decrypted_body`, `message_key` запрещены.
 
-Message creation idempotent по client-generated request/message ID. Authoritative ordering выдаёт серверный sequence/cursor, не client timestamp. Message + sync event записываются атомарно.
+Message creation idempotent по client-generated UUID в scope sender device. Exact retry возвращает исходные `message_id/sequence`; повтор ключа с иным immutable envelope даёт conflict. Под row lock conversation backend выделяет следующий positive sequence, а unique `(conversation_id, sequence)` страхует invariant в БД. List API выдаёт bounded ascending page `sequence > after_sequence`; client timestamp не участвует. Следующий sync этап добавит атомарный message + global sync event cursor.
 
 PostgreSQL — source of truth для server-side sync state только в retention window. WebSocket — notification channel. После reconnect/sleep/lost events клиент выполняет cursor catch-up:
 
