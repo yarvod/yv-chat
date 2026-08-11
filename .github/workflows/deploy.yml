@@ -95,21 +95,26 @@ jobs:
             exit 1
           fi
           key_file="$RUNNER_TEMP/yv-chat-deploy-key"
-          trap 'rm -f "$key_file"' EXIT
+          public_key_file="$RUNNER_TEMP/yv-chat-deploy-key.pub"
+          trap 'rm -f "$key_file" "$public_key_file"' EXIT
           umask 077
           printf '%s\n' "$DEPLOY_KEY" > "$key_file"
-          if ! ssh-keygen -y -f "$key_file" >/dev/null; then
+          if ! ssh-keygen -y -f "$key_file" > "$public_key_file"; then
             echo "::error title=Invalid deployment secret::DEPLOY_KEY is not a readable SSH private key"
             exit 1
           fi
-          ssh \
+          deploy_key_fingerprint=$(ssh-keygen -l -E sha256 -f "$public_key_file" | awk '{print $2}')
+          if ! ssh \
             -i "$key_file" \
             -o IdentitiesOnly=yes \
             -o BatchMode=yes \
             -o ConnectTimeout=10 \
             -o UserKnownHostsFile="$GITHUB_WORKSPACE/deploy/ssh_known_hosts" \
             "$DEPLOY_USER@$DEPLOY_HOST" \
-            'test "$(id -un)" = devuser && test -d /home/devuser/yv-chat'
+            'test "$(id -un)" = devuser && test -d /home/devuser/yv-chat'; then
+            echo "::error title=SSH authentication failed::DEPLOY_KEY public fingerprint $deploy_key_fingerprint is not authorized for devuser@chat.yoowee.ru"
+            exit 1
+          fi
 
   build:
     needs: [verify, prepare, deployment-config]
