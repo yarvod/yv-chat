@@ -159,12 +159,12 @@ describe('device crypto Worker protocol', () => {
     const first = client.restore({ userId, deviceId })
     const second = client.checkpoint()
     worker.reply({ requestId: firstRequestId, ok: true, result: 'private-state' })
-    await expect(first).rejects.toMatchObject({ code: 'runtime-unavailable' })
-    await expect(second).rejects.toMatchObject({ code: 'runtime-unavailable' })
+    await expect(first).rejects.toMatchObject({ code: 'worker-protocol' })
+    await expect(second).rejects.toMatchObject({ code: 'worker-protocol' })
 
     const timedOut = client.checkpoint()
     const timeoutAssertion = expect(timedOut).rejects.toMatchObject({
-      code: 'runtime-unavailable',
+      code: 'worker-timeout',
     })
     await vi.advanceTimersByTimeAsync(11)
     await timeoutAssertion

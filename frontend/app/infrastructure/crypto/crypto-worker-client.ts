@@ -105,7 +105,7 @@ export class CryptoWorkerClient implements DeviceCryptoGateway {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         this.pending.delete(request.requestId)
-        reject(new DeviceCryptoError('runtime-unavailable'))
+        reject(new DeviceCryptoError('worker-timeout'))
       }, this.timeoutMs)
       this.pending.set(request.requestId, { resolve, reject, timeout })
       try {
@@ -113,7 +113,7 @@ export class CryptoWorkerClient implements DeviceCryptoGateway {
       } catch {
         clearTimeout(timeout)
         this.pending.delete(request.requestId)
-        reject(new DeviceCryptoError('runtime-unavailable'))
+        reject(new DeviceCryptoError('worker-failed'))
       }
     })
   }
@@ -121,7 +121,7 @@ export class CryptoWorkerClient implements DeviceCryptoGateway {
   private readonly onMessage = (event: MessageEvent<unknown>): void => {
     const response = parseWorkerResponse(event.data)
     if (!response) {
-      this.rejectAll('runtime-unavailable')
+      this.rejectAll('worker-protocol')
       return
     }
     const pending = this.pending.get(response.requestId)
@@ -133,7 +133,7 @@ export class CryptoWorkerClient implements DeviceCryptoGateway {
   }
 
   private readonly onWorkerFailure = (): void => {
-    this.rejectAll('runtime-unavailable')
+    this.rejectAll('worker-failed')
   }
 
   private rejectAll(code: DeviceCryptoError['code']): void {

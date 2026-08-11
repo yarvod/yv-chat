@@ -1,6 +1,9 @@
 import { DeviceCryptoError } from '../../application/device-crypto/errors'
 
-const MODULE_URL = '/crypto/v1/yv_chat_openmls_provider.js'
+// v2 intentionally bypasses the old immutable Workbox entry. The public WASM
+// binding remains protocol-compatible, but a new URL prevents active PWAs from
+// mixing an older JS glue response with a newer WASM response during rollout.
+const MODULE_URL = '/crypto/v2/yv_chat_openmls_provider.js'
 
 export interface OpenMlsSealedSnapshot {
   readonly revision: bigint
@@ -55,14 +58,28 @@ function isOpenMlsModule(value: unknown): value is OpenMlsModule {
     && typeof candidate.validatePublicKeyPackage === 'function'
 }
 
-export async function loadOpenMlsModule(): Promise<OpenMlsModule> {
+type OpenMlsModuleLoader = () => Promise<unknown>
+
+const importVersionedModule: OpenMlsModuleLoader = () => (
+  import(/* @vite-ignore */ MODULE_URL)
+)
+
+export async function loadOpenMlsModule(
+  load: OpenMlsModuleLoader = importVersionedModule,
+): Promise<OpenMlsModule> {
+  let loaded: unknown
   try {
-    const loaded: unknown = await import(/* @vite-ignore */ MODULE_URL)
-    if (!isOpenMlsModule(loaded)) throw new DeviceCryptoError('runtime-unavailable')
-    await loaded.default()
-    return loaded
-  } catch (error) {
-    if (error instanceof DeviceCryptoError) throw error
-    throw new DeviceCryptoError('runtime-unavailable')
+    loaded = await load()
+  } catch {
+    throw new DeviceCryptoError('runtime-import-failed')
   }
+  if (!isOpenMlsModule(loaded)) {
+    throw new DeviceCryptoError('runtime-invalid-module')
+  }
+  try {
+    await loaded.default()
+  } catch {
+    throw new DeviceCryptoError('runtime-init-failed')
+  }
+  return loaded
 }

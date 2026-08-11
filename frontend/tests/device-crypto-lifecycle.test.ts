@@ -20,7 +20,17 @@ describe('device crypto lifecycle diagnostics', () => {
   })
 
   it('keeps transient runtime, storage and network failures retryable', () => {
-    for (const issue of ['runtime-unavailable', 'storage-unavailable', 'network'] as const) {
+    for (const issue of [
+      'runtime-unavailable',
+      'runtime-import-failed',
+      'runtime-init-failed',
+      'runtime-invalid-module',
+      'worker-failed',
+      'worker-protocol',
+      'worker-timeout',
+      'storage-unavailable',
+      'network',
+    ] as const) {
       expect(deviceCryptoIssueNeedsReconnect(issue)).toBe(false)
       expect(deviceCryptoIssueMessage(issue).length).toBeGreaterThan(20)
     }

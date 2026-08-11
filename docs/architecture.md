@@ -724,13 +724,16 @@ Vue/application DTO. Fake IndexedDB + Node WebCrypto tests фиксируют tr
 metadata semantics. Physical Chromium подтверждён; Firefox/Safari и storage-denial
 scenarios всё ещё release-gated.
 
-Repository хранит generated package под immutable protocol path `/crypto/v1/`:
+Repository хранит текущий generated package под immutable asset path `/crypto/v2/`:
 JS glue, TypeScript declaration и WASM производятся exact `Rust 1.91.0` /
 `wasm-bindgen 0.2.127`; CI пересобирает их и отклоняет tracked drift и private
 snapshot exports. Nuxt production build обязан выпустить отдельный module Worker
 chunk, скопировать WASM и включить оба versioned crypto assets и Worker в Workbox
 precache. Версия URL меняется вместе с несовместимой binding/schema revision, чтобы
 active service worker не смешивал новые JS bindings со старым WASM.
+Старый `/crypto/v1/` временно остаётся только rolling-compatibility asset для уже
+открытого Worker и не используется новым runtime. Import, binding-shape, WASM init,
+Worker crash/protocol/timeout имеют разные bounded error codes без raw exception.
 
 `DeviceCryptoRuntime` существует только внутри dedicated Worker. Он различает
 explicit `provision` и `restore`, после конкурентного bootstrap всегда восстанавливает

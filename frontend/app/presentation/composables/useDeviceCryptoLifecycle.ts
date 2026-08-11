@@ -31,6 +31,21 @@ export function deviceCryptoIssueMessage(issue: DeviceCryptoLifecycleIssue | nul
   if (issue === 'runtime-unavailable') {
     return 'Не загрузился локальный OpenMLS-модуль. Проверьте сеть и обновите приложение.'
   }
+  if (issue === 'runtime-import-failed') {
+    return 'Не загрузился файл OpenMLS. Полностью закройте PWA и откройте её снова.'
+  }
+  if (issue === 'runtime-invalid-module') {
+    return 'Версии OpenMLS JS и WASM не совпали. Обновите установленное приложение.'
+  }
+  if (issue === 'runtime-init-failed') {
+    return 'Браузер не смог запустить OpenMLS WebAssembly. Обновите браузер и приложение.'
+  }
+  if (issue === 'worker-timeout') {
+    return 'OpenMLS Worker не ответил вовремя. Полностью перезапустите приложение.'
+  }
+  if (issue === 'worker-failed' || issue === 'worker-protocol') {
+    return 'OpenMLS Worker аварийно остановился. Полностью перезапустите приложение.'
+  }
   if (issue === 'network') return 'Не удалось проверить ключи из-за потери соединения.'
   if (issue === 'server') return 'Сервер временно не смог проверить регистрацию устройства.'
   return 'Криптомодуль этого устройства не готов. Защищённые функции отключены.'

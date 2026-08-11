@@ -17,8 +17,14 @@ const ERROR_CODES = new Set<DeviceCryptoErrorCode>([
   'not-provisioned',
   'operation-failed',
   'rollback',
+  'runtime-import-failed',
+  'runtime-init-failed',
+  'runtime-invalid-module',
   'runtime-unavailable',
   'storage-unavailable',
+  'worker-failed',
+  'worker-protocol',
+  'worker-timeout',
 ])
 
 interface WorkerRequestBase {
