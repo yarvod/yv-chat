@@ -237,4 +237,131 @@ describe('message panel', () => {
     expect(wrapper.text()).toContain('Защищённое сообщение недоступно')
     expect(wrapper.text()).not.toContain('c2Vuc2l0aXZlLW9wYXF1ZS1ieXRlcw')
   })
+
+  it('sends on Enter while preserving Shift+Enter for multiline input', async () => {
+    const sendMessage = vi.fn().mockResolvedValue(true)
+    const wrapper = mount(MessagePanel, {
+      props: {
+        conversation,
+        messages: [],
+        actorUserId: 'alice-id',
+        sending: false,
+        protectionSecure: false,
+        protectionLabel: 'Тестовый режим без E2EE',
+        sendMessage,
+        deleteMessage: vi.fn(),
+        deletingMessageId: null,
+        typingActorIds: [],
+        onlineActorIds: [],
+        deliveryStates: [],
+        connectionState: 'connected',
+        setTyping: vi.fn(),
+      },
+    })
+    const input = wrapper.get('textarea')
+    await input.setValue('две\nстроки')
+    await input.trigger('keydown', { key: 'Enter', shiftKey: true })
+    expect(sendMessage).not.toHaveBeenCalled()
+    const composingEnter = new KeyboardEvent('keydown', { key: 'Enter' })
+    Object.defineProperty(composingEnter, 'isComposing', { value: true })
+    input.element.dispatchEvent(composingEnter)
+    await wrapper.vm.$nextTick()
+    expect(sendMessage).not.toHaveBeenCalled()
+    await input.trigger('keydown', { key: 'Enter' })
+    expect(sendMessage).toHaveBeenCalledWith('две\nстроки')
+  })
+
+  it('auto-grows the composer only up to its bounded height', async () => {
+    const wrapper = mount(MessagePanel, {
+      props: {
+        conversation,
+        messages: [],
+        actorUserId: 'alice-id',
+        sending: false,
+        protectionSecure: false,
+        protectionLabel: 'Тестовый режим без E2EE',
+        sendMessage: vi.fn(),
+        deleteMessage: vi.fn(),
+        deletingMessageId: null,
+        typingActorIds: [],
+        onlineActorIds: [],
+        deliveryStates: [],
+        connectionState: 'connected',
+        setTyping: vi.fn(),
+      },
+    })
+    const input = wrapper.get('textarea').element as HTMLTextAreaElement
+    Object.defineProperty(input, 'scrollHeight', { configurable: true, value: 104 })
+    await wrapper.get('textarea').trigger('input')
+    expect(input.style.height).toBe('104px')
+    expect(input.style.overflowY).toBe('hidden')
+
+    Object.defineProperty(input, 'scrollHeight', { configurable: true, value: 220 })
+    await wrapper.get('textarea').trigger('input')
+    expect(input.style.height).toBe('128px')
+    expect(input.style.overflowY).toBe('auto')
+  })
+
+  it('does not jump to an incoming message while the user reads history', async () => {
+    const firstMessage = {
+      messageId: 'message-1',
+      clientMessageId: 'client-1',
+      conversationId: 'conversation-1',
+      senderUserId: 'bob-id',
+      senderDeviceId: 'bob-device',
+      protocolVersion: 1,
+      sequence: 1,
+      createdAt: '2026-08-11T12:00:01Z',
+      expiresAt: '2026-09-10T12:00:01Z',
+      ciphertextBase64: 'aGVsbG8=',
+      deletionReason: null,
+      deletedAt: null,
+      contentState: 'available' as const,
+      displayBody: 'hello',
+      contentSecure: false,
+    }
+    const wrapper = mount(MessagePanel, {
+      props: {
+        conversation,
+        messages: [firstMessage],
+        actorUserId: 'alice-id',
+        sending: false,
+        protectionSecure: false,
+        protectionLabel: 'Тестовый режим без E2EE',
+        sendMessage: vi.fn(),
+        deleteMessage: vi.fn(),
+        deletingMessageId: null,
+        typingActorIds: [],
+        onlineActorIds: [],
+        deliveryStates: [],
+        connectionState: 'connected',
+        setTyping: vi.fn(),
+      },
+    })
+    const timeline = wrapper.get('.message-timeline').element as HTMLElement
+    const scrollTo = vi.fn()
+    Object.defineProperties(timeline, {
+      scrollHeight: { configurable: true, value: 1_200 },
+      clientHeight: { configurable: true, value: 400 },
+      scrollTop: { configurable: true, value: 200, writable: true },
+      scrollTo: { configurable: true, value: scrollTo },
+    })
+
+    await wrapper.setProps({
+      messages: [{ ...firstMessage }, {
+        ...firstMessage,
+        messageId: 'message-2',
+        clientMessageId: 'client-2',
+        sequence: 2,
+        createdAt: '2026-08-11T12:01:00Z',
+      }],
+    })
+
+    expect(scrollTo).not.toHaveBeenCalled()
+    await vi.waitFor(() => {
+      expect(wrapper.find('.scroll-to-latest').exists()).toBe(true)
+    })
+    await wrapper.get('.scroll-to-latest').trigger('click')
+    expect(scrollTo).toHaveBeenCalledWith({ top: 1_200, behavior: 'smooth' })
+  })
 })

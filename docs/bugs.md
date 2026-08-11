@@ -4,7 +4,24 @@
 
 ## Active
 
-Активных воспроизводимых дефектов нет.
+### BUG-030 — Существующая история длиннее 100 сообщений загружается не полностью
+
+- Статус: `open`.
+- Найдено в: storage/history audit, `WP-041`.
+- Severity: `high`.
+- Условия воспроизведения: открыть после login conversation, в котором до текущего
+  client sync baseline уже существует более 100 сообщений.
+- Ожидаемое поведение: UI сначала получает bounded latest page, а более старую
+  историю догружает стабильными cursor pages без unbounded DOM/RAM.
+- Фактическое поведение: gateway запрашивает только первые 100 rows с
+  `after_sequence=0`; bootstrap не продолжает pagination, а уже существующие rows
+  после сотой не обязательно представлены новыми sync events.
+- Причина: текущий transport реализует forward catch-up cursor, но ещё не имеет
+  latest/before history page contract и encrypted local archive.
+- Исправление: запланировано в `BL-022`: reverse/latest cursor page, incremental
+  load-older, bounded/virtual timeline и encrypted IndexedDB archive.
+- Проверка: будущий integration test с >100 pre-existing messages, reload, reconnect
+  и stable ordering/duplicate retry.
 
 ## Формат записи
 
@@ -21,6 +38,28 @@
 - Проверка: тест или команда, подтверждающая fix.
 
 ## Resolved
+
+### BUG-029 — Длинный timeline мог растягивать document и сдвигать messenger chrome
+
+- Статус: `verified`.
+- Найдено в: user PWA QA, `WP-041`.
+- Severity: `high`.
+- Условия воспроизведения: открыть chat с длинным списком диалогов/сообщений на
+  desktop или mobile и изменить высоту visual viewport программной клавиатурой.
+- Ожидаемое поведение: document остаётся размером с viewport; независимо скроллятся
+  list/timeline, header/composer/navigation сохраняют координаты.
+- Фактическое поведение: shell и message grid задавали в основном `min-height`,
+  поэтому intrinsic content мог увеличивать grid/document; composer и global tabs
+  конкурировали за mobile viewport.
+- Причина: у grid ancestors не было полного `height/min-height: 0/overflow` contract,
+  а mobile conversation не отделялся от top-level navigation slot.
+- Исправление: bounded `100dvh` product shell, `height: 100%` + `min-height: 0` на
+  chat ancestors, internal overflow containers и URL-backed focused conversation,
+  который скрывает global tabs. Timeline scroll coordinator не прыгает вниз при
+  входящем сообщении во время чтения истории.
+- Проверка: CSS/Vue tests и physical geometry: desktop `1440×900`, mobile
+  `390×844`, keyboard-sized `390×500`; document равен viewport, composer имеет
+  `bottom=viewport height`, scroll меняет только timeline.
 
 ### BUG-028 — Presence терялся при новом диалоге уже подключённых пользователей
 

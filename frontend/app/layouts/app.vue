@@ -1,17 +1,28 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
+import AppIcon from '../components/ui/AppIcon.vue'
+import { selectedConversationId } from '../presentation/chat/conversation-route'
+import type { AppIconName } from '../presentation/icons'
 import { useAuth } from '../presentation/composables/useAuth'
 import { usePreferences } from '../presentation/composables/usePreferences'
 
 const auth = useAuth()
 usePreferences()
 const route = useRoute()
-const items = computed(() => [
-  { to: '/chat', label: 'Чаты', icon: '◫' },
-  { to: '/settings', label: 'Настройки', icon: '◇' },
-  ...(auth.user.value?.isAdmin ? [{ to: '/admin/users', label: 'Люди', icon: '♙' }] : []),
+interface NavigationItem {
+  to: string
+  label: string
+  icon: AppIconName
+}
+const items = computed<NavigationItem[]>(() => [
+  { to: '/chat', label: 'Чаты', icon: 'chat' },
+  { to: '/settings', label: 'Настройки', icon: 'settings' },
+  ...(auth.user.value?.isAdmin ? [{ to: '/admin/users', label: 'Люди', icon: 'users' as const }] : []),
 ])
+const conversationFocused = computed(() => (
+  route.path === '/chat' && selectedConversationId(route.query.conversation) !== null
+))
 
 async function logout(): Promise<void> {
   await auth.logout()
@@ -20,7 +31,7 @@ async function logout(): Promise<void> {
 </script>
 
 <template>
-  <main class="product-shell">
+  <main class="product-shell" :class="{ 'product-shell--conversation': conversationFocused }">
     <aside class="app-rail">
       <NuxtLink class="rail-brand" to="/chat" aria-label="yv-chat">Y</NuxtLink>
       <nav class="rail-nav" aria-label="Основная навигация">
@@ -31,7 +42,7 @@ async function logout(): Promise<void> {
           class="rail-link"
           :class="{ active: route.path.startsWith(item.to) }"
         >
-          <span aria-hidden="true">{{ item.icon }}</span><small>{{ item.label }}</small>
+          <AppIcon :name="item.icon" /><small>{{ item.label }}</small>
         </NuxtLink>
       </nav>
       <button class="rail-account" type="button" title="Выйти" @click="logout">
@@ -47,7 +58,7 @@ async function logout(): Promise<void> {
         class="mobile-tab"
         :class="{ active: route.path.startsWith(item.to) }"
       >
-        <span aria-hidden="true">{{ item.icon }}</span><small>{{ item.label }}</small>
+        <AppIcon :name="item.icon" /><small>{{ item.label }}</small>
       </NuxtLink>
     </nav>
   </main>

@@ -258,6 +258,36 @@ crypto dependencies, поэтому client rendering задаётся явно. 
 screens, admin UI скрывается для обычного пользователя, но backend authorization
 всегда остаётся authoritative.
 
+### Messenger viewport и interaction model
+
+Authenticated `product-shell` ограничен ровно `100dvh` и не отдаёт высоту длинному
+content. Обычные settings/admin pages скроллят `.product-content`, а chat workspace
+получает `height: 100%`, `min-height: 0` и `overflow: hidden` на каждом grid boundary.
+Внутри messenger скроллятся только `.conversation-list` и `.message-timeline`;
+desktop rail/sidebar, conversation header, security state и composer остаются в
+своих grid rows. `overscroll-behavior: contain` не передаёт scroll наружу.
+
+Desktop использует split view с bounded sidebar. Mobile использует master/detail:
+выбранный conversation хранится как несекретный UUID в query `/chat?conversation=…`.
+Первый переход из list создаёт history entry, переключение между разговорами заменяет
+его, browser Back возвращает list. На list global bottom tabs занимают отдельный
+safe-area-aware viewport slot; внутри conversation они скрываются, поэтому composer
+остаётся у visual viewport и при уменьшении высоты software keyboard.
+
+Компонент не вычисляет grouping inline: pure typed `buildTimelineLayout` создаёт day
+separators и объединяет соседние сообщения одного sender только в пятиминутном окне.
+Scroll coordinator проверяет позицию до DOM update: initial load и собственная отправка
+следуют вниз, но входящее сообщение во время чтения истории сохраняет `scrollTop` и
+показывает explicit scroll-to-latest action. Composer ограниченно растёт до 128 px;
+Enter отправляет, Shift+Enter добавляет строку, IME composition никогда не вызывает
+преждевременную отправку.
+
+Reusable typed SVG icons, local conversation search, circular avatars, time/unread/
+presence metadata и compact grouped bubbles являются presentation деталями. Они не
+добавляют network state или crypto logic в Vue components. Physical acceptance для
+`WP-041` проверяет desktop `1440×900`, mobile `390×844`, keyboard-sized `390×500`,
+long sidebar/timeline и неизменные координаты header/composer после internal scroll.
+
 Transport flow разделён явно:
 
 ```text
@@ -814,7 +844,15 @@ expired encrypted blobs и терпеть already-missing storage keys чере�
 
 ## 13. PWA, realtime и Web Push
 
-PWA startup local-first:
+Install surface является частью versioned frontend: manifest имеет стабильные
+`id=/`, `scope=/`, `start_url=/`, отдельные opaque `any` и `maskable` PNG 192/512,
+а Apple получает 152/167/180 touch icons и media-matched portrait startup images.
+Критическое содержимое maskable icon находится в центральной W3C safe-zone;
+платформенные rounded corners никогда не baked в master. Большие startup PNG не
+precache-ятся все вместе: браузер выбирает только подходящий media resource, тогда
+как app shell, standard icons и crypto WASM остаются в согласованном Workbox release.
+
+Целевая (ещё не реализованная полностью) PWA startup local-first схема:
 
 ```text
 read IndexedDB → render immediately
@@ -822,6 +860,14 @@ read IndexedDB → render immediately
 ```
 
 Outbox имеет `pending/sending/sent/failed`, persistent idempotency key и reconcile после reconnect. Service Worker/IndexedDB migrations versioned и совместимы при update.
+
+Состояние на `WP-041`: сообщения выбранного разговора живут только в reactive RAM,
+а HTTP gateway получает максимум 100 записей `after_sequence`. IndexedDB уже хранит
+sealed device crypto/MLS state, но не conversation archive, message cursor или
+outbox. Workbox кэширует executable app shell/assets, не пользовательскую историю.
+Поэтому `BL-022` (encrypted local archive), `BL-023` (offline outbox) и bounded
+history pagination/virtualization обязательны до заявления о полноценном local-first
+или комфортной работе с произвольно длинной историей.
 
 WebSocket обслуживает foreground realtime и передаёт только wake-up hints. Web Push будит background Service Worker. Sync восстанавливает correctness. Current implementation сохраняет редкий HTTP fallback poll, поэтому недоступный WebSocket ухудшает latency, но не correctness.
 

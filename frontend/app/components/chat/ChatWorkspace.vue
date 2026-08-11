@@ -6,6 +6,7 @@ import type { CurrentAccount } from '../../domain/accounts/account'
 import type { TypingIndicator } from '../../application/messaging/typing-indicator-service'
 import type { PresenceIndicator } from '../../application/messaging/presence-indicator-service'
 import type { RealtimeConnectionState } from '../../application/messaging/realtime-sync-service'
+import { selectedConversationId } from '../../presentation/chat/conversation-route'
 import ConversationSidebar from './ConversationSidebar.vue'
 import MessagePanel from './MessagePanel.vue'
 
@@ -13,13 +14,16 @@ const props = defineProps<{ user: CurrentAccount }>()
 const emit = defineEmits<{ sessionExpired: [] }>()
 const messenger = useMessenger(props.user.userId, () => emit('sessionExpired'))
 const { $frontend } = useNuxtApp()
+const route = useRoute()
 const realtime = $frontend.createRealtimeSync()
 const typing = $frontend.createTypingIndicators(realtime)
 const presence = $frontend.createPresenceIndicators()
 const typingIndicators = ref<readonly TypingIndicator[]>([])
 const presenceIndicators = ref<readonly PresenceIndicator[]>([])
 const connectionState = ref<RealtimeConnectionState>('connecting')
-const mobilePane = ref<'list' | 'conversation'>('list')
+const mobilePane = computed<'list' | 'conversation'>(() => (
+  selectedConversationId(route.query.conversation) ? 'conversation' : 'list'
+))
 let unsubscribeVisibility: (() => void) | null = null
 let unsubscribeTyping: (() => void) | null = null
 let unsubscribePresence: (() => void) | null = null
@@ -31,13 +35,43 @@ const activeOnlineActorIds = computed(() => presenceIndicators.value
   .filter(item => item.conversationId === messenger.state.activeConversationId)
   .map(item => item.userId))
 
-function selectConversation(conversationId: string): void {
-  void messenger.selectConversation(conversationId)
-  mobilePane.value = 'conversation'
+async function selectConversation(conversationId: string): Promise<void> {
+  await messenger.selectConversation(conversationId)
+  await navigateTo(
+    { path: '/chat', query: { conversation: conversationId } },
+    { replace: selectedConversationId(route.query.conversation) !== null },
+  )
+}
+
+async function createDirect(userId: string): Promise<void> {
+  await messenger.createDirect(userId)
+  if (messenger.state.activeConversationId) {
+    await selectConversation(messenger.state.activeConversationId)
+  }
+}
+
+async function createGroup(title: string, userIds: string[]): Promise<void> {
+  await messenger.createGroup(title, userIds)
+  if (messenger.state.activeConversationId) {
+    await selectConversation(messenger.state.activeConversationId)
+  }
+}
+
+async function closeConversation(): Promise<void> {
+  await navigateTo('/chat', { replace: true })
 }
 
 onMounted(async () => {
   await messenger.load()
+  const requestedConversation = selectedConversationId(route.query.conversation)
+  if (
+    requestedConversation
+    && messenger.state.conversations.some(item => item.conversationId === requestedConversation)
+  ) {
+    await messenger.selectConversation(requestedConversation)
+  } else if (requestedConversation) {
+    await navigateTo('/chat', { replace: true })
+  }
   unsubscribeTyping = typing.subscribe(indicators => {
     typingIndicators.value = indicators
   })
@@ -85,8 +119,8 @@ onBeforeUnmount(() => {
       :presence-indicators="presenceIndicators"
       :creating="messenger.state.creating"
       @select="selectConversation"
-      @direct="messenger.createDirect"
-      @group="messenger.createGroup"
+      @direct="createDirect"
+      @group="createGroup"
     />
 
     <div v-if="messenger.state.phase === 'loading'" class="conversation-placeholder" aria-live="polite">
@@ -113,7 +147,7 @@ onBeforeUnmount(() => {
         :delivery-states="messenger.state.deliveryStates"
         :connection-state="connectionState"
         :set-typing="typing.setLocal.bind(typing)"
-        @back="mobilePane = 'list'"
+        @back="closeConversation"
       />
     </div>
   </section>

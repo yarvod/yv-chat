@@ -63,28 +63,33 @@ Implementation и desktop browser smoke завершены; physical 390px scree
 
 ### BL-041 — Visual system, accessibility и PWA polish
 
+Статус: **in progress** (`WP-041` завершает core messenger viewport/interaction
+и install assets; update UX и полный accessibility/visual-regression gate остаются).
+
 Результат: приложение имеет единый визуальный язык, install/update UX и
 доступность, а messenger shell по плотности и поведению привычен пользователю
 Telegram/WhatsApp без копирования их бренда.
 
-- semantic color/spacing/typography/elevation/motion tokens;
-- stable `100dvh`/visual-viewport shell без page-level скачков при длинном content,
+- [x] semantic color/spacing/typography/elevation/motion tokens;
+- [x] stable `100dvh`/visual-viewport shell без page-level скачков при длинном content,
   mobile browser chrome, safe areas и открытии software keyboard;
-- desktop split view: фиксированная conversation list/sidebar и отдельный timeline;
-- mobile master/detail navigation с естественным back flow и без горизонтального overflow;
-- закреплённые conversation header и composer; скроллится только timeline, новые
+- [x] desktop split view: фиксированная conversation list/sidebar и отдельный timeline;
+- [x] mobile master/detail navigation с естественным back flow и без горизонтального overflow;
+- [x] закреплённые conversation header и composer; скроллится только timeline, новые
   сообщения не выдёргивают пользователя с прочитанной позиции;
-- компактные chat rows, avatars, timestamps, unread/mute/presence indicators и
+- [x] компактные chat rows, avatars, timestamps, unread/presence indicators и
   touch-friendly contextual actions;
-- readable grouped bubbles, day/unread separators, delivery state, typing и
+- [x] readable grouped bubbles, day separators, delivery state, typing и
   scroll-to-latest control;
-- composer с multiline auto-grow в заданных пределах, attachment/emoji-ready slots,
+- [x] composer с multiline auto-grow в заданных пределах,
   Enter/Shift+Enter policy и mobile keyboard-safe positioning;
-- focus-visible, keyboard navigation, ARIA/live regions и contrast checks;
-- skeleton/empty/error/offline states без layout shift;
-- PWA icons/splash/theme colors для light/dark и standalone safe areas;
-- install/update prompts и migration-compatible service worker lifecycle;
-- visual regression screenshots для short/long timeline, empty/loading/error,
+- [ ] attachment/emoji-ready composer slots после encrypted attachments boundary;
+- [ ] полный focus-visible, keyboard navigation, ARIA/live regions и contrast audit;
+- [ ] skeleton/empty/error/offline states без layout shift;
+- [x] PWA standard/maskable/touch icons, portrait Apple splash, theme colors и
+  standalone safe areas;
+- [ ] install/update prompts и migration-compatible service worker lifecycle;
+- [ ] repository-owned visual regression screenshots для short/long timeline, empty/loading/error,
   mobile keyboard-sized viewport и основных desktop/mobile состояний.
 
 ## Messaging foundation
@@ -230,6 +235,9 @@ policy остаются).
 Результат: startup сначала показывает локальную историю, затем применяет sync delta.
 
 - versioned stores для conversation index, encrypted messages, cursor, receipts, protocol state и attachment metadata;
+- bounded latest/before pagination и load-older без пропусков для conversation с
+  более чем 100 уже существующими сообщениями;
+- virtual/bounded timeline rendering, чтобы DOM и reactive RAM не росли без лимита;
 - device-local non-extractable storage key где поддерживается;
 - plaintext только в RAM на время rendering/processing;
 - versioned IndexedDB migrations и service-worker compatibility tests;

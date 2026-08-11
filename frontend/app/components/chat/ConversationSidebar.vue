@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 
 import type { CurrentAccount } from '../../domain/accounts/account'
 import type {
@@ -8,6 +8,7 @@ import type {
   DirectoryUser,
 } from '../../domain/messaging/models'
 import type { PresenceIndicator } from '../../application/messaging/presence-indicator-service'
+import AppIcon from '../ui/AppIcon.vue'
 import NewConversationForm from './NewConversationForm.vue'
 
 const props = defineProps<{
@@ -25,6 +26,15 @@ const emit = defineEmits<{
   group: [title: string, userIds: string[]]
 }>()
 const creatingNew = ref(false)
+const query = ref('')
+
+const filteredConversations = computed(() => {
+  const normalized = query.value.trim().toLocaleLowerCase('ru-RU')
+  if (!normalized) return props.conversations
+  return props.conversations.filter(conversation => (
+    conversationName(conversation).toLocaleLowerCase('ru-RU').includes(normalized)
+  ))
+})
 
 function conversationName(conversation: Conversation): string {
   if (conversation.conversationType === 'group') return conversation.title ?? 'Группа'
@@ -47,6 +57,24 @@ function isConversationOnline(conversation: Conversation): boolean {
   ))
 }
 
+function conversationSummary(conversation: Conversation): string {
+  if (isConversationOnline(conversation) && conversation.conversationType === 'direct') {
+    return 'В сети'
+  }
+  if (conversation.conversationType === 'group') {
+    const activeMembers = conversation.members.filter(member => member.leftAt === null).length
+    return `${activeMembers} участников`
+  }
+  return 'Личный диалог'
+}
+
+function updatedTime(conversation: Conversation): string {
+  return new Date(conversation.updatedAt).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
 function createDirect(userId: string): void {
   emit('direct', userId)
   creatingNew.value = false
@@ -64,7 +92,7 @@ function createGroup(title: string, userIds: string[]): void {
       <span class="brand-mark small">Y</span>
       <strong>yv-chat</strong>
       <button class="new-chat-button" type="button" aria-label="Новый диалог" @click="creatingNew = true">
-        +
+        <AppIcon name="add" />
       </button>
     </div>
 
@@ -78,37 +106,60 @@ function createGroup(title: string, userIds: string[]): void {
       @group="createGroup"
     />
 
-    <nav v-else class="conversation-list" aria-label="Диалоги">
-      <button
-        v-for="conversation in conversations"
-        :key="conversation.conversationId"
-        type="button"
-        class="conversation-row"
-        :class="{ active: conversation.conversationId === activeConversationId }"
-        @click="emit('select', conversation.conversationId)"
-      >
-        <span class="conversation-avatar">
-          {{ conversationName(conversation).slice(0, 1).toUpperCase() }}
-          <i v-if="isConversationOnline(conversation)" class="presence-dot" aria-label="В сети" />
-        </span>
-        <span class="conversation-copy">
-          <strong>{{ conversationName(conversation) }}</strong>
-          <small>{{ conversation.conversationType === 'group' ? `${conversation.members.length} участников` : 'Личный диалог' }}</small>
-        </span>
-        <span
-          v-if="unreadCount(conversation.conversationId) > 0"
-          class="unread-badge"
-          :aria-label="`${unreadCount(conversation.conversationId)} непрочитанных`"
+    <template v-else>
+      <div class="conversation-search" role="search">
+        <label class="sr-only" for="conversation-search-input">Найти диалог</label>
+        <AppIcon name="search" />
+        <input
+          id="conversation-search-input"
+          v-model="query"
+          type="search"
+          placeholder="Поиск"
+          autocomplete="off"
         >
-          {{ unreadCount(conversation.conversationId) > 99 ? '99+' : unreadCount(conversation.conversationId) }}
-        </span>
-      </button>
-      <div v-if="conversations.length === 0" class="empty-conversations">
-        <span class="empty-icon">◎</span>
-        <h2>Пока нет диалогов</h2>
-        <p>Нажмите «+», чтобы начать личный диалог или создать группу.</p>
+        <button v-if="query" type="button" aria-label="Очистить поиск" @click="query = ''">
+          <AppIcon name="close" />
+        </button>
+        <span v-else aria-hidden="true" />
       </div>
-    </nav>
+      <nav class="conversation-list" aria-label="Диалоги">
+        <button
+          v-for="conversation in filteredConversations"
+          :key="conversation.conversationId"
+          type="button"
+          class="conversation-row"
+          :class="{ active: conversation.conversationId === activeConversationId }"
+          @click="emit('select', conversation.conversationId)"
+        >
+          <span class="conversation-avatar">
+            {{ conversationName(conversation).slice(0, 1).toUpperCase() }}
+            <i v-if="isConversationOnline(conversation)" class="presence-dot" aria-label="В сети" />
+          </span>
+          <span class="conversation-copy">
+            <strong>{{ conversationName(conversation) }}</strong>
+            <small :class="{ online: isConversationOnline(conversation) }">
+              {{ conversationSummary(conversation) }}
+            </small>
+          </span>
+          <span class="conversation-meta">
+            <time :datetime="conversation.updatedAt">{{ updatedTime(conversation) }}</time>
+            <span
+              v-if="unreadCount(conversation.conversationId) > 0"
+              class="unread-badge"
+              :aria-label="`${unreadCount(conversation.conversationId)} непрочитанных`"
+            >
+              {{ unreadCount(conversation.conversationId) > 99 ? '99+' : unreadCount(conversation.conversationId) }}
+            </span>
+          </span>
+        </button>
+        <div v-if="filteredConversations.length === 0" class="empty-conversations">
+          <span class="empty-icon">◎</span>
+          <h2>{{ query ? 'Ничего не найдено' : 'Пока нет диалогов' }}</h2>
+          <p v-if="query">Попробуйте изменить запрос.</p>
+          <p v-else>Нажмите «+», чтобы начать личный диалог или создать группу.</p>
+        </div>
+      </nav>
+    </template>
 
     <footer class="account-row">
       <span class="avatar">{{ user.displayName.slice(0, 1).toUpperCase() }}</span>

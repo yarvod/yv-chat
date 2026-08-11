@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import type { TimelineMessage } from '../../application/messaging/timeline-message'
 import type { RealtimeConnectionState } from '../../application/messaging/realtime-sync-service'
@@ -7,6 +7,8 @@ import type {
   Conversation,
   ParticipantDeliveryState,
 } from '../../domain/messaging/models'
+import { buildTimelineLayout } from '../../presentation/chat/timeline-layout'
+import AppIcon from '../ui/AppIcon.vue'
 
 const props = defineProps<{
   conversation: Conversation | null
@@ -29,6 +31,16 @@ const emit = defineEmits<{ back: [] }>()
 const draft = ref('')
 const deleteCandidateId = ref<string | null>(null)
 const timeline = ref<HTMLElement | null>(null)
+const composerInput = ref<HTMLTextAreaElement | null>(null)
+const showScrollToLatest = ref(false)
+
+const timelineItems = computed(() => props.conversation
+  ? buildTimelineLayout(
+      props.messages,
+      props.conversation.conversationType,
+      props.actorUserId,
+    )
+  : [])
 
 const typingLabel = computed(() => {
   const names = props.typingActorIds
@@ -106,15 +118,57 @@ async function confirmDelete(messageId: string): Promise<void> {
 }
 
 async function submit(): Promise<void> {
+  if (props.sending || draft.value.trim().length === 0) return
   const value = draft.value
-  if (await props.sendMessage(value)) draft.value = ''
+  if (await props.sendMessage(value)) {
+    draft.value = ''
+    await nextTick()
+    resizeComposer()
+    scrollToLatest('smooth')
+  }
+}
+
+function isNearLatest(): boolean {
+  const element = timeline.value
+  if (!element) return true
+  return element.scrollHeight - element.scrollTop - element.clientHeight < 120
+}
+
+function handleTimelineScroll(): void {
+  if (isNearLatest()) showScrollToLatest.value = false
+}
+
+function scrollToLatest(behavior: ScrollBehavior = 'smooth'): void {
+  const element = timeline.value
+  if (!element) return
+  element.scrollTo({ top: element.scrollHeight, behavior })
+  showScrollToLatest.value = false
+}
+
+function resizeComposer(): void {
+  const element = composerInput.value
+  if (!element) return
+  element.style.height = 'auto'
+  const height = Math.min(element.scrollHeight, 128)
+  element.style.height = `${height}px`
+  element.style.overflowY = element.scrollHeight > 128 ? 'auto' : 'hidden'
+}
+
+function handleComposerKeydown(event: KeyboardEvent): void {
+  if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return
+  event.preventDefault()
+  void submit()
 }
 
 watch(
   () => props.messages.length,
-  async () => {
+  async (length, previousLength) => {
+    const shouldFollow = previousLength === 0
+      || isNearLatest()
+      || props.messages.at(-1)?.senderUserId === props.actorUserId
     await nextTick()
-    timeline.value?.scrollTo({ top: timeline.value.scrollHeight })
+    if (shouldFollow) scrollToLatest(previousLength === 0 ? 'auto' : 'smooth')
+    else if (length > previousLength) showScrollToLatest.value = true
   },
 )
 
@@ -124,14 +178,23 @@ watch(draft, value => {
 
 watch(
   () => props.conversation?.conversationId,
-  (conversationId, previousConversationId) => {
+  async (conversationId, previousConversationId) => {
     if (previousConversationId) props.setTyping(previousConversationId, false)
     if (conversationId !== previousConversationId) {
       draft.value = ''
       deleteCandidateId.value = null
+      showScrollToLatest.value = false
+      await nextTick()
+      resizeComposer()
+      scrollToLatest('auto')
     }
   },
 )
+
+onMounted(() => {
+  resizeComposer()
+  scrollToLatest('auto')
+})
 
 onBeforeUnmount(() => {
   if (props.conversation) props.setTyping(props.conversation.conversationId, false)
@@ -141,8 +204,13 @@ onBeforeUnmount(() => {
 <template>
   <section v-if="conversation" class="message-panel">
     <header class="conversation-header">
-      <button class="mobile-back" type="button" aria-label="К списку диалогов" @click="emit('back')">‹</button>
-      <div>
+      <button class="mobile-back" type="button" aria-label="К списку диалогов" @click="emit('back')">
+        <AppIcon name="back" />
+      </button>
+      <span class="conversation-header-avatar" aria-hidden="true">
+        {{ conversationName(conversation).slice(0, 1).toUpperCase() }}
+      </span>
+      <div class="conversation-header-copy">
         <h2>{{ conversationName(conversation) }}</h2>
         <p v-if="typingLabel" class="typing-label" aria-live="polite">
           {{ typingLabel }}<span aria-hidden="true">…</span>
@@ -161,67 +229,94 @@ onBeforeUnmount(() => {
       {{ protectionLabel }}. Не отправляйте чувствительные данные.
     </p>
 
-    <div ref="timeline" class="message-timeline" aria-live="polite">
+    <div ref="timeline" class="message-timeline" aria-live="polite" @scroll.passive="handleTimelineScroll">
       <div v-if="messages.length === 0" class="empty-timeline">
         <span>✦</span>
         <h3>Начните разговор</h3>
         <p>Первое сообщение появится у всех участников после синхронизации.</p>
       </div>
-      <article
-        v-for="message in messages"
-        :key="message.messageId"
-        class="message-bubble"
-        :class="{ own: message.senderUserId === actorUserId }"
-      >
-        <strong>{{ senderName(message) }}</strong>
-        <p v-if="message.contentState === 'available'">
-          {{ message.displayBody }}
-        </p>
-        <p v-else-if="message.contentState === 'deleted'" class="message-tombstone">
-          {{ message.deletionReason === 'expired' ? 'Срок хранения сообщения истёк' : 'Сообщение удалено для всех' }}
-        </p>
-        <p v-else class="message-unavailable" role="status">
-          {{ message.displayBody }}
-        </p>
-        <div v-if="canDelete(message)" class="message-actions">
-          <template v-if="deleteCandidateId === message.messageId">
-            <span>Удалить без возможности восстановления?</span>
-            <button
-              type="button"
-              :disabled="deletingMessageId === message.messageId"
-              @click="confirmDelete(message.messageId)"
-            >
-              {{ deletingMessageId === message.messageId ? 'Удаляем…' : 'Да, удалить' }}
-            </button>
-            <button type="button" @click="deleteCandidateId = null">Отмена</button>
-          </template>
-          <button
-            v-else
-            type="button"
-            @click="deleteCandidateId = message.messageId"
-          >
-            Удалить у всех
-          </button>
+      <template v-for="item in timelineItems" :key="item.key">
+        <div v-if="item.kind === 'day'" class="timeline-day">
+          <span>{{ item.label }}</span>
         </div>
-        <small>
-          #{{ message.sequence }} · {{ new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
-          <template v-if="deliveryLabel(message)"> · {{ deliveryLabel(message) }}</template>
-        </small>
-      </article>
+        <article
+          v-else
+          class="message-bubble"
+          :class="{
+            own: item.message.senderUserId === actorUserId,
+            joined: item.joinedToPrevious,
+          }"
+        >
+          <strong v-if="item.showSender">{{ senderName(item.message) }}</strong>
+          <p v-if="item.message.contentState === 'available'">
+            {{ item.message.displayBody }}
+          </p>
+          <p v-else-if="item.message.contentState === 'deleted'" class="message-tombstone">
+            {{ item.message.deletionReason === 'expired' ? 'Срок хранения сообщения истёк' : 'Сообщение удалено для всех' }}
+          </p>
+          <p v-else class="message-unavailable" role="status">
+            {{ item.message.displayBody }}
+          </p>
+          <div v-if="canDelete(item.message)" class="message-actions">
+            <template v-if="deleteCandidateId === item.message.messageId">
+              <span>Удалить без возможности восстановления?</span>
+              <button
+                type="button"
+                :disabled="deletingMessageId === item.message.messageId"
+                @click="confirmDelete(item.message.messageId)"
+              >
+                {{ deletingMessageId === item.message.messageId ? 'Удаляем…' : 'Да, удалить' }}
+              </button>
+              <button type="button" @click="deleteCandidateId = null">Отмена</button>
+            </template>
+            <button
+              v-else
+              type="button"
+              :aria-label="`Удалить сообщение #${item.message.sequence} у всех`"
+              @click="deleteCandidateId = item.message.messageId"
+            >
+              Удалить у всех
+            </button>
+          </div>
+          <small class="message-meta">
+            <time :datetime="item.message.createdAt">
+              {{ new Date(item.message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
+            </time>
+            <span v-if="deliveryLabel(item.message)" class="delivery-state" :title="deliveryLabel(item.message) ?? undefined">
+              <span aria-hidden="true">{{ deliveryLabel(item.message) === 'Отправлено' ? '✓' : '✓✓' }}</span>
+              <span class="sr-only">{{ deliveryLabel(item.message) }}</span>
+            </span>
+          </small>
+        </article>
+      </template>
     </div>
+
+    <button
+      v-if="showScrollToLatest"
+      class="scroll-to-latest"
+      type="button"
+      aria-label="Перейти к новым сообщениям"
+      @click="scrollToLatest()"
+    >
+      <AppIcon name="back" />
+      <span aria-hidden="true">Новые</span>
+    </button>
 
     <form class="composer" @submit.prevent="submit">
       <label class="sr-only" for="message-draft">Сообщение</label>
       <textarea
         id="message-draft"
+        ref="composerInput"
         v-model="draft"
         maxlength="4000"
         rows="1"
         placeholder="Напишите сообщение…"
-        @keydown.enter.exact.prevent="submit"
+        @input="resizeComposer"
+        @keydown="handleComposerKeydown"
       />
       <button class="send-button" type="submit" :disabled="sending || draft.trim().length === 0" aria-label="Отправить">
-        {{ sending ? '…' : '↑' }}
+        <span v-if="sending" aria-hidden="true">…</span>
+        <AppIcon v-else name="send" />
       </button>
     </form>
   </section>

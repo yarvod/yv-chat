@@ -14,4 +14,16 @@ describe('mobile application shell', () => {
     expect(mobileBlock).toMatch(/\.mobile-tabs \{ position: fixed;[^}]*inset-inline: 0; bottom: 0;/)
     expect(mobileBlock).toContain('height: var(--mobile-tabs-height)')
   })
+
+  it('bounds chat to the viewport and assigns overflow only to internal lists', () => {
+    const cssPath = resolve(process.cwd(), 'app/assets/main.css')
+    const css = readFileSync(cssPath, 'utf8')
+
+    expect(css).toMatch(/\.product-shell \{[^}]*height: 100dvh;[^}]*overflow: hidden;/)
+    expect(css).toMatch(/\.messenger-shell \{[^}]*height: 100%;[^}]*overflow: hidden;/)
+    expect(css).toMatch(/\.message-panel \{[^}]*height: 100%;[^}]*overflow: hidden;/)
+    expect(css).toMatch(/\.message-timeline \{[^}]*overflow-y: auto;/)
+    expect(css).toMatch(/\.conversation-list \{[^}]*overflow-y: auto;/)
+    expect(css).toContain('.product-shell--conversation .mobile-tabs { display: none; }')
+  })
 })

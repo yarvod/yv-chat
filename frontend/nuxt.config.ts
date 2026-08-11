@@ -1,9 +1,55 @@
+const appleLaunchScreens = [
+  { href: '/splash/launch-750x1334.png', width: 375, height: 667, ratio: 2 },
+  { href: '/splash/launch-828x1792.png', width: 414, height: 896, ratio: 2 },
+  { href: '/splash/launch-1125x2436.png', width: 375, height: 812, ratio: 3 },
+  { href: '/splash/launch-1170x2532.png', width: 390, height: 844, ratio: 3 },
+  { href: '/splash/launch-1179x2556.png', width: 393, height: 852, ratio: 3 },
+  { href: '/splash/launch-1206x2622.png', width: 402, height: 874, ratio: 3 },
+  { href: '/splash/launch-1260x2736.png', width: 420, height: 912, ratio: 3 },
+  { href: '/splash/launch-1284x2778.png', width: 428, height: 926, ratio: 3 },
+  { href: '/splash/launch-1290x2796.png', width: 430, height: 932, ratio: 3 },
+  { href: '/splash/launch-1320x2868.png', width: 440, height: 956, ratio: 3 },
+  { href: '/splash/launch-1668x2388.png', width: 834, height: 1194, ratio: 2 },
+  { href: '/splash/launch-2048x2732.png', width: 1024, height: 1366, ratio: 2 },
+  { href: '/splash/launch-2064x2752.png', width: 1032, height: 1376, ratio: 2 },
+] as const
+
 export default defineNuxtConfig({
   compatibilityDate: '2026-08-11',
   ssr: false,
   devtools: { enabled: false },
   modules: ['@nuxt/eslint', '@vite-pwa/nuxt'],
   css: ['~/assets/main.css'],
+  app: {
+    head: {
+      title: 'yv-chat',
+      meta: [
+        {
+          name: 'viewport',
+          content: 'width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content',
+        },
+        { name: 'application-name', content: 'yv-chat' },
+        { name: 'mobile-web-app-capable', content: 'yes' },
+        { name: 'apple-mobile-web-app-capable', content: 'yes' },
+        { name: 'apple-mobile-web-app-title', content: 'yv-chat' },
+        { name: 'apple-mobile-web-app-status-bar-style', content: 'black-translucent' },
+        { name: 'format-detection', content: 'telephone=no' },
+        { name: 'theme-color', content: '#0b1224', media: '(prefers-color-scheme: dark)' },
+        { name: 'theme-color', content: '#f5f7fb', media: '(prefers-color-scheme: light)' },
+      ],
+      link: [
+        { rel: 'icon', type: 'image/png', sizes: '32x32', href: '/icons/favicon-32.png' },
+        { rel: 'apple-touch-icon', sizes: '152x152', href: '/icons/apple-touch-icon-152.png' },
+        { rel: 'apple-touch-icon', sizes: '167x167', href: '/icons/apple-touch-icon-167.png' },
+        { rel: 'apple-touch-icon', sizes: '180x180', href: '/apple-touch-icon.png' },
+        ...appleLaunchScreens.map(screen => ({
+          rel: 'apple-touch-startup-image' as const,
+          href: screen.href,
+          media: `(device-width: ${screen.width}px) and (device-height: ${screen.height}px) and (-webkit-device-pixel-ratio: ${screen.ratio}) and (orientation: portrait)`,
+        })),
+      ],
+    },
+  },
   typescript: {
     strict: true,
     typeCheck: true,
@@ -11,17 +57,31 @@ export default defineNuxtConfig({
   pwa: {
     registerType: 'prompt',
     manifest: {
+      id: '/',
       name: 'yv-chat',
       short_name: 'yv-chat',
-      description: 'Private messenger for trusted groups',
-      theme_color: '#7057ff',
-      background_color: '#0b0d13',
+      description: 'Приватный мессенджер для доверенного круга',
+      lang: 'ru',
+      dir: 'ltr',
+      start_url: '/',
+      scope: '/',
+      theme_color: '#0b1224',
+      background_color: '#07111f',
       display: 'standalone',
       orientation: 'any',
+      categories: ['social', 'communication'],
+      icons: [
+        { src: '/icons/icon-64.png', sizes: '64x64', type: 'image/png', purpose: 'any' },
+        { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+        { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+        { src: '/icons/icon-maskable-192.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
+        { src: '/icons/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+      ],
     },
     workbox: {
       navigateFallback: '/',
       globPatterns: ['**/*.{css,html,ico,js,png,svg,wasm,webmanifest}'],
+      globIgnores: ['splash/**/*.png'],
     },
   },
 })
