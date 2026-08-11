@@ -200,6 +200,8 @@
 
 ### BL-029 — Production Nginx, TLS и security headers
 
+Статус: **in progress** (`WP-019`).
+
 Результат: наружу опубликованы только HTTPS/WSS через проверенный ingress.
 
 - HTTP→HTTPS, certificate automation и HSTS только после проверки TLS;

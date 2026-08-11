@@ -2,65 +2,75 @@
 
 Этот файл содержит только одну текущую фичу. Перед началом следующей фичи завершённая работа фиксируется коммитом, а новый пункт переносится сюда из `backlog.md`.
 
-## WP-018 — Production Compose, GHCR и deploy workflow
+## WP-019 — Первый production rollout, host Nginx и TLS
 
-Статус: **completed**
-Backlog item: `BL-030`
-Цель: собирать immutable backend/frontend images в GitHub Actions и безопасно разворачивать отдельный stack на `ru1`, не затрагивая существующие сервисы.
+Статус: **in progress**
+Backlog item: `BL-029`
+Цель: развернуть проверенный messaging MVP на `chat.yoowee.ru` через изолированный Compose project `yv-chat`, подключить его к существующему host Nginx и подтвердить, что соседние сервисы на `ru1` не изменились.
 
 ### Результат
 
-`compose.prod.yml` запускает PostgreSQL, API, Nuxt и internal Nginx gateway как project `yv-chat`; наружу host публикуется только `127.0.0.1:18080`. `deploy.yml` после CI строит/push immutable GHCR images, копирует только versioned deploy artifacts, выполняет migration и health-checked rollout по SSH.
+GitHub Actions публикует immutable backend/frontend images и выкатывает их в `/home/devuser/yv-chat`; server-only `.env` создан непосредственно на VPS с mode `0600`. Host Nginx проксирует только `chat.yoowee.ru` в loopback gateway `127.0.0.1:18080`, HTTPS-сертификат валиден, HTTP перенаправляет на HTTPS, а public API/PWA проходят smoke-проверку без изменения чужих containers, ports и virtual hosts.
 
 ### Invariants
 
-1. Production server ничего не собирает; он только pulls GHCR images.
-2. Image tag immutable `sha-<commit>`; `latest` только convenience, rollout его не использует.
-3. Stack всегда запускается с explicit project `yv-chat`; чужие containers/networks/volumes не перечисляются и не удаляются.
-4. Только gateway имеет host bind `127.0.0.1:18080`; PostgreSQL/API/frontend не публикуют ports.
-5. `.env` не копируется из repository/workflow и должен существовать на server с mode `0600`.
-6. Workflow не печатает runtime secret values; GHCR credential подаётся через masked secret.
-7. Compose config fail-fast требует production DB credentials, exact HTTPS origin и image coordinates.
-8. Migration выполняется явно новым backend image до rollout; migrations backward-compatible с текущим app.
-9. Healthchecks обязательны; failed rollout не меняет соседние Compose projects.
-10. No `docker system prune`, broad cleanup или unscoped `--remove-orphans`.
-11. Resource limits учитывают VPS с 1.9 GiB RAM и отсутствие swap.
-12. Deployment environment защищается GitHub `production` environment/concurrency.
+1. До rollout снимается и сохраняется только несекретный baseline существующих Compose projects, container names/status, listeners и Nginx virtual hosts.
+2. Не читаются и не копируются `.env`, credentials или private keys соседних сервисов.
+3. Production secrets генерируются непосредственно на `ru1`; их значения не попадают в terminal output, logs, Git, Actions artifacts или документацию.
+4. `/home/devuser/yv-chat/.env` принадлежит `devuser` и имеет mode `0600`.
+5. Stack использует только explicit Compose project `yv-chat`; запрещены broad `down`, `--remove-orphans`, `system prune` и операции над чужими resources.
+6. Единственный host bind stack — `127.0.0.1:18080`; PostgreSQL/API/frontend не публикуются наружу.
+7. Перед изменением host Nginx новый stack обязан пройти loopback health/API smoke.
+8. Nginx-конфиг добавляется отдельным server block для exact `chat.yoowee.ru`; существующие конфиги не переписываются.
+9. Конфиг проверяется `nginx -t` до reload; reload выполняется только после успешной проверки.
+10. HSTS включается только после подтверждения валидного HTTPS и корректного redirect.
+11. WebSocket upgrade/timeouts, request body limit и trusted proxy boundary согласованы с backend/ingress.
+12. После rollout сравнивается baseline: соседние container names/status/listeners остаются неизменными.
+13. Первая admin credential хранится только как одноразовый server-side файл mode `0600`; после передачи администратору bootstrap env удаляется из `.env`.
+14. Если GitHub Actions/SSH/sudo prerequisite отсутствует, rollout останавливается до privileged mutation; работоспособные соседние сервисы имеют приоритет.
 
 ### План
 
-- [x] Добавить isolated `compose.prod.yml` с pinned images, volumes, healthchecks и limits.
-- [x] Добавить internal gateway config для `/api/` и PWA.
-- [x] Добавить remote deploy script с preflight, pull, migration, rollout и status.
-- [x] Добавить `.github/workflows/deploy.yml` для verify/build/push/copy/SSH deploy.
-- [x] Добавить `.env.production.example` без реальных secrets и production runbook.
-- [x] Добавить Compose/render/script static tests.
-- [x] Локально проверить config, images, migration и health smoke.
-- [x] Обновить docs и создать отдельный commit.
+- [ ] Проверить local branch/remote, GitHub Actions prerequisites и наличие deployment secret names без чтения значений (local/remote проверены; фактические secrets подтвердит workflow).
+- [x] Снять read-only production baseline: Docker projects/containers, listeners, Nginx config и текущие public endpoints.
+- [x] Добавить отдельный versioned host Nginx template с HTTP challenge/redirect и HTTPS reverse proxy.
+- [x] Добавить безопасный server bootstrap script: создать `.env`/bootstrap credential без вывода secret values и проверить permissions.
+- [x] Дополнить deployment runbook first-run, TLS, rollback и post-deploy comparison.
+- [x] Прогнать repository CI и deploy static checks; окончательный Nginx syntax test выполнить с issued certificate до reload.
+- [ ] Опубликовать feature branch и пропустить изменения через GitHub CI до `main`.
+- [ ] Создать server-only secrets и deploy directory; не изменять host Nginx до loopback smoke.
+- [ ] Выполнить immutable Compose rollout, migration и loopback health/API/PWA smoke.
+- [ ] Установить отдельный Nginx vhost, получить certificate, проверить config и reload.
+- [ ] Проверить public HTTPS/redirect/security headers и основной onboarding/login flow.
+- [ ] Сравнить соседние services с baseline, зафиксировать результат в docs и отдельном commit.
 
 ### Не входит в scope
 
-- изменение host Nginx/TLS (`WP-019`, `BL-029`);
-- запись production `.env`/первый production rollout;
+- real E2EE (`BL-012`–`BL-014`): текущий synthetic envelope остаётся явно non-secure;
+- attachment storage/upload (`BL-016`, `BL-017`);
 - backup/restore (`BL-031`);
-- real E2EE.
+- WebSocket notifications (`BL-011`);
+- изменение или перезапуск существующих unrelated services на `ru1`.
 
 ### Проверка готовности
 
-- `docker compose -p yv-chat --env-file test.env -f compose.prod.yml config` проходит;
-- опубликован ровно `127.0.0.1:18080`, Postgres извне недоступен;
-- workflow deploy uses commit SHA images and production environment;
-- remote script не содержит unscoped destructive operations;
-- local production-like migration/health smoke зелёный;
-- полный CI зелёный и отдельный commit создан.
+- GitHub verify/build/deploy jobs зелёные для immutable commit tag;
+- `docker compose -p yv-chat ... ps` показывает четыре healthy services;
+- на host опубликован только `127.0.0.1:18080`, порт PostgreSQL отсутствует в public listeners;
+- `curl http://127.0.0.1:18080/healthz` и `/api/v1/health` успешны;
+- `http://chat.yoowee.ru` перенаправляет на валидный `https://chat.yoowee.ru`;
+- PWA/API работают через HTTPS, browser console не содержит runtime errors;
+- Nginx передаёт trusted proxy headers и WebSocket upgrade, security headers присутствуют;
+- baseline diff не показывает stopped/recreated/renamed unrelated containers или потерянные listeners;
+- `.env` и bootstrap credential имеют mode `0600`, secret scan Git/workflow artifacts чистый;
+- полный repository CI проходит, docs обновлены и feature завершена отдельным commit.
 
 ### Проверено
 
-- portable YAML parse для CI/deploy/production Compose;
-- `make compose-check deploy-check` и полный `make ci`;
-- local `make ci`: 120 pytest passed, 6 PostgreSQL tests skipped без `TEST_DATABASE_URL`, 11 Vitest; GitHub deploy verify явно поднимает PostgreSQL и задаёт integration URL;
-- clean production-tagged backend/frontend Docker builds;
-- fresh PostgreSQL `base → 0010`, production settings и disabled direct API schema;
-- all four healthchecks, PWA/API HTTP through gateway;
-- `ps`: только gateway публикует `127.0.0.1:18082->80`, остальные ports internal;
-- временный production-like project и volumes удалены после smoke.
+- local branch `codex/bootstrap-and-workflow` линейно опережает `origin/main`; worktree до WP-019 был чистым;
+- root read-only audit: один Compose project `infra`/8 running containers, Docker subnets `172.17.0.0/16` и `172.18.0.0/16`, port `18080` свободен;
+- `nginx -T` успешен с двумя pre-existing duplicate `yoowee.ru` warnings; существующие configs не изменены;
+- Certbot установлен, действующие соседние certificates не читались глубже public metadata;
+- bootstrap-script в isolated temp directory создал только ожидаемые variables и оба файла mode `0600`, secret values не выводились;
+- production `.env` и `.bootstrap-admin.env` созданы непосредственно на `ru1` как `devuser:devuser`, mode `0600`; содержимое не читалось;
+- `make ci` с isolated `UV_CACHE_DIR`: 120 pytest passed, 6 PostgreSQL integration tests skipped без local `TEST_DATABASE_URL`, 11 Vitest; Ruff/format/import contracts/mypy/ESLint/Nuxt typecheck/build/Compose/deploy checks прошли.

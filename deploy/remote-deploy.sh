@@ -35,6 +35,15 @@ compose pull postgres api frontend gateway
 compose up -d --wait postgres
 compose run --rm --no-deps api uv run alembic upgrade head
 
+if test -f .bootstrap-admin.env; then
+    test "$(stat -c '%a' .bootstrap-admin.env)" = "600"
+    compose run --rm --no-deps \
+        --env-from-file .bootstrap-admin.env \
+        api uv run python -m messenger.bootstrap_admin
+    mv .bootstrap-admin.env .initial-admin-credential
+    chmod 600 .initial-admin-credential
+fi
+
 previous_tag=''
 if test -f .deployed-image-tag; then
     previous_tag=$(sed -n '1p' .deployed-image-tag)

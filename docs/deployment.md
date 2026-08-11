@@ -15,6 +15,8 @@ Internet
 
 Only `127.0.0.1:18080` is published on the host. Gateway joins a small edge network for the host bind and an internal private network; PostgreSQL, API and frontend live only on the private network. Production Compose uses bounded container memory/PID limits because the VPS has about 1.9 GiB RAM and no swap.
 
+The private network uses the project-owned `172.30.242.0/24` subnet and assigns `172.30.242.10` to the gateway. The API trusts only that exact address as a forwarding peer. The subnet was selected after checking the server's existing Docker networks (`172.17.0.0/16` and `172.18.0.0/16`); re-check before moving the stack to another host.
+
 ## GitHub configuration
 
 Repository Actions require:
@@ -44,13 +46,20 @@ The VPS never builds images.
 
 The populated file exists only as `/home/devuser/yv-chat/.env`, owner `devuser`, mode `0600`. Start from `.env.production.example`; do not copy a populated file back to the repository or Actions artifacts.
 
-Generate the database password directly on the server:
+Create the files directly on the server as `devuser`; the script refuses to run as root or overwrite existing credentials:
 
 ```bash
-openssl rand -hex 32
+cd /home/devuser/yv-chat
+chmod 700 deploy/bootstrap-server.sh
+./deploy/bootstrap-server.sh
 ```
 
-Use the same hex value in `POSTGRES_PASSWORD` and the password component of `DATABASE_URL`. Hex avoids URL-encoding ambiguity. Remove `BOOTSTRAP_ADMIN_*` after the initial administrator has been created.
+It uses `openssl rand` and creates, without printing secret values:
+
+- `.env` — database/runtime configuration, mode `0600`;
+- `.bootstrap-admin.env` — one-time initial administrator credential, mode `0600`.
+
+The first successful deployment runs the bootstrap command in a one-off backend container and atomically renames the latter file to `.initial-admin-credential`. The deploy script never uses that credential again. Retrieve it over the existing trusted SSH channel, then remove it after the administrator has logged in and changed the password. Do not paste it into an issue, Actions log or chat.
 
 Preflight without exposing values:
 
@@ -60,6 +69,62 @@ docker compose -p yv-chat \
   --env-file /home/devuser/yv-chat/.env \
   -f /home/devuser/yv-chat/compose.prod.yml config --quiet
 ```
+
+## First production rollout
+
+Before changing anything, record the non-secret baseline:
+
+```bash
+docker compose ls
+docker ps --format '{{.Names}}|{{.Image}}|{{.Status}}|{{.Ports}}'
+ss -lnt
+nginx -t
+```
+
+Do not read other projects' environment files. The expected pre-rollout state on `ru1` is one unrelated Compose project named `infra`; yv-chat must appear as a second project and must not recreate any `infra-*` container.
+
+After GitHub Actions has published and deployed the immutable images, verify the stack before installing a public vhost:
+
+```bash
+cd /home/devuser/yv-chat
+docker compose -p yv-chat --env-file .env -f compose.prod.yml ps
+curl --fail http://127.0.0.1:18080/healthz
+curl --fail http://127.0.0.1:18080/api/v1/health
+```
+
+The host Nginx transition has two explicit stages:
+
+```bash
+# 1. HTTP-only application/ACME route; existing vhosts are untouched.
+install -o root -g root -m 0644 \
+  /home/devuser/yv-chat/deploy/nginx/host-chat.http.conf \
+  /etc/nginx/conf.d/chat.yoowee.ru.conf
+nginx -t
+systemctl reload nginx
+
+# 2. Obtain a certificate without letting Certbot rewrite other vhosts.
+certbot certonly --webroot -w /var/www/html -d chat.yoowee.ru
+certbot certificates
+
+# 3. Install the reviewed HTTPS/redirect/HSTS vhost only after certificate validation.
+install -o root -g root -m 0644 \
+  /home/devuser/yv-chat/deploy/nginx/host-chat.conf \
+  /etc/nginx/conf.d/chat.yoowee.ru.conf
+nginx -t
+systemctl reload nginx
+```
+
+If `nginx -t` fails, do not reload. Restore only `/etc/nginx/conf.d/chat.yoowee.ru.conf` from its immediately preceding version; do not edit or remove neighboring files. The existing host currently reports duplicate `yoowee.ru` warnings from pre-existing `conf.d/esp.conf` and `sites-enabled/yoowee.ru`; they are outside this rollout and must not be silently changed.
+
+Public checks:
+
+```bash
+curl --fail --head http://chat.yoowee.ru
+curl --fail --head https://chat.yoowee.ru
+curl --fail https://chat.yoowee.ru/api/v1/health
+```
+
+Repeat the baseline commands and confirm every pre-existing `infra-*` container remains running with the same container ID and start time. Only `yv-chat-*`, its scoped networks and volumes may be new.
 
 ## Rollback
 

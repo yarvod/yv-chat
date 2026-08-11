@@ -73,7 +73,12 @@ compose-check:
 
 deploy-check:
 	sh -n deploy/remote-deploy.sh
+	sh -n deploy/bootstrap-server.sh
 	grep -q '127.0.0.1:$${YV_CHAT_BIND_PORT:-18080}:80' compose.prod.yml
-	! grep -Eq 'docker system prune|docker compose down|--remove-orphans' deploy/remote-deploy.sh
+	grep -q '172.30.242.10/32' compose.prod.yml
+	grep -q 'server_name chat.yoowee.ru' deploy/nginx/host-chat.http.conf
+	grep -q 'Strict-Transport-Security' deploy/nginx/host-chat.conf
+	grep -q 'proxy_pass http://127.0.0.1:18080' deploy/nginx/host-chat.conf
+	! grep -Eq 'docker system prune|docker compose down|--remove-orphans' deploy/remote-deploy.sh deploy/bootstrap-server.sh
 
 ci: backend-lint backend-typecheck backend-test frontend-lint frontend-typecheck frontend-test frontend-build compose-check deploy-check

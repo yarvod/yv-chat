@@ -122,7 +122,7 @@ jobs:
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_KEY }}
           port: ${{ secrets.DEPLOY_PORT || '22' }}
-          source: compose.prod.yml,deploy/nginx/gateway.conf,deploy/remote-deploy.sh
+          source: compose.prod.yml,deploy/nginx/gateway.conf,deploy/nginx/host-chat.http.conf,deploy/nginx/host-chat.conf,deploy/bootstrap-server.sh,deploy/remote-deploy.sh
           target: ${{ env.DEPLOY_ROOT }}
           overwrite: true
       - name: Migrate and roll out isolated stack
