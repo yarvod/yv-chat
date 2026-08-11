@@ -6,7 +6,7 @@
 
 ### BUG-050 — Direct recipient badge оставался stale после Welcome catch-up
 
-- Статус: `fixed and browser-verified in WP-050`.
+- Статус: `fixed, browser- and production-verified in WP-050`.
 - Severity: `high`; второй device успешно применял Welcome и расшифровывал новое
   direct v2 сообщение, но UI продолжал показывать «E2EE недоступно» из состояния,
   полученного до завершения sender bootstrap.

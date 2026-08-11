@@ -149,7 +149,7 @@ responsive group-info UI, а backend остаётся единственной �
 
 ### BL-050 — Conversation-scoped direct/group protocol policy
 
-Статус: **in progress** (`WP-050`).
+Статус: **completed** (`WP-050`, commit `45709c3`, production run `31541538389`).
 
 Результат: direct conversations остаются fail-closed OpenMLS v2 E2EE, а group
 conversations временно используют synthetic v1 без E2EE с постоянной честной
@@ -255,6 +255,8 @@ foundation; текущая product policy использует его тольк
 
 ### BL-016 — MediaStorage port и LocalMediaStorage
 
+Статус: **in progress** (`WP-051`).
+
 Результат: backend потоково хранит opaque encrypted bytes в `/data/media` за application port.
 
 - generated opaque storage keys и prefix layout;
@@ -264,6 +266,8 @@ foundation; текущая product policy использует его тольк
 - S3 adapter не добавляется до реальной внешней storage requirement.
 
 ### BL-017 — Encrypted attachment upload/download
+
+Статус: **in progress** (`WP-051`).
 
 Результат: клиент шифрует file до upload и расшифровывает только локально.
 
@@ -275,15 +279,15 @@ foundation; текущая product policy использует его тольк
 
 ### BL-043 — Telegram-like photo/file experience поверх encrypted attachments
 
-Статус: **next after `WP-050`** (новый workplan; объединяет product UX с
-`BL-016`/`BL-017`).
+Статус: **in progress** (`WP-051`; объединяет product UX с `BL-016`/`BL-017`).
 
 Результат: пользователь удобно отправляет изображения и произвольные файлы, но
 backend видит только opaque encrypted bytes и bounded routing metadata.
 
-File key и encrypted metadata доставляются только внутри MLS v2 application
-message. Synthetic v1 не может быть временным key envelope, потому что тогда server
-получит ключ расшифрования и требование E2EE будет нарушено.
+File key и encrypted metadata direct conversation доставляются только внутри MLS v2
+application message. Group v1 использует тот же encrypted-blob format, но server-readable
+envelope позволяет серверу получить ключ: такой group media flow явно не является E2EE
+и не получает secure badge до `BL-051`.
 
 - attachment button, picker и drag/drop/paste там, где это поддерживает platform;
 - одно сообщение содержит caption и bounded ordered набор файлов; несколько фото

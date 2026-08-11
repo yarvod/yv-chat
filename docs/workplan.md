@@ -4,81 +4,74 @@
 завершённая работа фиксируется отдельным коммитом, а новый пункт переносится
 сюда из `backlog.md`.
 
-## WP-050 — Conversation-scoped direct/group protocol policy
+## WP-051 — Encrypted photo/file vertical slice
 
 Статус: **in progress**
-Backlog: `BL-050`
+Backlog: `BL-016`, `BL-017`, `BL-043`
 
-Цель: стабилизировать messaging после MLS rollout, оставив OpenMLS v2 обязательным
-для direct conversations и временно вернув group conversations на честно
-обозначенный synthetic v1 без E2EE. Исключить silent downgrade, сохранить чтение
-истории по protocol version каждой записи и не запускать group MLS reconciliation.
+Цель: добавить удобную отправку фотографий и произвольных файлов через
+client-side encryption и bounded local filesystem storage. Direct attachment key и
+metadata доставляются внутри MLS v2 и остаются E2EE; group v1 использует тот же
+encrypted-blob format, но envelope доступен серверу и поэтому честно остаётся без E2EE.
 
 ### Scope и security contract
 
-- [x] Backend принимает новые direct messages только с `protocol_version=2` и
-  валидной current READY generation/epoch/roster binding.
-- [x] Backend принимает новые group messages только с `protocol_version=1` без
-  crypto generation/epoch и отклоняет group v2.
-- [x] Exact retry уже сохранённого historical direct v1 остаётся идемпотентным;
-  новые direct v1 запрещены.
-- [x] Frontend выбирает outgoing protocol только по authoritative conversation type:
-  direct → v2, group → v1; fallback после crypto error отсутствует.
-- [x] Group UI постоянно и недвусмысленно сообщает, что сообщения не защищены E2EE
-  и доступны серверу; direct UI сохраняет fail-closed MLS состояния.
-- [x] Group open/send/sync не вызывает bootstrap/Welcome/Commit reconciliation;
-  direct flow и device enrollment остаются без ослабления.
-- [x] Исторические v1/v2 rows не мигрируются и читаются exact-version adapter;
-  неизвестная версия остаётся fail closed.
-- [x] README, architecture, ADR и backlog отражают временную type-level policy и
-  отдельный будущий возврат group MLS.
+- [ ] `MediaStorage` application port и потоковый `LocalMediaStorage` adapter хранят
+  только opaque encrypted bytes под server-generated key в `/data/media`.
+- [ ] Attachment domain/application operations отделены от FastAPI/SQLAlchemy:
+  upload, commit-to-message, authorized download и orphan/expired cleanup.
+- [ ] Alembic migration хранит conversation/uploader, opaque storage key, bounded
+  routing metadata, ciphertext size/status/timestamps; absolute path, client filename,
+  file key и plaintext metadata в БД отсутствуют.
+- [ ] Upload/download API под `/api/v1` проверяет session, CSRF/Origin для upload,
+  membership, ownership, MIME allowlist, per-file limits и quota/admission policy.
+- [ ] Backend пишет upload потоково через atomic temporary file + rename, удаляет
+  partial files при ошибке и не грузит произвольный файл целиком в RAM.
+- [ ] Frontend file crypto изолирован за adapter/service boundary: random AES-GCM key
+  и nonce, authenticated encryption до upload, decrypt только на authorized device.
+- [ ] Versioned message content DTO содержит caption и ordered attachment descriptors;
+  direct descriptor защищён MLS v2, group descriptor доступен серверу и помечен non-E2EE.
+- [ ] Outbox сохраняет upload/send lifecycle идемпотентно, показывает progress,
+  retry/cancel и не создаёт duplicate message/attachment при повторе.
+- [ ] Фото выбираются picker/camera, paste и drag/drop; bubble показывает gallery,
+  viewer, caption и понятные loading/unavailable/expired states.
+- [ ] Произвольный файл показывает локально расшифрованные name/type/size и безопасное
+  download/open действие; имя никогда не используется backend как путь.
+- [ ] Локальный media cache bounded/evictable; object URLs освобождаются, plaintext
+  blobs не сохраняются в localStorage/обычный IndexedDB.
+- [ ] Compose/deploy создаёт persistent media volume с минимальными правами; host
+  Nginx body limit согласован с application limit без второго nginx-контейнера.
+- [ ] README, architecture, API/deployment docs и backlog отражают точные гарантии,
+  ограничения и различие direct E2EE/group non-E2EE.
 
 ### Tests и acceptance
 
-- [x] Backend unit/integration/negative tests: direct v1 reject, valid direct v2,
-  group v1 accept, group v2 reject, non-member reject и historical retry.
-- [x] Frontend tests: protocol selection, group warning/send availability,
-  отсутствие group reconciliation, direct fail-closed и mixed-version history.
-- [x] Полный `make ci`, migration/config checks и secret/diff review.
-- [x] Production-like browser: два аккаунта/устройства обмениваются direct v2 и
-  group v1 сообщениями, reload/catch-up сохраняет чтение, network contract не имеет
-  group crypto bootstrap и отправляет ожидаемые protocol versions.
-- [x] Revoke/relogin acceptance: новый device читает доступную group v1 history,
-  direct future v2 работает после enrollment, а недоступная старая MLS history не
-  подменяется plaintext fallback.
-- [ ] Commit/push, immutable deploy и production health/log verification.
+- [ ] Backend unit/security/integration: traversal, oversize, wrong MIME, non-member,
+  cross-conversation attach, duplicate commit, partial write, missing file и cleanup.
+- [ ] Fresh migration `0001 → head` и upgrade from previous head проходят.
+- [ ] Frontend unit tests: payload codec, encryption corruption, upload progress,
+  retry/cancel, exact protocol policy, gallery/file presentation и URL cleanup.
+- [ ] Полный `make ci`, migration/config checks и secret/diff review.
+- [ ] Реальный browser flow на двух origins: direct photo/file E2EE send/download,
+  group non-E2EE warning, reload/sync, offline retry и unauthorized download reject.
+- [ ] Immutable deploy, production health/log/storage permission verification и
+  проверка, что `yoowee.ru`/`s3.yoowee.ru` не затронуты.
 
-### Acceptance evidence
+### Ограничения первого slice
 
-- fresh PostgreSQL `messenger_test` прошёл migrations `0001 → 0018` и все 8
-  integration tests;
-- browser origins `localhost`, `127.0.0.1` и `alice.localhost` моделировали Bob и
-  два последовательных Alice devices без общего cookie/IndexedDB scope;
-- два account devices обменялись direct v2 и group v1 в обе стороны, reload обоих
-  сохранил историю; browser console errors/warnings отсутствовали;
-- новый/relogin device сразу прочитал group v1 history, показал старые direct epochs
-  unavailable и после roster update расшифровал future direct v2;
-- revoke перевёл target device на `/login`; повторный login создал новый leaf без
-  доступа к старым epochs и без fallback;
-- DB aggregate после acceptance: `direct/v2=3`, `group/v1=2`; direct generations=4,
-  group generations=0; backend logs без HTTP 5xx/traceback/constraint errors;
-- acceptance обнаружил `BUG-050` stale direct badge; regression добавлен, после
-  rebuild сообщение decrypted и warning исчез на recipient/reload.
-
-### Исключения
-
-- attachments/photo/file upload — следующий отдельный `BL-043` workplan сразу после
-  этого релиза; group media не будет ложно называться encrypted;
-- migration/re-encryption уже сохранённых messages;
-- изменение MLS primitives, wire format или private state;
-- secure group E2EE: возвращается отдельным future hardening после multi-device
-  stabilization и реального browser matrix.
+- bounded whole-file WebCrypto operation с небольшим documented per-file limit;
+  resumable chunk crypto остаётся отдельным hardening до поддержки больших файлов;
+- без server-side thumbnailing/transcoding/virus inspection plaintext;
+- без S3/MinIO adapter: single-VPS default остаётся `/data/media`;
+- без background OS download manager и без бессрочного local media cache;
+- group attachments не называются E2EE до возврата group MLS в `BL-051`.
 
 ### Definition of Done
 
-- conversation type и protocol version невозможно смешать для нового сообщения;
-- direct chat никогда не понижается до v1 при ошибке OpenMLS;
-- group chat остаётся usable на нескольких клиентах и честно маркирован non-E2EE;
-- mixed historical rows переживают sync/reload без изменения server content;
-- реальные сценарии подтверждены тестами и production-like браузером;
-- после зелёного production deploy active workplan переключён на фото/файлы.
+- два устройства передают фото и файл без появления plaintext/key в backend storage,
+  логах или transport metadata direct conversation;
+- сервер никогда не использует client filename как путь и проверяет membership на
+  upload/download/commit;
+- повтор/обрыв не оставляет бесконечные partial files и не создаёт duplicate message;
+- UI удобен на mobile/desktop и не ломает фиксированный messenger layout;
+- полный CI, реальный browser acceptance и production rollout зелёные.
