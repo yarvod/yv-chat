@@ -37,6 +37,19 @@ class SqlAlchemyDeviceRepository:
         model = await self._session.scalar(statement)
         return map_device(model) if model is not None else None
 
+    async def list_active_for_users(self, user_ids: set[UUID]) -> list[Device]:
+        if not user_ids:
+            return []
+        models = await self._session.scalars(
+            select(DeviceModel)
+            .where(
+                DeviceModel.user_id.in_(user_ids),
+                DeviceModel.revoked_at.is_(None),
+            )
+            .order_by(DeviceModel.user_id, DeviceModel.created_at, DeviceModel.id)
+        )
+        return [map_device(model) for model in models]
+
     async def add(self, device: Device) -> None:
         self._session.add(
             DeviceModel(

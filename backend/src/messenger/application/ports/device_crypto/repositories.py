@@ -16,6 +16,11 @@ class DeviceCryptoIdentityRepository(Protocol):
 
     async def add(self, identity: DeviceCryptoIdentity) -> None: ...
 
+    async def get_by_device_ids(
+        self,
+        device_ids: set[UUID],
+    ) -> list[DeviceCryptoIdentity]: ...
+
 
 class DeviceKeyPackageRepository(Protocol):
     async def get_initial_by_device_id(
@@ -28,6 +33,8 @@ class DeviceKeyPackageRepository(Protocol):
     async def add_many(self, key_packages: tuple[DeviceKeyPackage, ...]) -> None: ...
 
     async def get_by_refs(self, package_refs: set[str]) -> list[DeviceKeyPackage]: ...
+
+    async def get_by_ids(self, package_ids: set[UUID]) -> list[DeviceKeyPackage]: ...
 
     async def count_available(self, device_id: UUID) -> int: ...
 

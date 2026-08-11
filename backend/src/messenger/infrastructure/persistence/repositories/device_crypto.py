@@ -50,6 +50,19 @@ class SqlAlchemyDeviceCryptoIdentityRepository:
         )
         await self._session.flush()
 
+    async def get_by_device_ids(
+        self,
+        device_ids: set[UUID],
+    ) -> list[DeviceCryptoIdentity]:
+        if not device_ids:
+            return []
+        models = await self._session.scalars(
+            select(DeviceCryptoIdentityModel).where(
+                DeviceCryptoIdentityModel.device_id.in_(device_ids)
+            )
+        )
+        return [map_device_crypto_identity(model) for model in models]
+
 
 class SqlAlchemyDeviceKeyPackageRepository:
     def __init__(self, session: AsyncSession) -> None:
@@ -81,6 +94,14 @@ class SqlAlchemyDeviceKeyPackageRepository:
             return []
         models = await self._session.scalars(
             select(DeviceKeyPackageModel).where(DeviceKeyPackageModel.package_ref.in_(package_refs))
+        )
+        return [map_device_key_package(model) for model in models]
+
+    async def get_by_ids(self, package_ids: set[UUID]) -> list[DeviceKeyPackage]:
+        if not package_ids:
+            return []
+        models = await self._session.scalars(
+            select(DeviceKeyPackageModel).where(DeviceKeyPackageModel.id.in_(package_ids))
         )
         return [map_device_key_package(model) for model in models]
 

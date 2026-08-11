@@ -13,6 +13,12 @@ from messenger.application.accounts.reset_password import ResetPasswordWithToken
 from messenger.application.accounts.security_reset import SecurityReset
 from messenger.application.accounts.update_profile import UpdateCurrentProfile
 from messenger.application.accounts.update_user import UpdateManagedUser
+from messenger.application.conversation_crypto import (
+    AcknowledgeConversationCryptoWelcome,
+    BeginConversationCrypto,
+    FinalizeConversationCrypto,
+    GetCurrentConversationCrypto,
+)
 from messenger.application.conversations.add_member import AddConversationMember
 from messenger.application.conversations.change_member_role import (
     ChangeConversationMemberRole,
@@ -33,6 +39,7 @@ from messenger.application.messaging.get_message import GetMessage
 from messenger.application.messaging.list_message_history import ListMessageHistory
 from messenger.application.messaging.list_messages import ListMessages
 from messenger.application.messaging.send_message import SendOpaqueMessage
+from messenger.application.ports.conversation_crypto import ConversationCryptoUnitOfWorkFactory
 from messenger.application.ports.conversations import ConversationUnitOfWorkFactory
 from messenger.application.ports.messages import MessagingUnitOfWorkFactory
 from messenger.application.ports.sync import SyncUnitOfWorkFactory
@@ -74,6 +81,10 @@ async def test_production_graph_resolves_every_application_operation() -> None:
         RenameGroupConversation,
         LeaveConversation,
         ChangeConversationMemberRole,
+        BeginConversationCrypto,
+        FinalizeConversationCrypto,
+        GetCurrentConversationCrypto,
+        AcknowledgeConversationCryptoWelcome,
         SendOpaqueMessage,
         GetMessage,
         ListMessages,
@@ -95,6 +106,9 @@ async def test_production_graph_resolves_every_application_operation() -> None:
                 await request_container.get(operation_type) for operation_type in operation_types
             ]
             conversation_unit_of_work = await request_container.get(ConversationUnitOfWorkFactory)
+            conversation_crypto_unit_of_work = await request_container.get(
+                ConversationCryptoUnitOfWorkFactory
+            )
             messaging_unit_of_work = await request_container.get(MessagingUnitOfWorkFactory)
             sync_unit_of_work = await request_container.get(SyncUnitOfWorkFactory)
     finally:
@@ -102,5 +116,6 @@ async def test_production_graph_resolves_every_application_operation() -> None:
 
     assert tuple(type(operation) for operation in operations) == operation_types
     assert conversation_unit_of_work() is not None
+    assert conversation_crypto_unit_of_work() is not None
     assert messaging_unit_of_work() is not None
     assert sync_unit_of_work() is not None

@@ -9,6 +9,12 @@ from uuid import UUID
 
 from messenger.application.errors import DuplicateDirectConversationError, DuplicateUsernameError
 from messenger.application.ports.activation_secrets import GeneratedActivationSecret
+from messenger.application.ports.conversation_crypto import (
+    ConversationCryptoGenerationRepository,
+    ConversationCryptoRequiredDeviceRepository,
+    ConversationCryptoUnitOfWork,
+    ConversationCryptoWelcomeRepository,
+)
 from messenger.application.ports.conversations import (
     ConversationRepository,
     ConversationUnitOfWork,
@@ -49,6 +55,9 @@ from messenger.application.sync.events import SyncStreamPage
 from messenger.domain.entities import (
     ActivationToken,
     Conversation,
+    ConversationCryptoGeneration,
+    ConversationCryptoRequiredDevice,
+    ConversationCryptoWelcome,
     ConversationDeliveryState,
     ConversationReadState,
     Device,
@@ -73,6 +82,15 @@ class IdentityState:
     devices: dict[UUID, Device] = field(default_factory=dict)
     device_crypto_identities: dict[UUID, DeviceCryptoIdentity] = field(default_factory=dict)
     device_key_packages: dict[UUID, DeviceKeyPackage] = field(default_factory=dict)
+    conversation_crypto_generations: dict[UUID, ConversationCryptoGeneration] = field(
+        default_factory=dict
+    )
+    conversation_crypto_required_devices: dict[
+        tuple[UUID, UUID], ConversationCryptoRequiredDevice
+    ] = field(default_factory=dict)
+    conversation_crypto_welcomes: dict[tuple[UUID, UUID], ConversationCryptoWelcome] = field(
+        default_factory=dict
+    )
     sessions: dict[UUID, Session] = field(default_factory=dict)
     security_events: dict[UUID, SecurityEvent] = field(default_factory=dict)
     conversations: dict[UUID, Conversation] = field(default_factory=dict)
@@ -296,6 +314,16 @@ class FakeDeviceRepository:
         device = self._state.devices.get(device_id)
         return device if device is not None and device.user_id == user_id else None
 
+    async def list_active_for_users(self, user_ids: set[UUID]) -> list[Device]:
+        return sorted(
+            (
+                device
+                for device in self._state.devices.values()
+                if device.user_id in user_ids and device.revoked_at is None
+            ),
+            key=lambda device: (device.user_id, device.created_at, device.id),
+        )
+
     async def add(self, device: Device) -> None:
         self._state.devices[device.id] = device
 
@@ -318,6 +346,16 @@ class FakeDeviceCryptoIdentityRepository:
 
     async def add(self, identity: DeviceCryptoIdentity) -> None:
         self._state.device_crypto_identities[identity.device_id] = identity
+
+    async def get_by_device_ids(
+        self,
+        device_ids: set[UUID],
+    ) -> list[DeviceCryptoIdentity]:
+        return [
+            identity
+            for device_id, identity in self._state.device_crypto_identities.items()
+            if device_id in device_ids
+        ]
 
 
 class FakeDeviceKeyPackageRepository:
@@ -350,6 +388,13 @@ class FakeDeviceKeyPackageRepository:
             package
             for package in self._state.device_key_packages.values()
             if package.package_ref in package_refs
+        ]
+
+    async def get_by_ids(self, package_ids: set[UUID]) -> list[DeviceKeyPackage]:
+        return [
+            package
+            for package_id, package in self._state.device_key_packages.items()
+            if package_id in package_ids
         ]
 
     async def count_available(self, device_id: UUID) -> int:
@@ -660,6 +705,165 @@ class FakeConversationRepository:
 
     async def update(self, conversation: Conversation) -> None:
         self._state.conversations[conversation.id] = conversation
+
+
+class FakeConversationCryptoGenerationRepository:
+    def __init__(self, state: IdentityState) -> None:
+        self._state = state
+
+    async def get_current(
+        self,
+        conversation_id: UUID,
+        *,
+        for_update: bool = False,
+    ) -> ConversationCryptoGeneration | None:
+        del for_update
+        return next(
+            (
+                item
+                for item in self._state.conversation_crypto_generations.values()
+                if item.conversation_id == conversation_id and item.is_current
+            ),
+            None,
+        )
+
+    async def get_by_id(
+        self,
+        generation_id: UUID,
+        *,
+        for_update: bool = False,
+    ) -> ConversationCryptoGeneration | None:
+        del for_update
+        return self._state.conversation_crypto_generations.get(generation_id)
+
+    async def get_by_bootstrap_request(
+        self,
+        *,
+        coordinator_device_id: UUID,
+        bootstrap_request_id: UUID,
+        for_update: bool = False,
+    ) -> ConversationCryptoGeneration | None:
+        del for_update
+        return next(
+            (
+                item
+                for item in self._state.conversation_crypto_generations.values()
+                if item.coordinator_device_id == coordinator_device_id
+                and item.bootstrap_request_id == bootstrap_request_id
+            ),
+            None,
+        )
+
+    async def latest_generation_number(self, conversation_id: UUID) -> int:
+        return max(
+            (
+                item.generation_number
+                for item in self._state.conversation_crypto_generations.values()
+                if item.conversation_id == conversation_id
+            ),
+            default=0,
+        )
+
+    async def add(self, generation: ConversationCryptoGeneration) -> None:
+        self._state.conversation_crypto_generations[generation.id] = generation
+
+    async def update(self, generation: ConversationCryptoGeneration) -> None:
+        self._state.conversation_crypto_generations[generation.id] = generation
+
+
+class FakeConversationCryptoRequiredDeviceRepository:
+    def __init__(self, state: IdentityState) -> None:
+        self._state = state
+
+    async def list_by_generation(
+        self,
+        generation_id: UUID,
+    ) -> list[ConversationCryptoRequiredDevice]:
+        return sorted(
+            (
+                item
+                for (item_generation_id, _), item in (
+                    self._state.conversation_crypto_required_devices.items()
+                )
+                if item_generation_id == generation_id
+            ),
+            key=lambda item: (item.user_id, item.device_id),
+        )
+
+    async def add_many(
+        self,
+        required_devices: tuple[ConversationCryptoRequiredDevice, ...],
+    ) -> None:
+        for item in required_devices:
+            self._state.conversation_crypto_required_devices[
+                (item.generation_id, item.device_id)
+            ] = item
+
+
+class FakeConversationCryptoWelcomeRepository:
+    def __init__(self, state: IdentityState) -> None:
+        self._state = state
+
+    async def get_for_device(
+        self,
+        *,
+        generation_id: UUID,
+        device_id: UUID,
+        for_update: bool = False,
+    ) -> ConversationCryptoWelcome | None:
+        del for_update
+        return self._state.conversation_crypto_welcomes.get((generation_id, device_id))
+
+    async def add_many(self, welcomes: tuple[ConversationCryptoWelcome, ...]) -> None:
+        for item in welcomes:
+            self._state.conversation_crypto_welcomes[
+                (item.generation_id, item.target_device_id)
+            ] = item
+
+    async def update(self, welcome: ConversationCryptoWelcome) -> None:
+        self._state.conversation_crypto_welcomes[
+            (welcome.generation_id, welcome.target_device_id)
+        ] = welcome
+
+
+class FakeConversationCryptoUnitOfWork:
+    def __init__(self, state: IdentityState) -> None:
+        self._state = state
+        self.conversations: ConversationRepository = FakeConversationRepository(state)
+        self.devices: DeviceRepository = FakeDeviceRepository(state)
+        self.identities: DeviceCryptoIdentityRepository = FakeDeviceCryptoIdentityRepository(state)
+        self.key_packages: DeviceKeyPackageRepository = FakeDeviceKeyPackageRepository(state)
+        self.generations: ConversationCryptoGenerationRepository = (
+            FakeConversationCryptoGenerationRepository(state)
+        )
+        self.required_devices: ConversationCryptoRequiredDeviceRepository = (
+            FakeConversationCryptoRequiredDeviceRepository(state)
+        )
+        self.welcomes: ConversationCryptoWelcomeRepository = (
+            FakeConversationCryptoWelcomeRepository(state)
+        )
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        del exc_type, exc_value, traceback
+
+    async def commit(self) -> None:
+        self._state.commits += 1
+
+
+class FakeConversationCryptoUnitOfWorkFactory:
+    def __init__(self, state: IdentityState) -> None:
+        self._state = state
+
+    def __call__(self) -> ConversationCryptoUnitOfWork:
+        return FakeConversationCryptoUnitOfWork(self._state)
 
 
 class FakeConversationUnitOfWork:

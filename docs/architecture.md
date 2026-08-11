@@ -721,8 +721,8 @@ conflict и storage failure различаются typed errors и никогд�
 Этот adapter является внутренней зависимостью crypto Worker, а не
 application port: намеренно нельзя передавать `CryptoKey`, nonce или ciphertext в
 Vue/application DTO. Fake IndexedDB + Node WebCrypto tests фиксируют transaction и
-metadata semantics. Physical Chromium подтверждён; Firefox/Safari и storage-denial
-scenarios всё ещё release-gated.
+metadata semantics. Physical Chromium и чистый Firefox подтверждены; Safari и
+storage-denial scenarios всё ещё release-gated.
 
 Repository хранит текущий generated package под immutable asset path `/crypto/v2/`:
 JS glue, TypeScript declaration и WASM производятся exact `Rust 1.91.0` /
@@ -749,9 +749,10 @@ Worker не стартует и identity не создаётся автомат�
 Node 24 integration tests исполняют настоящий release WASM с WebCrypto и fake
 IndexedDB, включая reload, concurrent provision и tamper. Отдельный physical Chromium
 smoke подтвердил production Worker asset, same-origin module/WASM fetch,
-non-extractable key structured clone, exact restore и revision `1 → 2`. Это не
-разрешает production provisioning: backend immutable identity comparison,
-Firefox/Safari, storage-denial/update tests и MLS KAT/interop всё ещё обязательны.
+non-extractable key structured clone, exact restore и revision `1 → 2`. Чистый
+Firefox smoke под production CSP отдельно подтвердил import, WASM compilation и
+OpenMLS bootstrap. Это ещё не переключает message transport: Safari,
+storage-denial/update tests и MLS KAT/interop всё ещё обязательны.
 
 Backend registry хранит только public device anchors. `PUT/GET
 /api/v1/devices/current/crypto-identity` получает owner исключительно из validated
@@ -792,6 +793,24 @@ OpenMLS validation внутри isolated Worker: exact TLS bytes должны и
 signature, MLS 1.0, выбранный ciphersuite и leaf binding с canonical
 user/device credential, Ed25519 public key, fingerprint и SHA-256 package ref.
 TypeScript не разбирает MLS wire format и получает только bounded success/error.
+
+Conversation MLS coordination использует отдельный Unit of Work и три server-side
+типа opaque records: current generation, immutable required-device snapshot и
+адресный Welcome. `POST /api/v1/conversations/{id}/crypto/bootstrap` блокирует
+conversation/device rows, проверяет active membership, снимает все non-revoked
+devices активных участников и атомарно claim-ит по одному KeyPackage для каждого
+target кроме coordinator. Отсутствие identity/package создаёт `blocked` generation
+без частичного secure group и без расходования package. Retry привязан к
+`(coordinator_device_id, bootstrap_request_id)`; database uniqueness и conversation
+row lock закрывают concurrent duplicate generations.
+
+Только coordinator текущей pending generation может загрузить bounded opaque
+Commit, ratchet tree и точный набор per-device Welcome. Ready retry обязан совпасть
+побайтно, лишний/пропущенный target отклоняется. `GET .../crypto` возвращает Welcome
+только текущему device из required snapshot, а `welcome-ack` идемпотентно отмечает
+доставку до expiry. Server не получает signer/init/group/application secrets,
+message plaintext или attachment key. Эта coordination готова для Worker gateway,
+но сама по себе ещё не переводит outgoing synthetic v1 сообщения на MLS v2.
 
 Authenticated app layout автоматически запускает current-device lifecycle:
 

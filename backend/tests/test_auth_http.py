@@ -22,6 +22,12 @@ from messenger.application.accounts.reset_password import ResetPasswordWithToken
 from messenger.application.accounts.security_reset import SecurityReset
 from messenger.application.accounts.update_profile import UpdateCurrentProfile
 from messenger.application.accounts.update_user import UpdateManagedUser
+from messenger.application.conversation_crypto import (
+    AcknowledgeConversationCryptoWelcome,
+    BeginConversationCrypto,
+    FinalizeConversationCrypto,
+    GetCurrentConversationCrypto,
+)
 from messenger.application.conversations.add_member import AddConversationMember
 from messenger.application.conversations.change_member_role import (
     ChangeConversationMemberRole,
@@ -61,6 +67,7 @@ from messenger.application.messaging.retention import MessageRetentionPolicy
 from messenger.application.messaging.send_message import SendOpaqueMessage
 from messenger.application.ports.activation_secrets import ActivationSecretService
 from messenger.application.ports.clock import Clock
+from messenger.application.ports.conversation_crypto import ConversationCryptoUnitOfWorkFactory
 from messenger.application.ports.conversations import ConversationUnitOfWorkFactory
 from messenger.application.ports.device_crypto import DeviceCryptoUnitOfWorkFactory
 from messenger.application.ports.identity import IdentityUnitOfWorkFactory
@@ -88,6 +95,7 @@ from messenger.infrastructure.auth.password_reset_secrets import (
 )
 from messenger.infrastructure.realtime import InMemoryRealtimeHub
 from tests.application.fakes import (
+    FakeConversationCryptoUnitOfWorkFactory,
     FakeConversationUnitOfWorkFactory,
     FakeDeviceCryptoUnitOfWorkFactory,
     FakeIdentityUnitOfWorkFactory,
@@ -131,6 +139,7 @@ class HttpTestProvider(Provider):
         settings: AppSettings,
         unit_of_work: IdentityUnitOfWorkFactory,
         conversation_unit_of_work: ConversationUnitOfWorkFactory,
+        conversation_crypto_unit_of_work: ConversationCryptoUnitOfWorkFactory,
         device_crypto_unit_of_work: DeviceCryptoUnitOfWorkFactory,
         messaging_unit_of_work: MessagingUnitOfWorkFactory,
         sync_unit_of_work: SyncUnitOfWorkFactory,
@@ -143,6 +152,7 @@ class HttpTestProvider(Provider):
         self._settings = settings
         self._unit_of_work = unit_of_work
         self._conversation_unit_of_work = conversation_unit_of_work
+        self._conversation_crypto_unit_of_work = conversation_crypto_unit_of_work
         self._device_crypto_unit_of_work = device_crypto_unit_of_work
         self._messaging_unit_of_work = messaging_unit_of_work
         self._sync_unit_of_work = sync_unit_of_work
@@ -163,6 +173,10 @@ class HttpTestProvider(Provider):
     @provide(scope=Scope.APP)
     def conversation_unit_of_work(self) -> ConversationUnitOfWorkFactory:
         return self._conversation_unit_of_work
+
+    @provide(scope=Scope.APP)
+    def conversation_crypto_unit_of_work(self) -> ConversationCryptoUnitOfWorkFactory:
+        return self._conversation_crypto_unit_of_work
 
     @provide(scope=Scope.APP)
     def device_crypto_unit_of_work(self) -> DeviceCryptoUnitOfWorkFactory:
@@ -286,6 +300,16 @@ class HttpTestProvider(Provider):
         ChangeConversationMemberRole,
         scope=Scope.REQUEST,
     )
+    begin_conversation_crypto = provide(BeginConversationCrypto, scope=Scope.REQUEST)
+    finalize_conversation_crypto = provide(FinalizeConversationCrypto, scope=Scope.REQUEST)
+    get_current_conversation_crypto = provide(
+        GetCurrentConversationCrypto,
+        scope=Scope.REQUEST,
+    )
+    acknowledge_conversation_crypto_welcome = provide(
+        AcknowledgeConversationCryptoWelcome,
+        scope=Scope.REQUEST,
+    )
     send_opaque_message = provide(SendOpaqueMessage, scope=Scope.REQUEST)
     delete_message_for_everyone = provide(DeleteMessageForEveryone, scope=Scope.REQUEST)
     get_message = provide(GetMessage, scope=Scope.REQUEST)
@@ -344,6 +368,7 @@ def build_test_application(
             settings=settings,
             unit_of_work=factory,
             conversation_unit_of_work=FakeConversationUnitOfWorkFactory(state),
+            conversation_crypto_unit_of_work=FakeConversationCryptoUnitOfWorkFactory(state),
             device_crypto_unit_of_work=FakeDeviceCryptoUnitOfWorkFactory(state),
             messaging_unit_of_work=FakeMessagingUnitOfWorkFactory(state),
             sync_unit_of_work=FakeSyncUnitOfWorkFactory(state),

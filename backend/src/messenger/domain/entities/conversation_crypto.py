@@ -209,8 +209,8 @@ class ConversationCryptoWelcome:
 
     def acknowledge(self, now: datetime) -> "ConversationCryptoWelcome":
         timestamp = require_aware_datetime(now, "now")
-        if timestamp >= self.expires_at:
-            raise DomainValidationError("expired Welcome cannot be acknowledged")
         if self.acknowledged_at is not None:
             return self
+        if timestamp >= self.expires_at:
+            raise DomainValidationError("expired Welcome cannot be acknowledged")
         return replace(self, acknowledged_at=timestamp)

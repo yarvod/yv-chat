@@ -12,6 +12,7 @@ from messenger.bootstrap.container import create_container
 from messenger.bootstrap.settings import AppSettings
 from messenger.presentation.http.admin_users import router as admin_users_router
 from messenger.presentation.http.auth import router as auth_router
+from messenger.presentation.http.conversation_crypto import router as conversation_crypto_router
 from messenger.presentation.http.conversations import router as conversations_router
 from messenger.presentation.http.delivery_states import router as delivery_states_router
 from messenger.presentation.http.device_crypto import router as device_crypto_router
@@ -73,6 +74,7 @@ def create_app(
     application.include_router(me_router)
     application.include_router(users_router)
     application.include_router(conversations_router)
+    application.include_router(conversation_crypto_router)
     application.include_router(messages_router)
     application.include_router(sync_router)
     application.include_router(realtime_router)

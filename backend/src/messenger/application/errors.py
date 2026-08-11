@@ -69,6 +69,18 @@ class DeviceKeyPackageConflictError(ApplicationError):
     """A KeyPackage or claim idempotency key conflicts with durable state."""
 
 
+class ConversationCryptoConflictError(ApplicationError):
+    """An MLS generation request conflicts with its immutable durable binding."""
+
+
+class ConversationCryptoNotFoundError(ApplicationError):
+    """No authorized current MLS generation exists for this device."""
+
+
+class ConversationCryptoNotReadyError(ApplicationError):
+    """The current MLS generation cannot accept this lifecycle transition."""
+
+
 class CurrentDeviceRevocationError(ApplicationError):
     """The current device must be terminated through logout, not remote revoke."""
 

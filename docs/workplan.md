@@ -48,9 +48,9 @@ synthetic v1 payload виден серверу; положить туда file k
 
 ### План
 
-- [ ] Зафиксировать backend conversation crypto generation/state machine и Alembic
+- [x] Зафиксировать backend conversation crypto generation/state machine и Alembic
   schema без plaintext/private fields.
-- [ ] Добавить atomic bootstrap operation, required-device snapshot, KeyPackage
+- [x] Добавить atomic bootstrap operation, required-device snapshot, KeyPackage
   claims и per-device opaque Welcome queue/ack.
 - [ ] Добавить authorized opaque MLS handshake record routing и ordered sync events.
 - [x] Расширить native Rust core: deterministic create group, add validated
