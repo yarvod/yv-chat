@@ -132,6 +132,9 @@ deploy-check:
 	grep -q '^  cleanup:' compose.prod.yml
 	grep -q 'messenger.cleanup_messages' compose.prod.yml
 	grep -q 'compose pull postgres api cleanup frontend gateway' deploy/remote-deploy.sh
+	grep -q 'resolver 127.0.0.11 valid=10s ipv6=off' deploy/nginx/gateway.conf
+	grep -q 'proxy_pass \$$api_upstream' deploy/nginx/gateway.conf
+	grep -q 'proxy_pass \$$frontend_upstream' deploy/nginx/gateway.conf
 	grep -q 'server_name chat.yoowee.ru' deploy/nginx/host-chat.http.conf
 	grep -q 'Strict-Transport-Security' deploy/nginx/host-chat.conf
 	grep -q 'proxy_pass http://127.0.0.1:18080' deploy/nginx/host-chat.conf

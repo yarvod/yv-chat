@@ -22,6 +22,25 @@
 
 ## Resolved
 
+### BUG-024 — Gateway сохранял устаревший IP пересозданного API
+
+- Статус: `verified`.
+- Найдено в: production commit `1c8ffc058459baaab7fe714dd7524de4ce8e7d7c`,
+  `WP-036` operational diagnosis.
+- Severity: `critical`.
+- Условия воспроизведения: deploy пересоздаёт `yv-chat-api-1`, но неизменившийся
+  `yv-chat-gateway-1` продолжает работать без reload/recreate.
+- Ожидаемое поведение: `/api/v1/*` всегда направляется в текущий healthy API container.
+- Фактическое поведение: frontend `/` отвечал `200`, но login, `/me` и health получали
+  `502`; API собственный healthcheck при этом оставался `healthy`.
+- Причина: обычный `proxy_pass http://api:8000` разрешался Nginx один раз при старте и
+  сохранял прежний Docker IP после Compose replacement API.
+- Исправление: gateway использует Docker embedded DNS с runtime variable
+  `proxy_pass` для API/frontend; live config применён через syntax-check и graceful
+  reload без перезапуска соседних services.
+- Проверка: isolated network принудительно сменила API container IP и сохранила
+  non-502 response после DNS TTL; live public health отвечает `200`.
+
 ### BUG-023 — PWA update мог разделить версии crypto JS и WASM
 
 - Статус: `verified`.
