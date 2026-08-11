@@ -749,6 +749,14 @@ request correlation, bounded timeout, sanitized error taxonomy и deterministic
 dispose. Composition root предоставляет lazy `createDeviceCrypto()` factory, поэтому
 Worker не стартует и identity не создаётся автоматически при login.
 
+Runtime v3 также реализует intent-level create/join/protect/unprotect. Каждая такая
+операция считается успешной только после следующего optimistic vault revision и
+atomic sealed-state commit. Commit/Welcome/ciphertext/plaintext копируются наружу
+только после durability barrier. Любая ошибка MLS mutation, sealing или IndexedDB
+уничтожает потенциально продвинутый in-memory instance; продолжение возможно только
+через restore последнего подтверждённого snapshot. Это предотвращает ratchet/epoch
+rollback после частичного сбоя и повторное использование неподтверждённого state.
+
 Node 24 integration tests исполняют настоящий release WASM с WebCrypto и fake
 IndexedDB, включая reload, concurrent provision и tamper. Отдельный physical Chromium
 smoke подтвердил production Worker asset, same-origin module/WASM fetch,

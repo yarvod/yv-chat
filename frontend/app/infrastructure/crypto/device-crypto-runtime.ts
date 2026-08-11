@@ -5,6 +5,16 @@ import type {
   PublicKeyPackageValidationCommand,
   PublicKeyPackageValidationResult,
 } from '../../application/ports/device-crypto-gateway'
+import type {
+  BootstrapMlsConversationCommand,
+  BootstrapMlsConversationResult,
+  JoinMlsConversationCommand,
+  MlsConversationStateResult,
+  ProtectMlsMessageCommand,
+  ProtectMlsMessageResult,
+  UnprotectMlsMessageCommand,
+  UnprotectMlsMessageResult,
+} from '../../application/ports/mls-conversation-gateway'
 import {
   CryptoVaultError,
   type CryptoVault,
@@ -22,6 +32,9 @@ const FINGERPRINT_PATTERN = /^[0-9a-f]{64}$/
 const CREDENTIAL_IDENTITY_BYTES = 33
 const SIGNATURE_PUBLIC_KEY_BYTES = 32
 const MAX_KEY_PACKAGE_BYTES = 1024 * 1024
+const MAX_MLS_APPLICATION_BYTES = 256 * 1024
+const MAX_MLS_WIRE_BYTES = 1024 * 1024
+const MAX_MLS_ADD_MEMBERS = 49
 
 interface ActiveBootstrap {
   userId: string
@@ -153,6 +166,95 @@ export class DeviceCryptoRuntime {
     }
   }
 
+  async bootstrapConversation(
+    command: BootstrapMlsConversationCommand,
+  ): Promise<BootstrapMlsConversationResult> {
+    if (
+      !UUID_PATTERN.test(command.conversationId)
+      || command.keyPackages.length === 0
+      || command.keyPackages.length > MAX_MLS_ADD_MEMBERS
+      || command.keyPackages.some(item => (
+        !(item instanceof Uint8Array)
+        || item.byteLength === 0
+        || item.byteLength > MAX_KEY_PACKAGE_BYTES
+      ))
+    ) throw new DeviceCryptoError('invalid-request')
+    return await this.mutateAndCheckpoint(active => {
+      active.createConversation(command.conversationId)
+      const output = active.addMembersAndMerge(
+        command.conversationId,
+        command.keyPackages.map(item => item.slice()),
+      )
+      try {
+        return {
+          commit: output.commit.slice(),
+          welcome: output.welcome.slice(),
+          ratchetTree: output.ratchetTree.slice(),
+          epoch: safeUnsignedInteger(output.epoch),
+        }
+      } finally {
+        output.free()
+      }
+    })
+  }
+
+  async joinConversation(
+    command: JoinMlsConversationCommand,
+  ): Promise<MlsConversationStateResult> {
+    if (
+      !UUID_PATTERN.test(command.conversationId)
+      || !validWireBytes(command.welcome)
+      || !validWireBytes(command.ratchetTree)
+    ) throw new DeviceCryptoError('invalid-request')
+    return await this.mutateAndCheckpoint(active => ({
+      epoch: safeUnsignedInteger(active.joinConversation(
+        command.conversationId,
+        command.welcome,
+        command.ratchetTree,
+      )),
+    }))
+  }
+
+  async protectMessage(command: ProtectMlsMessageCommand): Promise<ProtectMlsMessageResult> {
+    if (
+      !validMessageRouting(command.conversationId, command.clientMessageId)
+      || !(command.plaintext instanceof Uint8Array)
+      || command.plaintext.byteLength === 0
+      || command.plaintext.byteLength > MAX_MLS_APPLICATION_BYTES
+    ) throw new DeviceCryptoError('invalid-request')
+    return await this.mutateAndCheckpoint(active => {
+      const output = active.protectApplicationMessage(
+        command.conversationId,
+        command.clientMessageId,
+        command.plaintext,
+      )
+      try {
+        return {
+          ciphertext: output.ciphertext.slice(),
+          epoch: safeUnsignedInteger(output.epoch),
+        }
+      } finally {
+        output.free()
+      }
+    })
+  }
+
+  async unprotectMessage(
+    command: UnprotectMlsMessageCommand,
+  ): Promise<UnprotectMlsMessageResult> {
+    if (
+      !validMessageRouting(command.conversationId, command.clientMessageId)
+      || !validWireBytes(command.ciphertext)
+    ) throw new DeviceCryptoError('invalid-request')
+    return await this.mutateAndCheckpoint(active => ({
+      plaintext: active.unprotectApplicationMessage(
+        command.conversationId,
+        command.clientMessageId,
+        command.ciphertext,
+      ).slice(),
+    }))
+  }
+
   dispose(): void {
     this.active?.value.free()
     this.active = null
@@ -237,4 +339,45 @@ export class DeviceCryptoRuntime {
       keyPackage: keyPackage.slice(),
     }
   }
+
+  private async mutateAndCheckpoint<T extends object>(
+    operation: (active: OpenMlsDeviceBootstrap) => T,
+  ): Promise<T & { revision: number }> {
+    const active = this.active
+    if (!active) throw new DeviceCryptoError('not-provisioned')
+    try {
+      const result = operation(active.value)
+      const stored = await this.vault.update(
+        active.userId,
+        active.deviceId,
+        (key, revision) => this.seal(active.value, key, revision),
+      )
+      active.revision = stored.revision
+      return { ...result, revision: active.revision }
+    } catch (error) {
+      // A failed mutation/checkpoint must never keep a potentially advanced
+      // sender/receiver ratchet alive against the previous durable snapshot.
+      active.value.free()
+      this.active = null
+      throw translateError(error)
+    }
+  }
+}
+
+function safeUnsignedInteger(value: bigint): number {
+  const number = Number(value)
+  if (!Number.isSafeInteger(number) || number < 0 || BigInt(number) !== value) {
+    throw new DeviceCryptoError('corrupt-state')
+  }
+  return number
+}
+
+function validWireBytes(value: unknown): value is Uint8Array {
+  return value instanceof Uint8Array
+    && value.byteLength > 0
+    && value.byteLength <= MAX_MLS_WIRE_BYTES
+}
+
+function validMessageRouting(conversationId: string, clientMessageId: string): boolean {
+  return UUID_PATTERN.test(conversationId) && UUID_PATTERN.test(clientMessageId)
 }

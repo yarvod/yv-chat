@@ -18,6 +18,9 @@ import initOpenMls, {
 const userId = '1b0a32e8-144f-4f60-bcb6-112f71bd5316'
 const deviceId = '50d6b08a-84ae-4bd7-829a-f40f38e9a2c1'
 const otherDeviceId = 'd44483ee-2c69-4eef-aeba-5ce92bc9181d'
+const otherUserId = 'abfef0af-10d0-4655-b4c7-84b3b418e4b7'
+const conversationId = 'f6a5941b-c417-4e50-a69c-9a30bd7ed28c'
+const messageId = '538998bb-1943-4cf3-beb1-8b87cadf0fc1'
 
 const openMlsModule: OpenMlsModule = {
   default: async () => undefined,
@@ -117,6 +120,65 @@ describe('device crypto runtime with the release OpenMLS WASM', () => {
       packageRef: await sha256Hex(corrupt),
     })).rejects.toMatchObject({ code: 'invalid-key-package' })
     runtime.dispose()
+  })
+
+  it('atomically checkpoints create, Welcome join and both message ratchets', async () => {
+    const aliceDb = new IDBFactory()
+    const bobDb = new IDBFactory()
+    const alice = new DeviceCryptoRuntime(openMlsModule, vault(aliceDb))
+    const bob = new DeviceCryptoRuntime(openMlsModule, vault(bobDb))
+    await alice.provision({ userId, deviceId })
+    const bobIdentity = await bob.provision({ userId: otherUserId, deviceId: otherDeviceId })
+
+    const bootstrap = await alice.bootstrapConversation({
+      conversationId,
+      keyPackages: [bobIdentity.keyPackage],
+    })
+    expect(bootstrap).toMatchObject({ epoch: 1, revision: 2 })
+    const joined = await bob.joinConversation({
+      conversationId,
+      welcome: bootstrap.welcome,
+      ratchetTree: bootstrap.ratchetTree,
+    })
+    expect(joined).toEqual({ epoch: 1, revision: 2 })
+    alice.dispose()
+    bob.dispose()
+
+    const restoredAlice = new DeviceCryptoRuntime(openMlsModule, vault(aliceDb))
+    const restoredBob = new DeviceCryptoRuntime(openMlsModule, vault(bobDb))
+    await restoredAlice.restore({ userId, deviceId })
+    await restoredBob.restore({ userId: otherUserId, deviceId: otherDeviceId })
+    const plaintext = new TextEncoder().encode('private hello')
+    const protectedMessage = await restoredAlice.protectMessage({
+      conversationId,
+      clientMessageId: messageId,
+      plaintext,
+    })
+    expect(protectedMessage.epoch).toBe(1)
+    expect(protectedMessage.revision).toBe(3)
+    expect(protectedMessage.ciphertext).not.toEqual(plaintext)
+
+    await expect(restoredBob.unprotectMessage({
+      conversationId,
+      clientMessageId: '784ace60-fba9-445d-b1e4-df34d56ad053',
+      ciphertext: protectedMessage.ciphertext,
+    })).rejects.toMatchObject({ code: 'operation-failed' })
+    await expect(restoredBob.unprotectMessage({
+      conversationId,
+      clientMessageId: messageId,
+      ciphertext: protectedMessage.ciphertext,
+    })).rejects.toMatchObject({ code: 'not-provisioned' })
+
+    await restoredBob.restore({ userId: otherUserId, deviceId: otherDeviceId })
+    const unprotected = await restoredBob.unprotectMessage({
+      conversationId,
+      clientMessageId: messageId,
+      ciphertext: protectedMessage.ciphertext,
+    })
+    expect(unprotected.plaintext).toEqual(plaintext)
+    expect(unprotected.revision).toBe(3)
+    restoredAlice.dispose()
+    restoredBob.dispose()
   })
 
   it('fails closed for wrong AAD and modified ciphertext without replacing identity', async () => {
