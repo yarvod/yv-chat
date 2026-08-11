@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import type { TimelineMessage } from '../../application/messaging/timeline-message'
+import type { OutgoingMessageView } from '../../application/messaging/outgoing-message-view'
 import type { RealtimeConnectionState } from '../../application/messaging/realtime-sync-service'
 import type {
   Conversation,
@@ -13,15 +14,18 @@ import AppIcon from '../ui/AppIcon.vue'
 const props = withDefaults(defineProps<{
   conversation: Conversation | null
   messages: readonly TimelineMessage[]
+  outgoingMessages?: readonly OutgoingMessageView[]
   historyHasMore?: boolean
   historyHasNewer?: boolean
   loadingOlder?: boolean
   archiveStatus?: 'ready' | 'unavailable'
+  outboxStatus?: 'ready' | 'unavailable'
   actorUserId: string
   sending: boolean
   protectionSecure: boolean
   protectionLabel: string
   sendMessage: (plaintext: string) => Promise<boolean>
+  retryOutgoing?: (clientMessageId: string) => Promise<boolean>
   loadOlder?: () => Promise<void>
   returnToLatest?: () => Promise<void>
   deleteMessage: (messageId: string) => Promise<boolean>
@@ -36,6 +40,9 @@ const props = withDefaults(defineProps<{
   historyHasNewer: false,
   loadingOlder: false,
   archiveStatus: 'ready',
+  outboxStatus: 'ready',
+  outgoingMessages: () => [],
+  retryOutgoing: async () => false,
   loadOlder: async () => undefined,
   returnToLatest: async () => undefined,
 })
@@ -81,6 +88,16 @@ const connectionLabel = computed(() => ({
   reconnecting: 'Переподключаем синхронизацию',
   stopped: 'Синхронизация остановлена',
 })[props.connectionState])
+
+function outgoingStatusLabel(message: OutgoingMessageView): string {
+  if (message.status === 'pending') return 'В очереди'
+  if (message.status === 'sending') return 'Отправляем…'
+  if (message.status === 'sent') return 'Подтверждено сервером…'
+  if (message.failureCode === 'conflict') return 'Конфликт идентификатора'
+  if (message.failureCode === 'forbidden') return 'Нет доступа к диалогу'
+  if (message.failureCode === 'unauthorized') return 'Нужно войти заново'
+  return 'Не отправлено'
+}
 
 function conversationName(conversation: Conversation): string {
   if (conversation.conversationType === 'group') return conversation.title ?? 'Группа'
@@ -196,6 +213,8 @@ watch(
     length: props.messages.length,
     oldest: props.messages[0]?.messageId ?? null,
     newest: props.messages.at(-1)?.messageId ?? null,
+    outgoingLength: props.outgoingMessages.length,
+    outgoingNewest: props.outgoingMessages.at(-1)?.clientMessageId ?? null,
   }),
   async (current, previous) => {
     const previousLength = previous?.length ?? 0
@@ -206,6 +225,7 @@ watch(
     const shouldFollow = previousLength === 0
       || isNearLatest()
       || props.messages.at(-1)?.senderUserId === props.actorUserId
+      || current.outgoingLength > (previous?.outgoingLength ?? 0)
     await nextTick()
     if (shouldFollow) scrollToLatest(previousLength === 0 ? 'auto' : 'smooth')
     else if (current.length > previousLength) showScrollToLatest.value = true
@@ -265,12 +285,15 @@ onBeforeUnmount(() => {
       />
     </header>
 
-    <div v-if="!protectionSecure || archiveStatus === 'unavailable'" class="timeline-notices">
+    <div v-if="!protectionSecure || archiveStatus === 'unavailable' || outboxStatus === 'unavailable'" class="timeline-notices">
       <p v-if="!protectionSecure" class="security-warning" role="status">
         {{ protectionLabel }}. Не отправляйте чувствительные данные.
       </p>
       <p v-if="archiveStatus === 'unavailable'" class="storage-warning" role="status">
         Локальная история недоступна. Online-синхронизация продолжает работать.
+      </p>
+      <p v-if="outboxStatus === 'unavailable'" class="storage-warning" role="alert">
+        Надёжная очередь отправки недоступна. Новые сообщения не будут отправлены в обход неё.
       </p>
     </div>
 
@@ -284,7 +307,7 @@ onBeforeUnmount(() => {
       >
         {{ loadingOlder ? 'Загружаем историю…' : 'Показать более ранние сообщения' }}
       </button>
-      <div v-if="messages.length === 0" class="empty-timeline">
+      <div v-if="messages.length === 0 && outgoingMessages.length === 0" class="empty-timeline">
         <span>✦</span>
         <h3>Начните разговор</h3>
         <p>Первое сообщение появится у всех участников после синхронизации.</p>
@@ -343,6 +366,28 @@ onBeforeUnmount(() => {
           </small>
         </article>
       </template>
+      <article
+        v-for="message in outgoingMessages"
+        :key="`outbox-${message.clientMessageId}`"
+        class="message-bubble own outbox-message"
+        :class="`outbox-message--${message.status}`"
+      >
+        <p>{{ message.displayBody }}</p>
+        <small class="message-meta outbox-meta">
+          <time :datetime="message.createdAt">
+            {{ new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
+          </time>
+          <span role="status">{{ outgoingStatusLabel(message) }}</span>
+          <button
+            v-if="message.status === 'failed'"
+            type="button"
+            :aria-label="'Повторить отправку сообщения'"
+            @click="retryOutgoing(message.clientMessageId)"
+          >
+            Повторить
+          </button>
+        </small>
+      </article>
     </div>
 
     <button

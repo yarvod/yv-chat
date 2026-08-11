@@ -57,6 +57,7 @@ export function parseCurrentAccount(value: unknown): CurrentAccount {
   }
   return {
     userId: stringField(item, 'user_id'),
+    deviceId: stringField(item, 'device_id'),
     username: stringField(item, 'username'),
     displayName: stringField(item, 'display_name'),
     isAdmin: item.is_admin,

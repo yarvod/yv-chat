@@ -48,6 +48,40 @@ describe('api boundary', () => {
     )
   })
 
+  it('returns a strictly parsed authoritative receipt for an idempotent send', async () => {
+    const response = {
+      message_id: 'message-1',
+      client_message_id: 'client-1',
+      conversation_id: 'conversation-1',
+      sender_user_id: 'user-1',
+      sender_device_id: 'device-1',
+      protocol_version: 1,
+      sequence: 7,
+      created_at: '2026-08-11T12:00:01Z',
+      expires_at: '2026-09-10T12:00:01Z',
+    }
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(
+      JSON.stringify(response),
+      { status: 201, headers: { 'Content-Type': 'application/json' } },
+    ))
+
+    await expect(new HttpMessagingGateway(new ApiClient()).sendMessage(
+      'conversation-1', 'client-1', 1, 'Y2lwaGVydGV4dA==',
+    )).resolves.toMatchObject({ messageId: 'message-1', sequence: 7 })
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/v1/conversations/conversation-1/messages',
+      expect.objectContaining({
+        method: 'POST',
+        credentials: 'include',
+        body: JSON.stringify({
+          client_message_id: 'client-1',
+          protocol_version: 1,
+          ciphertext_base64: 'Y2lwaGVydGV4dA==',
+        }),
+      }),
+    )
+  })
+
   it('fetches one opaque message by encoded conversation and message ids', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(
       JSON.stringify({

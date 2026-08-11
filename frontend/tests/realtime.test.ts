@@ -191,7 +191,9 @@ describe('realtime sync', () => {
     expect(scheduler.onceTasks[0]?.delay).toBe(1_000)
     scheduler.onceTasks[0]?.run()
     await vi.waitFor(() => expect(gateway.callbacks).toHaveLength(2))
-    expect(catchUp).toHaveBeenCalledTimes(2)
+    expect(catchUp).toHaveBeenCalledTimes(1)
+    gateway.callbacks[1]?.onOpen()
+    await vi.waitFor(() => expect(catchUp).toHaveBeenCalledTimes(2))
 
     gateway.callbacks[1]?.onFrame({
       type: 'typing',

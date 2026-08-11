@@ -22,13 +22,16 @@ async def test_current_profile_password_change_and_security_reset_flow() -> None
     transport = ASGITransport(app=application)
     async with AsyncClient(transport=transport, base_url=ORIGIN) as client:
         assert (await login(client)).status_code == 200
-        assert (await login(client)).status_code == 200
+        current_login = await login(client)
+        assert current_login.status_code == 200
+        current_device_id = current_login.json()["device_id"]
         csrf = client.cookies["__Host-yv_csrf"]
         headers = {"Origin": ORIGIN, "X-CSRF-Token": csrf}
 
         current = await client.get("/api/v1/me")
         assert current.status_code == 200
         assert current.json()["username"] == "alice"
+        assert current.json()["device_id"] == current_device_id
         assert FORBIDDEN_FIELDS.isdisjoint(current.json())
 
         missing_csrf = await client.patch(
@@ -45,6 +48,7 @@ async def test_current_profile_password_change_and_security_reset_flow() -> None
         )
         assert updated.status_code == 200
         assert updated.json()["display_name"] == "Alice Updated"
+        assert updated.json()["device_id"] == current.json()["device_id"]
 
         wrong_password = await client.patch(
             "/api/v1/me/password",
@@ -82,3 +86,4 @@ async def test_current_account_openapi_does_not_publish_secret_output_fields() -
 
     properties = schemas["CurrentAccountResponse"]["properties"]
     assert FORBIDDEN_FIELDS.isdisjoint(properties)
+    assert "device_id" in properties

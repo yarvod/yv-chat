@@ -36,6 +36,7 @@ router = APIRouter(prefix="/api/v1/me", tags=["current-account"], route_class=Di
 
 class CurrentAccountResponse(BaseModel):
     user_id: UUID
+    device_id: UUID
     username: str
     display_name: str
     is_admin: bool
@@ -84,7 +85,15 @@ async def get_current_account(
         result = await use_case.execute(GetCurrentAccountQuery(user_id=principal.user_id))
     except SessionNotAuthenticatedError as error:
         raise unauthorized(error) from error
-    return CurrentAccountResponse.model_validate(result, from_attributes=True)
+    return CurrentAccountResponse(
+        user_id=result.user_id,
+        device_id=principal.device_id,
+        username=result.username,
+        display_name=result.display_name,
+        is_admin=result.is_admin,
+        created_at=result.created_at,
+        updated_at=result.updated_at,
+    )
 
 
 @router.patch("", response_model=CurrentAccountResponse)
@@ -114,6 +123,7 @@ async def update_current_profile(
         ) from error
     return CurrentAccountResponse(
         user_id=result.id,
+        device_id=principal.device_id,
         username=result.username,
         display_name=result.display_name,
         is_admin=result.is_admin,

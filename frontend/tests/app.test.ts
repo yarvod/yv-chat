@@ -9,6 +9,7 @@ import LoginForm from '../app/components/auth/LoginForm.vue'
 
 const account = {
   userId: '8ec81303-0613-4ed6-bf79-4eecff0ceada',
+  deviceId: '1a166081-37d5-40ea-8238-3f639e7be090',
   username: 'alice',
   displayName: 'Alice',
   isAdmin: false,

@@ -73,11 +73,12 @@ export class RealtimeSyncService {
         onOpen: () => {
           this.reconnectAttempt = 0
           this.onConnectionState?.('connected')
+          void this.requestCatchUp()
         },
         onFrame: frame => {
           if (frame.type === 'typing' || frame.type === 'presence') {
             this.onEphemeral?.(frame)
-          } else if (frame.type !== 'ping') {
+          } else if (frame.type !== 'ping' && frame.type !== 'hello') {
             void this.requestCatchUp()
           }
         },
@@ -113,7 +114,6 @@ export class RealtimeSyncService {
     this.reconnectAttempt += 1
     this.reconnectTask = this.scheduler.once(delay, () => {
       this.reconnectTask = null
-      void this.requestCatchUp()
       this.connect()
     })
   }

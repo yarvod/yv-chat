@@ -4,7 +4,7 @@
 
 ## Active
 
-Активных воспроизводимых дефектов после автоматизированной проверки `WP-043` нет.
+Активных воспроизводимых дефектов после автоматизированной проверки `WP-044` нет.
 Physical Pixel acceptance для `BUG-033`/`BUG-034` ожидает пользовательского retest
 после production deploy и uninstall/reinstall старой установки.
 
@@ -23,6 +23,48 @@ Physical Pixel acceptance для `BUG-033`/`BUG-034` ожидает пользо
 - Проверка: тест или команда, подтверждающая fix.
 
 ## Resolved
+
+### BUG-037 — Outbox старого login-device мог повторить сообщение под новым device scope
+
+- Статус: `verified`.
+- Найдено в: security/idempotency review, `WP-044`.
+- Severity: `high`.
+- Условия воспроизведения: server commit успешен, но local outbox ack не завершён;
+  затем пользователь входит заново и получает новый backend device, после чего PWA
+  читает прежнюю user-scoped запись.
+- Ожидаемое поведение: envelope одного sender device никогда не отправляется от имени
+  другого; retry использует ту же backend uniqueness pair.
+- Фактическое поведение: первоначальный adapter был scoped только по
+  `owner_user_id + client_message_id`, тогда как backend idempotency scoped по
+  `(sender_device_id, client_message_id)`; повтор после нового login мог создать
+  второй server message.
+- Причина: current `/me` не передавал session `device_id`, и local outbox не связывал
+  запись/AAD/query с device.
+- Исправление: `/api/v1/me` возвращает authenticated `device_id`; outbox DTO,
+  compound key/index, AES-GCM AAD, use cases, flush и receipt reconciliation требуют
+  exact owner+device scope. Записи старого device сохраняются, но не переотправляются
+  и не удаляются неявно.
+- Проверка: backend HTTP test связывает `/me.device_id` с последним login principal;
+  IndexedDB test доказывает изоляцию одинакового client ID между devices, а delivery
+  tests требуют совпадения receipt sender device.
+
+### BUG-036 — Неотправленное сообщение терялось после reload/restart
+
+- Статус: `verified`.
+- Найдено в: local-first send audit, `WP-044`.
+- Severity: `high`.
+- Условия воспроизведения: отправить текст при network failure, затем закрыть или
+  перезагрузить PWA до успешного повторного POST.
+- Ожидаемое поведение: exact protected envelope durable сохраняется до HTTP,
+  остаётся видимым и повторяется с тем же `client_message_id`.
+- Фактическое поведение: старый `send()` создавал ID/envelope только в RAM и сразу
+  вызывал API; после exception/reload никакой recoverable queue entry не оставалось.
+- Причина: отсутствовали outbox application port/use cases и persistent adapter.
+- Исправление: `WP-044` добавил bounded encrypted IndexedDB outbox, explicit states,
+  retry/backoff/manual retry, reconnect flush и authoritative receipt reconciliation.
+- Проверка: Vitest моделирует network failure, persisted `sending`, restart и
+  successful exact retry; оба POST имеют одинаковые ID/protocol/ciphertext, entry
+  удаляется только после authoritative message попал в timeline/archive.
 
 ### BUG-035 — Список чатов повторно загружался с нуля при каждом входе
 

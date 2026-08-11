@@ -4,6 +4,7 @@ import type {
   DirectoryUser,
   MessageHistoryPage,
   OpaqueMessage,
+  SendMessageReceipt,
   SyncPage,
 } from '../../domain/messaging/models'
 
@@ -24,7 +25,7 @@ export interface MessagingGateway {
     clientMessageId: string,
     protocolVersion: number,
     ciphertextBase64: string,
-  ): Promise<void>
+  ): Promise<SendMessageReceipt>
   deleteMessage(conversationId: string, messageId: string): Promise<DeleteMessageResult>
   listSync(after: number): Promise<SyncPage>
 }

@@ -31,6 +31,55 @@ const conversation = {
 }
 
 describe('message panel', () => {
+  it('renders optimistic outbox states and exposes retry only for failed messages', async () => {
+    const retryOutgoing = vi.fn().mockResolvedValue(true)
+    const wrapper = mount(MessagePanel, {
+      props: {
+        conversation,
+        messages: [],
+        outgoingMessages: [{
+          clientMessageId: 'pending-1',
+          conversationId: 'conversation-1',
+          createdAt: '2026-08-11T12:00:00Z',
+          displayBody: 'queued text',
+          contentSecure: false,
+          status: 'pending',
+          attemptCount: 1,
+          failureCode: null,
+        }, {
+          clientMessageId: 'failed-1',
+          conversationId: 'conversation-1',
+          createdAt: '2026-08-11T12:00:01Z',
+          displayBody: 'failed text',
+          contentSecure: false,
+          status: 'failed',
+          attemptCount: 2,
+          failureCode: 'conflict',
+        }],
+        actorUserId: 'alice-id',
+        sending: false,
+        protectionSecure: false,
+        protectionLabel: 'Тестовый режим без E2EE',
+        sendMessage: vi.fn(),
+        retryOutgoing,
+        deleteMessage: vi.fn(),
+        deletingMessageId: null,
+        typingActorIds: [],
+        onlineActorIds: [],
+        deliveryStates: [],
+        connectionState: 'reconnecting',
+        setTyping: vi.fn(),
+      },
+    })
+
+    expect(wrapper.text()).toContain('queued text')
+    expect(wrapper.text()).toContain('В очереди')
+    expect(wrapper.text()).toContain('Конфликт идентификатора')
+    expect(wrapper.findAll('.outbox-meta button')).toHaveLength(1)
+    await wrapper.get('.outbox-meta button').trigger('click')
+    expect(retryOutgoing).toHaveBeenCalledWith('failed-1')
+  })
+
   it('shows the non-E2EE warning and clears a successfully sent draft', async () => {
     const sendMessage = vi.fn().mockResolvedValue(true)
     const setTyping = vi.fn()
@@ -62,6 +111,35 @@ describe('message panel', () => {
     expect(wrapper.get('textarea').element.value).toBe('')
     expect(setTyping).toHaveBeenCalledWith('conversation-1', true)
     expect(setTyping).toHaveBeenLastCalledWith('conversation-1', false)
+  })
+
+  it('keeps the draft when durable enqueue fails and explains unavailable outbox', async () => {
+    const sendMessage = vi.fn().mockResolvedValue(false)
+    const wrapper = mount(MessagePanel, {
+      props: {
+        conversation,
+        messages: [],
+        outboxStatus: 'unavailable',
+        actorUserId: 'alice-id',
+        sending: false,
+        protectionSecure: false,
+        protectionLabel: 'Тестовый режим без E2EE',
+        sendMessage,
+        deleteMessage: vi.fn(),
+        deletingMessageId: null,
+        typingActorIds: [],
+        onlineActorIds: [],
+        deliveryStates: [],
+        connectionState: 'connected',
+        setTyping: vi.fn(),
+      },
+    })
+
+    await wrapper.get('textarea').setValue('do not lose me')
+    await wrapper.get('form').trigger('submit')
+
+    expect(wrapper.get('textarea').element.value).toBe('do not lose me')
+    expect(wrapper.text()).toContain('Надёжная очередь отправки недоступна')
   })
 
   it('renders participant typing state without exposing draft content', () => {

@@ -263,13 +263,28 @@ upgrade migration gate и offline outbox остаются).
 
 ### BL-023 — Offline outbox и conflict recovery
 
+Статус: **completed** (`WP-044`).
+
 Результат: offline send проходит состояния `pending/sending/sent/failed` и безопасно повторяется.
 
-- persistent queue с client idempotency keys;
-- reconnect/backoff/manual retry;
-- reconcile с authoritative sync response;
-- crash-between-send-and-ack и duplicate retry tests;
-- bounded queue/storage pressure behavior.
+- [x] bounded per-account persistent queue с immutable client idempotency key и
+  active-device scope, совпадающим с backend uniqueness;
+- [x] AES-256-GCM encrypted records и non-extractable device-local key без raw
+  plaintext/session/private protocol state;
+- [x] explicit `pending/sending/sent/failed`, bounded backoff и manual retry;
+- [x] flush на foreground startup, WebSocket reconnect и fallback catch-up;
+- [x] reconcile typed authoritative send receipt с active timeline/archive, а
+  durable sync остаётся correctness path для неактивных conversations;
+- [x] crash-between-send-and-ack и duplicate exact-envelope retry tests;
+- [x] 250-entry account limit, storage/quota fail-closed UX и сохранение composer
+  draft, если durable enqueue не состоялся;
+- [x] stale entry предыдущего login-device не переотправляется под новым
+  `sender_device_id`; current device приходит только из authenticated `/me`;
+- [ ] Service Worker Background Sync не включён: браузерные ограничения и update/
+  protocol-state compatibility должны быть решены вместе с `BL-025`/MLS state;
+- [ ] cross-tab lease является дальнейшим hardening: параллельные вкладки уже не
+  создают server duplicates благодаря exact backend idempotency, но могут выполнять
+  лишний одинаковый request.
 
 ### BL-024 — OPFS media cache и local retention controls
 

@@ -1,14 +1,25 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { ApplicationError } from '../app/application/errors'
 import type { MessagingGateway } from '../app/application/ports/messaging-gateway'
 import type { MessageArchive } from '../app/application/ports/message-archive'
 import type { MessengerSnapshotStore } from '../app/application/ports/messenger-snapshot-store'
+import {
+  MessageOutboxError,
+  type MessageOutbox,
+} from '../app/application/ports/message-outbox'
 import type { Clock } from '../app/application/ports/clock'
 import type { HapticsPort } from '../app/application/ports/haptics'
 import type { ClientIdGenerator } from '../app/application/ports/client-id-generator'
+import type { OutboxMessage } from '../app/domain/messaging/outbox'
 import { ListConversationReadStates } from '../app/application/messaging/list-conversation-read-states'
 import { MarkConversationRead } from '../app/application/messaging/mark-conversation-read'
 import { DeleteMessageForEveryone } from '../app/application/messaging/delete-message-for-everyone'
+import { AcknowledgeOutboxMessage } from '../app/application/messaging/acknowledge-outbox-message'
+import { DeliverOutboxMessage } from '../app/application/messaging/deliver-outbox-message'
+import { ListOutboxMessages } from '../app/application/messaging/list-outbox-messages'
+import { QueueOutgoingMessage } from '../app/application/messaging/queue-outgoing-message'
+import { RetryOutboxMessage } from '../app/application/messaging/retry-outbox-message'
 import { ListParticipantDeliveryStates } from '../app/application/messaging/list-participant-delivery-states'
 import { MarkConversationDelivered } from '../app/application/messaging/mark-conversation-delivered'
 import type { ConversationReadStateGateway } from '../app/application/ports/conversation-read-state-gateway'
@@ -47,6 +58,7 @@ const message = {
 let gateway: MessagingGateway
 let messageArchive: MessageArchive
 let messengerSnapshotStore: MessengerSnapshotStore
+let messageOutbox: MessageOutbox
 const clock: Clock = { nowMilliseconds: () => Date.parse('2026-08-11T12:00:00Z') }
 const haptics: HapticsPort = { isEnabled: () => true, setEnabled: vi.fn(), perform: vi.fn() }
 const clientIdGenerator: ClientIdGenerator = { create: () => 'client-generated-id' }
@@ -70,6 +82,16 @@ function messengerDependencies() {
     gateway,
     messageArchive,
     messengerSnapshotStore,
+    listOutboxMessages: new ListOutboxMessages(messageOutbox),
+    queueOutgoingMessage: new QueueOutgoingMessage(
+      messageOutbox,
+      createMessageProtection(),
+      clientIdGenerator,
+      clock,
+    ),
+    deliverOutboxMessage: new DeliverOutboxMessage(messageOutbox, gateway, clock),
+    acknowledgeOutboxMessage: new AcknowledgeOutboxMessage(messageOutbox),
+    retryOutboxMessage: new RetryOutboxMessage(messageOutbox, clock),
     messageProtection: createMessageProtection(),
     clock,
     haptics,
@@ -119,6 +141,34 @@ beforeEach(() => {
     save: vi.fn().mockResolvedValue(undefined),
     close: vi.fn(),
   }
+  const outboxEntries = new Map<string, OutboxMessage>()
+  const outboxKey = (owner: string, device: string, client: string) => (
+    `${owner}:${device}:${client}`
+  )
+  messageOutbox = {
+    enqueue: vi.fn(async message => {
+      outboxEntries.set(
+        outboxKey(message.ownerUserId, message.senderDeviceId, message.clientMessageId),
+        message,
+      )
+    }),
+    get: vi.fn(async (ownerUserId, senderDeviceId, clientMessageId) => (
+      outboxEntries.get(outboxKey(ownerUserId, senderDeviceId, clientMessageId)) ?? null
+    )),
+    list: vi.fn(async (ownerUserId, senderDeviceId) => [...outboxEntries.values()].filter(
+      entry => entry.ownerUserId === ownerUserId && entry.senderDeviceId === senderDeviceId,
+    )),
+    replace: vi.fn(async message => {
+      outboxEntries.set(
+        outboxKey(message.ownerUserId, message.senderDeviceId, message.clientMessageId),
+        message,
+      )
+    }),
+    remove: vi.fn(async (ownerUserId, senderDeviceId, clientMessageId) => {
+      outboxEntries.delete(outboxKey(ownerUserId, senderDeviceId, clientMessageId))
+    }),
+    close: vi.fn(),
+  }
   gateway = {
     listDirectory: vi.fn().mockResolvedValue([]),
     listConversations: vi.fn().mockResolvedValue([conversation]),
@@ -134,7 +184,17 @@ beforeEach(() => {
       newestSequence: null,
     }),
     getMessage: vi.fn().mockResolvedValue(message),
-    sendMessage: vi.fn(),
+    sendMessage: vi.fn().mockResolvedValue({
+      messageId: 'message-sent',
+      clientMessageId: 'client-generated-id',
+      conversationId: 'conversation-1',
+      senderUserId: 'alice-id',
+      senderDeviceId: 'device-alice',
+      protocolVersion: 1,
+      sequence: 2,
+      createdAt: '2026-08-11T12:00:03Z',
+      expiresAt: '2026-09-10T12:00:03Z',
+    }),
     deleteMessage: vi.fn().mockResolvedValue({
       messageId: 'message-1',
       conversationId: 'conversation-1',
@@ -158,6 +218,78 @@ beforeEach(() => {
 })
 
 describe('messenger orchestration', () => {
+  it('never bypasses durable enqueue when local storage is full', async () => {
+    vi.mocked(gateway.listSync).mockReset().mockResolvedValue({
+      events: [], nextCursor: 0, streamCursor: 0, hasMore: false, resetRequired: false,
+    })
+    vi.mocked(messageOutbox.enqueue).mockRejectedValue(new MessageOutboxError('queue-full'))
+    const messenger = useMessenger('alice-id', 'device-alice', vi.fn(), messengerDependencies())
+    await messenger.load()
+
+    expect(await messenger.send('must remain a draft')).toBe(false)
+    expect(gateway.sendMessage).not.toHaveBeenCalled()
+    expect(messenger.outbox.state.notice).toContain('очередь заполнена')
+  })
+
+  it('keeps an offline envelope and recovers the exact idempotency key after restart', async () => {
+    vi.mocked(gateway.listSync).mockReset().mockResolvedValue({
+      events: [], nextCursor: 0, streamCursor: 0, hasMore: false, resetRequired: false,
+    })
+    vi.mocked(gateway.sendMessage)
+      .mockReset()
+      .mockRejectedValueOnce(new ApplicationError(null, 'network', 'offline'))
+      .mockResolvedValueOnce({
+        messageId: 'message-recovered',
+        clientMessageId: 'client-generated-id',
+        conversationId: 'conversation-1',
+        senderUserId: 'alice-id',
+        senderDeviceId: 'device-alice',
+        protocolVersion: 1,
+        sequence: 2,
+        createdAt: '2026-08-11T12:00:03Z',
+        expiresAt: '2026-09-10T12:00:03Z',
+      })
+    const first = useMessenger('alice-id', 'device-alice', vi.fn(), messengerDependencies())
+    await first.load()
+
+    expect(await first.send('offline body')).toBe(true)
+    await vi.waitFor(() => expect(first.outbox.state.messages[0]).toMatchObject({
+      clientMessageId: 'client-generated-id', status: 'pending', attemptCount: 1,
+    }))
+    const persisted = await messageOutbox.get(
+      'alice-id',
+      'device-alice',
+      'client-generated-id',
+    )
+    expect(persisted?.ciphertextBase64).toBe('b2ZmbGluZSBib2R5')
+
+    if (!persisted) throw new Error('outbox entry was not persisted')
+    await messageOutbox.replace({
+      ...persisted,
+      status: 'sending',
+      nextAttemptAt: null,
+      updatedAt: '2026-08-11T12:00:02Z',
+    })
+    const restarted = useMessenger('alice-id', 'device-alice', vi.fn(), messengerDependencies())
+    await restarted.load()
+
+    expect(gateway.sendMessage).toHaveBeenNthCalledWith(
+      1, 'conversation-1', 'client-generated-id', 1, 'b2ZmbGluZSBib2R5',
+    )
+    expect(gateway.sendMessage).toHaveBeenNthCalledWith(
+      2, 'conversation-1', 'client-generated-id', 1, 'b2ZmbGluZSBib2R5',
+    )
+    expect(restarted.outbox.state.messages).toEqual([])
+    expect(restarted.state.messages.at(-1)).toMatchObject({
+      messageId: 'message-recovered', clientMessageId: 'client-generated-id',
+    })
+    await expect(messageOutbox.get(
+      'alice-id',
+      'device-alice',
+      'client-generated-id',
+    )).resolves.toBeNull()
+  })
+
   it('hydrates a local conversation snapshot and catches up without full list refetch', async () => {
     vi.mocked(messengerSnapshotStore.load).mockResolvedValue({
       ownerUserId: 'alice-id',
@@ -172,7 +304,7 @@ describe('messenger orchestration', () => {
     vi.mocked(gateway.listSync).mockReset().mockResolvedValue({
       events: [], nextCursor: 8, streamCursor: 8, hasMore: false, resetRequired: false,
     })
-    const messenger = useMessenger('alice-id', vi.fn(), messengerDependencies())
+    const messenger = useMessenger('alice-id', 'device-alice', vi.fn(), messengerDependencies())
 
     await messenger.load()
 
@@ -193,7 +325,7 @@ describe('messenger orchestration', () => {
   })
 
   it('captures a cursor baseline before snapshot and catches up newer messages', async () => {
-    const messenger = useMessenger('alice-id', vi.fn(), messengerDependencies())
+    const messenger = useMessenger('alice-id', 'device-alice', vi.fn(), messengerDependencies())
 
     await messenger.load()
     await messenger.poll()
@@ -212,12 +344,9 @@ describe('messenger orchestration', () => {
     expect(readStateGateway.mark).toHaveBeenCalledWith('conversation-1', 1)
     expect(deliveryStateGateway.mark).toHaveBeenCalledWith('conversation-1', 1)
     expect(await messenger.send('  hello  ')).toBe(true)
-    expect(gateway.sendMessage).toHaveBeenCalledWith(
-      'conversation-1',
-      'client-generated-id',
-      1,
-      'aGVsbG8=',
-    )
+    await vi.waitFor(() => expect(gateway.sendMessage).toHaveBeenCalledWith(
+      'conversation-1', 'client-generated-id', 1, 'aGVsbG8=',
+    ))
     expect(await messenger.deleteMessage('message-1')).toBe(true)
     expect(gateway.deleteMessage).toHaveBeenCalledWith('conversation-1', 'message-1')
     expect(messenger.state.messages[0]?.ciphertextBase64).toBeNull()
@@ -236,7 +365,7 @@ describe('messenger orchestration', () => {
     vi.mocked(gateway.listSync).mockReset().mockResolvedValue({
       events: [], nextCursor: 0, streamCursor: 0, hasMore: false, resetRequired: false,
     })
-    const messenger = useMessenger('alice-id', vi.fn(), messengerDependencies())
+    const messenger = useMessenger('alice-id', 'device-alice', vi.fn(), messengerDependencies())
 
     await messenger.load()
     expect(readStateGateway.mark).not.toHaveBeenCalled()
@@ -271,7 +400,7 @@ describe('messenger orchestration', () => {
         newestSequence: page.at(-1)?.sequence ?? null,
       }
     })
-    const messenger = useMessenger('alice-id', vi.fn(), messengerDependencies())
+    const messenger = useMessenger('alice-id', 'device-alice', vi.fn(), messengerDependencies())
 
     await messenger.load()
     expect(messenger.state.messages.map(item => item.sequence)).toEqual(
@@ -317,7 +446,7 @@ describe('messenger orchestration', () => {
       .mockResolvedValueOnce({
         messages: page(801), hasMore: true, oldestSequence: 801, newestSequence: 900,
       })
-    const messenger = useMessenger('alice-id', vi.fn(), messengerDependencies())
+    const messenger = useMessenger('alice-id', 'device-alice', vi.fn(), messengerDependencies())
 
     await messenger.load()
     await messenger.loadOlder()
@@ -348,7 +477,7 @@ describe('messenger orchestration', () => {
     vi.mocked(gateway.listSync).mockReset().mockResolvedValue({
       events: [], nextCursor: 0, streamCursor: 0, hasMore: false, resetRequired: false,
     })
-    const messenger = useMessenger('alice-id', vi.fn(), messengerDependencies())
+    const messenger = useMessenger('alice-id', 'device-alice', vi.fn(), messengerDependencies())
 
     const loading = messenger.load()
     await vi.waitFor(() => expect(messenger.state.messages).toHaveLength(1))
@@ -367,7 +496,7 @@ describe('messenger orchestration', () => {
       messages: [], hasMore: false, oldestSequence: null, newestSequence: null,
     })
     vi.mocked(messengerSnapshotStore.save).mockClear()
-    const degraded = useMessenger('alice-id', vi.fn(), messengerDependencies())
+    const degraded = useMessenger('alice-id', 'device-alice', vi.fn(), messengerDependencies())
     await degraded.load()
     expect(degraded.state.phase).toBe('ready')
     expect(degraded.state.archiveStatus).toBe('unavailable')
@@ -399,7 +528,7 @@ describe('messenger orchestration', () => {
         newestSequence: page.at(-1)?.sequence ?? null,
       }
     })
-    const messenger = useMessenger('alice-id', vi.fn(), messengerDependencies())
+    const messenger = useMessenger('alice-id', 'device-alice', vi.fn(), messengerDependencies())
 
     await messenger.load()
     await messenger.loadOlder()
@@ -447,7 +576,7 @@ describe('messenger orchestration', () => {
         hasMore: false,
         resetRequired: false,
       })
-    const messenger = useMessenger('alice-id', vi.fn(), messengerDependencies())
+    const messenger = useMessenger('alice-id', 'device-alice', vi.fn(), messengerDependencies())
 
     await messenger.load()
     await messenger.poll()

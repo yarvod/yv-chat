@@ -241,6 +241,11 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .message-bubble.joined { margin-top: 0; border-top-left-radius: 12px; }
 .message-bubble.own { align-self: flex-end; border-color: color-mix(in srgb, var(--primary) 28%, var(--border)); border-radius: 17px 5px 17px 17px; background: color-mix(in srgb, var(--primary) 13%, var(--surface-solid)); }
 .message-bubble.own.joined { border-top-right-radius: 12px; }
+.outbox-message { opacity: .88; }
+.outbox-message--sending { animation: bubble-in .2s ease both, connection-pulse 1.3s ease-in-out infinite; }
+.outbox-message--failed { border-color: color-mix(in srgb, var(--danger) 52%, var(--border)) !important; }
+.outbox-meta { gap: 7px; }
+.outbox-meta button { min-height: 28px; padding: 2px 8px; border: 1px solid currentcolor; border-radius: 999px; color: var(--danger); background: transparent; font-size: inherit; }
 .message-bubble strong { display: block; margin-bottom: 4px; color: var(--primary); font-size: .71rem; }
 .message-bubble p { margin: 0; overflow-wrap: anywhere; line-height: 1.47; white-space: pre-wrap; }
 .message-meta { display: flex !important; align-items: center; justify-content: flex-end; gap: 4px; min-height: 12px; margin-top: 3px !important; color: var(--muted); text-align: right; font-size: .65rem !important; font-variant-numeric: tabular-nums; }

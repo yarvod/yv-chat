@@ -19,6 +19,11 @@ import { SecurityReset } from '../application/accounts/security-reset'
 import { SetManagedUserActive } from '../application/accounts/set-user-active'
 import { UpdateProfile } from '../application/accounts/update-profile'
 import { DeleteMessageForEveryone } from '../application/messaging/delete-message-for-everyone'
+import { AcknowledgeOutboxMessage } from '../application/messaging/acknowledge-outbox-message'
+import { DeliverOutboxMessage } from '../application/messaging/deliver-outbox-message'
+import { ListOutboxMessages } from '../application/messaging/list-outbox-messages'
+import { QueueOutgoingMessage } from '../application/messaging/queue-outgoing-message'
+import { RetryOutboxMessage } from '../application/messaging/retry-outbox-message'
 import { GetDeviceCryptoRegistration } from '../application/device-crypto/get-device-crypto-registration'
 import { ClaimDeviceKeyPackage } from '../application/device-crypto/claim-device-key-package'
 import { ListDeviceKeyPackages } from '../application/device-crypto/list-device-key-packages'
@@ -48,6 +53,7 @@ import { BrowserScheduler } from '../infrastructure/browser/scheduler'
 import { BrowserThemePreferences } from '../infrastructure/browser/theme-preferences'
 import { IndexedDbMessageArchive } from '../infrastructure/storage/indexeddb-message-archive'
 import { IndexedDbMessengerSnapshotStore } from '../infrastructure/storage/indexeddb-messenger-snapshot-store'
+import { IndexedDbMessageOutbox } from '../infrastructure/storage/indexeddb-message-outbox'
 import { SyntheticMessageProtocol } from '../infrastructure/crypto/synthetic-message-protocol'
 import { UnavailableMlsMessageProtocol } from '../infrastructure/crypto/unavailable-mls-message-protocol'
 import { HttpAdminAccountsGateway } from '../infrastructure/http/admin-accounts-gateway'
@@ -76,6 +82,7 @@ export default defineNuxtPlugin(() => {
   const realtimeGateway = new BrowserRealtimeGateway()
   const scheduler = new BrowserScheduler()
   const clock = new BrowserClock()
+  const clientIdGenerator = new BrowserClientIdGenerator()
   const themePreferences = new BrowserThemePreferences()
   const browserLocation = new BrowserLocation()
   const pageVisibility = new BrowserPageVisibility()
@@ -86,6 +93,7 @@ export default defineNuxtPlugin(() => {
   )
   const messageArchive = new IndexedDbMessageArchive()
   const messengerSnapshotStore = new IndexedDbMessengerSnapshotStore()
+  const messageOutbox = new IndexedDbMessageOutbox()
   themePreferences.apply(themePreference)
 
   return {
@@ -102,11 +110,21 @@ export default defineNuxtPlugin(() => {
         messageProtection,
         messageArchive,
         messengerSnapshotStore,
+        listOutboxMessages: new ListOutboxMessages(messageOutbox),
+        queueOutgoingMessage: new QueueOutgoingMessage(
+          messageOutbox,
+          messageProtection,
+          clientIdGenerator,
+          clock,
+        ),
+        deliverOutboxMessage: new DeliverOutboxMessage(messageOutbox, messagingGateway, clock),
+        acknowledgeOutboxMessage: new AcknowledgeOutboxMessage(messageOutbox),
+        retryOutboxMessage: new RetryOutboxMessage(messageOutbox, clock),
         deviceInfo,
         haptics,
         themePreferences,
         clipboard: new BrowserClipboard(),
-        clientIdGenerator: new BrowserClientIdGenerator(),
+        clientIdGenerator,
         loadCurrentAccount: new LoadCurrentAccount(authGateway),
         login: new Login(authGateway, deviceInfo, haptics),
         logout: new Logout(authGateway),

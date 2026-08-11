@@ -12,7 +12,11 @@ import MessagePanel from './MessagePanel.vue'
 
 const props = defineProps<{ user: CurrentAccount }>()
 const emit = defineEmits<{ sessionExpired: [] }>()
-const messenger = useMessenger(props.user.userId, () => emit('sessionExpired'))
+const messenger = useMessenger(
+  props.user.userId,
+  props.user.deviceId,
+  () => emit('sessionExpired'),
+)
 const { $frontend } = useNuxtApp()
 const route = useRoute()
 const realtime = $frontend.createRealtimeSync()
@@ -34,6 +38,7 @@ const activeTypingActorIds = computed(() => typingIndicators.value
 const activeOnlineActorIds = computed(() => presenceIndicators.value
   .filter(item => item.conversationId === messenger.state.activeConversationId)
   .map(item => item.userId))
+const workspaceNotice = computed(() => messenger.state.message ?? messenger.outbox.state.notice)
 
 async function selectConversation(conversationId: string): Promise<void> {
   await messenger.selectConversation(conversationId)
@@ -128,22 +133,25 @@ onBeforeUnmount(() => {
       <p>Загружаем диалоги…</p>
     </div>
     <div v-else class="workspace-main">
-      <p v-if="messenger.state.message" class="workspace-message" role="alert">
-        {{ messenger.state.message }}
+      <p v-if="workspaceNotice" class="workspace-message" role="alert">
+        {{ workspaceNotice }}
         <button v-if="messenger.state.phase === 'offline'" type="button" @click="messenger.poll">Повторить</button>
       </p>
       <MessagePanel
         :conversation="messenger.activeConversation.value"
         :messages="messenger.state.messages"
+        :outgoing-messages="messenger.activeOutgoingMessages.value"
         :history-has-more="messenger.state.historyHasMore"
         :history-has-newer="messenger.state.historyHasNewer"
         :loading-older="messenger.state.loadingOlder"
         :archive-status="messenger.state.archiveStatus"
+        :outbox-status="messenger.outbox.state.status"
         :actor-user-id="user.userId"
-        :sending="messenger.state.sending"
+        :sending="messenger.outbox.state.sending"
         :protection-secure="messenger.protection.secure"
         :protection-label="messenger.protection.label"
         :send-message="messenger.send"
+        :retry-outgoing="messenger.retryOutgoing"
         :load-older="messenger.loadOlder"
         :return-to-latest="messenger.returnToLatest"
         :delete-message="messenger.deleteMessage"

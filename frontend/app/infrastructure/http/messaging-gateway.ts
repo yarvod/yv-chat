@@ -5,6 +5,7 @@ import type {
   DirectoryUser,
   MessageHistoryPage,
   OpaqueMessage,
+  SendMessageReceipt,
   SyncPage,
 } from '../../domain/messaging/models'
 import type { ApiClient } from './api-client'
@@ -16,6 +17,7 @@ import {
   parseMessages,
   parseMessageHistoryPage,
   parseOpaqueMessage,
+  parseSendMessageReceipt,
   parseSyncPage,
 } from './messaging-parsers'
 
@@ -71,15 +73,15 @@ export class HttpMessagingGateway implements MessagingGateway {
     clientMessageId: string,
     protocolVersion: number,
     ciphertextBase64: string,
-  ): Promise<void> {
-    await this.apiClient.request(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`, {
+  ): Promise<SendMessageReceipt> {
+    return parseSendMessageReceipt(await this.apiClient.request(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`, {
       method: 'POST',
       body: {
         client_message_id: clientMessageId,
         protocol_version: protocolVersion,
         ciphertext_base64: ciphertextBase64,
       },
-    })
+    }))
   }
 
   async deleteMessage(

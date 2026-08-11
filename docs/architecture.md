@@ -880,7 +880,22 @@ no snapshot / corrupt snapshot / reset-required
 authoritative full bootstrap → persist new snapshot
 ```
 
-Outbox имеет `pending/sending/sent/failed`, persistent idempotency key и reconcile после reconnect. Service Worker/IndexedDB migrations versioned и совместимы при update.
+Offline mutation path после `WP-044`:
+
+```text
+protect once + allocate client_message_id
+              ↓
+durable encrypted enqueue (до HTTP)
+              ↓
+pending → sending → server exact-idempotent POST → sent
+              ↓                                      ↓
+retryable error + bounded backoff          authoritative local reconcile
+              ↓                                      ↓
+same immutable envelope                    remove queue entry
+```
+
+Permanent 4xx остаётся `failed` до explicit manual retry. Network/408/429/5xx и
+malformed acknowledgement считаются retryable; они не создают новый ID/envelope.
 
 Состояние после `WP-042`: backend имеет отдельный authorized latest/exclusive-before
 history use case и SQL adapter. Page возвращается ascending, `has_more` вычисляется
@@ -919,11 +934,47 @@ page и только если encrypted message archive доступен: cursor
 локально сохранённые envelopes. Повреждение ciphertext/key/schema fail closed и
 переводит startup на network bootstrap.
 
-Это ещё не полный local-first: offline outbox, protocol state, attachment metadata,
-IndexedDB cross-version upgrade compatibility и secure device-to-device history
-transfer остаются в `BL-022`–`BL-024`. Workbox по-прежнему кэширует только executable
-app shell/assets, а обе user-data БД принадлежат application adapters и не попадают в
-Cache Storage Service Worker.
+Message outbox находится за отдельным application port в
+`yv-chat-message-outbox-v1`. Raw record открывает только owner/sender-device/client
+IDs для bounded indexing; immutable envelope и status DTO находятся внутри
+AES-256-GCM ciphertext с random 96-bit IV и AAD
+`schema + owner + sender_device_id + client_message_id`. Per-account key
+non-extractable. Queue ограничена 250 entries на account, codec ограничивает
+record/envelope, проверяет scope/state/date/base64 и fail closed при
+tamper/schema/key mismatch.
+`QueueOutgoingMessage` сначала защищает текст и durable-enqueue-ит exact envelope;
+никакого fallback direct POST при storage/quota failure нет, поэтому composer draft
+не очищается. `DeliverOutboxMessage` durable-переводит запись в `sending` до HTTP,
+проверяет typed receipt на owner/device/conversation/client/protocol binding и только потом
+помечает `sent`. Crash до/после server commit оставляет `sending`/`sent`; следующий
+startup повторяет тот же request, а backend uniqueness
+`(sender_device_id, client_message_id)` возвращает тот же message или 409 при попытке
+изменить immutable envelope.
+
+Current `/api/v1/me` возвращает безопасный `device_id` именно authenticated session.
+Он нужен только как local storage/idempotency scope, не принимается backend от
+клиента при send и не становится authorization factor. Login создаёт новый backend
+device, поэтому outbox adapter читает и изменяет только записи текущей пары
+`(owner_user_id, sender_device_id)`: stale envelope предыдущего login-device не может
+быть повторён под новой uniqueness pair и создать логический duplicate. Старые записи
+не удаляются молча; явный lifecycle/cleanup orphaned device queues остаётся hardening
+item, а общий account limit не даёт им расти без границ.
+
+Для active conversation receipt преобразуется обратно в authoritative
+`OpaqueMessage`, записывается в encrypted history и заменяет optimistic bubble до
+удаления outbox entry. Для неактивного conversation server sync event остаётся
+correctness path. Startup, успешный WebSocket `onOpen`, durable realtime hints и
+30-секундный fallback poll запускают flush. Service Worker Background Sync пока не
+включён: он должен появиться только вместе с проверенной cross-release совместимостью
+IndexedDB и MLS protocol-state transaction. Параллельные вкладки могут сделать
+лишний exact retry, но server duplicate не создаётся; cross-tab lease остаётся
+hardening item.
+
+Это ещё не полный local-first: protocol state, attachment metadata, IndexedDB
+cross-version upgrade compatibility, Background Sync и secure device-to-device
+history transfer остаются в `BL-022`–`BL-025`. Workbox по-прежнему кэширует только
+executable app shell/assets, а user-data БД принадлежат application adapters и не
+попадают в Cache Storage Service Worker.
 
 WebSocket обслуживает foreground realtime и передаёт только wake-up hints. Web Push будит background Service Worker. Sync восстанавливает correctness. Current implementation сохраняет редкий HTTP fallback poll, поэтому недоступный WebSocket ухудшает latency, но не correctness.
 

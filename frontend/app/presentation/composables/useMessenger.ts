@@ -5,7 +5,6 @@ import {
   ConversationHistory,
   type ConversationHistoryWindow,
 } from '../../application/messaging/conversation-history'
-import type { ClientIdGenerator } from '../../application/ports/client-id-generator'
 import type { ListConversationReadStates } from '../../application/messaging/list-conversation-read-states'
 import type { DeleteMessageForEveryone } from '../../application/messaging/delete-message-for-everyone'
 import type { ListParticipantDeliveryStates } from '../../application/messaging/list-participant-delivery-states'
@@ -13,7 +12,6 @@ import type { MarkConversationDelivered } from '../../application/messaging/mark
 import type { MarkConversationRead } from '../../application/messaging/mark-conversation-read'
 import type { ProtocolMessageProtection } from '../../application/messaging/message-protection'
 import type { TimelineMessage } from '../../application/messaging/timeline-message'
-import type { HapticsPort } from '../../application/ports/haptics'
 import type { MessageArchive } from '../../application/ports/message-archive'
 import type {
   MessengerSnapshot,
@@ -26,8 +24,15 @@ import type {
   Conversation,
   ConversationReadState,
   DirectoryUser,
+  OpaqueMessage,
   ParticipantDeliveryState,
+  SendMessageReceipt,
 } from '../../domain/messaging/models'
+import type { OutboxMessage } from '../../domain/messaging/outbox'
+import {
+  useMessageOutbox,
+  type MessageOutboxDependencies,
+} from './useMessageOutbox'
 
 type MessengerPhase = 'loading' | 'ready' | 'offline' | 'error'
 
@@ -44,20 +49,17 @@ interface MessengerState {
   readStates: ConversationReadState[]
   deliveryStates: ParticipantDeliveryState[]
   syncCursor: number
-  sending: boolean
   creating: boolean
   deletingMessageId: string | null
   message: string | null
 }
 
-export interface MessengerDependencies {
+export interface MessengerDependencies extends MessageOutboxDependencies {
   gateway: MessagingGateway
   messageArchive: MessageArchive
   messengerSnapshotStore: MessengerSnapshotStore
   messageProtection: ProtocolMessageProtection
   clock: Clock
-  haptics: HapticsPort
-  clientIdGenerator: ClientIdGenerator
   listConversationReadStates: ListConversationReadStates
   markConversationRead: MarkConversationRead
   listParticipantDeliveryStates: ListParticipantDeliveryStates
@@ -68,6 +70,7 @@ export interface MessengerDependencies {
 
 export function useMessenger(
   actorUserId: string,
+  actorDeviceId: string,
   onUnauthorized: () => void,
   suppliedDependencies?: MessengerDependencies,
 ) {
@@ -80,7 +83,11 @@ export function useMessenger(
       messageProtection: $frontend.messageProtection,
       clock: $frontend.clock,
       haptics: $frontend.haptics,
-      clientIdGenerator: $frontend.clientIdGenerator,
+      listOutboxMessages: $frontend.listOutboxMessages,
+      queueOutgoingMessage: $frontend.queueOutgoingMessage,
+      deliverOutboxMessage: $frontend.deliverOutboxMessage,
+      acknowledgeOutboxMessage: $frontend.acknowledgeOutboxMessage,
+      retryOutboxMessage: $frontend.retryOutboxMessage,
       listConversationReadStates: $frontend.listConversationReadStates,
       markConversationRead: $frontend.markConversationRead,
       listParticipantDeliveryStates: $frontend.listParticipantDeliveryStates,
@@ -95,8 +102,6 @@ export function useMessenger(
     messengerSnapshotStore,
     messageProtection,
     clock,
-    haptics,
-    clientIdGenerator,
     listConversationReadStates,
     markConversationRead,
     listParticipantDeliveryStates,
@@ -117,7 +122,6 @@ export function useMessenger(
     readStates: [],
     deliveryStates: [],
     syncCursor: 0,
-    sending: false,
     creating: false,
     deletingMessageId: null,
     message: null,
@@ -136,6 +140,14 @@ export function useMessenger(
   const activeConversation = computed(() => (
     state.conversations.find(item => item.conversationId === state.activeConversationId) ?? null
   ))
+  const outbox = useMessageOutbox(actorUserId, actorDeviceId, dependencies, {
+    reconcile: reconcileSent,
+    unauthorized: onUnauthorized,
+    failed: fail,
+  })
+  const activeOutgoingMessages = computed(() => outbox.state.messages.filter(message => (
+    message.conversationId === state.activeConversationId
+  )))
 
   function fail(error: unknown): void {
     if (error instanceof ApplicationError && error.status === 401) {
@@ -144,7 +156,9 @@ export function useMessenger(
     }
     state.phase = error instanceof ApplicationError && error.kind === 'network' ? 'offline' : 'error'
     state.message = state.phase === 'offline'
-      ? 'Соединение потеряно. Сообщения на сервер не отправляются.'
+      ? outbox.state.status === 'ready'
+        ? 'Соединение потеряно. Новые сообщения сохраняются в локальной очереди.'
+        : 'Соединение потеряно, локальная очередь отправки недоступна.'
       : 'Не удалось обновить данные мессенджера.'
   }
 
@@ -228,6 +242,30 @@ export function useMessenger(
     state.archiveStatus = history.archiveStatus === 'ready' && snapshotAvailable
       ? 'ready'
       : 'unavailable'
+  }
+
+  async function reconcileSent(
+    message: OutboxMessage,
+    receipt: SendMessageReceipt,
+  ): Promise<void> {
+    if (message.conversationId === state.activeConversationId) {
+      const authoritative: OpaqueMessage = {
+        ...receipt,
+        ciphertextBase64: message.ciphertextBase64,
+        deletionReason: null,
+        deletedAt: null,
+      }
+      const window = await history.acceptAuthoritativeOutgoing(
+        authoritative,
+        state.messages,
+        state.historyHasMore,
+        state.historyHasNewer,
+      )
+      syncArchiveStatus()
+      applyHistoryWindow(window)
+      await advanceDelivery(message.conversationId)
+      await advanceActiveReadIfVisible()
+    }
   }
 
   async function persistSnapshot(): Promise<void> {
@@ -381,6 +419,7 @@ export function useMessenger(
     state.phase = 'loading'
     state.message = null
     try {
+      await outbox.load()
       if (await hydrateSnapshot()) {
         await poll()
         if (
@@ -408,6 +447,7 @@ export function useMessenger(
       state.syncCursor = syncBaseline.streamCursor
       state.phase = 'ready'
       await persistSnapshot()
+      await outbox.flush()
     } catch (error) {
       fail(error)
     }
@@ -472,31 +512,21 @@ export function useMessenger(
     const conversationId = state.activeConversationId
     const normalized = plaintext.trim()
     if (!conversationId || normalized.length === 0 || normalized.length > 4000) return false
-    state.sending = true
     state.message = null
     try {
-      const clientMessageId = clientIdGenerator.create()
-      const protectedMessage = await messageProtection.protectText({
-        conversationId,
-        clientMessageId,
-        plaintext: normalized,
-      })
-      await gateway.sendMessage(
-        conversationId,
-        clientMessageId,
-        protectedMessage.protocolVersion,
-        protectedMessage.ciphertextBase64,
-      )
-      if (state.historyHasNewer) await loadLatestHistory(conversationId)
-      else await loadForwardMessages(conversationId)
-      haptics.perform('sent')
-      state.phase = 'ready'
-      return true
+      return await outbox.enqueue(conversationId, normalized)
     } catch (error) {
       fail(error)
       return false
-    } finally {
-      state.sending = false
+    }
+  }
+
+  async function retryOutgoing(clientMessageId: string): Promise<boolean> {
+    try {
+      return await outbox.retry(clientMessageId)
+    } catch (error) {
+      fail(error)
+      return false
     }
   }
 
@@ -539,6 +569,7 @@ export function useMessenger(
     if (polling || state.phase === 'loading') return
     polling = true
     try {
+      await outbox.flush()
       let pages = 0
       let hasMore = true
       let conversationsChanged = false
@@ -629,7 +660,9 @@ export function useMessenger(
 
   return {
     state: readonly(state),
+    outbox,
     activeConversation,
+    activeOutgoingMessages,
     actorUserId,
     protection: {
       secure: messageProtection.secure,
@@ -641,6 +674,7 @@ export function useMessenger(
     createDirect,
     createGroup,
     send,
+    retryOutgoing,
     deleteMessage,
     loadOlder,
     returnToLatest,

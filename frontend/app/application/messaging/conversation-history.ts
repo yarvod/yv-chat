@@ -148,6 +148,22 @@ export class ConversationHistory {
     return prepareTimelineMessage(tombstone, this.protection)
   }
 
+  async acceptAuthoritativeOutgoing(
+    message: OpaqueMessage,
+    current: readonly TimelineMessage[],
+    hasMore: boolean,
+    hasNewer: boolean,
+  ): Promise<ConversationHistoryWindow> {
+    await this.persist(message.conversationId, [message])
+    if (hasNewer) return { messages: [...current], hasMore, hasNewer }
+    const merged = mergeById(current, [await prepareTimelineMessage(message, this.protection)])
+    return {
+      messages: this.latestWindow(merged),
+      hasMore: hasMore || merged.length > MAX_TIMELINE_MESSAGES,
+      hasNewer: false,
+    }
+  }
+
   async persist(conversationId: string, messages: readonly OpaqueMessage[]): Promise<void> {
     if (!this.archiveAvailable || messages.length === 0) return
     try {

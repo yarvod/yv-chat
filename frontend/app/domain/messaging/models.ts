@@ -38,6 +38,18 @@ export interface OpaqueMessage {
   deletedAt: string | null
 }
 
+export interface SendMessageReceipt {
+  messageId: string
+  clientMessageId: string
+  conversationId: string
+  senderUserId: string
+  senderDeviceId: string
+  protocolVersion: number
+  sequence: number
+  createdAt: string
+  expiresAt: string
+}
+
 export interface MessageHistoryPage {
   messages: readonly OpaqueMessage[]
   hasMore: boolean

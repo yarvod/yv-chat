@@ -8,6 +8,7 @@ import type {
   DirectoryUser,
   MessageHistoryPage,
   OpaqueMessage,
+  SendMessageReceipt,
   MessageDeletionReason,
   SyncEvent,
   SyncEventType,
@@ -90,6 +91,21 @@ export function parseOpaqueMessage(value: unknown): OpaqueMessage {
     ciphertextBase64,
     deletionReason,
     deletedAt,
+  }
+}
+
+export function parseSendMessageReceipt(value: unknown): SendMessageReceipt {
+  const item = record(value)
+  return {
+    messageId: stringField(item, 'message_id'),
+    clientMessageId: stringField(item, 'client_message_id'),
+    conversationId: stringField(item, 'conversation_id'),
+    senderUserId: stringField(item, 'sender_user_id'),
+    senderDeviceId: stringField(item, 'sender_device_id'),
+    protocolVersion: integerField(item, 'protocol_version'),
+    sequence: integerField(item, 'sequence'),
+    createdAt: stringField(item, 'created_at'),
+    expiresAt: stringField(item, 'expires_at'),
   }
 }
 
