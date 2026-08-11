@@ -13,6 +13,10 @@ export interface MessagingGateway {
   listConversations(): Promise<Conversation[]>
   createDirect(otherUserId: string): Promise<Conversation>
   createGroup(title: string, memberUserIds: string[]): Promise<Conversation>
+  renameGroup(conversationId: string, title: string): Promise<Conversation>
+  addGroupMember(conversationId: string, userId: string): Promise<Conversation>
+  removeGroupMember(conversationId: string, userId: string): Promise<Conversation>
+  leaveGroup(conversationId: string): Promise<void>
   listMessages(conversationId: string, afterSequence?: number): Promise<OpaqueMessage[]>
   listMessageHistory(
     conversationId: string,

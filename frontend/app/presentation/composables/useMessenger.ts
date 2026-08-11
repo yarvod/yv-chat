@@ -7,6 +7,10 @@ import {
 } from '../../application/messaging/conversation-history'
 import type { ListConversationReadStates } from '../../application/messaging/list-conversation-read-states'
 import type { DeleteMessageForEveryone } from '../../application/messaging/delete-message-for-everyone'
+import type { AddGroupMember } from '../../application/conversations/add-group-member'
+import type { LeaveGroup } from '../../application/conversations/leave-group'
+import type { RemoveGroupMember } from '../../application/conversations/remove-group-member'
+import type { RenameGroup } from '../../application/conversations/rename-group'
 import type { ListParticipantDeliveryStates } from '../../application/messaging/list-participant-delivery-states'
 import type { MarkConversationDelivered } from '../../application/messaging/mark-conversation-delivered'
 import type { MarkConversationRead } from '../../application/messaging/mark-conversation-read'
@@ -51,6 +55,7 @@ interface MessengerState {
   syncCursor: number
   creating: boolean
   deletingMessageId: string | null
+  groupMutating: boolean
   message: string | null
 }
 
@@ -65,6 +70,10 @@ export interface MessengerDependencies extends MessageOutboxDependencies {
   listParticipantDeliveryStates: ListParticipantDeliveryStates
   markConversationDelivered: MarkConversationDelivered
   deleteMessageForEveryone: DeleteMessageForEveryone
+  addGroupMember: AddGroupMember
+  removeGroupMember: RemoveGroupMember
+  renameGroup: RenameGroup
+  leaveGroup: LeaveGroup
   pageVisibility: PageVisibility
 }
 
@@ -93,6 +102,10 @@ export function useMessenger(
       listParticipantDeliveryStates: $frontend.listParticipantDeliveryStates,
       markConversationDelivered: $frontend.markConversationDelivered,
       deleteMessageForEveryone: $frontend.deleteMessageForEveryone,
+      addGroupMember: $frontend.addGroupMember,
+      removeGroupMember: $frontend.removeGroupMember,
+      renameGroup: $frontend.renameGroup,
+      leaveGroup: $frontend.leaveGroup,
       pageVisibility: $frontend.pageVisibility,
     }
   })()
@@ -107,6 +120,10 @@ export function useMessenger(
     listParticipantDeliveryStates,
     markConversationDelivered,
     deleteMessageForEveryone,
+    addGroupMember,
+    removeGroupMember,
+    renameGroup,
+    leaveGroup,
     pageVisibility,
   } = dependencies
   const state = reactive<MessengerState>({
@@ -124,6 +141,7 @@ export function useMessenger(
     syncCursor: 0,
     creating: false,
     deletingMessageId: null,
+    groupMutating: false,
     message: null,
   })
   const history = new ConversationHistory(
@@ -508,6 +526,63 @@ export function useMessenger(
     }
   }
 
+  async function mutateGroup(operation: () => Promise<Conversation>): Promise<boolean> {
+    if (state.groupMutating) return false
+    state.groupMutating = true
+    state.message = null
+    try {
+      const conversation = await operation()
+      state.conversations = state.conversations.map(item => (
+        item.conversationId === conversation.conversationId ? conversation : item
+      ))
+      await persistSnapshot()
+      state.phase = 'ready'
+      return true
+    } catch (error) {
+      fail(error)
+      return false
+    } finally {
+      state.groupMutating = false
+    }
+  }
+
+  function renameActiveGroup(title: string): Promise<boolean> {
+    const conversationId = state.activeConversationId
+    if (!conversationId) return Promise.resolve(false)
+    return mutateGroup(() => renameGroup.execute(conversationId, title))
+  }
+
+  function addActiveGroupMember(userId: string): Promise<boolean> {
+    const conversationId = state.activeConversationId
+    if (!conversationId) return Promise.resolve(false)
+    return mutateGroup(() => addGroupMember.execute(conversationId, userId))
+  }
+
+  function removeActiveGroupMember(userId: string): Promise<boolean> {
+    const conversationId = state.activeConversationId
+    if (!conversationId) return Promise.resolve(false)
+    return mutateGroup(() => removeGroupMember.execute(conversationId, userId))
+  }
+
+  async function leaveActiveGroup(): Promise<boolean> {
+    const conversationId = state.activeConversationId
+    if (!conversationId || state.groupMutating) return false
+    state.groupMutating = true
+    state.message = null
+    try {
+      await leaveGroup.execute(conversationId)
+      await reloadConversations()
+      await persistSnapshot()
+      state.phase = 'ready'
+      return true
+    } catch (error) {
+      fail(error)
+      return false
+    } finally {
+      state.groupMutating = false
+    }
+  }
+
   async function send(plaintext: string): Promise<boolean> {
     const conversationId = state.activeConversationId
     const normalized = plaintext.trim()
@@ -673,6 +748,10 @@ export function useMessenger(
     selectConversation,
     createDirect,
     createGroup,
+    renameActiveGroup,
+    addActiveGroupMember,
+    removeActiveGroupMember,
+    leaveActiveGroup,
     send,
     retryOutgoing,
     deleteMessage,

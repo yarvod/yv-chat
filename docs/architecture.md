@@ -232,6 +232,7 @@ app/
 ├── application/
 │   ├── auth/              # operations + app state
 │   ├── accounts/          # admin/profile operations
+│   ├── conversations/     # focused group/member operations
 │   ├── messaging/         # sync/send orchestration
 │   └── ports/             # http-agnostic browser/storage/capability contracts
 ├── infrastructure/
@@ -287,6 +288,14 @@ presence metadata и compact grouped bubbles являются presentation де�
 добавляют network state или crypto logic в Vue components. Physical acceptance для
 `WP-041` проверяет desktop `1440×900`, mobile `390×844`, keyboard-sized `390×500`,
 long sidebar/timeline и неизменные координаты header/composer после internal scroll.
+
+Group info открывается отдельной responsive panel, а не разрастается внутри
+`MessagePanel`: desktop использует bounded side sheet, mobile — `100dvh` surface с
+safe-area и собственным scroll. Panel получает intent callbacks rename/add/remove/
+leave, а реализации находятся в `application/conversations` и вызывают typed
+`MessagingGateway`. После successful mutation `useMessenger` заменяет authoritative
+conversation DTO и сохраняет encrypted snapshot; другой device сходится через
+durable `conversation_updated` + cursor catch-up.
 
 Transport flow разделён явно:
 
@@ -468,11 +477,11 @@ User ──< Device ──< Session
                                            └──< SyncEvent/Tombstone
 ```
 
-Conversation имеет type `direct|group`, creator и membership lifecycle. Реализованный aggregate не зависит от FastAPI/SQLAlchemy и валидирует timezone-aware timestamps, уникальность members, direct shape и ровно одного active creator-owner группы. Membership не удаляется при выходе: фиксируется `left_at`, чтобы последующие sync/audit операции могли отличить бывшего участника от никогда не состоявшего.
+Conversation имеет type `direct|group`, creator и membership lifecycle. Реализованный aggregate не зависит от FastAPI/SQLAlchemy и валидирует timezone-aware timestamps, уникальность members, direct shape, bounded/normalized group title, максимум 50 active members и ровно одного active creator-owner группы. Membership не удаляется при выходе: фиксируется `left_at`, чтобы последующие sync/audit операции могли отличить бывшего участника от никогда не состоявшего. Повторное добавление реактивирует ту же запись с новым `joined_at`, ролью `member` и `left_at = null`; active duplicate остаётся конфликтом.
 
 Persistence хранит unordered direct pair в канонических `direct_user_low_id`/`direct_user_high_id`; unique index `uq_conversations_direct_pair` закрывает race двух одновременных create. `conversation_members` имеет составной primary key `(conversation_id, user_id)`, bounded role и `left_at >= joined_at`. Удаление conversation каскадирует membership, а ссылки на users используют `RESTRICT`. Repository возвращает domain aggregate с явно загруженными members; ORM наружу infrastructure не выходит.
 
-Versioned `/api/v1/conversations` transport получает actor только из opaque-session principal. List/get возвращают DTO с безопасными user profile fields и membership metadata; ORM не выходит из infrastructure. Unknown UUID, inactive membership и removed member дают одинаковый not-found outcome. Direct membership immutable. В группе owner управляет member↔admin и любыми non-owner memberships; admin может добавлять и удалять только ordinary members, но не менять роли. Owner не может выйти или быть удалён без отдельного ownership-transfer дизайна. Все writes используют row lock, одну transaction и Origin+CSRF.
+Versioned `/api/v1/conversations` transport получает actor только из opaque-session principal. List/get возвращают DTO с безопасными user profile fields и membership metadata; ORM не выходит из infrastructure. Unknown UUID, inactive membership и removed member дают одинаковый not-found outcome. Direct membership/title immutable. В группе owner/admin может переименовать conversation и добавлять active accounts; owner управляет member↔admin и любыми non-owner memberships, admin удаляет только ordinary members и не меняет роли. Owner не может выйти или быть удалён без отдельного ownership-transfer дизайна. Все writes используют row lock, одну transaction и Origin+CSRF; title/add/remove/leave публикуют recipient-specific `conversation_updated`, причём remove/leave включает бывшего участника для удаления доступа через catch-up.
 
 List загружает members через SQLAlchemy `selectinload` и все referenced users одним bulk lookup, не выполняя user query на каждую conversation. Client-supplied `user_id`, role, device, conversation или resource ID никогда не считается доказательством доступа.
 

@@ -12,6 +12,7 @@ from messenger.application.conversations.get_conversation import GetConversation
 from messenger.application.conversations.leave_conversation import LeaveConversation
 from messenger.application.conversations.list_conversations import ListConversations
 from messenger.application.conversations.remove_member import RemoveConversationMember
+from messenger.application.conversations.rename_group import RenameGroupConversation
 
 
 class ConversationUseCaseProvider(Provider):
@@ -23,6 +24,7 @@ class ConversationUseCaseProvider(Provider):
     get_conversation = provide(GetConversation, scope=Scope.REQUEST)
     add_conversation_member = provide(AddConversationMember, scope=Scope.REQUEST)
     remove_conversation_member = provide(RemoveConversationMember, scope=Scope.REQUEST)
+    rename_group_conversation = provide(RenameGroupConversation, scope=Scope.REQUEST)
     leave_conversation = provide(LeaveConversation, scope=Scope.REQUEST)
     change_conversation_member_role = provide(
         ChangeConversationMemberRole,

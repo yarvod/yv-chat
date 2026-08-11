@@ -46,7 +46,7 @@ const props = withDefaults(defineProps<{
   loadOlder: async () => undefined,
   returnToLatest: async () => undefined,
 })
-const emit = defineEmits<{ back: [] }>()
+const emit = defineEmits<{ back: []; groupDetails: [] }>()
 
 const draft = ref('')
 const deleteCandidateId = ref<string | null>(null)
@@ -79,7 +79,7 @@ const presenceLabel = computed(() => {
   }
   return props.onlineActorIds.length > 0
     ? `${props.onlineActorIds.length} в сети`
-    : `${props.conversation.members.length} участников`
+    : `${props.conversation.members.filter(member => member.leftAt === null).length} участников`
 })
 
 const connectionLabel = computed(() => ({
@@ -283,6 +283,15 @@ onBeforeUnmount(() => {
         :title="connectionLabel"
         :aria-label="connectionLabel"
       />
+      <button
+        v-if="conversation.conversationType === 'group'"
+        class="group-info-button"
+        type="button"
+        aria-label="Информация о группе"
+        @click="emit('groupDetails')"
+      >
+        <AppIcon name="users" />
+      </button>
     </header>
 
     <div v-if="!protectionSecure || archiveStatus === 'unavailable' || outboxStatus === 'unavailable'" class="timeline-notices">

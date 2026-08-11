@@ -8,6 +8,37 @@ import { parseCurrentAccount } from '../app/infrastructure/http/runtime-parsers'
 afterEach(() => vi.restoreAllMocks())
 
 describe('api boundary', () => {
+  it('sends group management mutations through encoded CSRF-protected routes', async () => {
+    vi.spyOn(document, 'cookie', 'get').mockReturnValue('__Host-yv_csrf=csrf-test')
+    const response = {
+      conversation_id: '11111111-1111-4111-8111-111111111111',
+      conversation_type: 'group',
+      title: 'Core team',
+      created_by: '22222222-2222-4222-8222-222222222222',
+      created_at: '2026-08-11T12:00:00Z',
+      updated_at: '2026-08-11T12:01:00Z',
+      members: [],
+    }
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(
+      JSON.stringify(response),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    ))
+    const gateway = new HttpMessagingGateway(new ApiClient())
+
+    await gateway.renameGroup('conversation/1', 'Core team')
+    await gateway.addGroupMember('conversation/1', 'user/2')
+    await gateway.removeGroupMember('conversation/1', 'user/2')
+
+    expect(fetchMock.mock.calls.map(([path, init]) => [path, init?.method])).toEqual([
+      ['/api/v1/conversations/conversation%2F1', 'PATCH'],
+      ['/api/v1/conversations/conversation%2F1/members', 'POST'],
+      ['/api/v1/conversations/conversation%2F1/members/user%2F2', 'DELETE'],
+    ])
+    for (const [, init] of fetchMock.mock.calls) {
+      expect(new Headers(init?.headers).get('X-CSRF-Token')).toBe('csrf-test')
+    }
+  })
+
   it('uses same-origin cookies and a CSRF header for writes', async () => {
     vi.spyOn(document, 'cookie', 'get').mockReturnValue('__Host-yv_csrf=csrf-test')
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(

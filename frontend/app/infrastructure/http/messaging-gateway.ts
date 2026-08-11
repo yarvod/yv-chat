@@ -44,6 +44,35 @@ export class HttpMessagingGateway implements MessagingGateway {
     }))
   }
 
+  async renameGroup(conversationId: string, title: string): Promise<Conversation> {
+    return parseConversation(await this.apiClient.request(
+      `/api/v1/conversations/${encodeURIComponent(conversationId)}`,
+      { method: 'PATCH', body: { title } },
+    ))
+  }
+
+  async addGroupMember(conversationId: string, userId: string): Promise<Conversation> {
+    return parseConversation(await this.apiClient.request(
+      `/api/v1/conversations/${encodeURIComponent(conversationId)}/members`,
+      { method: 'POST', body: { user_id: userId } },
+    ))
+  }
+
+  async removeGroupMember(conversationId: string, userId: string): Promise<Conversation> {
+    return parseConversation(await this.apiClient.request(
+      `/api/v1/conversations/${encodeURIComponent(conversationId)}`
+      + `/members/${encodeURIComponent(userId)}`,
+      { method: 'DELETE' },
+    ))
+  }
+
+  async leaveGroup(conversationId: string): Promise<void> {
+    await this.apiClient.request(
+      `/api/v1/conversations/${encodeURIComponent(conversationId)}/leave`,
+      { method: 'POST' },
+    )
+  }
+
   async listMessages(conversationId: string, afterSequence = 0): Promise<OpaqueMessage[]> {
     const query = new URLSearchParams({ after_sequence: String(afterSequence), limit: '100' })
     return parseMessages(await this.apiClient.request(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages?${query}`))

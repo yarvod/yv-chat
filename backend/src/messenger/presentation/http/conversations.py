@@ -40,6 +40,10 @@ from messenger.application.conversations.remove_member import (
     RemoveConversationMember,
     RemoveConversationMemberCommand,
 )
+from messenger.application.conversations.rename_group import (
+    RenameGroupConversation,
+    RenameGroupConversationCommand,
+)
 from messenger.application.errors import (
     AuthorizationDeniedError,
     ConversationMembershipConflictError,
@@ -87,7 +91,11 @@ class CreateDirectConversationRequest(BaseModel):
 
 class CreateGroupConversationRequest(BaseModel):
     title: str = Field(min_length=1, max_length=100)
-    member_user_ids: list[UUID] = Field(default_factory=list, max_length=50)
+    member_user_ids: list[UUID] = Field(default_factory=list, max_length=49)
+
+
+class RenameGroupConversationRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=100)
 
 
 class AddConversationMemberRequest(BaseModel):
@@ -209,6 +217,31 @@ async def create_group_conversation(
                 principal.user_id,
                 payload.title,
                 tuple(payload.member_user_ids),
+            )
+        )
+    except CONVERSATION_ERRORS as error:
+        raise translate_conversation_error(error) from error
+    return response_from(result)
+
+
+@router.patch("/{conversation_id}", response_model=ConversationResponse)
+async def rename_group_conversation(
+    conversation_id: UUID,
+    payload: RenameGroupConversationRequest,
+    request: Request,
+    response: Response,
+    settings: FromDishka[AppSettings],
+    authenticate_session: FromDishka[AuthenticateSession],
+    use_case: FromDishka[RenameGroupConversation],
+) -> ConversationResponse:
+    require_csrf(request, settings)
+    principal = await authenticate_request(request, response, settings, authenticate_session)
+    try:
+        result = await use_case.execute(
+            RenameGroupConversationCommand(
+                actor_user_id=principal.user_id,
+                conversation_id=conversation_id,
+                title=payload.title,
             )
         )
     except CONVERSATION_ERRORS as error:

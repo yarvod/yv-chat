@@ -178,5 +178,6 @@ class SqlAlchemyConversationRepository:
                 )
             else:
                 stored.role = member.role.value
+                stored.joined_at = member.joined_at
                 stored.left_at = member.left_at
         await self._session.flush()

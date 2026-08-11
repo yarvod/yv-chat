@@ -23,6 +23,7 @@ from messenger.application.conversations.get_conversation import GetConversation
 from messenger.application.conversations.leave_conversation import LeaveConversation
 from messenger.application.conversations.list_conversations import ListConversations
 from messenger.application.conversations.remove_member import RemoveConversationMember
+from messenger.application.conversations.rename_group import RenameGroupConversation
 from messenger.application.devices.list_security_events import ListSecurityEvents
 from messenger.application.devices.list_sessions import ListMySessions
 from messenger.application.devices.rename import RenameMyDevice
@@ -70,6 +71,7 @@ async def test_production_graph_resolves_every_application_operation() -> None:
         GetConversation,
         AddConversationMember,
         RemoveConversationMember,
+        RenameGroupConversation,
         LeaveConversation,
         ChangeConversationMemberRole,
         SendOpaqueMessage,

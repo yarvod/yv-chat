@@ -23,6 +23,9 @@ class ConversationMemberRole(StrEnum):
     MEMBER = "member"
 
 
+MAX_GROUP_ACTIVE_MEMBERS = 50
+
+
 @dataclass(frozen=True, slots=True)
 class ConversationMember:
     conversation_id: UUID
@@ -54,6 +57,19 @@ class ConversationMember:
         if not self.is_active:
             raise DomainValidationError("inactive member role cannot be changed")
         return replace(self, role=role)
+
+    def rejoin(self, now: datetime) -> "ConversationMember":
+        timestamp = require_aware_datetime(now, "now")
+        if self.is_active:
+            raise DomainValidationError("conversation member is already active")
+        if self.left_at is not None and timestamp < self.left_at:
+            raise DomainValidationError("joined_at must not be before previous left_at")
+        return replace(
+            self,
+            role=ConversationMemberRole.MEMBER,
+            joined_at=timestamp,
+            left_at=None,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,6 +121,8 @@ class Conversation:
             ]
             if len(owners) != 1 or owners[0].user_id != self.created_by:
                 raise DomainValidationError("group creator must be the single active owner")
+            if sum(member.is_active for member in self.members) > MAX_GROUP_ACTIVE_MEMBERS:
+                raise DomainValidationError("group active member limit exceeded")
 
     @classmethod
     def create_direct(
@@ -173,9 +191,25 @@ class Conversation:
     def add_member(self, user_id: UUID, now: datetime) -> "Conversation":
         if self.conversation_type is not ConversationType.GROUP:
             raise DomainValidationError("members cannot be added to direct conversation")
-        if any(member.user_id == user_id for member in self.members):
-            raise DomainValidationError("conversation member already exists")
         timestamp = require_aware_datetime(now, "now")
+        if timestamp < self.updated_at:
+            raise DomainValidationError("updated_at cannot move backwards")
+        existing = next((member for member in self.members if member.user_id == user_id), None)
+        if existing is not None:
+            if existing.is_active:
+                raise DomainValidationError("conversation member already exists and is active")
+            if sum(member.is_active for member in self.members) >= MAX_GROUP_ACTIVE_MEMBERS:
+                raise DomainValidationError("group active member limit exceeded")
+            return replace(
+                self,
+                members=tuple(
+                    item.rejoin(timestamp) if item.user_id == user_id else item
+                    for item in self.members
+                ),
+                updated_at=timestamp,
+            )
+        if sum(member.is_active for member in self.members) >= MAX_GROUP_ACTIVE_MEMBERS:
+            raise DomainValidationError("group active member limit exceeded")
         member = ConversationMember(
             conversation_id=self.id,
             user_id=user_id,
@@ -183,6 +217,19 @@ class Conversation:
             joined_at=timestamp,
         )
         return replace(self, members=(*self.members, member), updated_at=timestamp)
+
+    def rename(self, title: str, now: datetime) -> "Conversation":
+        if self.conversation_type is not ConversationType.GROUP:
+            raise DomainValidationError("direct conversation cannot be renamed")
+        timestamp = require_aware_datetime(now, "now")
+        if timestamp < self.updated_at:
+            raise DomainValidationError("updated_at cannot move backwards")
+        normalized_title = normalize_bounded_text(
+            title,
+            field_name="title",
+            maximum_length=100,
+        )
+        return replace(self, title=normalized_title, updated_at=timestamp)
 
     def remove_member(self, user_id: UUID, now: datetime) -> "Conversation":
         if self.conversation_type is not ConversationType.GROUP:

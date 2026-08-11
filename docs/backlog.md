@@ -99,6 +99,22 @@ Telegram/WhatsApp без копирования их бренда.
 
 ## Messaging foundation
 
+### BL-042 — Управление группой и составом участников
+
+Статус: **in progress** (`WP-046`).
+
+Результат: owner/admin управляет названием и активным составом группы через
+responsive group-info UI, а backend остаётся единственной границей авторизации.
+
+- rename title отдельным use case и versioned endpoint;
+- add/remove/re-add участника с single-membership lifecycle;
+- максимум 50 активных участников вместе с owner;
+- role-aware UI без обещания передачи ownership;
+- atomic `conversation_updated` для старых и новых recipients;
+- immediate local encrypted snapshot update и multi-device catch-up;
+- negative authorization, concurrency, persistence и frontend interaction tests;
+- явная интеграционная граница для MLS Commit/Welcome без фиктивной key rotation.
+
 ### BL-009 — Receipts, unread state, typing и presence
 
 Статус: **implementation complete; verification pending** (`WP-024` завершил shared read cursor/unread slice;
@@ -213,6 +229,23 @@ versioned package и isolated Worker runtime; `WP-040` — server one-time deliv
 - authorization через conversation membership;
 - configurable limits для image/file/video/voice;
 - server не делает preview/transcoding и не получает keys/plaintext.
+
+### BL-043 — Telegram-like photo/file experience поверх encrypted attachments
+
+Статус: **planned** (после `WP-046`, объединяет product UX с `BL-016`/`BL-017`).
+
+Результат: пользователь удобно отправляет изображения и произвольные файлы, но
+backend видит только opaque encrypted bytes и bounded routing metadata.
+
+- attachment button, picker и drag/drop/paste там, где это поддерживает platform;
+- image preview генерируется локально до encryption, файл показывает имя/type/size;
+- upload progress, cancel/retry и offline-safe draft/outbox lifecycle;
+- bubble/gallery UX с tap-to-view/download и понятным unavailable/expired state;
+- client-side authenticated encryption metadata интегрирована с выбранным MLS
+  message protection, без server-side plaintext thumbnail/transcoding;
+- streaming/chunked upload/download, quotas, opaque storage keys и membership auth;
+- encrypted bounded OPFS/IndexedDB cache и explicit eviction policy;
+- mobile camera/photo-library/file chooser, desktop keyboard/accessibility tests.
 
 ### BL-018 — Server TTL cleanup и tombstone retention
 

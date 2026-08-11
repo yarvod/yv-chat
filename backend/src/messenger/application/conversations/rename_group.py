@@ -1,4 +1,4 @@
-"""Add one active account to a managed group."""
+"""Rename a managed group conversation."""
 
 from dataclasses import dataclass
 from uuid import UUID
@@ -12,10 +12,6 @@ from messenger.application.conversations.dto import (
     ConversationResult,
     build_conversation_result,
 )
-from messenger.application.errors import (
-    ConversationMembershipConflictError,
-    ConversationParticipantNotFoundError,
-)
 from messenger.application.ports.clock import Clock
 from messenger.application.ports.conversations import ConversationUnitOfWorkFactory
 from messenger.application.ports.realtime import RealtimeNotifier
@@ -26,13 +22,13 @@ from messenger.application.sync.emission import events_for_users
 
 
 @dataclass(frozen=True, slots=True)
-class AddConversationMemberCommand:
+class RenameGroupConversationCommand:
     actor_user_id: UUID
     conversation_id: UUID
-    target_user_id: UUID
+    title: str
 
 
-class AddConversationMember:
+class RenameGroupConversation:
     def __init__(
         self,
         *,
@@ -46,7 +42,10 @@ class AddConversationMember:
         self._sync_policy = sync_policy
         self._realtime_notifier = realtime_notifier
 
-    async def execute(self, command: AddConversationMemberCommand) -> ConversationResult:
+    async def execute(
+        self,
+        command: RenameGroupConversationCommand,
+    ) -> ConversationResult:
         async with self._unit_of_work() as unit_of_work:
             await require_active_actor(unit_of_work.users, command.actor_user_id)
             conversation, actor = require_active_membership(
@@ -57,13 +56,8 @@ class AddConversationMember:
                 command.actor_user_id,
             )
             require_group_manager(conversation, actor)
-            target = await unit_of_work.users.get_by_id(command.target_user_id)
-            if target is None or not target.is_active:
-                raise ConversationParticipantNotFoundError("participant not found")
-            if conversation.active_member(command.target_user_id) is not None:
-                raise ConversationMembershipConflictError("participant already has membership")
             now = self._clock.now()
-            updated = conversation.add_member(command.target_user_id, now)
+            updated = conversation.rename(command.title, now)
             await unit_of_work.conversations.update(updated)
             sync_events = events_for_users(
                 {member.user_id for member in updated.members if member.is_active},

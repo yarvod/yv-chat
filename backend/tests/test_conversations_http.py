@@ -103,6 +103,20 @@ async def test_conversation_membership_http_flow_and_negative_authorization() ->
             json={"user_id": str(charlie.id)},
         )
         assert ordinary_member_add.status_code == 403
+        ordinary_member_rename = await bob_client.patch(
+            f"/api/v1/conversations/{group_id}",
+            headers=bob_headers,
+            json={"title": "Denied"},
+        )
+        assert ordinary_member_rename.status_code == 403
+
+        renamed = await alice_client.patch(
+            f"/api/v1/conversations/{group_id}",
+            headers=alice_headers,
+            json={"title": "  Core team  "},
+        )
+        assert renamed.status_code == 200
+        assert renamed.json()["title"] == "Core team"
 
         promoted = await alice_client.patch(
             f"/api/v1/conversations/{group_id}/members/{bob.id}",
@@ -130,6 +144,18 @@ async def test_conversation_membership_http_flow_and_negative_authorization() ->
         )
         assert left.status_code == 204
         assert (await charlie_client.get(f"/api/v1/conversations/{group_id}")).status_code == 404
+
+        readded = await alice_client.post(
+            f"/api/v1/conversations/{group_id}/members",
+            headers=alice_headers,
+            json={"user_id": str(charlie.id)},
+        )
+        assert readded.status_code == 200
+        charlie_memberships = [
+            member for member in readded.json()["members"] if member["user_id"] == str(charlie.id)
+        ]
+        assert len(charlie_memberships) == 1
+        assert charlie_memberships[0]["left_at"] is None
 
         alice_list = await alice_client.get("/api/v1/conversations")
         bob_list = await bob_client.get("/api/v1/conversations")

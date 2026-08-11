@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApplicationError } from '../app/application/errors'
+import { AddGroupMember } from '../app/application/conversations/add-group-member'
+import { LeaveGroup } from '../app/application/conversations/leave-group'
+import { RemoveGroupMember } from '../app/application/conversations/remove-group-member'
+import { RenameGroup } from '../app/application/conversations/rename-group'
 import type { MessagingGateway } from '../app/application/ports/messaging-gateway'
 import type { MessageArchive } from '../app/application/ports/message-archive'
 import type { MessengerSnapshotStore } from '../app/application/ports/messenger-snapshot-store'
@@ -101,6 +105,10 @@ function messengerDependencies() {
     listParticipantDeliveryStates: new ListParticipantDeliveryStates(deliveryStateGateway),
     markConversationDelivered: new MarkConversationDelivered(deliveryStateGateway),
     deleteMessageForEveryone: new DeleteMessageForEveryone(gateway),
+    addGroupMember: new AddGroupMember(gateway),
+    removeGroupMember: new RemoveGroupMember(gateway),
+    renameGroup: new RenameGroup(gateway),
+    leaveGroup: new LeaveGroup(gateway),
     pageVisibility,
   }
 }
@@ -174,6 +182,10 @@ beforeEach(() => {
     listConversations: vi.fn().mockResolvedValue([conversation]),
     createDirect: vi.fn(),
     createGroup: vi.fn(),
+    renameGroup: vi.fn(),
+    addGroupMember: vi.fn(),
+    removeGroupMember: vi.fn(),
+    leaveGroup: vi.fn(),
     listMessages: vi.fn()
       .mockResolvedValueOnce([message])
       .mockResolvedValue([]),
@@ -218,6 +230,30 @@ beforeEach(() => {
 })
 
 describe('messenger orchestration', () => {
+  it('applies a group mutation immediately and persists the encrypted snapshot', async () => {
+    const group = {
+      ...conversation,
+      conversationType: 'group' as const,
+      title: 'Old title',
+      members: [{
+        userId: 'alice-id', username: 'alice', displayName: 'Alice',
+        role: 'owner' as const, joinedAt: conversation.createdAt, leftAt: null,
+      }],
+    }
+    const renamed = { ...group, title: 'New title', updatedAt: '2026-08-11T12:01:00Z' }
+    vi.mocked(gateway.listConversations).mockResolvedValue([group])
+    vi.mocked(gateway.renameGroup).mockResolvedValue(renamed)
+    const messenger = useMessenger('alice-id', 'device-alice', vi.fn(), messengerDependencies())
+    await messenger.load()
+
+    expect(await messenger.renameActiveGroup(' New title ')).toBe(true)
+    expect(gateway.renameGroup).toHaveBeenCalledWith('conversation-1', 'New title')
+    expect(messenger.activeConversation.value?.title).toBe('New title')
+    expect(messengerSnapshotStore.save).toHaveBeenCalledWith(expect.objectContaining({
+      conversations: [renamed],
+    }))
+  })
+
   it('never bypasses durable enqueue when local storage is full', async () => {
     vi.mocked(gateway.listSync).mockReset().mockResolvedValue({
       events: [], nextCursor: 0, streamCursor: 0, hasMore: false, resetRequired: false,

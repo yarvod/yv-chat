@@ -9,6 +9,7 @@ import type { RealtimeConnectionState } from '../../application/messaging/realti
 import { selectedConversationId } from '../../presentation/chat/conversation-route'
 import ConversationSidebar from './ConversationSidebar.vue'
 import MessagePanel from './MessagePanel.vue'
+import GroupDetailsPanel from './GroupDetailsPanel.vue'
 
 const props = defineProps<{ user: CurrentAccount }>()
 const emit = defineEmits<{ sessionExpired: [] }>()
@@ -25,6 +26,7 @@ const presence = $frontend.createPresenceIndicators()
 const typingIndicators = ref<readonly TypingIndicator[]>([])
 const presenceIndicators = ref<readonly PresenceIndicator[]>([])
 const connectionState = ref<RealtimeConnectionState>('connecting')
+const groupDetailsOpen = ref(false)
 const mobilePane = computed<'list' | 'conversation'>(() => (
   selectedConversationId(route.query.conversation) ? 'conversation' : 'list'
 ))
@@ -41,11 +43,18 @@ const activeOnlineActorIds = computed(() => presenceIndicators.value
 const workspaceNotice = computed(() => messenger.state.message ?? messenger.outbox.state.notice)
 
 async function selectConversation(conversationId: string): Promise<void> {
+  groupDetailsOpen.value = false
   await messenger.selectConversation(conversationId)
   await navigateTo(
     { path: '/chat', query: { conversation: conversationId } },
     { replace: selectedConversationId(route.query.conversation) !== null },
   )
+}
+
+async function leaveGroup(): Promise<boolean> {
+  const left = await messenger.leaveActiveGroup()
+  if (left) await navigateTo('/chat', { replace: true })
+  return left
 }
 
 async function createDirect(userId: string): Promise<void> {
@@ -162,6 +171,20 @@ onBeforeUnmount(() => {
         :connection-state="connectionState"
         :set-typing="typing.setLocal.bind(typing)"
         @back="closeConversation"
+        @group-details="groupDetailsOpen = true"
+      />
+      <GroupDetailsPanel
+        v-if="groupDetailsOpen && messenger.activeConversation.value?.conversationType === 'group'"
+        :conversation="messenger.activeConversation.value"
+        :directory="messenger.state.directory"
+        :actor-user-id="user.userId"
+        :busy="messenger.state.groupMutating"
+        :notice="workspaceNotice"
+        :rename-group="messenger.renameActiveGroup"
+        :add-member="messenger.addActiveGroupMember"
+        :remove-member="messenger.removeActiveGroupMember"
+        :leave-group="leaveGroup"
+        @close="groupDetailsOpen = false"
       />
     </div>
   </section>

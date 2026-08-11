@@ -24,6 +24,10 @@ from messenger.application.conversations.leave_conversation import (
     LeaveConversation,
     LeaveConversationCommand,
 )
+from messenger.application.conversations.remove_member import (
+    RemoveConversationMember,
+    RemoveConversationMemberCommand,
+)
 from messenger.application.errors import (
     AuthorizationDeniedError,
     ConversationNotFoundError,
@@ -171,9 +175,27 @@ async def run_flow(database_url: str) -> None:
             sync_policy=SyncPolicy(),
             realtime_notifier=RecordingRealtimeNotifier(),
         ).execute(AddConversationMemberCommand(alice.id, group.id, charlie.id))
-        await ChangeConversationMemberRole(
+
+        await RemoveConversationMember(
             unit_of_work=unit_of_work_factory,
             clock=FixedClock(NOW + timedelta(minutes=5)),
+            sync_policy=SyncPolicy(),
+            realtime_notifier=RecordingRealtimeNotifier(),
+        ).execute(RemoveConversationMemberCommand(alice.id, group.id, charlie.id))
+        rejoined = await AddConversationMember(
+            unit_of_work=unit_of_work_factory,
+            clock=FixedClock(NOW + timedelta(minutes=6)),
+            sync_policy=SyncPolicy(),
+            realtime_notifier=RecordingRealtimeNotifier(),
+        ).execute(AddConversationMemberCommand(alice.id, group.id, charlie.id))
+        charlie_memberships = [
+            member for member in rejoined.members if member.user_id == charlie.id
+        ]
+        assert len(charlie_memberships) == 1
+        assert charlie_memberships[0].left_at is None
+        await ChangeConversationMemberRole(
+            unit_of_work=unit_of_work_factory,
+            clock=FixedClock(NOW + timedelta(minutes=7)),
             sync_policy=SyncPolicy(),
             realtime_notifier=RecordingRealtimeNotifier(),
         ).execute(
@@ -187,7 +209,7 @@ async def run_flow(database_url: str) -> None:
         with pytest.raises(AuthorizationDeniedError):
             await ChangeConversationMemberRole(
                 unit_of_work=unit_of_work_factory,
-                clock=FixedClock(NOW + timedelta(minutes=6)),
+                clock=FixedClock(NOW + timedelta(minutes=8)),
                 sync_policy=SyncPolicy(),
                 realtime_notifier=RecordingRealtimeNotifier(),
             ).execute(
@@ -200,7 +222,7 @@ async def run_flow(database_url: str) -> None:
             )
         await LeaveConversation(
             unit_of_work=unit_of_work_factory,
-            clock=FixedClock(NOW + timedelta(minutes=7)),
+            clock=FixedClock(NOW + timedelta(minutes=9)),
             sync_policy=SyncPolicy(),
             realtime_notifier=RecordingRealtimeNotifier(),
         ).execute(LeaveConversationCommand(charlie.id, group.id))

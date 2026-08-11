@@ -19,6 +19,10 @@ import { SecurityReset } from '../application/accounts/security-reset'
 import { SetManagedUserActive } from '../application/accounts/set-user-active'
 import { UpdateProfile } from '../application/accounts/update-profile'
 import { DeleteMessageForEveryone } from '../application/messaging/delete-message-for-everyone'
+import { AddGroupMember } from '../application/conversations/add-group-member'
+import { LeaveGroup } from '../application/conversations/leave-group'
+import { RemoveGroupMember } from '../application/conversations/remove-group-member'
+import { RenameGroup } from '../application/conversations/rename-group'
 import { AcknowledgeOutboxMessage } from '../application/messaging/acknowledge-outbox-message'
 import { DeliverOutboxMessage } from '../application/messaging/deliver-outbox-message'
 import { ListOutboxMessages } from '../application/messaging/list-outbox-messages'
@@ -100,6 +104,10 @@ export default defineNuxtPlugin(() => {
       frontend: {
         messagingGateway,
         deleteMessageForEveryone: new DeleteMessageForEveryone(messagingGateway),
+        addGroupMember: new AddGroupMember(messagingGateway),
+        removeGroupMember: new RemoveGroupMember(messagingGateway),
+        renameGroup: new RenameGroup(messagingGateway),
+        leaveGroup: new LeaveGroup(messagingGateway),
         listConversationReadStates: new ListConversationReadStates(readStateGateway),
         markConversationRead: new MarkConversationRead(readStateGateway),
         listParticipantDeliveryStates: new ListParticipantDeliveryStates(deliveryStateGateway),

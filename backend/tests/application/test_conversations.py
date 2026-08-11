@@ -36,6 +36,10 @@ from messenger.application.conversations.remove_member import (
     RemoveConversationMember,
     RemoveConversationMemberCommand,
 )
+from messenger.application.conversations.rename_group import (
+    RenameGroupConversation,
+    RenameGroupConversationCommand,
+)
 from messenger.application.errors import (
     AuthorizationDeniedError,
     ConversationNotFoundError,
@@ -171,6 +175,53 @@ async def test_group_role_policy_add_remove_and_removed_member_visibility() -> N
         and event.event_type.value == "conversation_updated"
         for event in state.sync_events
     )
+
+
+async def test_group_manager_renames_and_readds_removed_member() -> None:
+    state, alice, bob, charlie = conversation_state()
+    factory = FakeConversationUnitOfWorkFactory(state)
+    clock = FixedClock(NOW + timedelta(minutes=1))
+    notifier = RecordingRealtimeNotifier()
+    group = await CreateGroupConversation(
+        unit_of_work=factory,
+        clock=clock,
+        sync_policy=SYNC_POLICY,
+        realtime_notifier=notifier,
+    ).execute(CreateGroupConversationCommand(alice.id, "MVP team", (bob.id, charlie.id)))
+
+    with pytest.raises(AuthorizationDeniedError):
+        await RenameGroupConversation(
+            unit_of_work=factory,
+            clock=clock,
+            sync_policy=SYNC_POLICY,
+            realtime_notifier=notifier,
+        ).execute(RenameGroupConversationCommand(bob.id, group.conversation_id, "Denied"))
+
+    renamed = await RenameGroupConversation(
+        unit_of_work=factory,
+        clock=clock,
+        sync_policy=SYNC_POLICY,
+        realtime_notifier=notifier,
+    ).execute(RenameGroupConversationCommand(alice.id, group.conversation_id, "  Core team  "))
+    assert renamed.title == "Core team"
+
+    await RemoveConversationMember(
+        unit_of_work=factory,
+        clock=clock,
+        sync_policy=SYNC_POLICY,
+        realtime_notifier=notifier,
+    ).execute(RemoveConversationMemberCommand(alice.id, group.conversation_id, bob.id))
+    rejoined = await AddConversationMember(
+        unit_of_work=factory,
+        clock=clock,
+        sync_policy=SYNC_POLICY,
+        realtime_notifier=notifier,
+    ).execute(AddConversationMemberCommand(alice.id, group.conversation_id, bob.id))
+
+    bob_memberships = [member for member in rejoined.members if member.user_id == bob.id]
+    assert len(bob_memberships) == 1
+    assert bob_memberships[0].left_at is None
+    assert bob_memberships[0].role is ConversationMemberRole.MEMBER
 
 
 async def test_member_can_leave_but_owner_cannot() -> None:

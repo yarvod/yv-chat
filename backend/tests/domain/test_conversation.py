@@ -10,6 +10,7 @@ from messenger.domain.entities import (
     ConversationMemberRole,
     ConversationType,
 )
+from messenger.domain.entities.conversation import MAX_GROUP_ACTIVE_MEMBERS
 from messenger.domain.exceptions import DomainValidationError
 
 NOW = datetime(2026, 8, 11, 12, 0, tzinfo=UTC)
@@ -96,6 +97,50 @@ def test_group_rejects_duplicate_members_and_invalid_timestamps() -> None:
             title="Project room",
             now=datetime(2026, 8, 11, 12, 0),
         )
+
+
+def test_group_can_rename_and_reactivate_one_membership() -> None:
+    creator_id = uuid4()
+    member_id = uuid4()
+    conversation = Conversation.create_group(
+        created_by=creator_id,
+        title="Old title",
+        now=NOW,
+    ).add_member(member_id, NOW + timedelta(seconds=1))
+    left = conversation.remove_member(member_id, NOW + timedelta(seconds=2))
+
+    renamed = left.rename("  New title  ", NOW + timedelta(seconds=3))
+    rejoined = renamed.add_member(member_id, NOW + timedelta(seconds=4))
+
+    assert renamed.title == "New title"
+    assert len(rejoined.members) == 2
+    assert rejoined.member(member_id).left_at is None
+    assert rejoined.member(member_id).joined_at == NOW + timedelta(seconds=4)
+    assert rejoined.member(member_id).role is ConversationMemberRole.MEMBER
+
+
+def test_group_enforces_total_active_member_limit() -> None:
+    conversation = Conversation.create_group(
+        created_by=uuid4(),
+        title="Full group",
+        now=NOW,
+    )
+    for _ in range(MAX_GROUP_ACTIVE_MEMBERS - 1):
+        conversation = conversation.add_member(uuid4(), NOW)
+
+    with pytest.raises(DomainValidationError, match="member limit"):
+        conversation.add_member(uuid4(), NOW)
+
+
+def test_direct_conversation_cannot_be_renamed() -> None:
+    conversation = Conversation.create_direct(
+        created_by=uuid4(),
+        other_user_id=uuid4(),
+        now=NOW,
+    )
+
+    with pytest.raises(DomainValidationError, match="cannot be renamed"):
+        conversation.rename("Not allowed", NOW + timedelta(seconds=1))
 
 
 def test_group_owner_changes_member_role_but_ownership_is_immutable() -> None:
