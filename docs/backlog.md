@@ -181,8 +181,8 @@ versioned package и isolated Worker runtime; `WP-040` — server one-time deliv
   credential, signature key, fingerprint, package ref и exact bytes;
 - [x] restore/provision/register подключены к authenticated lifecycle только после
   exact local/server comparison; registered identity никогда тихо не заменяется;
-- [ ] bounded KeyPackage pool generation/replenishment из того же sealed provider
-  state и automatic foreground inventory policy;
+- [x] bounded KeyPackage pool generation/replenishment из того же sealed provider
+  state и automatic foreground inventory policy (`WP-047`, target 8);
 - [ ] memory/plaintext lifecycle audit и log-redaction gate для полного Worker flow;
 - [ ] known-answer/interop test vectors реального MLS provider;
 - [x] corruption/version-mismatch/no-fallback tests для protocol dispatch;

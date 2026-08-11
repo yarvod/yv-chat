@@ -86,6 +86,7 @@ export default defineNuxtConfig({
         'splash/**/*.png',
         'crypto/v1/**/*',
         'crypto/v2/**/*',
+        'crypto/v3/**/*',
       ],
     },
   },

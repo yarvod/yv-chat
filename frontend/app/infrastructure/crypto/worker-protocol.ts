@@ -2,6 +2,8 @@ import type { DeviceCryptoErrorCode } from '../../application/device-crypto/erro
 import type {
   DeviceCryptoIdentity,
   DeviceCryptoIdentityCommand,
+  GenerateDeviceKeyPackagesCommand,
+  GeneratedDeviceKeyPackages,
   PublicKeyPackageValidationCommand,
   PublicKeyPackageValidationResult,
 } from '../../application/ports/device-crypto-gateway'
@@ -51,6 +53,10 @@ export type DeviceCryptoWorkerRequest = MlsWorkerRequest
       type: 'validate-key-package'
       command: PublicKeyPackageValidationCommand
     })
+  | (WorkerRequestBase & {
+      type: 'generate-key-packages'
+      command: GenerateDeviceKeyPackagesCommand
+    })
   | (WorkerRequestBase & { type: 'checkpoint' })
   | (WorkerRequestBase & { type: 'dispose' })
 
@@ -59,7 +65,8 @@ export type DeviceCryptoWorkerResponse =
       version: typeof PROTOCOL_VERSION
       requestId: string
       ok: true
-      result: DeviceCryptoIdentity | PublicKeyPackageValidationResult | MlsWorkerResult
+      result: DeviceCryptoIdentity | PublicKeyPackageValidationResult
+        | GeneratedDeviceKeyPackages | MlsWorkerResult
         | { disposed: true }
     }
   | {
@@ -123,6 +130,39 @@ function validKeyPackageCommand(value: unknown): value is PublicKeyPackageValida
     && candidate.keyPackage instanceof Uint8Array
     && candidate.keyPackage.byteLength > 0
     && candidate.keyPackage.byteLength <= 1024 * 1024
+}
+
+function validGenerateKeyPackagesCommand(
+  value: unknown,
+): value is GenerateDeviceKeyPackagesCommand {
+  const candidate = record(value)
+  return candidate !== null
+    && exactKeys(candidate, ['count'])
+    && Number.isSafeInteger(candidate.count)
+    && Number(candidate.count) >= 1
+    && Number(candidate.count) <= 16
+}
+
+function parseGeneratedKeyPackages(value: unknown): GeneratedDeviceKeyPackages | null {
+  const candidate = record(value)
+  if (
+    candidate === null
+    || !exactKeys(candidate, ['keyPackages', 'revision'])
+    || !Array.isArray(candidate.keyPackages)
+    || candidate.keyPackages.length < 1
+    || candidate.keyPackages.length > 16
+    || candidate.keyPackages.some(item => (
+      !(item instanceof Uint8Array)
+      || item.byteLength === 0
+      || item.byteLength > 1024 * 1024
+    ))
+    || !Number.isSafeInteger(candidate.revision)
+    || Number(candidate.revision) <= 0
+  ) return null
+  return {
+    keyPackages: candidate.keyPackages,
+    revision: Number(candidate.revision),
+  }
 }
 
 function parseIdentity(value: unknown): DeviceCryptoIdentity | null {
@@ -205,6 +245,18 @@ export function parseWorkerRequest(value: unknown): DeviceCryptoWorkerRequest | 
       command: candidate.command,
     }
   }
+  if (
+    candidate.type === 'generate-key-packages'
+    && exactKeys(candidate, ['command', 'requestId', 'type', 'version'])
+    && validGenerateKeyPackagesCommand(candidate.command)
+  ) {
+    return {
+      version: PROTOCOL_VERSION,
+      requestId: candidate.requestId,
+      type: candidate.type,
+      command: candidate.command,
+    }
+  }
   return parseMlsWorkerRequest(value)
 }
 
@@ -254,6 +306,15 @@ export function parseWorkerResponse(value: unknown): DeviceCryptoWorkerResponse 
       result: { validated: true },
     }
   }
+  const generated = parseGeneratedKeyPackages(candidate.result)
+  if (generated) {
+    return {
+      version: PROTOCOL_VERSION,
+      requestId: candidate.requestId,
+      ok: true,
+      result: generated,
+    }
+  }
   const mlsResult = parseMlsWorkerResult(candidate.result)
   if (mlsResult) {
     return {
@@ -289,8 +350,15 @@ export function requestEnvelope(
 ): DeviceCryptoWorkerRequest
 export function requestEnvelope(
   requestId: string,
-  type: 'checkpoint' | 'dispose' | 'provision' | 'restore' | 'validate-key-package',
-  command?: DeviceCryptoIdentityCommand | PublicKeyPackageValidationCommand,
+  type: 'generate-key-packages',
+  command: GenerateDeviceKeyPackagesCommand,
+): DeviceCryptoWorkerRequest
+export function requestEnvelope(
+  requestId: string,
+  type: 'checkpoint' | 'dispose' | 'provision' | 'restore' | 'validate-key-package'
+    | 'generate-key-packages',
+  command?: DeviceCryptoIdentityCommand | PublicKeyPackageValidationCommand
+    | GenerateDeviceKeyPackagesCommand,
 ): DeviceCryptoWorkerRequest {
   if (type === 'provision' || type === 'restore') {
     if (!command || !validIdentityCommand(command)) throw new Error('identity command is required')
@@ -302,12 +370,19 @@ export function requestEnvelope(
     }
     return { version: PROTOCOL_VERSION, requestId, type, command }
   }
+  if (type === 'generate-key-packages') {
+    if (!command || !validGenerateKeyPackagesCommand(command)) {
+      throw new Error('KeyPackage generation command is required')
+    }
+    return { version: PROTOCOL_VERSION, requestId, type, command }
+  }
   return { version: PROTOCOL_VERSION, requestId, type }
 }
 
 export function successResponse(
   requestId: string,
-  result: DeviceCryptoIdentity | PublicKeyPackageValidationResult | MlsWorkerResult
+  result: DeviceCryptoIdentity | PublicKeyPackageValidationResult
+    | GeneratedDeviceKeyPackages | MlsWorkerResult
     | { disposed: true },
 ): DeviceCryptoWorkerResponse {
   return { version: PROTOCOL_VERSION, requestId, ok: true, result }

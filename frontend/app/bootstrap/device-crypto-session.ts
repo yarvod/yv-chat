@@ -1,5 +1,6 @@
 import type { InitializedDeviceCrypto } from '../application/device-crypto/initialize-device-crypto'
 import { InitializeDeviceCrypto } from '../application/device-crypto/initialize-device-crypto'
+import { EnsureDeviceKeyPackagePool } from '../application/device-crypto/ensure-key-package-pool'
 import {
   ReconcileConversationCrypto,
   type ReconcileConversationCryptoCommand,
@@ -11,6 +12,7 @@ import type { ConversationCryptoGateway } from '../application/ports/conversatio
 import type { ConversationCryptoStateRepository } from '../application/ports/conversation-crypto-state-repository'
 import type { DeviceCryptoGateway, DeviceCryptoIdentityCommand } from '../application/ports/device-crypto-gateway'
 import type { DeviceCryptoRegistryGateway } from '../application/ports/device-crypto-registry-gateway'
+import type { DeviceKeyPackageGateway } from '../application/ports/device-key-package-gateway'
 import type {
   BootstrapMlsConversationCommand,
   BootstrapMlsConversationResult,
@@ -35,9 +37,15 @@ type CryptoGatewayFactory = () => DeviceCryptoGateway & MlsConversationGateway
 export class DeviceCryptoSession implements MlsConversationGateway {
   private active: ActiveDeviceCryptoScope | null = null
   private initializing: { binding: string, promise: Promise<InitializedDeviceCrypto> } | null = null
+  private readonly reconciliation = new Map<
+    string,
+    Promise<ReconcileConversationCryptoResult>
+  >()
+  private readonly readyConversations = new Map<string, ReconcileConversationCryptoResult>()
 
   constructor(
     private readonly registry: DeviceCryptoRegistryGateway,
+    private readonly packages: DeviceKeyPackageGateway,
     private readonly conversations: ConversationCryptoGateway,
     private readonly state: ConversationCryptoStateRepository,
     private readonly ids: ClientIdGenerator,
@@ -59,11 +67,28 @@ export class DeviceCryptoSession implements MlsConversationGateway {
   }
 
   reconcileConversation(conversationId: string): Promise<ReconcileConversationCryptoResult> {
+    const ready = this.readyConversations.get(conversationId)
+    if (ready) return Promise.resolve(ready)
+    const pending = this.reconciliation.get(conversationId)
+    if (pending) return pending
     const active = this.requireActive()
-    return active.reconcile.execute({
+    const operation = active.reconcile.execute({
       conversationId,
       deviceId: active.initialized.identity.deviceId,
     })
+    this.reconciliation.set(conversationId, operation)
+    void operation.then((result) => {
+      if (result.status === 'ready') this.readyConversations.set(conversationId, result)
+    }, () => undefined).finally(() => {
+      if (this.reconciliation.get(conversationId) === operation) {
+        this.reconciliation.delete(conversationId)
+      }
+    })
+    return operation
+  }
+
+  invalidateConversation(conversationId: string): void {
+    this.readyConversations.delete(conversationId)
   }
 
   reconcile(command: ReconcileConversationCryptoCommand): Promise<ReconcileConversationCryptoResult> {
@@ -101,10 +126,16 @@ export class DeviceCryptoSession implements MlsConversationGateway {
     const gateway = this.createGateway()
     try {
       const initialized = await new InitializeDeviceCrypto(gateway, this.registry).execute(command)
+      const pool = await new EnsureDeviceKeyPackagePool(this.packages, gateway).execute(
+        command.deviceId,
+      )
+      const current = pool.revision === null
+        ? initialized
+        : { ...initialized, identity: { ...initialized.identity, revision: pool.revision } }
       this.active = {
         binding,
         gateway,
-        initialized,
+        initialized: current,
         reconcile: new ReconcileConversationCrypto(
           this.conversations,
           this.state,
@@ -113,7 +144,7 @@ export class DeviceCryptoSession implements MlsConversationGateway {
           this.ids,
         ),
       }
-      return initialized
+      return current
     } catch (error) {
       await gateway.dispose().catch(() => undefined)
       throw error
@@ -121,6 +152,8 @@ export class DeviceCryptoSession implements MlsConversationGateway {
   }
 
   private async disposeActive(): Promise<void> {
+    this.reconciliation.clear()
+    this.readyConversations.clear()
     const current = this.active
     this.active = null
     if (current) await current.gateway.dispose()

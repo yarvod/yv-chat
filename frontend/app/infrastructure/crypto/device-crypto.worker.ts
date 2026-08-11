@@ -40,6 +40,8 @@ scope.addEventListener('message', async (event: MessageEvent<unknown>) => {
     else if (request.type === 'restore') result = await current.restore(request.command)
     else if (request.type === 'validate-key-package') {
       result = await current.validateKeyPackage(request.command)
+    } else if (request.type === 'generate-key-packages') {
+      result = await current.generateKeyPackages(request.command)
     } else if (request.type === 'mls-bootstrap') {
       result = await current.bootstrapConversation(request.command)
     } else if (request.type === 'mls-join') {
@@ -52,6 +54,7 @@ scope.addEventListener('message', async (event: MessageEvent<unknown>) => {
     const response = successResponse(request.requestId, result)
     const transfer = 'credentialIdentity' in result
       ? [result.credentialIdentity.buffer, result.signaturePublicKey.buffer, result.keyPackage.buffer]
+      : 'keyPackages' in result ? result.keyPackages.map(item => item.buffer)
       : isMlsResult(result) ? mlsResultTransferables(result) : []
     scope.postMessage(response, { transfer })
   } catch (error) {

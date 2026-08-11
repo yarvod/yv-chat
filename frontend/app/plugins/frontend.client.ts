@@ -100,6 +100,7 @@ export default defineNuxtPlugin(() => {
   const conversationCryptoState = new IndexedDbConversationCryptoState()
   const deviceCryptoSession = new DeviceCryptoSession(
     deviceCryptoRegistryGateway,
+    deviceKeyPackageGateway,
     conversationCryptoGateway,
     conversationCryptoState,
     clientIdGenerator,

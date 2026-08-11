@@ -6,7 +6,16 @@
 
 ## Статус
 
-Готовы закрытый invitation/activation/session lifecycle, admin user management и purpose-bound password recovery, authorized direct/group conversations, ordered/idempotent message transport, durable per-user cursor sync и usable PWA для обмена сообщениями. История открывается с bounded latest page, догружается назад и сохраняет transport envelopes в AES-GCM encrypted IndexedDB archive; список чатов, directory, receipts и sync cursor открываются из отдельного encrypted snapshot до network catch-up. Offline send сначала попадает в bounded encrypted device-scoped outbox, повторяется с тем же idempotency key после reconnect/restart и показывает optimistic pending/failed/retry state. [ADR-0001](docs/adr/0001-e2ee-mls.md) принял MLS 1.0 и threat model; repository воспроизводимо собирает pinned OpenMLS WASM, изолирует его в Worker, хранит private state только как WebCrypto-sealed IndexedDB record и автоматически restore/provision/register-ит authenticated device после exact server comparison и consumer KeyPackage validation. MLS group/Welcome/Commit/message lifecycle и остальные implementation release gates ещё не выполнены. Текущий synthetic client codec предназначен только для MVP-проверки транспорта, **не шифрует сообщения и не является E2EE**; интерфейс явно предупреждает об этом.
+Готовы закрытый invitation/activation/session lifecycle, admin user management и
+purpose-bound password recovery, authorized direct/group conversations,
+ordered/idempotent transport, cursor sync и usable local-first PWA. История,
+conversation index и offline outbox хранятся в bounded AES-GCM encrypted IndexedDB.
+[ADR-0001](docs/adr/0001-e2ee-mls.md) принял MLS 1.0; текущий `WP-047` реализовал
+server generation/Welcome coordination, Rust/OpenMLS group bootstrap/join и v2
+protect/unprotect через isolated Worker. Новые sends в текущей ветке не имеют
+downgrade на synthetic v1. Исторический synthetic v1 codec сохраняется только для
+чтения старых записей: он **не шифрует сообщения и не является E2EE**. Production
+rollout и multi-device acceptance остаются release gate и не объявлены пройденными.
 
 Install assets адаптированы для Android circle/squircle и Apple Dock. После смены
 launcher icon уже установленную Android PWA может потребоваться удалить и установить
@@ -75,8 +84,9 @@ make ci
 crypto package перед frontend tests/build. Public device crypto anchor регистрируется
 идемпотентно через `/api/v1/devices/current/crypto-identity`; atomic one-time
 KeyPackage inventory/replenishment/claim lifecycle уже реализован. Authenticated
-device provisioning включён только с exact consumer-side OpenMLS validation;
-защита сообщений остаётся выключена до MLS group/Welcome/Commit lifecycle. Backend-команды используют
+device provisioning использует exact consumer-side OpenMLS validation и пополняет
+bounded one-time package pool из того же sealed provider. MLS v2 transport включён
+в текущей ветке, но остаётся до production acceptance в `WP-047`. Backend-команды используют
 только `uv`; Python dependency
 source of truth — `backend/pyproject.toml` и `backend/uv.lock`, Rust —
 `crypto/Cargo.toml` и `crypto/Cargo.lock`.

@@ -3,6 +3,8 @@ import type {
   DeviceCryptoGateway,
   DeviceCryptoIdentity,
   DeviceCryptoIdentityCommand,
+  GenerateDeviceKeyPackagesCommand,
+  GeneratedDeviceKeyPackages,
   PublicKeyPackageValidationCommand,
   PublicKeyPackageValidationResult,
 } from '../../application/ports/device-crypto-gateway'
@@ -45,6 +47,7 @@ function defaultWorkerFactory(): Worker {
 }
 
 type WorkerResult = DeviceCryptoIdentity | PublicKeyPackageValidationResult
+  | GeneratedDeviceKeyPackages
   | MlsWorkerResult | { disposed: true }
 
 export class CryptoWorkerClient implements DeviceCryptoGateway, MlsConversationGateway {
@@ -83,6 +86,18 @@ export class CryptoWorkerClient implements DeviceCryptoGateway, MlsConversationG
       'validate-key-package',
       command,
     ))
+  }
+
+  async generateKeyPackages(
+    command: GenerateDeviceKeyPackagesCommand,
+  ): Promise<GeneratedDeviceKeyPackages> {
+    const result = await this.send(requestEnvelope(
+      this.requestId(),
+      'generate-key-packages',
+      command,
+    ))
+    if (!('keyPackages' in result)) throw new DeviceCryptoError('worker-protocol')
+    return result
   }
 
   async bootstrapConversation(

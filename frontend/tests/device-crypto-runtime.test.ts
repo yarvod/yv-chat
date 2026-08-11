@@ -13,7 +13,7 @@ import { IndexedDbCryptoVault } from '../app/infrastructure/storage/indexeddb-cr
 import initOpenMls, {
   DeviceBootstrap,
   validatePublicKeyPackage,
-} from '../public/crypto/v3/yv_chat_openmls_provider.js'
+} from '../public/crypto/v4/yv_chat_openmls_provider.js'
 
 const userId = '1b0a32e8-144f-4f60-bcb6-112f71bd5316'
 const deviceId = '50d6b08a-84ae-4bd7-829a-f40f38e9a2c1'
@@ -41,7 +41,7 @@ function vault(indexedDb: IDBFactory): IndexedDbCryptoVault {
 }
 
 beforeAll(async () => {
-  const wasm = await readFile('public/crypto/v3/yv_chat_openmls_provider_bg.wasm')
+  const wasm = await readFile('public/crypto/v4/yv_chat_openmls_provider_bg.wasm')
   await initOpenMls({ module_or_path: wasm })
 })
 
@@ -119,6 +119,18 @@ describe('device crypto runtime with the release OpenMLS WASM', () => {
       keyPackage: corrupt,
       packageRef: await sha256Hex(corrupt),
     })).rejects.toMatchObject({ code: 'invalid-key-package' })
+    const generated = await runtime.generateKeyPackages({ count: 4 })
+    expect(generated).toMatchObject({ revision: 2 })
+    expect(generated.keyPackages).toHaveLength(4)
+    expect(new Set(generated.keyPackages.map(item => Buffer.from(item).toString('base64'))).size)
+      .toBe(4)
+    for (const keyPackage of generated.keyPackages) {
+      await expect(runtime.validateKeyPackage({
+        ...command,
+        keyPackage,
+        packageRef: await sha256Hex(keyPackage),
+      })).resolves.toEqual({ validated: true })
+    }
     runtime.dispose()
   })
 

@@ -151,6 +151,26 @@ describe('device crypto Worker protocol', () => {
     })
     worker.reply(successResponse(firstRequestId, { validated: true }))
     await expect(validating).resolves.toEqual({ validated: true })
+
+    const generating = client.generateKeyPackages({ count: 2 })
+    const generationRequest = parseWorkerRequest(worker.messages[1])
+    expect(generationRequest).toMatchObject({
+      type: 'generate-key-packages',
+      command: { count: 2 },
+    })
+    if (!generationRequest) throw new Error('expected generation request')
+    const generated = {
+      keyPackages: [new Uint8Array([4]), new Uint8Array([5])],
+      revision: 2,
+    }
+    worker.reply(successResponse(generationRequest.requestId, generated))
+    await expect(generating).resolves.toEqual(generated)
+    expect(parseWorkerRequest({
+      version: 2,
+      requestId: firstRequestId,
+      type: 'generate-key-packages',
+      command: { count: 17 },
+    })).toBeNull()
   })
 
   it('routes only bounded MLS commands and exact result variants', async () => {

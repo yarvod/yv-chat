@@ -1,8 +1,8 @@
 import { DeviceCryptoError } from '../../application/device-crypto/errors'
 
 // A new immutable path is mandatory whenever the generated JS/WASM binding changes.
-// v3 adds MLS conversation operations; v1/v2 remain rolling-compatibility assets.
-const MODULE_URL = '/crypto/v3/yv_chat_openmls_provider.js'
+// v4 adds bounded KeyPackage pool generation; v1-v3 remain rolling assets.
+const MODULE_URL = '/crypto/v4/yv_chat_openmls_provider.js'
 
 export interface OpenMlsSealedSnapshot {
   readonly revision: bigint
@@ -16,6 +16,7 @@ export interface OpenMlsDeviceBootstrap {
   credentialIdentity(): Uint8Array
   signaturePublicKey(): Uint8Array
   keyPackage(): Uint8Array
+  generateKeyPackages(count: number): Uint8Array[]
   fingerprint(): string
   createConversation(conversationId: string): bigint
   addMembersAndMerge(
@@ -92,6 +93,7 @@ function isOpenMlsModule(value: unknown): value is OpenMlsModule {
     && typeof candidate.DeviceBootstrap.restoreSealedState === 'function'
     && typeof candidate.validatePublicKeyPackage === 'function'
     && typeof prototype?.createConversation === 'function'
+    && typeof prototype.generateKeyPackages === 'function'
     && typeof prototype.addMembersAndMerge === 'function'
     && typeof prototype.joinConversation === 'function'
     && typeof prototype.protectApplicationMessage === 'function'

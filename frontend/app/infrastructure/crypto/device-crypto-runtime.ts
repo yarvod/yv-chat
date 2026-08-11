@@ -2,6 +2,8 @@ import { DeviceCryptoError } from '../../application/device-crypto/errors'
 import type {
   DeviceCryptoIdentity,
   DeviceCryptoIdentityCommand,
+  GenerateDeviceKeyPackagesCommand,
+  GeneratedDeviceKeyPackages,
   PublicKeyPackageValidationCommand,
   PublicKeyPackageValidationResult,
 } from '../../application/ports/device-crypto-gateway'
@@ -164,6 +166,23 @@ export class DeviceCryptoRuntime {
     } catch {
       throw new DeviceCryptoError('invalid-key-package')
     }
+  }
+
+  async generateKeyPackages(
+    command: GenerateDeviceKeyPackagesCommand,
+  ): Promise<GeneratedDeviceKeyPackages> {
+    if (!Number.isSafeInteger(command.count) || command.count < 1 || command.count > 16) {
+      throw new DeviceCryptoError('invalid-request')
+    }
+    return await this.mutateAndCheckpoint(active => {
+      const keyPackages = active.generateKeyPackages(command.count)
+      if (
+        !Array.isArray(keyPackages)
+        || keyPackages.length !== command.count
+        || keyPackages.some(item => !validWireBytes(item))
+      ) throw new DeviceCryptoError('operation-failed')
+      return { keyPackages: keyPackages.map(item => item.slice()) }
+    })
   }
 
   async bootstrapConversation(

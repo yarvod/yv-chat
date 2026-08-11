@@ -57,6 +57,7 @@ describe('PWA install assets', () => {
     expect(config).toContain("'splash/**/*.png'")
     expect(config).toContain("'crypto/v1/**/*'")
     expect(config).toContain("'crypto/v2/**/*'")
+    expect(config).toContain("'crypto/v3/**/*'")
   })
 
   it('offers activation of a waiting service worker without erasing local state', () => {

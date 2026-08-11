@@ -725,14 +725,14 @@ Vue/application DTO. Fake IndexedDB + Node WebCrypto tests фиксируют tr
 metadata semantics. Physical Chromium и чистый Firefox подтверждены; Safari и
 storage-denial scenarios всё ещё release-gated.
 
-Repository хранит текущий generated package под immutable asset path `/crypto/v3/`:
+Repository хранит текущий generated package под immutable asset path `/crypto/v4/`:
 JS glue, TypeScript declaration и WASM производятся exact `Rust 1.91.0` /
 `wasm-bindgen 0.2.127`; CI пересобирает их и отклоняет tracked drift и private
 snapshot exports. Nuxt production build обязан выпустить отдельный module Worker
 chunk, скопировать WASM и включить оба versioned crypto assets и Worker в Workbox
 precache. Версия URL меняется вместе с несовместимой binding/schema revision, чтобы
 active service worker не смешивал новые JS bindings со старым WASM.
-Старые `/crypto/v1/` и `/crypto/v2/` временно остаются только rolling-compatibility
+Старые `/crypto/v1/`–`/crypto/v3/` временно остаются только rolling-compatibility
 assets для уже открытых Worker, не используются новым runtime и не входят в новый
 precache. Import,
 binding-shape, WASM init,
@@ -746,11 +746,14 @@ exact поля/UUID/bounds и возвращает main thread только publ
 signature key, KeyPackage, fingerprint и revision; raw exception, `CryptoKey`, IV,
 ciphertext и vault record в response schema невозможны. Main-thread client добавляет
 request correlation, bounded timeout, sanitized error taxonomy и deterministic
-dispose. Composition root предоставляет lazy `createDeviceCrypto()` factory, поэтому
-Worker не стартует и identity не создаётся автоматически при login.
+dispose. Composition root предоставляет один lazy authenticated
+`DeviceCryptoSession`: layout и messenger делят один Worker/runtime, concurrent
+initialize сходятся в один promise, а logout/device change детерминированно dispose-ит
+старый scope. Worker не стартует на public login/activation page.
 
-Runtime v3 также реализует intent-level create/join/protect/unprotect. Каждая такая
-операция считается успешной только после следующего optimistic vault revision и
+Runtime v4 также реализует intent-level bounded KeyPackage generation и
+create/join/protect/unprotect. Каждая state-changing операция считается успешной
+только после следующего optimistic vault revision и
 atomic sealed-state commit. Commit/Welcome/ciphertext/plaintext копируются наружу
 только после durability barrier. Любая ошибка MLS mutation, sealing или IndexedDB
 уничтожает потенциально продвинутый in-memory instance; продолжение возможно только
@@ -768,7 +771,8 @@ IndexedDB, включая reload, concurrent provision и tamper. Отдельн
 smoke подтвердил production Worker asset, same-origin module/WASM fetch,
 non-extractable key structured clone, exact restore и revision `1 → 2`. Чистый
 Firefox smoke под production CSP отдельно подтвердил import, WASM compilation и
-OpenMLS bootstrap. Это ещё не переключает message transport: Safari,
+OpenMLS bootstrap. Текущая ветка переключает новые sends на v2 без fallback, но
+production rollout остаётся закрыт до multi-device acceptance. Safari,
 storage-denial/update tests и MLS KAT/interop всё ещё обязательны.
 
 Backend registry хранит только public device anchors. `PUT/GET
@@ -804,7 +808,13 @@ HTTP transport разделён на identity registry и KeyPackage inventory/c
 Он принимает canonical base64 и возвращает KeyPackage только вместе с immutable
 target identity anchors; session/CSRF/Origin остаются обязательны для mutation.
 Frontend имеет собственный typed port, strict response parser и list/replenish/claim
-use cases. `claim_request_id` создаётся и сохраняется caller/outbox, чтобы retry не
+use cases. После identity initialization он держит foreground target восемь
+available packages: недостающие пакеты генерируются внутри Rust/OpenMLS, их private
+init keys сначала входят в следующий sealed provider revision, а наружу Worker
+возвращает только bounded public TLS bytes для upload. HTTP failure не откатывает
+provider и может лишь оставить невыданные локальные init keys; следующий inventory
+retry создаёт новый уникальный batch без reuse. `claim_request_id` создаётся и
+сохраняется caller/outbox, чтобы retry не
 создавал новую выдачу. После `WP-045` server-delivered KeyPackage проходит pinned
 OpenMLS validation внутри isolated Worker: exact TLS bytes должны иметь valid
 signature, MLS 1.0, выбранный ciphersuite и leaf binding с canonical
@@ -826,8 +836,17 @@ Commit, ratchet tree и точный набор per-device Welcome. Ready retry 
 побайтно, лишний/пропущенный target отклоняется. `GET .../crypto` возвращает Welcome
 только текущему device из required snapshot, а `welcome-ack` идемпотентно отмечает
 доставку до expiry. Server не получает signer/init/group/application secrets,
-message plaintext или attachment key. Эта coordination готова для Worker gateway,
-но сама по себе ещё не переводит outgoing synthetic v1 сообщения на MLS v2.
+message plaintext или attachment key. Frontend typed gateway и
+`ReconcileConversationCrypto` соединяют coordination с Worker. Coordinator перед
+finalize шифрованно checkpoint-ит точные Commit/Welcome/tree bytes для crash retry;
+target checkpoint-ит join до Welcome ack. Outgoing router использует v2, а v1
+остаётся только read-only historical adapter.
+
+Подготовка history page параллельна, поэтому `DeviceCryptoSession` применяет
+single-flight по conversation: concurrent decrypt делят одну reconciliation, а
+только результат `ready` кэшируется на срок жизни authenticated runtime. Blocked,
+pending и error не кэшируются навсегда. Membership/device sync обязан invalidation-ить
+этот cache перед следующим generation check; dispose очищает все entries.
 
 Authenticated app layout автоматически запускает current-device lifecycle:
 
@@ -838,16 +857,18 @@ GET immutable server registration
                          ↓
 exact local/server public comparison
                          ↓
-OpenMLS validate initial KeyPackage + server anchors → ready
+OpenMLS validate initial KeyPackage + server anchors
+                         ↓
+inventory target 8 → generate/seal unique packages → upload public bytes → ready
 ```
 
 Если registered server identity существует, но local vault отсутствует/повреждён,
 клиент fail closed и показывает unavailable state: password/login не восстанавливает
 private signer. Substitution/malformed package/Worker/storage failure не получают
 synthetic fallback для secure operations. Private key, wrapping key и sealed state
-остаются исключительно client-side. Automatic KeyPackage pool replenishment,
-claim orchestration и Welcome/group lifecycle всё ещё release gates; одна ready
-device identity не означает, что messaging уже E2EE.
+остаются исключительно client-side. Initial bootstrap/Welcome lifecycle и pool
+replenishment реализованы; existing-member Commit/remove/re-add, fork handling и
+production multi-device acceptance остаются release gates.
 
 UI не вызывает concrete crypto adapter: application-facing async operations
 `protectText/unprotectText` получают intent DTO с conversation/client-message

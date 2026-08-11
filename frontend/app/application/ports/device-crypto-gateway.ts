@@ -27,6 +27,15 @@ export interface PublicKeyPackageValidationResult {
   validated: true
 }
 
+export interface GenerateDeviceKeyPackagesCommand {
+  readonly count: number
+}
+
+export interface GeneratedDeviceKeyPackages {
+  readonly keyPackages: readonly Uint8Array[]
+  readonly revision: number
+}
+
 export interface DeviceCryptoGateway {
   provision(command: DeviceCryptoIdentityCommand): Promise<DeviceCryptoIdentity>
   restore(command: DeviceCryptoIdentityCommand): Promise<DeviceCryptoIdentity>
@@ -34,5 +43,8 @@ export interface DeviceCryptoGateway {
   validateKeyPackage(
     command: PublicKeyPackageValidationCommand,
   ): Promise<PublicKeyPackageValidationResult>
+  generateKeyPackages(
+    command: GenerateDeviceKeyPackagesCommand,
+  ): Promise<GeneratedDeviceKeyPackages>
   dispose(): Promise<void>
 }

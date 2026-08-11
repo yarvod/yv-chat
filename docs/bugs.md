@@ -4,6 +4,20 @@
 
 ## Active
 
+### BUG-042 — Параллельная подготовка истории могла повторно bootstrap-ить MLS group
+
+- Статус: `fixed`, ожидает browser acceptance.
+- Найдено в: `WP-047`, проверка initial history из 100 сообщений.
+- Severity: `critical`; второй concurrent bootstrap получал `GroupAlreadyExists` и
+  fail-closed уничтожил бы активный runtime после успешного первого bootstrap.
+- Причина: timeline готовит bounded page через `Promise.all`, а каждый v2 adapter
+  независимо запускал server reconciliation одной conversation.
+- Исправление: authenticated `DeviceCryptoSession` single-flight-ит reconciliation
+  по conversation, разделяет один promise между всеми decrypt и кэширует только
+  подтверждённый `ready` до explicit invalidation/device-session dispose.
+- Проверка: 20 параллельных вызовов выполняют один server GET и один Welcome join;
+  повторный read не вызывает сеть, explicit invalidation проверяет generation снова.
+
 ### BUG-041 — Повторное открытие MLS сообщения выглядело бы как повреждение
 
 - Статус: `fixed`, ожидает production E2E retest.
@@ -41,7 +55,8 @@
   отдельно прошёл в чистом Firefox весь `Worker → WASM → DeviceBootstrap →
   non-extractable WebCrypto key → IndexedDB sealed state` path. Значит второй сбой
   локален для активного PWA/Workbox cache или профиля, а не требует Rust container.
-- Второе исправление: новый Worker использует immutable `/crypto/v3/`, исключая
+- Второе исправление: Worker сначала перешёл на immutable `/crypto/v3/`, а текущий
+  KeyPackage-pool binding — на `/crypto/v4/`, исключая
   mixed cached JS/WASM; `/crypto/v1/` сохранён на rolling window. Import, invalid
   binding, WASM init, Worker crash/protocol/timeout теперь показываются раздельно,
   не раскрывая raw exception или private state.

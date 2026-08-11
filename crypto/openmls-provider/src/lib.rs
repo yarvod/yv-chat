@@ -32,6 +32,7 @@ mod sealing;
 
 pub const CREDENTIAL_SCHEMA_VERSION: u8 = 1;
 pub const CREDENTIAL_IDENTITY_LENGTH: usize = 33;
+const MAX_GENERATED_KEY_PACKAGES: usize = 16;
 pub const DEVICE_FINGERPRINT_LABEL: &[u8] = b"yv-chat-device-fingerprint-v1\0";
 pub const CIPHERSUITE: Ciphersuite = Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519;
 
@@ -203,6 +204,33 @@ impl DeviceBootstrap {
         &self.key_package
     }
 
+    pub fn generate_key_packages(&mut self, count: usize) -> Result<Vec<Vec<u8>>, BootstrapError> {
+        if count == 0 || count > MAX_GENERATED_KEY_PACKAGES {
+            return Err(BootstrapError::KeyPackageUnavailable);
+        }
+        (0..count)
+            .map(|_| {
+                let serialized = KeyPackage::builder()
+                    .build(
+                        CIPHERSUITE,
+                        &self._provider,
+                        &self.signer,
+                        self.credential.clone(),
+                    )
+                    .map_err(|_| BootstrapError::KeyPackageUnavailable)?
+                    .key_package()
+                    .tls_serialize_detached()
+                    .map_err(|_| BootstrapError::SerializationFailed)?;
+                validate_public_key_package(
+                    &serialized,
+                    self.credential_identity(),
+                    self.signature_public_key(),
+                )?;
+                Ok(serialized)
+            })
+            .collect()
+    }
+
     pub fn fingerprint(&self) -> &str {
         &self.fingerprint
     }
@@ -327,6 +355,20 @@ impl DeviceBootstrap {
     #[wasm_bindgen(js_name = keyPackage)]
     pub fn wasm_key_package(&self) -> Vec<u8> {
         self.key_package().to_vec()
+    }
+
+    #[wasm_bindgen(js_name = generateKeyPackages)]
+    pub fn wasm_generate_key_packages(&mut self, count: u32) -> Result<Array, JsError> {
+        let count = usize::try_from(count)
+            .map_err(|_| JsError::new("invalid KeyPackage generation count"))?;
+        let result = Array::new();
+        for package in self
+            .generate_key_packages(count)
+            .map_err(|error| JsError::new(error.to_string().as_str()))?
+        {
+            result.push(&Uint8Array::from(package.as_slice()));
+        }
+        Ok(result)
     }
 
     #[wasm_bindgen(js_name = fingerprint)]
@@ -468,6 +510,31 @@ mod tests {
         assert_eq!(bootstrap.signature_public_key().len(), 32);
         assert_eq!(bootstrap.fingerprint().len(), 64);
         assert!(!bootstrap.key_package().is_empty());
+    }
+
+    #[test]
+    fn generates_a_bounded_unique_key_package_pool_for_the_same_device() {
+        let mut bootstrap = DeviceBootstrap::generate(USER_ID, DEVICE_ID).unwrap();
+        let packages = bootstrap.generate_key_packages(8).unwrap();
+        assert_eq!(packages.len(), 8);
+        let unique = packages.iter().collect::<std::collections::HashSet<_>>();
+        assert_eq!(unique.len(), packages.len());
+        for package in packages {
+            validate_public_key_package(
+                &package,
+                bootstrap.credential_identity(),
+                bootstrap.signature_public_key(),
+            )
+            .unwrap();
+        }
+        assert_eq!(
+            bootstrap.generate_key_packages(0),
+            Err(BootstrapError::KeyPackageUnavailable),
+        );
+        assert_eq!(
+            bootstrap.generate_key_packages(17),
+            Err(BootstrapError::KeyPackageUnavailable),
+        );
     }
 
     #[test]
