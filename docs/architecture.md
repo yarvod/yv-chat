@@ -847,18 +847,37 @@ expired encrypted blobs и терпеть already-missing storage keys чере�
 ## 13. PWA, realtime и Web Push
 
 Install surface является частью versioned frontend: manifest имеет стабильные
-`id=/`, `scope=/`, `start_url=/`, отдельные opaque `any` и `maskable` PNG 192/512,
-а Apple получает 152/167/180 touch icons и media-matched portrait startup images.
-Критическое содержимое maskable icon находится в центральной W3C safe-zone;
-платформенные rounded corners никогда не baked в master. Большие startup PNG не
-precache-ятся все вместе: браузер выбирает только подходящий media resource, тогда
-как app shell, standard icons и crypto WASM остаются в согласованном Workbox release.
+`id=/`, `scope=/`, `start_url=/`, отдельные прозрачные `any` и full-bleed opaque
+`maskable` PNG 192/512, а Apple получает 152/167/180 touch icons и media-matched
+portrait startup images. Канонический знак хранится как SVG без baked platform
+shape; deterministic `sharp` script генерирует все raster derivatives. Критическое
+содержимое maskable icon находится в центральной W3C safe-zone radius 40%, поэтому
+circle/squircle применяет сама ОС. Имена install icons versioned (`icon-v2-*`), но
+Android launcher может удерживать icon уже установленной PWA до uninstall/reinstall.
+Большие startup PNG не precache-ятся все вместе: браузер выбирает только подходящий
+media resource, тогда как app shell, standard icons и crypto WASM остаются в
+согласованном Workbox release.
 
-Целевая (ещё не реализованная полностью) PWA startup local-first схема:
+Root `html/body` не является scroll container и использует
+`overscroll-behavior: none`: это выключает Chrome pull-to-refresh, но не запрещает
+`overflow: auto` у bounded conversation list и timeline. На narrow viewport mobile
+tabs используют пару `safe-area-inset-bottom`/`safe-area-max-inset-bottom`: maximum
+inset задаёт стабильную высоту и padding, а fixed bottom смещается на разницу dynamic
+и maximum inset. Непрозрачный `surface-solid` продолжается под Android gesture pill;
+theme-color синхронизируется с выбранной light/dark темой.
+
+Реализованная после `WP-043` PWA startup схема:
 
 ```text
-read IndexedDB → render immediately
-              ↘ sync delta in parallel → apply → persist
+encrypted snapshot + cached latest envelopes
+              ↓
+render local conversation list/timeline
+              ↓
+sync(persisted cursor) → apply delta → atomically persist a coherent snapshot
+
+no snapshot / corrupt snapshot / reset-required
+              ↓
+authoritative full bootstrap → persist new snapshot
 ```
 
 Outbox имеет `pending/sending/sent/failed`, persistent idempotency key и reconcile после reconnect. Service Worker/IndexedDB migrations versioned и совместимы при update.
@@ -881,7 +900,7 @@ IV и AAD `schema + owner + conversation + sequence`; scope/sequence mismatch,
 state не попадают в storage. Archive ограничен 2000 envelopes на conversation.
 
 Клиент сначала пробует encrypted cached latest page, затем reconciles её с server
-latest page. `load older` использует exclusive cursor и сохраняет scroll anchor.
+cursor catch-up. `load older` использует exclusive cursor и сохраняет scroll anchor.
 Reactive/DOM window ограничен 300 envelopes; при уходе в более ранний диапазон UI
 показывает явный возврат к latest. IndexedDB denial/corruption отключает archive на
 текущую сессию и показывает non-blocking warning, не ломая online sync.
@@ -890,10 +909,21 @@ Durable `message_deleted` event не вызывает грубый timeline rese
 loaded item и идемпотентно перезаписывает encrypted archive record, в том числе для
 неактивного conversation. Foreign conversation/message binding возвращает 404.
 
-Это ещё не полный local-first: conversation index, durable sync/read cursor, outbox,
-attachment metadata, IndexedDB upgrade compatibility и secure device-to-device
-history transfer остаются в `BL-022`–`BL-024`. Workbox по-прежнему кэширует executable
-app shell/assets, а не пользовательскую историю.
+Conversation/directory/read/delivery/sync snapshot находится за отдельным application
+port и в отдельной versioned БД `yv-chat-messenger-snapshot-v1`. Запись содержит
+только строго валидируемые transport/application DTO, ограничена 1 MiB и шифруется
+AES-256-GCM под отдельным per-account non-extractable key с AAD
+`schema + owner`. Snapshot не содержит message bodies, session credentials или
+private protocol state. Cursor сохраняется только после успешного применения sync
+page и только если encrypted message archive доступен: cursor не может обогнать
+локально сохранённые envelopes. Повреждение ciphertext/key/schema fail closed и
+переводит startup на network bootstrap.
+
+Это ещё не полный local-first: offline outbox, protocol state, attachment metadata,
+IndexedDB cross-version upgrade compatibility и secure device-to-device history
+transfer остаются в `BL-022`–`BL-024`. Workbox по-прежнему кэширует только executable
+app shell/assets, а обе user-data БД принадлежат application adapters и не попадают в
+Cache Storage Service Worker.
 
 WebSocket обслуживает foreground realtime и передаёт только wake-up hints. Web Push будит background Service Worker. Sync восстанавливает correctness. Current implementation сохраняет редкий HTTP fallback poll, поэтому недоступный WebSocket ухудшает latency, но не correctness.
 

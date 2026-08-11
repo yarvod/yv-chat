@@ -20,6 +20,10 @@ export class BrowserThemePreferences implements ThemePreferencesPort {
     this.storage.setItem(STORAGE_KEY, preference)
     this.documentRef.documentElement.dataset.theme = resolved
     this.documentRef.documentElement.style.colorScheme = resolved
+    this.documentRef.getElementById('yv-theme-color')?.setAttribute(
+      'content',
+      resolved === 'dark' ? '#0a0b10' : '#f4f2fb',
+    )
     return resolved
   }
 

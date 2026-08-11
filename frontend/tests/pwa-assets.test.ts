@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
+import sharp from 'sharp'
 
 function pngDimensions(relativePath: string): { width: number, height: number } {
   const bytes = readFileSync(resolve(process.cwd(), 'public', relativePath))
@@ -15,11 +16,11 @@ function pngDimensions(relativePath: string): { width: number, height: number } 
 describe('PWA install assets', () => {
   it.each([
     ['icons/favicon-32.png', 32, 32],
-    ['icons/icon-64.png', 64, 64],
-    ['icons/icon-192.png', 192, 192],
-    ['icons/icon-512.png', 512, 512],
-    ['icons/icon-maskable-192.png', 192, 192],
-    ['icons/icon-maskable-512.png', 512, 512],
+    ['icons/icon-v2-64.png', 64, 64],
+    ['icons/icon-v2-192.png', 192, 192],
+    ['icons/icon-v2-512.png', 512, 512],
+    ['icons/icon-v2-maskable-192.png', 192, 192],
+    ['icons/icon-v2-maskable-512.png', 512, 512],
     ['icons/apple-touch-icon-152.png', 152, 152],
     ['icons/apple-touch-icon-167.png', 167, 167],
     ['apple-touch-icon.png', 180, 180],
@@ -50,8 +51,46 @@ describe('PWA install assets', () => {
     expect(config).toContain("id: '/'")
     expect(config).toContain("start_url: '/'")
     expect(config).toContain("purpose: 'maskable'")
+    expect(config).toContain('/icons/icon-v2-maskable-512.png')
     expect(config).toContain("rel: 'apple-touch-startup-image'")
     expect(config).toContain('viewport-fit=cover')
     expect(config).toContain("globIgnores: ['splash/**/*.png']")
+  })
+
+  it('keeps standard artwork transparent and the maskable canvas fully opaque', async () => {
+    const transparent = await sharp(resolve(process.cwd(), 'public/icons/icon-v2-512.png'))
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true })
+    const maskable = await sharp(resolve(process.cwd(), 'public/icons/icon-v2-maskable-512.png'))
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true })
+    const alphaAt = (
+      image: typeof transparent,
+      x: number,
+      y: number,
+    ) => image.data[(y * image.info.width + x) * image.info.channels + 3]
+
+    expect(alphaAt(transparent, 0, 0)).toBe(0)
+    expect(alphaAt(transparent, 511, 511)).toBe(0)
+    expect(alphaAt(maskable, 0, 0)).toBe(255)
+    expect(alphaAt(maskable, 511, 511)).toBe(255)
+    let minimumAlpha = 255
+    for (let index = 3; index < maskable.data.length; index += maskable.info.channels) {
+      minimumAlpha = Math.min(minimumAlpha, maskable.data[index] ?? 0)
+    }
+    expect(minimumAlpha).toBe(255)
+  })
+
+  it('uses a vector mark without a baked platform shape inside the safe zone', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'design/brand/yv-chat-symbol.svg'),
+      'utf8',
+    )
+    expect(source).toContain('viewBox="0 0 512 512"')
+    expect(source).toContain('data-safe-zone-radius="204.8"')
+    expect(source).not.toContain('<rect')
+    expect(source.match(/<path /g)).toHaveLength(3)
   })
 })

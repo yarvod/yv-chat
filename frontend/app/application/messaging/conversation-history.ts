@@ -42,6 +42,16 @@ export class ConversationHistory {
     return this.archiveAvailable ? 'ready' : 'unavailable'
   }
 
+  async loadCachedLatest(conversationId: string): Promise<ConversationHistoryWindow | null> {
+    const cached = await this.readLatest(conversationId)
+    if (cached.length === 0) return null
+    return {
+      messages: this.latestWindow(await this.prepare(cached)),
+      hasMore: cached.length === HISTORY_PAGE_SIZE,
+      hasNewer: false,
+    }
+  }
+
   async loadLatest(
     conversationId: string,
     onCached?: HistoryListener,

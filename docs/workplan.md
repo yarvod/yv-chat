@@ -4,62 +4,64 @@
 завершённая работа фиксируется отдельным коммитом, а новый пункт переносится
 сюда из `backlog.md`.
 
-## WP-042 — Bounded message history and encrypted local archive
+## WP-043 — Pixel PWA edge-to-edge and local conversation startup
 
 Статус: **completed**
-Backlog: `BL-022`
-Цель: разговор с историей длиннее одной HTTP-страницы открывается с последних
-сообщений, позволяет стабильно догружать старые страницы и восстанавливает
-локально сохранённый ciphertext без хранения расшифрованного текста.
+Backlog: `BL-022`, `BL-025`, `BL-041`
+Цель: установленная через Chrome на Pixel PWA корректно закрашивает Android gesture
+navigation area, не запускает browser pull-to-refresh, использует адаптивную иконку
+без квадратной подложки и открывает список чатов из encrypted local snapshot до
+authoritative catch-up.
 
 ### Инварианты
 
-1. PostgreSQL остаётся authoritative source в пределах server retention. Новый
-   history contract возвращает bounded latest/before pages в стабильном ascending
-   порядке и повторно проверяет active user/membership authorization.
-2. Existing forward `after_sequence` API и cursor sync сохраняют совместимость.
-   `before_sequence` всегда exclusive; server вычисляет `has_more` через bounded
-   `limit + 1`, а не по непрерывности sequence после TTL purge.
-3. Клиент открывает latest page, а не первые 100 сообщений. `load older` не создаёт
-   пропусков/дублей и сохраняет visual scroll anchor.
-4. Local archive реализует application port и отдельный IndexedDB adapter. В нём
-   сохраняются только transport `OpaqueMessage`, зашифрованные AES-256-GCM под
-   non-extractable browser-installation key с AAD, связывающим owner/conversation/
-   sequence/schema.
-5. `TimelineMessage.displayBody`, plaintext, message keys, session credentials и
-   crypto private state никогда не сериализуются в archive records или логи.
-6. Archive bounded per conversation; client reactive window также bounded. При
-   переходе в старую историю пользователь может явно вернуться к latest page.
-7. Corrupt/tampered/swapped records удаляются или игнорируются fail-closed. Отказ,
-   eviction или запрет IndexedDB не ломает online messaging и отражается понятным
-   non-blocking storage status.
-8. Realtime/sync additions, duplicate retries и tombstones обновляют archive
-   idempotently через authorized single-message fetch; read/delivery cursor
-   продвигается только до реально полученного newest sequence.
-9. Изменение покрывается application, HTTP, PostgreSQL repository, IndexedDB,
-   orchestration и Vue interaction tests, включая >100 pre-existing messages.
+1. Document приложения не становится scroll container. `overscroll-behavior: none`
+   на root отключает Chrome pull-to-refresh, а chat/list/page продолжают скроллиться
+   только в своих bounded containers.
+2. `viewport-fit=cover` сохраняется. Bottom navigation/composer учитывают dynamic
+   `safe-area-inset-bottom` и maximum inset по Chrome 135 edge-to-edge pattern;
+   непрозрачный app surface визуально продолжается под Android gesture pill.
+3. Navigation controls никогда не перекрываются system gesture area или keyboard,
+   а iOS standalone safe-area поведение не ухудшается.
+4. Manifest имеет разные `any` и `maskable` assets. Maskable background полностью
+   opaque, важный знак находится в minimum safe circle radius 40%, platform сама
+   применяет circle/squircle mask; rounded square не baked внутрь adaptive asset.
+5. Icon asset URL versioned, чтобы новая установка не получила старый cached icon.
+   Уже установленная Android PWA может потребовать uninstall/reinstall, это явно
+   документируется, поскольку launcher icon не обязан обновляться сразу.
+6. Conversation/directory/read/delivery/sync snapshot хранится за отдельным
+   application port в versioned IndexedDB adapter, зашифрован AES-256-GCM под
+   non-extractable per-account key и не содержит session credential/plaintext.
+7. При входе на `/chat` valid snapshot рендерится до сети. Catch-up начинается с
+   persisted cursor и вызывает full list APIs только без snapshot, при reset или
+   соответствующих sync events; PostgreSQL/sync остаются authoritative.
+8. Snapshot cursor сохраняется только вместе с согласованными DTO после успешного
+   применения страницы. Corrupt/unsupported snapshot fail closed и приводит к
+   обычному network bootstrap без потери online функциональности.
+9. Local snapshot schema и service-worker release проверяются compatibility tests;
+   executable assets и user data остаются в разных browser stores.
 
 ### План
 
-- [x] Добавить backend latest/before history Query/Result DTO и repository port.
-- [x] Реализовать SQLAlchemy/fake adapters и versioned HTTP history response.
-- [x] Покрыть stable ordering, authorization, gaps, bounds и >100 history tests.
-- [x] Добавить typed frontend history DTO/parser/gateway method.
-- [x] Добавить `MessageArchive` port и AES-GCM IndexedDB adapter с bounded retention.
-- [x] Подключить cached hydration, network reconciliation и idempotent archive writes.
-- [x] Добавить load-older/latest state и bounded reactive timeline orchestration.
-- [x] Добавить UI controls с сохранением scroll anchor и accessible status.
-- [x] Проверить storage corruption/unavailability, duplicates, tombstones и reload.
-- [x] Обновить architecture/backlog/bugs, прогнать полный CI и commit/push.
+- [x] Зафиксировать BUG-033..035 и Pixel acceptance contract.
+- [x] Исправить root overscroll и Chrome 135 edge-to-edge bottom surface.
+- [x] Обновить versioned standard/maskable icon assets и manifest tests.
+- [x] Добавить typed encrypted messenger snapshot port/codec/IndexedDB adapter.
+- [x] Перевести messenger bootstrap на cache-first + cursor catch-up reconciliation.
+- [x] Покрыть Pixel CSS, manifest/safe-zone, snapshot tamper/reload/no-refetch tests.
+- [x] Обновить architecture/backlog/bugs и инструкции Android reinstall/update.
+- [x] Прогнать полный CI, commit/push, production deploy и external smoke-test.
 
 ### Definition of Done
 
-- conversation с 205 сообщениями сначала показывает sequences `106..205`, затем
-  догружает `6..105` и `1..5` без пропусков/дублей и с устойчивой позицией scroll;
-- reload может показать зашифрованную local page до завершения network reconcile;
-- raw IndexedDB inspection не содержит `displayBody`/plaintext и ключ не extractable;
-- altered ciphertext/AAD не превращается в UI plaintext и не ломает network fallback;
-- active timeline/archive имеют явные bounds и не растут бесконечно;
-- старый `after_sequence` endpoint и reconnect/cursor sync tests остаются зелёными;
-- backend Ruff/format/mypy/pytest, frontend lint/typecheck/Vitest/build и repository
-  config/security gates проходят.
+- root overscroll не может инициировать pull-to-refresh, внутренний timeline/list
+  сохраняет независимый scroll;
+- background bottom bar/composer покрывает gesture area в Chrome 135+ и имеет
+  безопасный fallback для iOS/старых браузеров;
+- round/squircle/circle crop не показывает квадратную рамку, а ключевой знак не
+  обрезается минимальной maskable safe-zone;
+- повторный переход на `/chat` сначала показывает encrypted local snapshot и при
+  отсутствии новых sync events не вызывает directory/conversations APIs;
+- offline/corrupt snapshot приводит к документированному fallback без credential
+  leakage или ложного authoritative state;
+- frontend lint/typecheck/Vitest/build и полный repository CI проходят.

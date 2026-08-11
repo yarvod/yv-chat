@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { MessagingGateway } from '../app/application/ports/messaging-gateway'
 import type { MessageArchive } from '../app/application/ports/message-archive'
+import type { MessengerSnapshotStore } from '../app/application/ports/messenger-snapshot-store'
+import type { Clock } from '../app/application/ports/clock'
 import type { HapticsPort } from '../app/application/ports/haptics'
 import type { ClientIdGenerator } from '../app/application/ports/client-id-generator'
 import { ListConversationReadStates } from '../app/application/messaging/list-conversation-read-states'
@@ -44,6 +46,8 @@ const message = {
 
 let gateway: MessagingGateway
 let messageArchive: MessageArchive
+let messengerSnapshotStore: MessengerSnapshotStore
+const clock: Clock = { nowMilliseconds: () => Date.parse('2026-08-11T12:00:00Z') }
 const haptics: HapticsPort = { isEnabled: () => true, setEnabled: vi.fn(), perform: vi.fn() }
 const clientIdGenerator: ClientIdGenerator = { create: () => 'client-generated-id' }
 let visible = true
@@ -59,6 +63,24 @@ function createMessageProtection(): ProtocolMessageProtection {
     [new SyntheticMessageProtocol(), new UnavailableMlsMessageProtocol()],
     1,
   )
+}
+
+function messengerDependencies() {
+  return {
+    gateway,
+    messageArchive,
+    messengerSnapshotStore,
+    messageProtection: createMessageProtection(),
+    clock,
+    haptics,
+    clientIdGenerator,
+    listConversationReadStates: new ListConversationReadStates(readStateGateway),
+    markConversationRead: new MarkConversationRead(readStateGateway),
+    listParticipantDeliveryStates: new ListParticipantDeliveryStates(deliveryStateGateway),
+    markConversationDelivered: new MarkConversationDelivered(deliveryStateGateway),
+    deleteMessageForEveryone: new DeleteMessageForEveryone(gateway),
+    pageVisibility,
+  }
 }
 
 beforeEach(() => {
@@ -90,6 +112,11 @@ beforeEach(() => {
     loadLatest: vi.fn().mockResolvedValue([]),
     loadBefore: vi.fn().mockResolvedValue([]),
     put: vi.fn().mockResolvedValue(undefined),
+    close: vi.fn(),
+  }
+  messengerSnapshotStore = {
+    load: vi.fn().mockResolvedValue(null),
+    save: vi.fn().mockResolvedValue(undefined),
     close: vi.fn(),
   }
   gateway = {
@@ -131,20 +158,42 @@ beforeEach(() => {
 })
 
 describe('messenger orchestration', () => {
-  it('captures a cursor baseline before snapshot and catches up newer messages', async () => {
-    const messenger = useMessenger('alice-id', vi.fn(), {
-      gateway,
-      messageArchive,
-      messageProtection: createMessageProtection(),
-      haptics,
-      clientIdGenerator,
-      listConversationReadStates: new ListConversationReadStates(readStateGateway),
-      markConversationRead: new MarkConversationRead(readStateGateway),
-      listParticipantDeliveryStates: new ListParticipantDeliveryStates(deliveryStateGateway),
-      markConversationDelivered: new MarkConversationDelivered(deliveryStateGateway),
-      deleteMessageForEveryone: new DeleteMessageForEveryone(gateway),
-      pageVisibility,
+  it('hydrates a local conversation snapshot and catches up without full list refetch', async () => {
+    vi.mocked(messengerSnapshotStore.load).mockResolvedValue({
+      ownerUserId: 'alice-id',
+      directory: [],
+      conversations: [conversation],
+      readStates: [],
+      deliveryStates: [],
+      syncCursor: 8,
+      savedAt: '2026-08-11T11:59:00Z',
     })
+    vi.mocked(messageArchive.loadLatest).mockResolvedValue([message])
+    vi.mocked(gateway.listSync).mockReset().mockResolvedValue({
+      events: [], nextCursor: 8, streamCursor: 8, hasMore: false, resetRequired: false,
+    })
+    const messenger = useMessenger('alice-id', vi.fn(), messengerDependencies())
+
+    await messenger.load()
+
+    expect(messenger.state.phase).toBe('ready')
+    expect(messenger.state.conversations).toEqual([conversation])
+    expect(messenger.state.messages[0]).toMatchObject({
+      messageId: 'message-1', displayBody: 'hello',
+    })
+    expect(gateway.listSync).toHaveBeenCalledWith(8)
+    expect(gateway.listDirectory).not.toHaveBeenCalled()
+    expect(gateway.listConversations).not.toHaveBeenCalled()
+    expect(gateway.listMessageHistory).not.toHaveBeenCalled()
+    expect(readStateGateway.list).not.toHaveBeenCalled()
+    expect(deliveryStateGateway.list).not.toHaveBeenCalled()
+    expect(messengerSnapshotStore.save).toHaveBeenCalledWith(expect.objectContaining({
+      ownerUserId: 'alice-id', syncCursor: 8,
+    }))
+  })
+
+  it('captures a cursor baseline before snapshot and catches up newer messages', async () => {
+    const messenger = useMessenger('alice-id', vi.fn(), messengerDependencies())
 
     await messenger.load()
     await messenger.poll()
@@ -187,19 +236,7 @@ describe('messenger orchestration', () => {
     vi.mocked(gateway.listSync).mockReset().mockResolvedValue({
       events: [], nextCursor: 0, streamCursor: 0, hasMore: false, resetRequired: false,
     })
-    const messenger = useMessenger('alice-id', vi.fn(), {
-      gateway,
-      messageArchive,
-      messageProtection: createMessageProtection(),
-      haptics,
-      clientIdGenerator,
-      listConversationReadStates: new ListConversationReadStates(readStateGateway),
-      markConversationRead: new MarkConversationRead(readStateGateway),
-      listParticipantDeliveryStates: new ListParticipantDeliveryStates(deliveryStateGateway),
-      markConversationDelivered: new MarkConversationDelivered(deliveryStateGateway),
-      deleteMessageForEveryone: new DeleteMessageForEveryone(gateway),
-      pageVisibility,
-    })
+    const messenger = useMessenger('alice-id', vi.fn(), messengerDependencies())
 
     await messenger.load()
     expect(readStateGateway.mark).not.toHaveBeenCalled()
@@ -234,19 +271,7 @@ describe('messenger orchestration', () => {
         newestSequence: page.at(-1)?.sequence ?? null,
       }
     })
-    const messenger = useMessenger('alice-id', vi.fn(), {
-      gateway,
-      messageArchive,
-      messageProtection: createMessageProtection(),
-      haptics,
-      clientIdGenerator,
-      listConversationReadStates: new ListConversationReadStates(readStateGateway),
-      markConversationRead: new MarkConversationRead(readStateGateway),
-      listParticipantDeliveryStates: new ListParticipantDeliveryStates(deliveryStateGateway),
-      markConversationDelivered: new MarkConversationDelivered(deliveryStateGateway),
-      deleteMessageForEveryone: new DeleteMessageForEveryone(gateway),
-      pageVisibility,
-    })
+    const messenger = useMessenger('alice-id', vi.fn(), messengerDependencies())
 
     await messenger.load()
     expect(messenger.state.messages.map(item => item.sequence)).toEqual(
@@ -292,19 +317,7 @@ describe('messenger orchestration', () => {
       .mockResolvedValueOnce({
         messages: page(801), hasMore: true, oldestSequence: 801, newestSequence: 900,
       })
-    const messenger = useMessenger('alice-id', vi.fn(), {
-      gateway,
-      messageArchive,
-      messageProtection: createMessageProtection(),
-      haptics,
-      clientIdGenerator,
-      listConversationReadStates: new ListConversationReadStates(readStateGateway),
-      markConversationRead: new MarkConversationRead(readStateGateway),
-      listParticipantDeliveryStates: new ListParticipantDeliveryStates(deliveryStateGateway),
-      markConversationDelivered: new MarkConversationDelivered(deliveryStateGateway),
-      deleteMessageForEveryone: new DeleteMessageForEveryone(gateway),
-      pageVisibility,
-    })
+    const messenger = useMessenger('alice-id', vi.fn(), messengerDependencies())
 
     await messenger.load()
     await messenger.loadOlder()
@@ -335,19 +348,7 @@ describe('messenger orchestration', () => {
     vi.mocked(gateway.listSync).mockReset().mockResolvedValue({
       events: [], nextCursor: 0, streamCursor: 0, hasMore: false, resetRequired: false,
     })
-    const messenger = useMessenger('alice-id', vi.fn(), {
-      gateway,
-      messageArchive,
-      messageProtection: createMessageProtection(),
-      haptics,
-      clientIdGenerator,
-      listConversationReadStates: new ListConversationReadStates(readStateGateway),
-      markConversationRead: new MarkConversationRead(readStateGateway),
-      listParticipantDeliveryStates: new ListParticipantDeliveryStates(deliveryStateGateway),
-      markConversationDelivered: new MarkConversationDelivered(deliveryStateGateway),
-      deleteMessageForEveryone: new DeleteMessageForEveryone(gateway),
-      pageVisibility,
-    })
+    const messenger = useMessenger('alice-id', vi.fn(), messengerDependencies())
 
     const loading = messenger.load()
     await vi.waitFor(() => expect(messenger.state.messages).toHaveLength(1))
@@ -365,22 +366,12 @@ describe('messenger orchestration', () => {
     vi.mocked(gateway.listMessageHistory).mockResolvedValue({
       messages: [], hasMore: false, oldestSequence: null, newestSequence: null,
     })
-    const degraded = useMessenger('alice-id', vi.fn(), {
-      gateway,
-      messageArchive,
-      messageProtection: createMessageProtection(),
-      haptics,
-      clientIdGenerator,
-      listConversationReadStates: new ListConversationReadStates(readStateGateway),
-      markConversationRead: new MarkConversationRead(readStateGateway),
-      listParticipantDeliveryStates: new ListParticipantDeliveryStates(deliveryStateGateway),
-      markConversationDelivered: new MarkConversationDelivered(deliveryStateGateway),
-      deleteMessageForEveryone: new DeleteMessageForEveryone(gateway),
-      pageVisibility,
-    })
+    vi.mocked(messengerSnapshotStore.save).mockClear()
+    const degraded = useMessenger('alice-id', vi.fn(), messengerDependencies())
     await degraded.load()
     expect(degraded.state.phase).toBe('ready')
     expect(degraded.state.archiveStatus).toBe('unavailable')
+    expect(messengerSnapshotStore.save).not.toHaveBeenCalled()
   })
 
   it('bounds the reactive history window and can return to the latest page', async () => {
@@ -408,19 +399,7 @@ describe('messenger orchestration', () => {
         newestSequence: page.at(-1)?.sequence ?? null,
       }
     })
-    const messenger = useMessenger('alice-id', vi.fn(), {
-      gateway,
-      messageArchive,
-      messageProtection: createMessageProtection(),
-      haptics,
-      clientIdGenerator,
-      listConversationReadStates: new ListConversationReadStates(readStateGateway),
-      markConversationRead: new MarkConversationRead(readStateGateway),
-      listParticipantDeliveryStates: new ListParticipantDeliveryStates(deliveryStateGateway),
-      markConversationDelivered: new MarkConversationDelivered(deliveryStateGateway),
-      deleteMessageForEveryone: new DeleteMessageForEveryone(gateway),
-      pageVisibility,
-    })
+    const messenger = useMessenger('alice-id', vi.fn(), messengerDependencies())
 
     await messenger.load()
     await messenger.loadOlder()
@@ -468,19 +447,7 @@ describe('messenger orchestration', () => {
         hasMore: false,
         resetRequired: false,
       })
-    const messenger = useMessenger('alice-id', vi.fn(), {
-      gateway,
-      messageArchive,
-      messageProtection: createMessageProtection(),
-      haptics,
-      clientIdGenerator,
-      listConversationReadStates: new ListConversationReadStates(readStateGateway),
-      markConversationRead: new MarkConversationRead(readStateGateway),
-      listParticipantDeliveryStates: new ListParticipantDeliveryStates(deliveryStateGateway),
-      markConversationDelivered: new MarkConversationDelivered(deliveryStateGateway),
-      deleteMessageForEveryone: new DeleteMessageForEveryone(gateway),
-      pageVisibility,
-    })
+    const messenger = useMessenger('alice-id', vi.fn(), messengerDependencies())
 
     await messenger.load()
     await messenger.poll()

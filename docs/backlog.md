@@ -63,8 +63,9 @@ Implementation и desktop browser smoke завершены; physical 390px scree
 
 ### BL-041 — Visual system, accessibility и PWA polish
 
-Статус: **in progress** (`WP-041` завершает core messenger viewport/interaction
-и install assets; update UX и полный accessibility/visual-regression gate остаются).
+Статус: **in progress** (`WP-041` завершил core messenger viewport/interaction и
+первую install surface; `WP-043` добавил Pixel edge-to-edge/pull-to-refresh contract
+и maskable v2 assets; update UX и полный accessibility/visual-regression gate остаются).
 
 Результат: приложение имеет единый визуальный язык, install/update UX и
 доступность, а messenger shell по плотности и поведению привычен пользователю
@@ -88,6 +89,10 @@ Telegram/WhatsApp без копирования их бренда.
 - [ ] skeleton/empty/error/offline states без layout shift;
 - [x] PWA standard/maskable/touch icons, portrait Apple splash, theme colors и
   standalone safe areas;
+- [x] Android gesture-area surface и запрет root pull-to-refresh при сохранении
+  независимого scrolling timeline/list;
+- [x] отдельная прозрачная `any` icon и full-bleed opaque `maskable` icon без baked
+  square/squircle, с versioned manifest URLs и воспроизводимым SVG→PNG pipeline;
 - [ ] install/update prompts и migration-compatible service worker lifecycle;
 - [ ] repository-owned visual regression screenshots для short/long timeline, empty/loading/error,
   mobile keyboard-sized viewport и основных desktop/mobile состояний.
@@ -232,13 +237,16 @@ policy остаются).
 
 ### BL-022 — IndexedDB encrypted local archive
 
-Статус: **частично выполнено** (`WP-042` завершил bounded latest/before history,
-AES-GCM encrypted message archive и bounded reactive window; conversation index,
-durable sync/read cursors, attachment metadata и update migration gate остаются).
+Статус: **частично выполнено** (`WP-042` завершил bounded latest/before history и
+encrypted message archive; `WP-043` добавил encrypted conversation/directory/
+receipt/sync snapshot и cache-first startup. Protocol state, attachment metadata,
+upgrade migration gate и offline outbox остаются).
 
 Результат: startup сначала показывает локальную историю, затем применяет sync delta.
 
-- [ ] versioned stores для conversation index, cursor, receipts, protocol state и attachment metadata;
+- [x] отдельный versioned encrypted snapshot store для conversation index,
+  directory, sync cursor и read/delivery receipts;
+- [ ] versioned stores для protocol state и attachment metadata;
 - [x] отдельный versioned encrypted-message store с bounded per-conversation retention;
 - [x] bounded latest/before pagination и load-older без пропусков для conversation с
   более чем 100 уже существующими сообщениями;
@@ -246,9 +254,12 @@ durable sync/read cursors, attachment metadata и update migration gate оста
 - [x] device-local non-extractable AES-256-GCM storage key;
 - [x] plaintext только в RAM на время rendering/processing; archive adapter явно
   проецирует `TimelineMessage` обратно в transport DTO до encryption;
-- [ ] IndexedDB upgrade migrations и service-worker compatibility tests;
+- [ ] IndexedDB upgrade migrations и cross-release service-worker compatibility tests;
 - [x] понятный non-blocking UX при недоступном browser storage;
-- [ ] encrypted conversation snapshot позволяет полностью network-independent startup.
+- [x] encrypted conversation snapshot рендерится до сети и затем выполняет catch-up
+  с persisted cursor без повторного full list bootstrap;
+- [ ] полноценная offline работа без API остаётся зависимой от `BL-023` outbox и
+  будущих локальных mutation/reconciliation правил.
 
 ### BL-023 — Offline outbox и conflict recovery
 
@@ -274,7 +285,8 @@ durable sync/read cursors, attachment metadata и update migration gate оста
 
 Результат: приложение устанавливается, работает с offline shell и безопасно обновляется.
 
-- manifest/icons/installability;
+- [x] manifest, versioned transparent `any`/opaque `maskable` icons и Apple touch assets;
+- [x] Android edge-to-edge gesture surface и root pull-to-refresh suppression;
 - service-worker offline shell и background-safe reconnect;
 - update notification/activation flow;
 - compatibility gate с IndexedDB schema;

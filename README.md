@@ -6,7 +6,11 @@
 
 ## Статус
 
-Готовы закрытый invitation/activation/session lifecycle, admin user management и purpose-bound password recovery, authorized direct/group conversations, ordered/idempotent message transport, durable per-user cursor sync и usable PWA для обмена сообщениями. История открывается с bounded latest page, догружается назад и сохраняет transport envelopes в AES-GCM encrypted IndexedDB archive; полный local-first snapshot/outbox ещё не завершён. [ADR-0001](docs/adr/0001-e2ee-mls.md) принял MLS 1.0 и threat model; repository воспроизводимо собирает pinned OpenMLS WASM, изолирует его в Worker и хранит private state только как WebCrypto-sealed IndexedDB record. Server identity registry, MLS group lifecycle и остальные implementation release gates ещё не выполнены. Текущий synthetic client codec предназначен только для MVP-проверки транспорта, **не шифрует сообщения и не является E2EE**; интерфейс явно предупреждает об этом.
+Готовы закрытый invitation/activation/session lifecycle, admin user management и purpose-bound password recovery, authorized direct/group conversations, ordered/idempotent message transport, durable per-user cursor sync и usable PWA для обмена сообщениями. История открывается с bounded latest page, догружается назад и сохраняет transport envelopes в AES-GCM encrypted IndexedDB archive; список чатов, directory, receipts и sync cursor открываются из отдельного encrypted snapshot до network catch-up. Offline outbox ещё не завершён. [ADR-0001](docs/adr/0001-e2ee-mls.md) принял MLS 1.0 и threat model; repository воспроизводимо собирает pinned OpenMLS WASM, изолирует его в Worker и хранит private state только как WebCrypto-sealed IndexedDB record. Server identity registry, MLS group lifecycle и остальные implementation release gates ещё не выполнены. Текущий synthetic client codec предназначен только для MVP-проверки транспорта, **не шифрует сообщения и не является E2EE**; интерфейс явно предупреждает об этом.
+
+Install assets адаптированы для Android circle/squircle и Apple Dock. После смены
+launcher icon уже установленную Android PWA может потребоваться удалить и установить
+заново: Chrome/launcher не гарантируют немедленное обновление install icon.
 
 Текущая фича и подробный план находятся в [docs/workplan.md](docs/workplan.md). Полный продуктовый backlog — в [docs/backlog.md](docs/backlog.md), архитектура и правила её развития — в [docs/architecture.md](docs/architecture.md), найденные дефекты — в [docs/bugs.md](docs/bugs.md).
 

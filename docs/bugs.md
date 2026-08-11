@@ -4,8 +4,9 @@
 
 ## Active
 
-Активных воспроизводимых дефектов сейчас нет; незавершённые продуктовые возможности
-остаются в `backlog.md` и не маскируются как bugs.
+Активных воспроизводимых дефектов после автоматизированной проверки `WP-043` нет.
+Physical Pixel acceptance для `BUG-033`/`BUG-034` ожидает пользовательского retest
+после production deploy и uninstall/reinstall старой установки.
 
 ## Формат записи
 
@@ -22,6 +23,59 @@
 - Проверка: тест или команда, подтверждающая fix.
 
 ## Resolved
+
+### BUG-035 — Список чатов повторно загружался с нуля при каждом входе
+
+- Статус: `verified`.
+- Найдено в: production Pixel PWA QA, `WP-043`.
+- Severity: `medium`.
+- Условия воспроизведения: перейти из settings/admin обратно на `/chat` при уже
+  синхронизированном account.
+- Ожидаемое поведение: encrypted local snapshot отображается немедленно, затем
+  применяется cursor catch-up; full list APIs нужны только при reset/change.
+- Фактическое поведение: новый `useMessenger` всегда начинал с `listSync(0)` и
+  параллельно заново вызывал directory/conversations/read/delivery endpoints.
+- Причина: локально был реализован только message archive, но не messenger snapshot.
+- Исправление: `WP-043` добавил typed encrypted snapshot port/codec/IndexedDB adapter
+  и cache-first bootstrap от persisted sync cursor.
+- Проверка: Vitest подтверждает local render, `listSync(8)` и отсутствие повторных
+  directory/conversations/history/read/delivery list calls; corrupt/tampered storage
+  fail closed. Physical production navigation остаётся acceptance check.
+
+### BUG-034 — Android launcher показывал квадратную icon artwork внутри маски
+
+- Статус: `fixed`, physical verification pending.
+- Найдено в: production Pixel PWA QA, `WP-043`.
+- Severity: `medium`.
+- Условия воспроизведения: установить PWA из Chrome на Pixel с круглой launcher mask.
+- Ожидаемое поведение: отдельный opaque maskable asset заполняет системную форму,
+  знак остаётся внутри minimum safe-zone без baked square/card silhouette.
+- Фактическое поведение: launcher визуально воспринимался как квадратная картинка,
+  неровно вложенная в круглую рамку.
+- Причина: install artwork не имел отдельного канонического transparent/maskable
+  generation contract и versioned manifest URL для новой установки.
+- Исправление: `WP-043` добавил SVG mark без platform shape, transparent `any`,
+  full-bleed opaque `maskable`, 40% safe-zone и versioned v2 URLs.
+- Проверка: raster dimension/alpha/source tests проходят; старую Pixel PWA нужно
+  удалить и установить заново, затем визуально проверить circle crop.
+
+### BUG-033 — Gesture navigation area и pull-to-refresh ломали Android PWA shell
+
+- Статус: `fixed`, physical verification pending.
+- Найдено в: production Pixel PWA QA, `WP-043`.
+- Severity: `high`.
+- Условия воспроизведения: открыть установленную Chrome PWA на Pixel, использовать
+  gesture navigation и потянуть root вниз у верхней границы internal scroll.
+- Ожидаемое поведение: app surface непрерывно закрашен под gesture pill; системный
+  pull-to-refresh не запускается, обновление контролируется PWA lifecycle.
+- Фактическое поведение: область под gesture pill имела чужой фон, а browser refresh
+  мог перезагрузить приложение и сбросить transient UI state.
+- Причина: root не запрещал overscroll default action; bottom bar использовал только
+  dynamic inset, а не Chrome 135 dynamic/maximum-inset edge-to-edge pattern.
+- Исправление: `WP-043` задаёт root `overscroll-behavior: none`, отдельные internal
+  scroll containers, opaque theme surface и max/dynamic safe-area geometry.
+- Проверка: CSS/theme contract tests проходят; окончательная standalone проверка
+  gesture pill и pull-down выполняется на физическом Pixel после deploy.
 
 ### BUG-030 — Существующая история длиннее 100 сообщений загружалась не полностью
 

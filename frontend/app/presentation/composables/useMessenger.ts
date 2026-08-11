@@ -15,8 +15,13 @@ import type { ProtocolMessageProtection } from '../../application/messaging/mess
 import type { TimelineMessage } from '../../application/messaging/timeline-message'
 import type { HapticsPort } from '../../application/ports/haptics'
 import type { MessageArchive } from '../../application/ports/message-archive'
+import type {
+  MessengerSnapshot,
+  MessengerSnapshotStore,
+} from '../../application/ports/messenger-snapshot-store'
 import type { MessagingGateway } from '../../application/ports/messaging-gateway'
 import type { PageVisibility } from '../../application/ports/page-visibility'
+import type { Clock } from '../../application/ports/clock'
 import type {
   Conversation,
   ConversationReadState,
@@ -48,7 +53,9 @@ interface MessengerState {
 export interface MessengerDependencies {
   gateway: MessagingGateway
   messageArchive: MessageArchive
+  messengerSnapshotStore: MessengerSnapshotStore
   messageProtection: ProtocolMessageProtection
+  clock: Clock
   haptics: HapticsPort
   clientIdGenerator: ClientIdGenerator
   listConversationReadStates: ListConversationReadStates
@@ -69,7 +76,9 @@ export function useMessenger(
     return {
       gateway: $frontend.messagingGateway,
       messageArchive: $frontend.messageArchive,
+      messengerSnapshotStore: $frontend.messengerSnapshotStore,
       messageProtection: $frontend.messageProtection,
+      clock: $frontend.clock,
       haptics: $frontend.haptics,
       clientIdGenerator: $frontend.clientIdGenerator,
       listConversationReadStates: $frontend.listConversationReadStates,
@@ -83,7 +92,9 @@ export function useMessenger(
   const {
     gateway,
     messageArchive,
+    messengerSnapshotStore,
     messageProtection,
+    clock,
     haptics,
     clientIdGenerator,
     listConversationReadStates,
@@ -118,6 +129,7 @@ export function useMessenger(
     messageProtection,
   )
   let polling = false
+  let snapshotAvailable = true
   const readAdvances = new Map<string, number>()
   const deliveryAdvances = new Map<string, number>()
 
@@ -213,7 +225,56 @@ export function useMessenger(
   }
 
   function syncArchiveStatus(): void {
-    state.archiveStatus = history.archiveStatus
+    state.archiveStatus = history.archiveStatus === 'ready' && snapshotAvailable
+      ? 'ready'
+      : 'unavailable'
+  }
+
+  async function persistSnapshot(): Promise<void> {
+    // Never persist an advanced sync cursor when the encrypted message archive is
+    // unavailable. Otherwise a later startup could trust that cursor while the
+    // corresponding message envelopes were never stored locally.
+    if (!snapshotAvailable || history.archiveStatus !== 'ready') return
+    try {
+      await messengerSnapshotStore.save({
+        ownerUserId: actorUserId,
+        directory: state.directory,
+        conversations: state.conversations,
+        readStates: state.readStates,
+        deliveryStates: state.deliveryStates,
+        syncCursor: state.syncCursor,
+        savedAt: new Date(clock.nowMilliseconds()).toISOString(),
+      })
+    } catch {
+      snapshotAvailable = false
+      syncArchiveStatus()
+    }
+  }
+
+  async function hydrateSnapshot(): Promise<boolean> {
+    let snapshot: MessengerSnapshot | null
+    try {
+      snapshot = await messengerSnapshotStore.load(actorUserId)
+    } catch {
+      snapshotAvailable = false
+      syncArchiveStatus()
+      return false
+    }
+    if (!snapshot) return false
+    state.directory = [...snapshot.directory]
+    state.conversations = [...snapshot.conversations]
+    state.readStates = [...snapshot.readStates]
+    state.deliveryStates = [...snapshot.deliveryStates]
+    state.syncCursor = snapshot.syncCursor
+    state.activeConversationId = state.conversations[0]?.conversationId ?? null
+    resetHistoryWindow()
+    if (state.activeConversationId) {
+      const cached = await history.loadCachedLatest(state.activeConversationId)
+      syncArchiveStatus()
+      if (cached) applyHistoryWindow(cached)
+    }
+    state.phase = 'ready'
+    return true
   }
 
   async function loadLatestHistory(conversationId: string): Promise<void> {
@@ -303,7 +364,12 @@ export function useMessenger(
   }
 
   async function reloadConversations(): Promise<void> {
-    state.conversations = await gateway.listConversations()
+    const [directory, conversations] = await Promise.all([
+      gateway.listDirectory(),
+      gateway.listConversations(),
+    ])
+    state.directory = directory
+    state.conversations = conversations
     if (!state.conversations.some(item => item.conversationId === state.activeConversationId)) {
       state.activeConversationId = state.conversations[0]?.conversationId ?? null
       resetHistoryWindow()
@@ -315,6 +381,16 @@ export function useMessenger(
     state.phase = 'loading'
     state.message = null
     try {
+      if (await hydrateSnapshot()) {
+        await poll()
+        if (
+          state.activeConversationId
+          && state.messages.length === 0
+        ) {
+          await loadLatestHistory(state.activeConversationId)
+        }
+        return
+      }
       const syncBaseline = await gateway.listSync(0)
       const [directory, conversations, readStates, deliveryStates] = await Promise.all([
         gateway.listDirectory(),
@@ -331,6 +407,7 @@ export function useMessenger(
       if (state.activeConversationId) await loadLatestHistory(state.activeConversationId)
       state.syncCursor = syncBaseline.streamCursor
       state.phase = 'ready'
+      await persistSnapshot()
     } catch (error) {
       fail(error)
     }
@@ -342,7 +419,15 @@ export function useMessenger(
     resetHistoryWindow()
     state.message = null
     try {
-      await loadLatestHistory(conversationId)
+      const cached = await history.loadCachedLatest(conversationId)
+      syncArchiveStatus()
+      if (cached) {
+        applyHistoryWindow(cached)
+        state.phase = 'ready'
+        await loadForwardMessages(conversationId)
+      } else {
+        await loadLatestHistory(conversationId)
+      }
       state.phase = 'ready'
     } catch (error) {
       fail(error)
@@ -356,6 +441,7 @@ export function useMessenger(
       const conversation = await gateway.createDirect(otherUserId)
       await reloadConversations()
       await selectConversation(conversation.conversationId)
+      await persistSnapshot()
     } catch (error) {
       if (error instanceof ApplicationError && error.status === 409) {
         state.message = 'Прямой диалог с этим участником уже существует.'
@@ -374,6 +460,7 @@ export function useMessenger(
       const conversation = await gateway.createGroup(title, memberUserIds)
       await reloadConversations()
       await selectConversation(conversation.conversationId)
+      await persistSnapshot()
     } catch (error) {
       fail(error)
     } finally {
@@ -466,11 +553,13 @@ export function useMessenger(
         const page = await gateway.listSync(state.syncCursor)
         if (page.resetRequired) {
           await reloadConversations()
+          await Promise.all([reloadReadStates(), reloadDeliveryStates()])
           if (state.activeConversationId) {
             resetHistoryWindow()
             await loadLatestHistory(state.activeConversationId)
           }
           state.syncCursor = page.streamCursor
+          await persistSnapshot()
           state.phase = 'ready'
           return
         }
@@ -520,6 +609,7 @@ export function useMessenger(
       }
       if (readStatesChanged) await reloadReadStates()
       if (deliveryStatesChanged) await reloadDeliveryStates()
+      await persistSnapshot()
       state.phase = 'ready'
       state.message = null
     } catch (error) {

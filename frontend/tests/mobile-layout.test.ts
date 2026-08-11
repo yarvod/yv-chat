@@ -9,10 +9,21 @@ describe('mobile application shell', () => {
     const css = readFileSync(cssPath, 'utf8')
     const mobileBlock = css.slice(css.indexOf('@media (max-width: 840px)'))
 
-    expect(mobileBlock).toContain('--mobile-tabs-height: calc(62px + env(safe-area-inset-bottom))')
-    expect(mobileBlock).toContain('padding-bottom: var(--mobile-tabs-height)')
-    expect(mobileBlock).toMatch(/\.mobile-tabs \{ position: fixed;[^}]*inset-inline: 0; bottom: 0;/)
-    expect(mobileBlock).toContain('height: var(--mobile-tabs-height)')
+    expect(css).toContain('--safe-area-max-inset-bottom: env(safe-area-max-inset-bottom, 36px)')
+    expect(mobileBlock).toContain('--mobile-tabs-slot-height: calc(62px + env(safe-area-inset-bottom, 0px))')
+    expect(mobileBlock).toContain('padding-bottom: var(--mobile-tabs-slot-height)')
+    expect(mobileBlock).toMatch(/\.mobile-tabs \{ position: fixed;[^}]*bottom: calc\(env\(safe-area-inset-bottom, 0px\) - var\(--safe-area-max-inset-bottom\)\);/)
+    expect(mobileBlock).toContain('height: var(--mobile-tabs-outer-height)')
+    expect(mobileBlock).toContain('background: var(--surface-solid)')
+  })
+
+  it('prevents root pull-to-refresh without disabling internal scrollers', () => {
+    const css = readFileSync(resolve(process.cwd(), 'app/assets/main.css'), 'utf8')
+
+    expect(css).toMatch(/html \{[^}]*overscroll-behavior: none;/)
+    expect(css).toMatch(/body \{[^}]*overscroll-behavior: none;/)
+    expect(css).toMatch(/\.message-timeline \{[^}]*overflow-y: auto;/)
+    expect(css).toMatch(/\.conversation-list \{[^}]*overflow-y: auto;/)
   })
 
   it('bounds chat to the viewport and assigns overflow only to internal lists', () => {
