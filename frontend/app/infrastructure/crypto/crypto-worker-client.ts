@@ -6,6 +6,21 @@ import type {
   PublicKeyPackageValidationCommand,
   PublicKeyPackageValidationResult,
 } from '../../application/ports/device-crypto-gateway'
+import type {
+  BootstrapMlsConversationCommand,
+  BootstrapMlsConversationResult,
+  JoinMlsConversationCommand,
+  MlsConversationGateway,
+  MlsConversationStateResult,
+  ProtectMlsMessageCommand,
+  ProtectMlsMessageResult,
+  UnprotectMlsMessageCommand,
+  UnprotectMlsMessageResult,
+} from '../../application/ports/mls-conversation-gateway'
+import {
+  mlsRequestEnvelope,
+  type MlsWorkerResult,
+} from './mls-worker-protocol'
 import {
   parseWorkerResponse,
   requestEnvelope,
@@ -15,7 +30,7 @@ import {
 const DEFAULT_TIMEOUT_MS = 15_000
 
 interface PendingRequest {
-  resolve(value: DeviceCryptoIdentity | PublicKeyPackageValidationResult | { disposed: true }): void
+  resolve(value: WorkerResult): void
   reject(reason: DeviceCryptoError): void
   timeout: ReturnType<typeof setTimeout>
 }
@@ -29,7 +44,10 @@ function defaultWorkerFactory(): Worker {
   })
 }
 
-export class CryptoWorkerClient implements DeviceCryptoGateway {
+type WorkerResult = DeviceCryptoIdentity | PublicKeyPackageValidationResult
+  | MlsWorkerResult | { disposed: true }
+
+export class CryptoWorkerClient implements DeviceCryptoGateway, MlsConversationGateway {
   private readonly worker: Worker
   private readonly pending = new Map<string, PendingRequest>()
   private disposed = false
@@ -67,6 +85,40 @@ export class CryptoWorkerClient implements DeviceCryptoGateway {
     ))
   }
 
+  async bootstrapConversation(
+    command: BootstrapMlsConversationCommand,
+  ): Promise<BootstrapMlsConversationResult> {
+    const result = await this.send(mlsRequestEnvelope(
+      this.requestId(),
+      'mls-bootstrap',
+      command,
+    ))
+    if (!('commit' in result)) throw new DeviceCryptoError('worker-protocol')
+    return result
+  }
+
+  async joinConversation(
+    command: JoinMlsConversationCommand,
+  ): Promise<MlsConversationStateResult> {
+    const result = await this.send(mlsRequestEnvelope(this.requestId(), 'mls-join', command))
+    if (!isConversationState(result)) throw new DeviceCryptoError('worker-protocol')
+    return result
+  }
+
+  async protectMessage(command: ProtectMlsMessageCommand): Promise<ProtectMlsMessageResult> {
+    const result = await this.send(mlsRequestEnvelope(this.requestId(), 'mls-protect', command))
+    if (!('ciphertext' in result)) throw new DeviceCryptoError('worker-protocol')
+    return result
+  }
+
+  async unprotectMessage(
+    command: UnprotectMlsMessageCommand,
+  ): Promise<UnprotectMlsMessageResult> {
+    const result = await this.send(mlsRequestEnvelope(this.requestId(), 'mls-unprotect', command))
+    if (!('plaintext' in result)) throw new DeviceCryptoError('worker-protocol')
+    return result
+  }
+
   async dispose(): Promise<void> {
     if (this.disposed) return
     try {
@@ -84,7 +136,7 @@ export class CryptoWorkerClient implements DeviceCryptoGateway {
 
   private async identityRequest(request: DeviceCryptoWorkerRequest): Promise<DeviceCryptoIdentity> {
     const result = await this.send(request)
-    if ('disposed' in result || 'validated' in result) {
+    if (!isDeviceIdentity(result)) {
       throw new DeviceCryptoError('runtime-unavailable')
     }
     return result
@@ -100,7 +152,7 @@ export class CryptoWorkerClient implements DeviceCryptoGateway {
 
   private send(
     request: DeviceCryptoWorkerRequest,
-  ): Promise<DeviceCryptoIdentity | PublicKeyPackageValidationResult | { disposed: true }> {
+  ): Promise<WorkerResult> {
     if (this.disposed) return Promise.reject(new DeviceCryptoError('runtime-unavailable'))
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
@@ -143,4 +195,15 @@ export class CryptoWorkerClient implements DeviceCryptoGateway {
     }
     this.pending.clear()
   }
+}
+
+function isDeviceIdentity(result: WorkerResult): result is DeviceCryptoIdentity {
+  return 'credentialIdentity' in result
+}
+
+function isConversationState(result: WorkerResult): result is MlsConversationStateResult {
+  return 'epoch' in result
+    && 'revision' in result
+    && !('commit' in result)
+    && !('ciphertext' in result)
 }

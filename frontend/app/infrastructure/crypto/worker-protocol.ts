@@ -5,6 +5,12 @@ import type {
   PublicKeyPackageValidationCommand,
   PublicKeyPackageValidationResult,
 } from '../../application/ports/device-crypto-gateway'
+import {
+  parseMlsWorkerRequest,
+  parseMlsWorkerResult,
+  type MlsWorkerRequest,
+  type MlsWorkerResult,
+} from './mls-worker-protocol'
 
 const PROTOCOL_VERSION = 2
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
@@ -32,7 +38,7 @@ interface WorkerRequestBase {
   requestId: string
 }
 
-export type DeviceCryptoWorkerRequest =
+export type DeviceCryptoWorkerRequest = MlsWorkerRequest
   | (WorkerRequestBase & {
       type: 'provision'
       command: DeviceCryptoIdentityCommand
@@ -53,7 +59,8 @@ export type DeviceCryptoWorkerResponse =
       version: typeof PROTOCOL_VERSION
       requestId: string
       ok: true
-      result: DeviceCryptoIdentity | PublicKeyPackageValidationResult | { disposed: true }
+      result: DeviceCryptoIdentity | PublicKeyPackageValidationResult | MlsWorkerResult
+        | { disposed: true }
     }
   | {
       version: typeof PROTOCOL_VERSION
@@ -198,7 +205,7 @@ export function parseWorkerRequest(value: unknown): DeviceCryptoWorkerRequest | 
       command: candidate.command,
     }
   }
-  return null
+  return parseMlsWorkerRequest(value)
 }
 
 export function parseWorkerResponse(value: unknown): DeviceCryptoWorkerResponse | null {
@@ -247,6 +254,15 @@ export function parseWorkerResponse(value: unknown): DeviceCryptoWorkerResponse 
       result: { validated: true },
     }
   }
+  const mlsResult = parseMlsWorkerResult(candidate.result)
+  if (mlsResult) {
+    return {
+      version: PROTOCOL_VERSION,
+      requestId: candidate.requestId,
+      ok: true,
+      result: mlsResult,
+    }
+  }
   const identity = parseIdentity(candidate.result)
   if (!identity) return null
   return {
@@ -273,7 +289,7 @@ export function requestEnvelope(
 ): DeviceCryptoWorkerRequest
 export function requestEnvelope(
   requestId: string,
-  type: DeviceCryptoWorkerRequest['type'],
+  type: 'checkpoint' | 'dispose' | 'provision' | 'restore' | 'validate-key-package',
   command?: DeviceCryptoIdentityCommand | PublicKeyPackageValidationCommand,
 ): DeviceCryptoWorkerRequest {
   if (type === 'provision' || type === 'restore') {
@@ -291,7 +307,8 @@ export function requestEnvelope(
 
 export function successResponse(
   requestId: string,
-  result: DeviceCryptoIdentity | PublicKeyPackageValidationResult | { disposed: true },
+  result: DeviceCryptoIdentity | PublicKeyPackageValidationResult | MlsWorkerResult
+    | { disposed: true },
 ): DeviceCryptoWorkerResponse {
   return { version: PROTOCOL_VERSION, requestId, ok: true, result }
 }

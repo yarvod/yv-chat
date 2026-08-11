@@ -756,6 +756,12 @@ atomic sealed-state commit. Commit/Welcome/ciphertext/plaintext копируют
 уничтожает потенциально продвинутый in-memory instance; продолжение возможно только
 через restore последнего подтверждённого snapshot. Это предотвращает ratchet/epoch
 rollback после частичного сбоя и повторное использование неподтверждённого state.
+Main-thread gateway достигает этих операций только через exact Worker envelopes
+`mls-bootstrap`, `mls-join`, `mls-protect`, `mls-unprotect`. Каждый command/result
+variant имеет закрытый набор полей, canonical UUID, bounded binary sizes и safe
+integer epoch/revision. Лишнее поле делает весь envelope invalid; private state не
+является допустимым типом. Commit/Welcome/tree/ciphertext/plaintext передаются как
+transferable buffers, а malformed response завершает все pending calls fail-closed.
 
 Node 24 integration tests исполняют настоящий release WASM с WebCrypto и fake
 IndexedDB, включая reload, concurrent provision и tamper. Отдельный physical Chromium

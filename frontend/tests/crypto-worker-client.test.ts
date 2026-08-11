@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { CryptoWorkerClient } from '../app/infrastructure/crypto/crypto-worker-client'
+import { mlsRequestEnvelope } from '../app/infrastructure/crypto/mls-worker-protocol'
 import {
   errorResponse,
   parseWorkerRequest,
@@ -12,6 +13,10 @@ const userId = '1b0a32e8-144f-4f60-bcb6-112f71bd5316'
 const deviceId = '50d6b08a-84ae-4bd7-829a-f40f38e9a2c1'
 const firstRequestId = '11111111-1111-4111-8111-111111111111'
 const secondRequestId = '22222222-2222-4222-8222-222222222222'
+const thirdRequestId = '33333333-3333-4333-8333-333333333333'
+const fourthRequestId = '44444444-4444-4444-8444-444444444444'
+const conversationId = 'f6a5941b-c417-4e50-a69c-9a30bd7ed28c'
+const messageId = '538998bb-1943-4cf3-beb1-8b87cadf0fc1'
 
 const identity = {
   userId,
@@ -146,6 +151,71 @@ describe('device crypto Worker protocol', () => {
     })
     worker.reply(successResponse(firstRequestId, { validated: true }))
     await expect(validating).resolves.toEqual({ validated: true })
+  })
+
+  it('routes only bounded MLS commands and exact result variants', async () => {
+    const worker = new MockWorker()
+    const client = new CryptoWorkerClient(
+      () => worker as unknown as Worker,
+      1_000,
+      requestIds(firstRequestId, secondRequestId, thirdRequestId, fourthRequestId),
+    )
+    const bootstrapResult = {
+      commit: new Uint8Array([1]),
+      welcome: new Uint8Array([2]),
+      ratchetTree: new Uint8Array([3]),
+      epoch: 1,
+      revision: 2,
+    }
+    const bootstrapping = client.bootstrapConversation({
+      conversationId,
+      keyPackages: [identity.keyPackage],
+    })
+    expect(parseWorkerRequest(worker.messages[0])).toMatchObject({
+      type: 'mls-bootstrap',
+      command: { conversationId },
+    })
+    worker.reply(successResponse(firstRequestId, bootstrapResult))
+    await expect(bootstrapping).resolves.toEqual(bootstrapResult)
+
+    const joining = client.joinConversation({
+      conversationId,
+      welcome: bootstrapResult.welcome,
+      ratchetTree: bootstrapResult.ratchetTree,
+    })
+    worker.reply(successResponse(secondRequestId, { epoch: 1, revision: 2 }))
+    await expect(joining).resolves.toEqual({ epoch: 1, revision: 2 })
+
+    const protecting = client.protectMessage({
+      conversationId,
+      clientMessageId: messageId,
+      plaintext: new Uint8Array([4]),
+    })
+    const protectedResult = { ciphertext: new Uint8Array([5]), epoch: 1, revision: 3 }
+    worker.reply(successResponse(thirdRequestId, protectedResult))
+    await expect(protecting).resolves.toEqual(protectedResult)
+
+    const unprotecting = client.unprotectMessage({
+      conversationId,
+      clientMessageId: messageId,
+      ciphertext: protectedResult.ciphertext,
+    })
+    const unprotectedResult = { plaintext: new Uint8Array([4]), revision: 3 }
+    worker.reply(successResponse(fourthRequestId, unprotectedResult))
+    await expect(unprotecting).resolves.toEqual(unprotectedResult)
+
+    expect(parseWorkerRequest({
+      ...mlsRequestEnvelope(firstRequestId, 'mls-protect', {
+        conversationId,
+        clientMessageId: messageId,
+        plaintext: new Uint8Array([1]),
+      }),
+      leakedPrivateState: new Uint8Array([9]),
+    })).toBeNull()
+    expect(parseWorkerResponse(successResponse(firstRequestId, {
+      ...protectedResult,
+      plaintext: new Uint8Array([9]),
+    }))).toBeNull()
   })
 
   it('fails all pending calls on malformed messages and timeouts', async () => {

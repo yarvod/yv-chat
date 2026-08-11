@@ -59,7 +59,7 @@ synthetic v1 payload виден серверу; положить туда file k
 - [x] Экспортировать initial create/add/Welcome и protect/unprotect через безопасные
   WASM bindings поверх проверенного native контракта.
 - [ ] Добавить обработку Commit существующими members и remove/re-add leaf.
-- [ ] Расширить closed Worker protocol; все state-changing crypto operations должны
+- [x] Расширить closed Worker protocol; все state-changing crypto operations должны
   checkpoint-ить sealed provider state до success наружу.
 - [ ] Добавить frontend bootstrap/reconcile coordinator и typed server gateways;
   UI показывает pending/ready/blocked generation state.
