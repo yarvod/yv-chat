@@ -69,6 +69,25 @@ export function parseRealtimeFrame(value: unknown): RealtimeFrame {
       expiresAt,
     }
   }
+  if (type === 'presence') {
+    if (new Set(Object.keys(frame)).size !== 6 || ![
+      'type',
+      'event_id',
+      'conversation_id',
+      'message_id',
+      'actor_user_id',
+      'online',
+    ].every(key => key in frame) || frame.message_id !== null) {
+      throw new ApplicationError(200, 'invalid-response', 'invalid realtime frame')
+    }
+    return {
+      type,
+      eventId: requiredString(frame, 'event_id'),
+      conversationId: requiredString(frame, 'conversation_id'),
+      actorUserId: requiredString(frame, 'actor_user_id'),
+      online: requiredBoolean(frame, 'online'),
+    }
+  }
   if (!DURABLE_TYPES.has(type as DurableRealtimeEventType)) {
     throw new ApplicationError(200, 'invalid-response', 'unknown realtime frame')
   }

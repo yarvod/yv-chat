@@ -12,6 +12,7 @@ const props = defineProps<{
   codec: MessageCodec
   sendMessage: (plaintext: string) => Promise<boolean>
   typingActorIds: readonly string[]
+  onlineActorIds: readonly string[]
   setTyping: (conversationId: string, active: boolean) => void
 }>()
 const emit = defineEmits<{ back: [] }>()
@@ -27,6 +28,16 @@ const typingLabel = computed(() => {
   if (names.length === 1) return `${names[0]} печатает`
   if (names.length === 2) return `${names[0]} и ${names[1]} печатают`
   return `${names.length} участника печатают`
+})
+
+const presenceLabel = computed(() => {
+  if (!props.conversation) return ''
+  if (props.conversation.conversationType === 'direct') {
+    return props.onlineActorIds.length > 0 ? 'В сети' : 'Не в сети'
+  }
+  return props.onlineActorIds.length > 0
+    ? `${props.onlineActorIds.length} в сети`
+    : `${props.conversation.members.length} участников`
 })
 
 function conversationName(conversation: Conversation): string {
@@ -80,7 +91,7 @@ onBeforeUnmount(() => {
         <p v-if="typingLabel" class="typing-label" aria-live="polite">
           {{ typingLabel }}<span aria-hidden="true">…</span>
         </p>
-        <p v-else>{{ conversation.conversationType === 'group' ? `${conversation.members.length} участников` : 'Личный диалог' }}</p>
+        <p v-else>{{ presenceLabel }}</p>
       </div>
       <span class="connection-dot" title="Синхронизация активна" />
     </header>

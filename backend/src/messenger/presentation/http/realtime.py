@@ -5,7 +5,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 from time import monotonic
 from typing import cast
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from dishka import Scope
 from dishka.integrations.fastapi import FromDishka, inject
@@ -18,6 +18,12 @@ from messenger.application.errors import (
 )
 from messenger.application.ports.realtime import RealtimeHub, RealtimeSubscription
 from messenger.application.realtime import RealtimeNotification
+from messenger.application.realtime.presence import (
+    ListPresenceSnapshot,
+    ListPresenceSnapshotQuery,
+    PublishPresence,
+    PublishPresenceCommand,
+)
 from messenger.application.realtime.typing import PublishTyping, PublishTypingCommand
 from messenger.application.sessions.authenticate import (
     AuthenticateSession,
@@ -102,7 +108,44 @@ def _notification_payload(
         payload["active"] = notification.typing_active
     if notification.expires_at is not None:
         payload["expires_at"] = notification.expires_at.isoformat()
+    if notification.presence_online is not None:
+        payload["online"] = notification.presence_online
     return payload
+
+
+async def _presence_snapshot(
+    websocket: WebSocket,
+    principal: AuthenticateSessionResult,
+) -> list[dict[str, str | bool | None]]:
+    session_container = websocket.state.dishka_container
+    async with session_container(scope=Scope.REQUEST) as request_container:
+        use_case = cast(
+            ListPresenceSnapshot,
+            await request_container.get(ListPresenceSnapshot),
+        )
+        records = await use_case.execute(ListPresenceSnapshotQuery(principal.user_id))
+    return [
+        {
+            "type": "presence",
+            "event_id": str(uuid4()),
+            "conversation_id": str(record.conversation_id),
+            "message_id": None,
+            "actor_user_id": str(record.user_id),
+            "online": True,
+        }
+        for record in records
+    ]
+
+
+async def _publish_presence(
+    websocket: WebSocket,
+    principal: AuthenticateSessionResult,
+    online: bool,
+) -> None:
+    session_container = websocket.state.dishka_container
+    async with session_container(scope=Scope.REQUEST) as request_container:
+        use_case = cast(PublishPresence, await request_container.get(PublishPresence))
+        await use_case.execute(PublishPresenceCommand(principal.user_id, online))
 
 
 async def _send_notifications(
@@ -246,7 +289,11 @@ async def realtime_notifications(
     )
     send_lock = asyncio.Lock()
     heartbeat_state = HeartbeatState(monotonic())
+    if subscription.became_online:
+        await _publish_presence(websocket, principal, True)
     await websocket.send_json({"type": "hello"})
+    for payload in await _presence_snapshot(websocket, principal):
+        await websocket.send_json(payload)
     tasks = {
         asyncio.create_task(_send_notifications(websocket, subscription, send_lock)),
         asyncio.create_task(_receive_client_frames(websocket, heartbeat_state, principal)),
@@ -273,4 +320,8 @@ async def realtime_notifications(
             ):
                 await task
     finally:
-        await hub.unsubscribe(subscription)
+        became_offline = await hub.unsubscribe(subscription)
+        if became_offline:
+            await _publish_presence(websocket, principal, False)
+            if principal.user_id in await hub.online_user_ids({principal.user_id}):
+                await _publish_presence(websocket, principal, True)

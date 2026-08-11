@@ -512,6 +512,21 @@ renew-ит active draft раз в три секунды и отправляет 
 Vue-компонент сообщает только intent о непустом draft и отображает готовый transient
 state; draft content никогда не покидает client UI/message-codec boundary.
 
+Presence также остаётся process-local и ephemeral. Hub атомарно отмечает `0 → 1`
+subscription как `became_online`, а удаление последней из нескольких user sessions —
+как `became_offline`; закрытый slow consumer перестаёт считаться online и будит
+transport cleanup. Authorized snapshot пересекает active conversation members с
+`hub.online_user_ids`, поэтому не существует global online-directory endpoint.
+Transition отправляется отдельно для каждой общей conversation, без session/device/IP
+metadata и без DB/sync write. Если новая session появляется во время offline publish,
+transport выполняет post-publish reconciliation и повторяет online, сохраняя верное
+итоговое best-effort состояние.
+
+Frontend хранит presence keyed по conversation+user в отдельном application service.
+Initial snapshot и последующие transitions применяются идемпотентно; socket close
+немедленно очищает весь ephemeral state. Presence frame не запускает `/sync`, не
+продлевает auth session и используется только для UI-индикатора, не авторизации.
+
 Правильность любой realtime-фичи проверяется при отключённом WebSocket. Duplicate WebSocket/Push/sync delivery применяется идемпотентно.
 
 ## 10. E2EE trust boundary

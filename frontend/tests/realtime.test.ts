@@ -92,6 +92,20 @@ describe('realtime sync', () => {
       readSequence: null,
     })
     expect(parseRealtimeFrame({
+      type: 'presence',
+      event_id: 'presence-event',
+      conversation_id: 'conversation',
+      message_id: null,
+      actor_user_id: 'bob',
+      online: true,
+    })).toEqual({
+      type: 'presence',
+      eventId: 'presence-event',
+      conversationId: 'conversation',
+      actorUserId: 'bob',
+      online: true,
+    })
+    expect(parseRealtimeFrame({
       type: 'read_receipt',
       event_id: 'read-event',
       conversation_id: 'conversation',
@@ -164,6 +178,15 @@ describe('realtime sync', () => {
       expiresAt: '2026-08-11T12:00:05+00:00',
     })
     expect(onTyping).toHaveBeenCalledOnce()
+    expect(catchUp).toHaveBeenCalledTimes(2)
+    gateway.callbacks[1]?.onFrame({
+      type: 'presence',
+      eventId: 'presence-event',
+      conversationId: 'conversation',
+      actorUserId: 'bob',
+      online: true,
+    })
+    expect(onTyping).toHaveBeenCalledTimes(2)
     expect(catchUp).toHaveBeenCalledTimes(2)
 
     gateway.callbacks[1]?.onClose({ unauthorized: true })

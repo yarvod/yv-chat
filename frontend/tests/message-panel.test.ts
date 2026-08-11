@@ -44,6 +44,7 @@ describe('message panel', () => {
         codec: syntheticMessageCodec,
         sendMessage,
         typingActorIds: [],
+        onlineActorIds: ['bob-id'],
         setTyping,
       },
     })
@@ -68,6 +69,7 @@ describe('message panel', () => {
         codec: syntheticMessageCodec,
         sendMessage: vi.fn(),
         typingActorIds: ['bob-id'],
+        onlineActorIds: ['bob-id'],
         setTyping: vi.fn(),
       },
     })

@@ -14,6 +14,7 @@ class RealtimeEventType(StrEnum):
     MESSAGE_DELETED = "message_deleted"
     READ_RECEIPT = "read_receipt"
     TYPING = "typing"
+    PRESENCE = "presence"
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,6 +28,7 @@ class RealtimeNotification:
     read_sequence: int | None
     typing_active: bool | None = None
     expires_at: datetime | None = None
+    presence_online: bool | None = None
 
     def __post_init__(self) -> None:
         if self.event_type is RealtimeEventType.TYPING:
@@ -38,6 +40,16 @@ class RealtimeNotification:
                 and self.expires_at is not None
                 and self.expires_at.tzinfo is not None
                 and self.expires_at.utcoffset() is not None
+                and self.presence_online is None
+            )
+        elif self.event_type is RealtimeEventType.PRESENCE:
+            valid = (
+                self.message_id is None
+                and self.actor_user_id is not None
+                and self.read_sequence is None
+                and self.typing_active is None
+                and self.expires_at is None
+                and self.presence_online is not None
             )
         elif self.event_type is RealtimeEventType.READ_RECEIPT:
             valid = (
@@ -47,6 +59,7 @@ class RealtimeNotification:
                 and self.read_sequence > 0
                 and self.typing_active is None
                 and self.expires_at is None
+                and self.presence_online is None
             )
         elif self.event_type is RealtimeEventType.CONVERSATION_UPDATED:
             valid = (
@@ -55,6 +68,7 @@ class RealtimeNotification:
                 and self.read_sequence is None
                 and self.typing_active is None
                 and self.expires_at is None
+                and self.presence_online is None
             )
         else:
             valid = (
@@ -63,6 +77,7 @@ class RealtimeNotification:
                 and self.read_sequence is None
                 and self.typing_active is None
                 and self.expires_at is None
+                and self.presence_online is None
             )
         if not valid:
             raise ValueError("realtime notification shape does not match event type")

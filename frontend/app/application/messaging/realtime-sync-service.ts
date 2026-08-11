@@ -1,6 +1,6 @@
 import type { RealtimeConnection, RealtimeGateway } from '../ports/realtime-gateway'
 import type { ScheduledTask, Scheduler } from '../ports/scheduler'
-import type { TypingRealtimeFrame } from '../../domain/messaging/realtime'
+import type { EphemeralRealtimeFrame } from '../../domain/messaging/realtime'
 
 const FALLBACK_SYNC_INTERVAL_MS = 30_000
 const RECONNECT_DELAYS_MS = [1_000, 2_000, 5_000, 10_000, 30_000] as const
@@ -15,7 +15,7 @@ export class RealtimeSyncService {
   private catchUpQueued = false
   private catchUp: (() => Promise<void>) | null = null
   private unauthorized: (() => void) | null = null
-  private onTyping: ((frame: TypingRealtimeFrame) => void) | null = null
+  private onEphemeral: ((frame: EphemeralRealtimeFrame) => void) | null = null
   private resetEphemeral: (() => void) | null = null
 
   constructor(
@@ -26,14 +26,14 @@ export class RealtimeSyncService {
   start(
     catchUp: () => Promise<void>,
     unauthorized: () => void,
-    onTyping: (frame: TypingRealtimeFrame) => void = () => undefined,
+    onEphemeral: (frame: EphemeralRealtimeFrame) => void = () => undefined,
     resetEphemeral: () => void = () => undefined,
   ): void {
     if (this.active) return
     this.active = true
     this.catchUp = catchUp
     this.unauthorized = unauthorized
-    this.onTyping = onTyping
+    this.onEphemeral = onEphemeral
     this.resetEphemeral = resetEphemeral
     this.fallbackTask = this.scheduler.repeat(
       FALLBACK_SYNC_INTERVAL_MS,
@@ -52,7 +52,7 @@ export class RealtimeSyncService {
     this.fallbackTask = null
     this.catchUp = null
     this.unauthorized = null
-    this.onTyping = null
+    this.onEphemeral = null
     this.resetEphemeral?.()
     this.resetEphemeral = null
     this.catchUpQueued = false
@@ -66,8 +66,8 @@ export class RealtimeSyncService {
           this.reconnectAttempt = 0
         },
         onFrame: frame => {
-          if (frame.type === 'typing') {
-            this.onTyping?.(frame)
+          if (frame.type === 'typing' || frame.type === 'presence') {
+            this.onEphemeral?.(frame)
           } else if (frame.type !== 'ping') {
             void this.requestCatchUp()
           }

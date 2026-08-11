@@ -20,6 +20,7 @@ import { SetManagedUserActive } from '../application/accounts/set-user-active'
 import { UpdateProfile } from '../application/accounts/update-profile'
 import { RealtimeSyncService } from '../application/messaging/realtime-sync-service'
 import { TypingIndicatorService } from '../application/messaging/typing-indicator-service'
+import { PresenceIndicatorService } from '../application/messaging/presence-indicator-service'
 import type { TypingTransport } from '../application/ports/typing-transport'
 import { ListConversationReadStates } from '../application/messaging/list-conversation-read-states'
 import { MarkConversationRead } from '../application/messaging/mark-conversation-read'
@@ -101,6 +102,7 @@ export default defineNuxtPlugin(() => {
         createTypingIndicators: (transport: TypingTransport) => (
           new TypingIndicatorService(transport, scheduler, clock)
         ),
+        createPresenceIndicators: () => new PresenceIndicatorService(),
       },
     },
   }

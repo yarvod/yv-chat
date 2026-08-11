@@ -13,6 +13,16 @@ export interface TypingRealtimeFrame {
   expiresAt: string
 }
 
+export interface PresenceRealtimeFrame {
+  type: 'presence'
+  eventId: string
+  conversationId: string
+  actorUserId: string
+  online: boolean
+}
+
+export type EphemeralRealtimeFrame = TypingRealtimeFrame | PresenceRealtimeFrame
+
 export type RealtimeFrame =
   | { type: 'hello' }
   | { type: 'ping' }
@@ -25,6 +35,7 @@ export type RealtimeFrame =
       readSequence: number | null
     }
   | TypingRealtimeFrame
+  | PresenceRealtimeFrame
 
 export interface RealtimeCloseReason {
   unauthorized: boolean

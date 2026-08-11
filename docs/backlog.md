@@ -78,7 +78,8 @@ Implementation и desktop browser smoke завершены; physical 390px scree
 ### BL-009 — Receipts, unread state, typing и presence
 
 Статус: **in progress** (`WP-024` завершил shared read cursor/unread slice;
-`WP-025` завершил ephemeral typing; delivered-per-device и presence остаются).
+`WP-025` завершил ephemeral typing; `WP-026` завершил best-effort presence;
+delivered-per-device остаётся).
 
 Результат: read state согласуется между устройствами, а ephemeral indicators не становятся durable truth.
 
@@ -87,7 +88,7 @@ Implementation и desktop browser smoke завершены; physical 390px scree
 - [x] foreground-only mark-read до реально загруженной server sequence;
 - [ ] delivered cursor/receipt на уровне device;
 - [x] typing events с server expiry без долговременной истории (`WP-025`);
-- best-effort online presence из active WebSockets с heartbeat timeout;
+- [x] best-effort multi-device online presence из active WebSockets (`WP-026`);
 - deduplication и tests после reconnect.
 
 ### BL-010 — Delete-for-everyone и tombstones
@@ -103,7 +104,7 @@ Implementation и desktop browser smoke завершены; physical 390px scree
 ### BL-011 — Authenticated WebSocket notifications
 
 Статус: **in progress** (`WP-023` foundation + `WP-024` durable read receipt;
-`WP-025` завершил typing; presence и device-revoked hints остаются).
+`WP-025` завершил typing; `WP-026` завершил presence; device-revoked hints остаются).
 
 Результат: WebSocket ускоряет доставку, но не заменяет sync.
 

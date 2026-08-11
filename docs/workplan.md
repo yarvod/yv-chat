@@ -4,77 +4,67 @@
 завершённая работа фиксируется отдельным коммитом, а новый пункт переносится
 сюда из `backlog.md`.
 
-## WP-025 — Authorized ephemeral typing indicators
+## WP-026 — Best-effort multi-device presence
 
 Статус: **completed**  
 Backlog items: `BL-009`, `BL-011`  
-Цель: показывать краткоживущий индикатор набора текста через authenticated
-WebSocket, не превращая его в durable/DB truth и не позволяя клиенту объявлять
-чужую identity или conversation membership.
+Цель: показывать online/offline состояние только как best-effort производную от
+живых authenticated WebSocket connections, корректно учитывая несколько sessions
+одного user и не превращая presence в durable authorization/audit truth.
 
 ### Результат
 
-Активный участник отправляет bounded intent `typing(active)` по уже
-аутентифицированному socket. Backend повторно проверяет user/session и active
-membership, сам назначает actor и expiry, затем публикует ephemeral hint только
-остальным active участникам. Frontend держит indicator в отдельном application
-service, автоматически удаляет его по expiry и никогда не запускает `/sync` для
-typing-only frame.
+Первое активное socket-соединение пользователя создаёт online transition, последнее
+закрытое — offline. Новый клиент получает authorized snapshot только пользователей,
+с которыми у него есть active conversations. Transitions и snapshot содержат только
+IDs/boolean, не пишутся в БД/sync и очищаются frontend при disconnect.
 
 ### Invariants
 
-1. `actor_user_id` берётся только из authenticated WebSocket principal; client не
-   может прислать user ID, recipient list или expiry.
-2. Conversation UUID валидируется, active membership проверяется application use
-   case на каждый accepted state transition; inaccessible conversation не
-   раскрывается и закрывает/отклоняет frame bounded образом.
-3. Typing event ephemeral: не создаёт `sync_events`, DB rows, audit payload или
-   offline delivery; пропуск события безопасен.
-4. Server назначает короткий bounded expiry и explicit `active`; stop/repeated
-   start идемпотентны на frontend.
-5. Transport принимает только exact frame shape, ограничивает частоту и число
-   tracked conversation keys на connection; malformed/flood input не создаёт
-   unbounded memory/DB work.
-6. Payload содержит только event/conversation/actor IDs, `active` и `expires_at`;
-   никаких content, draft text, ciphertext, key или credential.
-7. Slow consumer остаётся изолирован bounded hub queue; publish failure не влияет
-   на durable message operations.
-8. Frontend parser строго различает durable и ephemeral frames. Только durable
-   frame вызывает cursor catch-up; typing обновляет отдельное transient state.
-9. Indicator очищается server stop, local expiry, conversation change/unmount и
-   socket lifecycle; UI не утверждает, что offline user всё ещё печатает.
-10. Presence и delivered-per-device остаются отдельными срезами: typing activity
-    не является durable presence/last-seen сигналом.
+1. Presence считается на user level поверх количества live subscriptions; закрытие
+   одного из нескольких devices не создаёт ложный offline.
+2. Online transition только на `0 → 1`, offline только на `1 → 0`; subscribe,
+   unsubscribe и snapshot выполняются под одним hub lock.
+3. Snapshot/audience ограничены active conversation memberships текущего actor;
+   нельзя перечислить глобально online users или подать чужой user ID.
+4. Presence ephemeral: нет DB rows, sync events, push и исторического last-seen.
+5. Heartbeat/revalidation/slow-consumer cleanup гарантируют eventual offline;
+   presence не продлевает opaque auth session.
+6. Payload содержит event/conversation/actor IDs и `online`, без IP/device/session,
+   content, credential или произвольной metadata.
+7. Missed transitions безопасны: каждый reconnect получает новый snapshot, а
+   frontend очищает старое состояние сразу при socket disconnect.
+8. Frontend не запускает `/sync` на presence frames и не использует presence как
+   authorization boundary.
+9. Direct/group UI показывает online только для соответствующего active member;
+   собственный connection не рендерится как peer presence.
+10. Реализация остаётся process-local для single backend process; horizontal scale
+    потребует отдельного ADR, а не скрытого Redis dependency.
 
 ### План
 
-- [x] Добавить typed ephemeral realtime DTO/policy и `PublishTyping` use case.
-- [x] Проверять active actor/membership через Messaging UoW и публиковать только
-  другим active recipients без transaction write.
-- [x] Расширить WebSocket receive loop strict frame parser, per-connection throttle
-  и bounded tracked conversation state.
-- [x] Расширить hub payload serializer и negative pytest: spoofed shape,
-  non-member, inactive actor, expiry, recipient isolation, no durable events.
-- [x] Добавить frontend strict parser, typing indicator application service с
-  Scheduler-driven expiry и UI в active conversation header.
-- [x] Не запускать `/sync` на typing frame; проверить reconnect/stop/unmount cleanup
-  и отсутствие duplicate timers через Vitest.
+- [x] Расширить RealtimeHub atomic first/last transition и authorized online query.
+- [x] Добавить presence application audience/snapshot/transition use cases.
+- [x] Подключить lifecycle к WebSocket subscribe/finally и отправить initial snapshot.
+- [x] Добавить typed payload shape и pytest для multi-device, membership isolation,
+  slow consumer, no durable writes и reconnect snapshot.
+- [x] Добавить frontend parser/presence service, disconnect reset и UI indicators.
+- [x] Проверить, что typing/presence не запускают durable catch-up; добавить Vitest.
 - [x] Обновить architecture/backlog/bugs; full CI, container smoke, commit/push.
 
 ### Не входит в этот slice
 
-- online/offline presence;
-- delivered/read per-device receipts;
-- persisted drafts;
-- push notification о typing;
-- rate limiting общего HTTP/API уровня.
+- persisted `last_seen` social status;
+- cross-process presence/Redis;
+- per-device delivered receipts;
+- push presence/typing;
+- presence-based authorization или risk scoring.
 
 ### Проверка готовности
 
-- user ID/expiry невозможно spoof через frame;
-- non-member не может разослать typing в чужой conversation;
-- start/stop доходят только active recipients и не появляются в `/sync`;
-- repeated start заменяет expiry без duplicate UI rows/timers;
-- expiry/stop/socket teardown очищают indicator;
-- malformed/high-frequency frames bounded и не роняют другие connections;
+- два sockets одного user дают один online и offline только после второго close;
+- unrelated user отсутствует в snapshot/events;
+- revoked/expired/slow connection eventually исчезает;
+- reconnect строит snapshot и исправляет пропущенные transitions;
+- no DB/sync mutations;
 - backend/frontend CI и local container smoke проходят.

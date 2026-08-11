@@ -7,6 +7,7 @@ import type {
   ConversationReadState,
   DirectoryUser,
 } from '../../domain/messaging/models'
+import type { PresenceIndicator } from '../../application/messaging/presence-indicator-service'
 import NewConversationForm from './NewConversationForm.vue'
 
 const props = defineProps<{
@@ -15,6 +16,7 @@ const props = defineProps<{
   directory: readonly DirectoryUser[]
   activeConversationId: string | null
   readStates: readonly ConversationReadState[]
+  presenceIndicators: readonly PresenceIndicator[]
   creating: boolean
 }>()
 const emit = defineEmits<{
@@ -32,6 +34,17 @@ function conversationName(conversation: Conversation): string {
 
 function unreadCount(conversationId: string): number {
   return props.readStates.find(item => item.conversationId === conversationId)?.unreadCount ?? 0
+}
+
+function isConversationOnline(conversation: Conversation): boolean {
+  const peerIds = new Set(
+    conversation.members
+      .filter(member => member.userId !== props.user.userId && member.leftAt === null)
+      .map(member => member.userId),
+  )
+  return props.presenceIndicators.some(item => (
+    item.conversationId === conversation.conversationId && peerIds.has(item.userId)
+  ))
 }
 
 function createDirect(userId: string): void {
@@ -74,7 +87,10 @@ function createGroup(title: string, userIds: string[]): void {
         :class="{ active: conversation.conversationId === activeConversationId }"
         @click="emit('select', conversation.conversationId)"
       >
-        <span class="conversation-avatar">{{ conversationName(conversation).slice(0, 1).toUpperCase() }}</span>
+        <span class="conversation-avatar">
+          {{ conversationName(conversation).slice(0, 1).toUpperCase() }}
+          <i v-if="isConversationOnline(conversation)" class="presence-dot" aria-label="В сети" />
+        </span>
         <span class="conversation-copy">
           <strong>{{ conversationName(conversation) }}</strong>
           <small>{{ conversation.conversationType === 'group' ? `${conversation.members.length} участников` : 'Личный диалог' }}</small>

@@ -184,6 +184,14 @@ def test_typing_is_authorized_ephemeral_and_not_written_to_sync() -> None:
         ):
             assert bob_socket.receive_json() == {"type": "hello"}
             assert alice_socket.receive_json() == {"type": "hello"}
+            alice_online = bob_socket.receive_json()
+            assert alice_online["type"] == "presence"
+            assert alice_online["actor_user_id"] == str(alice.id)
+            assert alice_online["online"] is True
+            bob_snapshot = alice_socket.receive_json()
+            assert bob_snapshot["type"] == "presence"
+            assert bob_snapshot["actor_user_id"] == str(bob.id)
+            assert bob_snapshot["online"] is True
             alice_socket.send_json(
                 {
                     "type": "typing",

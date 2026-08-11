@@ -52,6 +52,21 @@ async def test_hub_fans_out_by_user_and_drops_slow_connection() -> None:
     assert await hub.active_count() == 0
 
 
+async def test_hub_presence_transitions_are_user_level_across_devices() -> None:
+    user_id = uuid4()
+    hub = InMemoryRealtimeHub()
+    first = await hub.subscribe(user_id=user_id, session_id=uuid4())
+    second = await hub.subscribe(user_id=user_id, session_id=uuid4())
+
+    assert first.became_online is True
+    assert second.became_online is False
+    assert await hub.online_user_ids({user_id, uuid4()}) == {user_id}
+    assert await hub.unsubscribe(first) is False
+    assert await hub.online_user_ids({user_id}) == {user_id}
+    assert await hub.unsubscribe(second) is True
+    assert await hub.online_user_ids({user_id}) == set()
+
+
 async def test_passive_revalidation_never_touches_session() -> None:
     user = User.create(username="alice", display_name="Alice", now=NOW)
     device = Device.create(user_id=user.id, name="Browser", now=NOW)

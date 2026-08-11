@@ -52,6 +52,7 @@ from messenger.application.ports.passwords import PasswordHasher
 from messenger.application.ports.realtime import RealtimeHub, RealtimeNotifier
 from messenger.application.ports.session_credentials import SessionCredentialService
 from messenger.application.ports.sync import SyncUnitOfWorkFactory
+from messenger.application.realtime.presence import ListPresenceSnapshot, PublishPresence
 from messenger.application.realtime.typing import PublishTyping, TypingPolicy
 from messenger.application.security_events.policy import SecurityEventPolicy
 from messenger.application.sessions.authenticate import AuthenticateSession
@@ -245,6 +246,8 @@ class HttpTestProvider(Provider):
     mark_conversation_read = provide(MarkConversationRead, scope=Scope.REQUEST)
     list_sync_events = provide(ListSyncEvents, scope=Scope.REQUEST)
     publish_typing = provide(PublishTyping, scope=Scope.REQUEST)
+    list_presence_snapshot = provide(ListPresenceSnapshot, scope=Scope.REQUEST)
+    publish_presence = provide(PublishPresence, scope=Scope.REQUEST)
 
 
 def build_test_application(

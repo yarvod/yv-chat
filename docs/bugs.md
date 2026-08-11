@@ -22,6 +22,23 @@
 
 ## Resolved
 
+### BUG-017 — Reconnect мог оставить peer в ложном offline после race
+
+- Статус: `verified`.
+- Найдено в: `WP-026`, аудит concurrent `last unsubscribe ↔ new subscribe`.
+- Severity: `medium`.
+- Условия воспроизведения: последняя старая session удаляет subscription, новая
+  session успевает создать `0 → 1` и отправить online до завершения offline publish.
+- Ожидаемое поведение: итоговый UI state соответствует наличию новой live session.
+- Фактическое поведение: без reconciliation запоздавший offline мог прийти после
+  нового online и остаться последним transition.
+- Причина: hub transition атомарен, но authorized audience lookup/publish намеренно
+  выполняется вне hub lock и может пересекаться с новым connection lifecycle.
+- Исправление: после offline publish transport повторно проверяет hub; если user уже
+  снова online, публикуется corrective idempotent online transition.
+- Проверка: hub multi-device tests подтверждают first/last semantics, frontend
+  presence store идемпотентен, reconnect snapshot остаётся authoritative reset.
+
 ### BUG-016 — Realtime package re-export создавал bootstrap import cycle
 
 - Статус: `verified`.

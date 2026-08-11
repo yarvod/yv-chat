@@ -15,6 +15,7 @@ class InMemoryRealtimeSubscription:
     user_id: UUID
     session_id: UUID
     queue: asyncio.Queue[RealtimeNotification]
+    became_online: bool = False
     closed: asyncio.Event = field(default_factory=asyncio.Event)
 
     async def receive(self) -> RealtimeNotification:
@@ -59,17 +60,36 @@ class InMemoryRealtimeHub:
             queue=asyncio.Queue(maxsize=self._queue_size),
         )
         async with self._lock:
-            self._subscriptions.setdefault(user_id, {})[subscription.id] = subscription
+            user_subscriptions = self._subscriptions.setdefault(user_id, {})
+            closed_ids = [item.id for item in user_subscriptions.values() if item.closed.is_set()]
+            for subscription_id in closed_ids:
+                user_subscriptions.pop(subscription_id, None)
+            subscription.became_online = not user_subscriptions
+            user_subscriptions[subscription.id] = subscription
         return subscription
 
-    async def unsubscribe(self, subscription: RealtimeSubscription) -> None:
+    async def unsubscribe(self, subscription: RealtimeSubscription) -> bool:
+        became_offline = False
         async with self._lock:
             user_subscriptions = self._subscriptions.get(subscription.user_id)
             if user_subscriptions is not None:
-                user_subscriptions.pop(subscription.id, None)
+                removed = user_subscriptions.pop(subscription.id, None)
                 if not user_subscriptions:
                     self._subscriptions.pop(subscription.user_id, None)
+                    became_offline = removed is not None
             subscription.close()
+        return became_offline
+
+    async def online_user_ids(self, candidates: set[UUID]) -> set[UUID]:
+        async with self._lock:
+            return {
+                user_id
+                for user_id in candidates
+                if any(
+                    not subscription.closed.is_set()
+                    for subscription in self._subscriptions.get(user_id, {}).values()
+                )
+            }
 
     async def publish(self, notifications: tuple[RealtimeNotification, ...]) -> None:
         slow: list[InMemoryRealtimeSubscription] = []
@@ -83,13 +103,12 @@ class InMemoryRealtimeHub:
                     except asyncio.QueueFull:
                         slow.append(subscription)
             for subscription in slow:
-                user_subscriptions = self._subscriptions.get(subscription.user_id)
-                if user_subscriptions is not None:
-                    user_subscriptions.pop(subscription.id, None)
-                    if not user_subscriptions:
-                        self._subscriptions.pop(subscription.user_id, None)
                 subscription.closed.set()
 
     async def active_count(self) -> int:
         async with self._lock:
-            return sum(len(items) for items in self._subscriptions.values())
+            return sum(
+                not subscription.closed.is_set()
+                for items in self._subscriptions.values()
+                for subscription in items.values()
+            )
