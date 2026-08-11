@@ -200,7 +200,7 @@
 
 ### BL-029 — Production Nginx, TLS и security headers
 
-Статус: **in progress** (`WP-019`).
+Статус: **completed** (`WP-019`, production workflow `31452613018`).
 
 Результат: наружу опубликованы только HTTPS/WSS через проверенный ingress.
 
@@ -209,6 +209,11 @@
 - upload limits согласованы с application limits;
 - CSP, `X-Content-Type-Options`, `Referrer-Policy` и минимальное раскрытие backend;
 - PostgreSQL не опубликован наружу.
+
+Production `chat.yoowee.ru` работает через отдельный host Nginx vhost и
+loopback-only gateway `127.0.0.1:18080`. Let’s Encrypt certificate, HTTP→HTTPS,
+HSTS/CSP, trusted proxy boundary, migration-before-rollout и immutable GHCR
+images проверены; все соседние `infra-*` containers сохранили состояние.
 
 ### BL-031 — Backup/restore и retention-compatible policy
 

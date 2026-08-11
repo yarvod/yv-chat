@@ -4,17 +4,7 @@
 
 ## Active
 
-### BUG-011 — Appleboy SCP transport завершался до remote deploy без диагностируемой причины
-
-- Статус: `fixed`, ожидает production verification.
-- Найдено в: `WP-019`, GitHub Actions run `31451487597` для `a06e056`.
-- Severity: `high`.
-- Условия воспроизведения: verify и оба GHCR build jobs зелёные, затем `appleboy/scp-action@v1` завершается exit code 1 до появления versioned artifacts на VPS.
-- Ожидаемое поведение: SSH readiness проверяется до resource-heavy builds, artifacts копируются через pinned host identity, затем запускается remote deploy.
-- Фактическое поведение: opaque action annotation не показывала публично ничего кроме exit code; remote script не запускался, server stack не менялся.
-- Причина: точный внутренний error action недоступен без authenticated job log; transport boundary не имел отдельного проверяемого SSH preflight и полагался на четыре необязательных/невалидируемых secret inputs.
-- Исправление: non-secret target зафиксирован как `devuser@chat.yoowee.ru:22`, host ED25519 key pinned; отдельный job проверяет `DEPLOY_KEY`/SSH до build, а deploy использует native `ssh/scp` и передаёт GHCR token только через stdin.
-- Проверка: следующий workflow должен пройти `deployment-config`, copy, remote migration и health-checked rollout; до этого дефект не переносится в Resolved.
+Активных воспроизводимых дефектов нет.
 
 ## Формат записи
 
@@ -31,6 +21,18 @@
 - Проверка: тест или команда, подтверждающая fix.
 
 ## Resolved
+
+### BUG-011 — Appleboy SCP transport завершался до remote deploy без диагностируемой причины
+
+- Статус: `verified`.
+- Найдено в: `WP-019`, GitHub Actions run `31451487597` для `a06e056`.
+- Severity: `high`.
+- Условия воспроизведения: verify и оба GHCR build jobs зелёные, затем `appleboy/scp-action@v1` завершается exit code 1 до появления versioned artifacts на VPS.
+- Ожидаемое поведение: SSH readiness проверяется до resource-heavy builds, artifacts копируются через pinned host identity, затем запускается remote deploy.
+- Фактическое поведение: opaque action annotation не показывала публично ничего кроме exit code; remote script не запускался, server stack не менялся.
+- Причина: transport boundary не имел отдельного проверяемого SSH preflight и полагался на opaque third-party SCP action; после его замены диагностика также выявила неверный `DEPLOY_KEY` fingerprint.
+- Исправление: non-secret target зафиксирован как `devuser@chat.yoowee.ru:22`, host ED25519 key pinned; отдельный job проверяет `DEPLOY_KEY`/SSH до build, а deploy использует native `ssh/scp` и передаёт GHCR token только через stdin.
+- Проверка: production workflow `31452613018` прошёл `deployment-config`, artifact copy, remote migration и health-checked rollout; четыре `yv-chat-*` containers healthy, public HTTPS API отвечает.
 
 ### BUG-010 — Deploy verify запускал PostgreSQL integration tests без schema
 

@@ -4,7 +4,7 @@
 
 ## WP-019 — Первый production rollout, host Nginx и TLS
 
-Статус: **in progress**
+Статус: **complete**
 Backlog item: `BL-029`
 Цель: развернуть проверенный messaging MVP на `chat.yoowee.ru` через изолированный Compose project `yv-chat`, подключить его к существующему host Nginx и подтвердить, что соседние сервисы на `ru1` не изменились.
 
@@ -31,18 +31,18 @@ GitHub Actions публикует immutable backend/frontend images и выка�
 
 ### План
 
-- [ ] Проверить local branch/remote, GitHub Actions prerequisites и наличие deployment secret names без чтения значений (local/remote проверены; фактические secrets подтвердит workflow).
+- [x] Проверить local branch/remote, GitHub Actions prerequisites и наличие deployment secret names без чтения значений.
 - [x] Снять read-only production baseline: Docker projects/containers, listeners, Nginx config и текущие public endpoints.
 - [x] Добавить отдельный versioned host Nginx template с HTTP challenge/redirect и HTTPS reverse proxy.
 - [x] Добавить безопасный server bootstrap script: создать `.env`/bootstrap credential без вывода secret values и проверить permissions.
 - [x] Дополнить deployment runbook first-run, TLS, rollback и post-deploy comparison.
 - [x] Прогнать repository CI и deploy static checks; окончательный Nginx syntax test выполнить с issued certificate до reload.
-- [ ] Опубликовать feature branch и пропустить изменения через GitHub CI до `main`.
-- [ ] Создать server-only secrets и deploy directory; не изменять host Nginx до loopback smoke.
-- [ ] Выполнить immutable Compose rollout, migration и loopback health/API/PWA smoke.
-- [ ] Установить отдельный Nginx vhost, получить certificate, проверить config и reload.
-- [ ] Проверить public HTTPS/redirect/security headers и основной onboarding/login flow.
-- [ ] Сравнить соседние services с baseline, зафиксировать результат в docs и отдельном commit.
+- [x] Опубликовать feature branch и пропустить изменения через GitHub CI до `main`.
+- [x] Создать server-only secrets и deploy directory; не изменять host Nginx до loopback smoke.
+- [x] Выполнить immutable Compose rollout, migration и loopback health/API/PWA smoke.
+- [x] Установить отдельный Nginx vhost, получить certificate, проверить config и reload.
+- [x] Проверить public HTTPS/redirect/security headers и основной onboarding/login flow.
+- [x] Сравнить соседние services с baseline, зафиксировать результат в docs и отдельном commit.
 
 ### Не входит в scope
 
@@ -78,3 +78,9 @@ GitHub Actions публикует immutable backend/frontend images и выка�
 - второй workflow `31451487597` прошёл verify и оба GHCR builds, но opaque Appleboy SCP transport остановился до server mutation; BUG-011 заменяет его native pinned SSH/SCP и добавляет pre-build credential/access validation.
 - третий workflow `31451932579` подтвердил, что `DEPLOY_KEY` существует и парсится, но `sshd` закрыл authentication для `devuser`; firewall/ufw/fail2ban не блокируют runner. Safe failure annotation дополнена public SHA256 fingerprint для exact authorized-key repair без чтения private secret.
 - diagnostic fingerprint `SHA256:xVq4eZp0lE0gNxyt++gL+w4XHRrMFGlUrPR5qN6IxPo` не совпал с существующими server/local public keys; поиск exact public key продолжается только по уже публичным/private-safe источникам без публикации secret-derived material.
+- владелец заменил `DEPLOY_KEY`; production workflow `31452613018` для `dffae45` прошёл `deployment-config`, repository verify, оба immutable GHCR build и deploy за 3m20s;
+- Compose project `yv-chat` запущен четырьмя healthy containers; наружу опубликован только gateway `127.0.0.1:18080`, loopback `/healthz` и `/api/v1/health` отвечают;
+- отдельный `chat.yoowee.ru` vhost установлен после успешного `nginx -t`; Let's Encrypt certificate выдан до 2026-11-09, HTTP возвращает `301`, HTTPS содержит HSTS/CSP/anti-framing/referrer headers;
+- production PWA загружается по HTTPS; credential-safe acceptance внутри VPS подтвердил login `200`, `/me` `200`, CSRF-protected revoke-others `200` и logout `204`, после чего все smoke sessions отозваны;
+- `.env` и `.initial-admin-credential` принадлежат `devuser:devuser` и имеют mode `0600`; их содержимое не читалось и не выводилось;
+- все восемь pre-existing `infra-*` containers остались `Up`, их published ports не изменялись; Nginx сохраняет только две ранее известные duplicate-name warnings для unrelated `yoowee.ru` configs.

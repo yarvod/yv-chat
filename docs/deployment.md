@@ -147,4 +147,25 @@ curl --fail http://127.0.0.1:18080/healthz
 curl --fail http://127.0.0.1:18080/api/v1/health
 ```
 
-Host Nginx/TLS setup and public HTTPS verification are the next workplan. Do not expose port `18080` publicly and do not enable HSTS until the certificate/domain route is verified.
+Host Nginx/TLS setup завершён в `WP-019`. Не публикуйте port `18080` наружу;
+HSTS должен оставаться включённым только при исправном certificate/HTTPS route.
+
+## First rollout record
+
+Первый production rollout завершён 2026-08-11 workflow run `31452613018` для
+commit `dffae45`:
+
+- SSH preflight, repository verify, backend/frontend GHCR builds и deploy успешны;
+- Alembic migrations применены до запуска приложения;
+- `postgres`, `api`, `frontend` и `gateway` проекта `yv-chat` healthy;
+- единственный published bind проекта — `127.0.0.1:18080`;
+- отдельный Nginx vhost прошёл `nginx -t`, HTTP перенаправляет на HTTPS;
+- certificate `chat.yoowee.ru` действует до 2026-11-09 и обновляется Certbot;
+- публичный PWA и `/api/v1/health` доступны по HTTPS;
+- login/`me`/CSRF revoke/logout acceptance выполнен без вывода credential;
+- `.env` и `.initial-admin-credential` имеют owner `devuser` и mode `0600`;
+- восемь pre-existing `infra-*` containers остались `Up`.
+
+Владелец забирает initial admin credential непосредственно через уже доверенный
+SSH-канал. После первого собственного входа и смены пароля файл
+`.initial-admin-credential` необходимо удалить с VPS.
