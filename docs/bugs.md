@@ -6,7 +6,7 @@
 
 ### BUG-049 — Revoke/relogin оставлял устройства на разных MLS generations
 
-- Статус: `fix in progress`, production `WP-049`.
+- Статус: `fixed`, production `WP-049`, verified 2026-08-12.
 - Severity: `critical`; после завершения всех sessions один новый device не мог
   дочитать roster history, а другой шифровал новым client message со старой
   generation binding и получал HTTP 409 (`Конфликт идентификатора`).
@@ -19,10 +19,12 @@
   device можно идемпотентно подтвердить для historical generation.
 - Security: server по-прежнему отклоняет новый ciphertext со старой generation/epoch;
   revoked leaf не получает возможность продолжать future messaging.
+- Production: immutable release `fb650ae` deployed; health/container checks green,
+  новых HTTP 500/traceback в post-deploy backend logs не обнаружено.
 
 ### BUG-048 — Retry blocked crypto bootstrap падал на unique constraint
 
-- Статус: `fix in progress`, production `WP-049`.
+- Статус: `fixed`, production `WP-049`, verified 2026-08-12.
 - Severity: `critical`; UI показывал недоступную защищённую группу, а повторный
   `POST .../crypto/bootstrap` завершался HTTP 500.
 - Причина: первый request корректно создавал generation `blocked/missing_identity`,
@@ -43,6 +45,8 @@
   devices; после первого provisioning они добавляются следующим roster Commit.
   `missing_identity` сохраняется как fail-closed состояние только для current device,
   которое пытается координировать bootstrap до собственного provisioning.
+- Production: GitHub Actions run `31539053027` полностью green, release `fb650ae`
+  deployed; повторных unique constraint/HTTP 500 в post-deploy logs нет.
 
 ### BUG-047 — Layout мог уничтожить MLS runtime во время cache-first восстановления
 

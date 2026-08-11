@@ -6,7 +6,7 @@
 
 ## WP-049 — Production hotfix idempotent blocked MLS bootstrap
 
-Статус: **in progress**
+Статус: **completed**
 Bug: `BUG-048`
 Цель: убрать HTTP 500 при повторной reconciliation старых conversations и честно
 возвращать стабильный `blocked/missing_identity` до регистрации всех active devices.
@@ -24,8 +24,9 @@ Bug: `BUG-048`
 - [x] Исправить revoke/relogin catch-up: skip pre-enrollment generations, historical
   Welcome ack и обязательная server reconciliation перед message crypto operation.
 - [x] Прогнать backend/full CI, PostgreSQL integration и diff/security review.
-- [ ] Commit/push, production deploy и проверить отсутствие новых 500.
-- [ ] Вернуть `WP-048` encrypted attachments в active workplan после hotfix commit.
+- [x] Commit/push, production deploy и проверить отсутствие новых 500.
+- [x] Вернуть product work в active workplan после hotfix commit; перед media
+  отдельно зафиксировать согласованную direct/group protocol policy.
 
 ### Definition of Done
 
@@ -38,3 +39,11 @@ Bug: `BUG-048`
   подготовленных устройств и не получают ciphertext до собственного enrollment;
 - `missing_identity` объяснён как состояние непрошедшего provisioning другого active
   device, а не как повреждение миграцией.
+
+### Production verification
+
+- GitHub Actions run `31539053027`: verify, backend/frontend build и deploy — green;
+- production использует immutable images `sha-fb650aee922933f6e474280d03023a8a8b0ccf9f`;
+- `yv-chat-api`, `yv-chat-frontend` и PostgreSQL healthy, public health отвечает 200;
+- в отфильтрованных backend logs после rollout нет новых HTTP 500,
+  `UniqueViolation`, `IntegrityError` или traceback на crypto bootstrap.
