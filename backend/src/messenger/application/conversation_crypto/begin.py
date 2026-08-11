@@ -58,6 +58,8 @@ class BeginConversationCrypto:
                 raise ConversationCryptoConflictError(
                     "bootstrap request is bound to another conversation"
                 )
+            if retry is not None:
+                return await materialize_generation(uow, retry)
 
             current = await uow.generations.get_current(
                 command.conversation_id,

@@ -150,14 +150,21 @@ async def test_bootstrap_snapshots_all_active_devices_and_claims_each_target_onc
 
 async def test_missing_identity_blocks_generation_without_consuming_packages() -> None:
     state = bootstrap_state(omit_identity=BOB_PHONE_ID)
-    result = await BeginConversationCrypto(
-        unit_of_work=FakeConversationCryptoUnitOfWorkFactory(state),
+    factory = FakeConversationCryptoUnitOfWorkFactory(state)
+    use_case = BeginConversationCrypto(
+        unit_of_work=factory,
         clock=FixedClock(NOW),
-    ).execute(begin_command())
+    )
 
+    result = await use_case.execute(begin_command())
+    retried = await use_case.execute(begin_command())
+
+    assert retried == result
     assert result.generation.status is ConversationCryptoStatus.BLOCKED
     assert result.generation.block_reason is ConversationCryptoBlockReason.MISSING_IDENTITY
     assert not any(item.is_claimed for item in state.device_key_packages.values())
+    assert len(state.conversation_crypto_generations) == 1
+    assert state.commits == 1
 
 
 async def test_finalize_routes_exact_welcomes_and_device_ack_is_idempotent() -> None:

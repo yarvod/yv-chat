@@ -4,6 +4,23 @@
 
 ## Active
 
+### BUG-048 — Retry blocked crypto bootstrap падал на unique constraint
+
+- Статус: `fix in progress`, production `WP-049`.
+- Severity: `critical`; UI показывал недоступную защищённую группу, а повторный
+  `POST .../crypto/bootstrap` завершался HTTP 500.
+- Причина: первый request корректно создавал generation `blocked/missing_identity`,
+  но same-device/same-request retry находил idempotency record и не возвращал его.
+  Затем use case пытался вставить новую generation с той же парой
+  `(coordinator_device_id, bootstrap_request_id)`, и PostgreSQL отклонял её по
+  `uq_conversation_crypto_bootstrap_request`.
+- Исправление: exact retry немедленно materialize-ит существующую generation любого
+  статуса; request, уже связанный с другой conversation, по-прежнему даёт typed
+  conflict. Regression повторяет blocked request и требует одну generation/commit.
+- Отдельное ожидаемое состояние: `missing_identity` не является миграционной
+  потерей ключей. Оно означает, что хотя бы одно active device участника ещё не
+  зарегистрировало собственную MLS identity после обновления PWA.
+
 ### BUG-047 — Layout мог уничтожить MLS runtime во время cache-first восстановления
 
 - Статус: `verified` в production-like two-origin browser acceptance `WP-047`.
