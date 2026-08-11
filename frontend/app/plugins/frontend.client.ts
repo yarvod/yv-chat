@@ -19,12 +19,15 @@ import { SecurityReset } from '../application/accounts/security-reset'
 import { SetManagedUserActive } from '../application/accounts/set-user-active'
 import { UpdateProfile } from '../application/accounts/update-profile'
 import { RealtimeSyncService } from '../application/messaging/realtime-sync-service'
+import { TypingIndicatorService } from '../application/messaging/typing-indicator-service'
+import type { TypingTransport } from '../application/ports/typing-transport'
 import { ListConversationReadStates } from '../application/messaging/list-conversation-read-states'
 import { MarkConversationRead } from '../application/messaging/mark-conversation-read'
 import { LoadCurrentAccount } from '../application/auth/load-current-account'
 import { Login } from '../application/auth/login'
 import { Logout } from '../application/auth/logout'
 import { BrowserClipboard } from '../infrastructure/browser/clipboard'
+import { BrowserClock } from '../infrastructure/browser/clock'
 import { BrowserClientIdGenerator } from '../infrastructure/browser/client-id-generator'
 import { BrowserDeviceInfo } from '../infrastructure/browser/device-info'
 import { BrowserHaptics } from '../infrastructure/browser/haptics'
@@ -52,6 +55,7 @@ export default defineNuxtPlugin(() => {
   const haptics = new BrowserHaptics()
   const realtimeGateway = new BrowserRealtimeGateway()
   const scheduler = new BrowserScheduler()
+  const clock = new BrowserClock()
   const themePreferences = new BrowserThemePreferences()
   const browserLocation = new BrowserLocation()
   const pageVisibility = new BrowserPageVisibility()
@@ -94,6 +98,9 @@ export default defineNuxtPlugin(() => {
         securityReset: new SecurityReset(accountSecurityGateway),
         listSecurityEvents: new ListSecurityEvents(accountSecurityGateway),
         createRealtimeSync: () => new RealtimeSyncService(realtimeGateway, scheduler),
+        createTypingIndicators: (transport: TypingTransport) => (
+          new TypingIndicatorService(transport, scheduler, clock)
+        ),
       },
     },
   }

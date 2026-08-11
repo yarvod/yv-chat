@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import { useMessenger } from '../../composables/useMessenger'
 import type { CurrentAccount } from '../../domain/accounts/account'
+import type { TypingIndicator } from '../../application/messaging/typing-indicator-service'
 import ConversationSidebar from './ConversationSidebar.vue'
 import MessagePanel from './MessagePanel.vue'
 
@@ -11,8 +12,15 @@ const emit = defineEmits<{ sessionExpired: [] }>()
 const messenger = useMessenger(props.user.userId, () => emit('sessionExpired'))
 const { $frontend } = useNuxtApp()
 const realtime = $frontend.createRealtimeSync()
+const typing = $frontend.createTypingIndicators(realtime)
+const typingIndicators = ref<readonly TypingIndicator[]>([])
 const mobilePane = ref<'list' | 'conversation'>('list')
 let unsubscribeVisibility: (() => void) | null = null
+let unsubscribeTyping: (() => void) | null = null
+
+const activeTypingActorIds = computed(() => typingIndicators.value
+  .filter(item => item.conversationId === messenger.state.activeConversationId)
+  .map(item => item.actorUserId))
 
 function selectConversation(conversationId: string): void {
   void messenger.selectConversation(conversationId)
@@ -21,13 +29,23 @@ function selectConversation(conversationId: string): void {
 
 onMounted(async () => {
   await messenger.load()
+  unsubscribeTyping = typing.subscribe(indicators => {
+    typingIndicators.value = indicators
+  })
   unsubscribeVisibility = $frontend.pageVisibility.subscribe(() => {
     void messenger.markActiveRead()
   })
-  realtime.start(messenger.poll, () => emit('sessionExpired'))
+  realtime.start(
+    messenger.poll,
+    () => emit('sessionExpired'),
+    frame => typing.apply(frame),
+    () => typing.clearRemote(),
+  )
 })
 
 onBeforeUnmount(() => {
+  typing.clear()
+  unsubscribeTyping?.()
   realtime.stop()
   unsubscribeVisibility?.()
 })
@@ -63,6 +81,8 @@ onBeforeUnmount(() => {
         :sending="messenger.state.sending"
         :codec="messenger.codec"
         :send-message="messenger.send"
+        :typing-actor-ids="activeTypingActorIds"
+        :set-typing="typing.setLocal.bind(typing)"
         @back="mobilePane = 'list'"
       />
     </div>

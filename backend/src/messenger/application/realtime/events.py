@@ -1,6 +1,7 @@
 """Small routing hints that wake durable cursor sync."""
 
 from dataclasses import dataclass
+from datetime import datetime
 from enum import StrEnum
 from uuid import UUID
 
@@ -12,6 +13,7 @@ class RealtimeEventType(StrEnum):
     CONVERSATION_UPDATED = "conversation_updated"
     MESSAGE_DELETED = "message_deleted"
     READ_RECEIPT = "read_receipt"
+    TYPING = "typing"
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,6 +25,47 @@ class RealtimeNotification:
     message_id: UUID | None
     actor_user_id: UUID | None
     read_sequence: int | None
+    typing_active: bool | None = None
+    expires_at: datetime | None = None
+
+    def __post_init__(self) -> None:
+        if self.event_type is RealtimeEventType.TYPING:
+            valid = (
+                self.message_id is None
+                and self.actor_user_id is not None
+                and self.read_sequence is None
+                and self.typing_active is not None
+                and self.expires_at is not None
+                and self.expires_at.tzinfo is not None
+                and self.expires_at.utcoffset() is not None
+            )
+        elif self.event_type is RealtimeEventType.READ_RECEIPT:
+            valid = (
+                self.message_id is None
+                and self.actor_user_id is not None
+                and self.read_sequence is not None
+                and self.read_sequence > 0
+                and self.typing_active is None
+                and self.expires_at is None
+            )
+        elif self.event_type is RealtimeEventType.CONVERSATION_UPDATED:
+            valid = (
+                self.message_id is None
+                and self.actor_user_id is None
+                and self.read_sequence is None
+                and self.typing_active is None
+                and self.expires_at is None
+            )
+        else:
+            valid = (
+                self.message_id is not None
+                and self.actor_user_id is None
+                and self.read_sequence is None
+                and self.typing_active is None
+                and self.expires_at is None
+            )
+        if not valid:
+            raise ValueError("realtime notification shape does not match event type")
 
 
 _SYNC_EVENT_TYPES = {

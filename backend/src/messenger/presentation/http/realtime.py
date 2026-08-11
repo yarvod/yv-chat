@@ -5,17 +5,20 @@ from contextlib import suppress
 from dataclasses import dataclass
 from time import monotonic
 from typing import cast
+from uuid import UUID
 
 from dishka import Scope
 from dishka.integrations.fastapi import FromDishka, inject
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
 from messenger.application.errors import (
+    ConversationNotFoundError,
     RealtimeSubscriptionClosedError,
     SessionNotAuthenticatedError,
 )
 from messenger.application.ports.realtime import RealtimeHub, RealtimeSubscription
 from messenger.application.realtime import RealtimeNotification
+from messenger.application.realtime.typing import PublishTyping, PublishTypingCommand
 from messenger.application.sessions.authenticate import (
     AuthenticateSession,
     AuthenticateSessionCommand,
@@ -35,6 +38,8 @@ UNAUTHORIZED_CLOSE = 4401
 FORBIDDEN_CLOSE = 4403
 INVALID_PAYLOAD_CLOSE = 4400
 HEARTBEAT_CLOSE = 4408
+TYPING_REPEAT_INTERVAL_SECONDS = 0.5
+MAX_TRACKED_TYPING_CONVERSATIONS = 32
 
 
 @dataclass(slots=True)
@@ -80,8 +85,10 @@ async def _revalidate(websocket: WebSocket, principal: AuthenticateSessionResult
         )
 
 
-def _notification_payload(notification: RealtimeNotification) -> dict[str, str | int | None]:
-    payload: dict[str, str | int | None] = {
+def _notification_payload(
+    notification: RealtimeNotification,
+) -> dict[str, str | int | bool | None]:
+    payload: dict[str, str | int | bool | None] = {
         "type": notification.event_type.value,
         "event_id": str(notification.event_id),
         "conversation_id": str(notification.conversation_id),
@@ -91,6 +98,10 @@ def _notification_payload(notification: RealtimeNotification) -> dict[str, str |
         payload["actor_user_id"] = str(notification.actor_user_id)
     if notification.read_sequence is not None:
         payload["read_sequence"] = notification.read_sequence
+    if notification.typing_active is not None:
+        payload["active"] = notification.typing_active
+    if notification.expires_at is not None:
+        payload["expires_at"] = notification.expires_at.isoformat()
     return payload
 
 
@@ -105,17 +116,79 @@ async def _send_notifications(
             await websocket.send_json(_notification_payload(notification))
 
 
-async def _receive_client_frames(websocket: WebSocket, heartbeat: HeartbeatState) -> None:
+async def _publish_typing(
+    websocket: WebSocket,
+    principal: AuthenticateSessionResult,
+    conversation_id: UUID,
+    active: bool,
+) -> None:
+    session_container = websocket.state.dishka_container
+    async with session_container(scope=Scope.REQUEST) as request_container:
+        use_case = cast(PublishTyping, await request_container.get(PublishTyping))
+        await use_case.execute(
+            PublishTypingCommand(
+                actor_user_id=principal.user_id,
+                conversation_id=conversation_id,
+                active=active,
+            )
+        )
+
+
+async def _receive_client_frames(
+    websocket: WebSocket,
+    heartbeat: HeartbeatState,
+    principal: AuthenticateSessionResult,
+) -> None:
+    tracked: dict[UUID, tuple[bool, float]] = {}
     while True:
         try:
             payload = await websocket.receive_json()
         except (TypeError, ValueError):
             await websocket.close(code=INVALID_PAYLOAD_CLOSE)
             return
-        if payload != {"type": "pong"}:
+        if payload == {"type": "pong"}:
+            heartbeat.pong_seen_at = monotonic()
+            continue
+        if not isinstance(payload, dict) or set(payload) != {
+            "type",
+            "conversation_id",
+            "active",
+        }:
             await websocket.close(code=INVALID_PAYLOAD_CLOSE)
             return
-        heartbeat.pong_seen_at = monotonic()
+        if payload.get("type") != "typing" or not isinstance(payload.get("active"), bool):
+            await websocket.close(code=INVALID_PAYLOAD_CLOSE)
+            return
+        try:
+            conversation_id = UUID(payload["conversation_id"])
+        except (TypeError, ValueError):
+            await websocket.close(code=INVALID_PAYLOAD_CLOSE)
+            return
+        active = payload["active"]
+        now = monotonic()
+        previous = tracked.get(conversation_id)
+        if (
+            previous is not None
+            and previous[0] is active
+            and now - previous[1] < TYPING_REPEAT_INTERVAL_SECONDS
+        ):
+            continue
+        if active and previous is None and len(tracked) >= MAX_TRACKED_TYPING_CONVERSATIONS:
+            await websocket.close(code=INVALID_PAYLOAD_CLOSE)
+            return
+        try:
+            await _revalidate(websocket, principal)
+            await _publish_typing(websocket, principal, conversation_id, active)
+        except ConversationNotFoundError:
+            await websocket.close(code=FORBIDDEN_CLOSE)
+            return
+        except SessionNotAuthenticatedError:
+            await websocket.close(code=UNAUTHORIZED_CLOSE)
+            return
+        if active:
+            tracked[conversation_id] = (active, now)
+        else:
+            tracked.pop(conversation_id, None)
 
 
 async def _monitor_connection(
@@ -176,7 +249,7 @@ async def realtime_notifications(
     await websocket.send_json({"type": "hello"})
     tasks = {
         asyncio.create_task(_send_notifications(websocket, subscription, send_lock)),
-        asyncio.create_task(_receive_client_frames(websocket, heartbeat_state)),
+        asyncio.create_task(_receive_client_frames(websocket, heartbeat_state, principal)),
         asyncio.create_task(
             _monitor_connection(
                 websocket,

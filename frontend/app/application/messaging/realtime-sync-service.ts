@@ -1,5 +1,6 @@
 import type { RealtimeConnection, RealtimeGateway } from '../ports/realtime-gateway'
 import type { ScheduledTask, Scheduler } from '../ports/scheduler'
+import type { TypingRealtimeFrame } from '../../domain/messaging/realtime'
 
 const FALLBACK_SYNC_INTERVAL_MS = 30_000
 const RECONNECT_DELAYS_MS = [1_000, 2_000, 5_000, 10_000, 30_000] as const
@@ -14,17 +15,26 @@ export class RealtimeSyncService {
   private catchUpQueued = false
   private catchUp: (() => Promise<void>) | null = null
   private unauthorized: (() => void) | null = null
+  private onTyping: ((frame: TypingRealtimeFrame) => void) | null = null
+  private resetEphemeral: (() => void) | null = null
 
   constructor(
     private readonly gateway: RealtimeGateway,
     private readonly scheduler: Scheduler,
   ) {}
 
-  start(catchUp: () => Promise<void>, unauthorized: () => void): void {
+  start(
+    catchUp: () => Promise<void>,
+    unauthorized: () => void,
+    onTyping: (frame: TypingRealtimeFrame) => void = () => undefined,
+    resetEphemeral: () => void = () => undefined,
+  ): void {
     if (this.active) return
     this.active = true
     this.catchUp = catchUp
     this.unauthorized = unauthorized
+    this.onTyping = onTyping
+    this.resetEphemeral = resetEphemeral
     this.fallbackTask = this.scheduler.repeat(
       FALLBACK_SYNC_INTERVAL_MS,
       () => void this.requestCatchUp(),
@@ -42,6 +52,9 @@ export class RealtimeSyncService {
     this.fallbackTask = null
     this.catchUp = null
     this.unauthorized = null
+    this.onTyping = null
+    this.resetEphemeral?.()
+    this.resetEphemeral = null
     this.catchUpQueued = false
   }
 
@@ -53,10 +66,15 @@ export class RealtimeSyncService {
           this.reconnectAttempt = 0
         },
         onFrame: frame => {
-          if (frame.type !== 'ping') void this.requestCatchUp()
+          if (frame.type === 'typing') {
+            this.onTyping?.(frame)
+          } else if (frame.type !== 'ping') {
+            void this.requestCatchUp()
+          }
         },
         onClose: reason => {
           this.connection = null
+          this.resetEphemeral?.()
           if (!this.active) return
           if (reason.unauthorized) {
             const unauthorized = this.unauthorized
@@ -71,6 +89,10 @@ export class RealtimeSyncService {
       this.connection = null
       this.scheduleReconnect()
     }
+  }
+
+  setTyping(conversationId: string, active: boolean): void {
+    this.connection?.setTyping(conversationId, active)
   }
 
   private scheduleReconnect(): void {

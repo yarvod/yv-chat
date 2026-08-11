@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 
 import type { MessageCodec } from '../../application/ports/message-codec'
 import type { Conversation, OpaqueMessage } from '../../domain/messaging/models'
@@ -11,11 +11,23 @@ const props = defineProps<{
   sending: boolean
   codec: MessageCodec
   sendMessage: (plaintext: string) => Promise<boolean>
+  typingActorIds: readonly string[]
+  setTyping: (conversationId: string, active: boolean) => void
 }>()
 const emit = defineEmits<{ back: [] }>()
 
 const draft = ref('')
 const timeline = ref<HTMLElement | null>(null)
+
+const typingLabel = computed(() => {
+  const names = props.typingActorIds
+    .map(actorId => props.conversation?.members.find(member => member.userId === actorId)?.displayName)
+    .filter((name): name is string => Boolean(name))
+  if (names.length === 0) return null
+  if (names.length === 1) return `${names[0]} печатает`
+  if (names.length === 2) return `${names[0]} и ${names[1]} печатают`
+  return `${names.length} участника печатают`
+})
 
 function conversationName(conversation: Conversation): string {
   if (conversation.conversationType === 'group') return conversation.title ?? 'Группа'
@@ -41,6 +53,22 @@ watch(
     timeline.value?.scrollTo({ top: timeline.value.scrollHeight })
   },
 )
+
+watch(draft, value => {
+  if (props.conversation) props.setTyping(props.conversation.conversationId, value.trim().length > 0)
+})
+
+watch(
+  () => props.conversation?.conversationId,
+  (conversationId, previousConversationId) => {
+    if (previousConversationId) props.setTyping(previousConversationId, false)
+    if (conversationId !== previousConversationId) draft.value = ''
+  },
+)
+
+onBeforeUnmount(() => {
+  if (props.conversation) props.setTyping(props.conversation.conversationId, false)
+})
 </script>
 
 <template>
@@ -49,7 +77,10 @@ watch(
       <button class="mobile-back" type="button" aria-label="К списку диалогов" @click="emit('back')">‹</button>
       <div>
         <h2>{{ conversationName(conversation) }}</h2>
-        <p>{{ conversation.conversationType === 'group' ? `${conversation.members.length} участников` : 'Личный диалог' }}</p>
+        <p v-if="typingLabel" class="typing-label" aria-live="polite">
+          {{ typingLabel }}<span aria-hidden="true">…</span>
+        </p>
+        <p v-else>{{ conversation.conversationType === 'group' ? `${conversation.members.length} участников` : 'Личный диалог' }}</p>
       </div>
       <span class="connection-dot" title="Синхронизация активна" />
     </header>

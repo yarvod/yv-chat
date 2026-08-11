@@ -22,6 +22,44 @@
 
 ## Resolved
 
+### BUG-016 — Realtime package re-export создавал bootstrap import cycle
+
+- Статус: `verified`.
+- Найдено в: `WP-025`, local production-image smoke.
+- Severity: `high`.
+- Условия воспроизведения: запустить новый backend image после re-export
+  `PublishTyping` из `application.realtime.__init__`.
+- Ожидаемое поведение: FastAPI bootstrap импортирует realtime ports/use cases и
+  запускает healthy process.
+- Фактическое поведение: container перезапускался с `ImportError` о partially
+  initialized module.
+- Причина: `ports.realtime → realtime.events` сначала инициализировал package
+  `__init__`, тот импортировал `realtime.typing`, а typing снова импортировал
+  `ports.realtime.RealtimeNotifier`.
+- Исправление: package `__init__` экспортирует только event primitives без обратной
+  port dependency; provider, transport и tests импортируют typing use case из
+  конкретного cohesive модуля.
+- Проверка: import contracts/unit suite и повторный production-image health smoke.
+
+### BUG-015 — Ephemeral typing hint запускал бы ненужный durable sync
+
+- Статус: `verified`.
+- Найдено в: `WP-025`, расширение frontend realtime closed union.
+- Severity: `medium`.
+- Условия воспроизведения: передать новый `typing` frame в прежний общий callback,
+  который запускал `/sync` для любого события кроме `ping`.
+- Ожидаемое поведение: ephemeral typing обновляет только bounded transient state и
+  не создаёт cursor-sync traffic.
+- Фактическое поведение: исходный lifecycle различал только heartbeat и общий
+  durable wake-up, поэтому новый event автоматически попадал бы в catch-up branch.
+- Причина: до появления первого ephemeral event realtime union не требовал явной
+  классификации delivery semantics.
+- Исправление: parser выдаёт discriminated `TypingRealtimeFrame`, lifecycle
+  направляет его отдельному `TypingIndicatorService`, а durable branch остаётся
+  единственным источником `/sync` wake-up.
+- Проверка: Vitest подтверждает typing callback без увеличения catch-up calls,
+  expiry/stop dedup и socket-disconnect cleanup.
+
 ### BUG-014 — Собственные отправленные сообщения учитывались как unread
 
 - Статус: `verified`.

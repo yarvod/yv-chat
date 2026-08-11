@@ -4,6 +4,15 @@ export type DurableRealtimeEventType =
   | 'message_deleted'
   | 'read_receipt'
 
+export interface TypingRealtimeFrame {
+  type: 'typing'
+  eventId: string
+  conversationId: string
+  actorUserId: string
+  active: boolean
+  expiresAt: string
+}
+
 export type RealtimeFrame =
   | { type: 'hello' }
   | { type: 'ping' }
@@ -15,6 +24,7 @@ export type RealtimeFrame =
       actorUserId: string | null
       readSequence: number | null
     }
+  | TypingRealtimeFrame
 
 export interface RealtimeCloseReason {
   unauthorized: boolean

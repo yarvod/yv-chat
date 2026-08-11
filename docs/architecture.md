@@ -493,8 +493,24 @@ slow consumer. После durable commit application публикует толь
 `conversation_id`, optional `message_id` и typed `new_message`,
 `conversation_updated`, `message_deleted` либо durable `read_receipt`; failure notifier
 логируется без content и не меняет committed result. Это сознательно single-process
-решение без Redis. Ephemeral typing/presence появятся отдельными application policies
-с bounded expiry и не станут durable truth.
+решение без Redis. Ephemeral presence появится отдельной application policy с
+bounded expiry и не станет durable truth.
+
+Typing использует отдельный ephemeral path поверх того же authenticated WebSocket.
+Client frame имеет exact форму `typing(conversation_id, active)` и не может задавать
+actor, recipients или expiry. `PublishTyping` повторно проверяет active actor и
+membership через Messaging UoW, исключает actor из recipients, назначает server TTL
+и публикует hint без commit, DB row или `sync_event`. Transport дедуплицирует слишком
+частые одинаковые transitions и ограничивает число active conversation keys на
+connection; stop transition не задерживается throttle.
+
+Frontend строго отделяет durable frames от typing: `RealtimeSyncService` запускает
+cursor catch-up только для durable hints, а typing передаёт в
+`TypingIndicatorService`. Сервис keyed по conversation+actor, заменяет expiry timer
+при renew, удаляет state по stop/expiry/socket disconnect, а собственный publisher
+renew-ит active draft раз в три секунды и отправляет stop при очистке/switch/unmount.
+Vue-компонент сообщает только intent о непустом draft и отображает готовый transient
+state; draft content никогда не покидает client UI/message-codec boundary.
 
 Правильность любой realtime-фичи проверяется при отключённом WebSocket. Duplicate WebSocket/Push/sync delivery применяется идемпотентно.
 

@@ -2,6 +2,7 @@ import type { RealtimeCloseReason, RealtimeFrame } from '../../domain/messaging/
 
 export interface RealtimeConnection {
   close(): void
+  setTyping(conversationId: string, active: boolean): void
 }
 
 export interface RealtimeCallbacks {

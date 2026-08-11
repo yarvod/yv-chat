@@ -183,6 +183,9 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .conversation-row strong, .conversation-row small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .conversation-row small, .account-row small { color: var(--muted); }
 .unread-badge { display: inline-grid; min-width: 24px; height: 24px; padding: 0 7px; place-items: center; border-radius: 999px; color: white; background: linear-gradient(135deg, var(--primary), var(--primary-strong)); font-size: 12px; font-weight: 850; box-shadow: 0 6px 18px color-mix(in srgb, var(--primary) 28%, transparent); }
+.typing-label { color: var(--primary) !important; font-weight: 700; }
+.typing-label span { display: inline-block; animation: typing-pulse 1s ease-in-out infinite; }
+@keyframes typing-pulse { 0%, 100% { opacity: .35; transform: translateY(0); } 50% { opacity: 1; transform: translateY(-1px); } }
 .empty-conversations, .conversation-placeholder { display: grid; place-content: center; justify-items: center; margin: auto; padding: 34px; color: var(--muted); text-align: center; }
 .empty-icon { color: var(--primary); font-size: 2rem; }
 .empty-conversations h2, .conversation-placeholder h2 { margin: 14px 0 8px; color: var(--text); font-size: 1rem; }

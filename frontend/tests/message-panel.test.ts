@@ -34,6 +34,7 @@ const conversation = {
 describe('message panel', () => {
   it('shows the non-E2EE warning and clears a successfully sent draft', async () => {
     const sendMessage = vi.fn().mockResolvedValue(true)
+    const setTyping = vi.fn()
     const wrapper = mount(MessagePanel, {
       props: {
         conversation,
@@ -42,6 +43,8 @@ describe('message panel', () => {
         sending: false,
         codec: syntheticMessageCodec,
         sendMessage,
+        typingActorIds: [],
+        setTyping,
       },
     })
 
@@ -51,5 +54,24 @@ describe('message panel', () => {
 
     expect(sendMessage).toHaveBeenCalledWith('  hello  ')
     expect(wrapper.get('textarea').element.value).toBe('')
+    expect(setTyping).toHaveBeenCalledWith('conversation-1', true)
+    expect(setTyping).toHaveBeenLastCalledWith('conversation-1', false)
+  })
+
+  it('renders participant typing state without exposing draft content', () => {
+    const wrapper = mount(MessagePanel, {
+      props: {
+        conversation,
+        messages: [],
+        actorUserId: 'alice-id',
+        sending: false,
+        codec: syntheticMessageCodec,
+        sendMessage: vi.fn(),
+        typingActorIds: ['bob-id'],
+        setTyping: vi.fn(),
+      },
+    })
+
+    expect(wrapper.text()).toContain('Bob печатает')
   })
 })

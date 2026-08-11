@@ -6,4 +6,8 @@ from messenger.application.realtime.events import (
     notifications_from_sync,
 )
 
-__all__ = ["RealtimeEventType", "RealtimeNotification", "notifications_from_sync"]
+__all__ = [
+    "RealtimeEventType",
+    "RealtimeNotification",
+    "notifications_from_sync",
+]

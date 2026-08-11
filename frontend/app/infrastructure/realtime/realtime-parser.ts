@@ -26,10 +26,49 @@ function requiredString(value: Record<string, unknown>, key: string): string {
   return field
 }
 
+function requiredBoolean(value: Record<string, unknown>, key: string): boolean {
+  const field = value[key]
+  if (typeof field !== 'boolean') {
+    throw new ApplicationError(200, 'invalid-response', 'invalid realtime frame')
+  }
+  return field
+}
+
 export function parseRealtimeFrame(value: unknown): RealtimeFrame {
   const frame = record(value)
   const type = requiredString(frame, 'type')
   if (type === 'hello' || type === 'ping') return { type }
+  if (type === 'typing') {
+    if (new Set(Object.keys(frame)).size !== 7 || ![
+      'type',
+      'event_id',
+      'conversation_id',
+      'message_id',
+      'actor_user_id',
+      'active',
+      'expires_at',
+    ].every(key => key in frame)) {
+      throw new ApplicationError(200, 'invalid-response', 'invalid realtime frame')
+    }
+    if (frame.message_id !== null || frame.read_sequence !== undefined) {
+      throw new ApplicationError(200, 'invalid-response', 'invalid realtime frame')
+    }
+    const expiresAt = requiredString(frame, 'expires_at')
+    if (
+      !Number.isFinite(Date.parse(expiresAt))
+      || !/(?:Z|[+-]\d{2}:\d{2})$/.test(expiresAt)
+    ) {
+      throw new ApplicationError(200, 'invalid-response', 'invalid realtime frame')
+    }
+    return {
+      type,
+      eventId: requiredString(frame, 'event_id'),
+      conversationId: requiredString(frame, 'conversation_id'),
+      actorUserId: requiredString(frame, 'actor_user_id'),
+      active: requiredBoolean(frame, 'active'),
+      expiresAt,
+    }
+  }
   if (!DURABLE_TYPES.has(type as DurableRealtimeEventType)) {
     throw new ApplicationError(200, 'invalid-response', 'unknown realtime frame')
   }

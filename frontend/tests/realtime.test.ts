@@ -51,15 +51,17 @@ class FakeRealtimeGateway implements RealtimeGateway {
 
   connect(callbacks: RealtimeCallbacks): RealtimeConnection {
     this.callbacks.push(callbacks)
-    return { close: this.close }
+    return { close: this.close, setTyping: vi.fn() }
   }
 }
 
 class FakeWebSocket extends EventTarget {
+  static OPEN = 1
   static instances: FakeWebSocket[] = []
   readonly url: string
   sent: string[] = []
   close = vi.fn()
+  readyState = FakeWebSocket.OPEN
 
   constructor(url: string | URL) {
     super()
@@ -112,6 +114,22 @@ describe('realtime sync', () => {
     })).toThrow(ApplicationError)
     expect(() => parseRealtimeFrame({ type: 'typing', user_id: 'arbitrary' }))
       .toThrow(ApplicationError)
+    expect(parseRealtimeFrame({
+      type: 'typing',
+      event_id: 'typing-event',
+      conversation_id: 'conversation',
+      message_id: null,
+      actor_user_id: 'bob',
+      active: true,
+      expires_at: '2026-08-11T12:00:05+00:00',
+    })).toEqual({
+      type: 'typing',
+      eventId: 'typing-event',
+      conversationId: 'conversation',
+      actorUserId: 'bob',
+      active: true,
+      expiresAt: '2026-08-11T12:00:05+00:00',
+    })
   })
 
   it('keeps one connection, catches up on hints and reconnects with backoff', async () => {
@@ -119,9 +137,11 @@ describe('realtime sync', () => {
     const scheduler = new FakeScheduler()
     const catchUp = vi.fn().mockResolvedValue(undefined)
     const unauthorized = vi.fn()
+    const onTyping = vi.fn()
+    const resetEphemeral = vi.fn()
     const service = new RealtimeSyncService(gateway, scheduler)
 
-    service.start(catchUp, unauthorized)
+    service.start(catchUp, unauthorized, onTyping, resetEphemeral)
     service.start(catchUp, unauthorized)
     expect(gateway.callbacks).toHaveLength(1)
     expect(scheduler.repeatTasks[0]?.delay).toBe(30_000)
@@ -129,9 +149,21 @@ describe('realtime sync', () => {
     await vi.waitFor(() => expect(catchUp).toHaveBeenCalledTimes(1))
 
     gateway.callbacks[0]?.onClose({ unauthorized: false })
+    expect(resetEphemeral).toHaveBeenCalledOnce()
     expect(scheduler.onceTasks[0]?.delay).toBe(1_000)
     scheduler.onceTasks[0]?.run()
     await vi.waitFor(() => expect(gateway.callbacks).toHaveLength(2))
+    expect(catchUp).toHaveBeenCalledTimes(2)
+
+    gateway.callbacks[1]?.onFrame({
+      type: 'typing',
+      eventId: 'typing-event',
+      conversationId: 'conversation',
+      actorUserId: 'bob',
+      active: true,
+      expiresAt: '2026-08-11T12:00:05+00:00',
+    })
+    expect(onTyping).toHaveBeenCalledOnce()
     expect(catchUp).toHaveBeenCalledTimes(2)
 
     gateway.callbacks[1]?.onClose({ unauthorized: true })
@@ -148,13 +180,15 @@ describe('realtime sync', () => {
       onOpen: vi.fn(),
       onClose: vi.fn(),
     }
-    new BrowserRealtimeGateway().connect(callbacks)
+    const connection = new BrowserRealtimeGateway().connect(callbacks)
     const socket = FakeWebSocket.instances.at(-1)
     expect(socket?.url).toBe('wss://chat.example/api/v1/realtime')
     expect(socket?.url).not.toContain('?')
     socket?.dispatchEvent(new MessageEvent('message', { data: '{"type":"ping"}' }))
     expect(socket?.sent).toEqual(['{"type":"pong"}'])
     expect(callbacks.onFrame).not.toHaveBeenCalled()
+    connection.setTyping('conversation-id', true)
+    expect(socket?.sent.at(-1)).toBe('{"type":"typing","conversation_id":"conversation-id","active":true}')
     vi.unstubAllGlobals()
   })
 })

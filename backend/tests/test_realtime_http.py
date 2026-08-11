@@ -12,11 +12,15 @@ from tests.test_auth_http import PASSWORD, build_test_application
 
 
 def login(client: TestClient) -> None:
+    login_as(client, "alice")
+
+
+def login_as(client: TestClient, username: str) -> None:
     response = client.post(
         "/api/v1/auth/login",
         headers={"Origin": "https://test"},
         json={
-            "username": "alice",
+            "username": username,
             "password": PASSWORD,
             "device_name": "Browser",
         },
@@ -143,3 +147,113 @@ def test_committed_message_emits_only_an_opaque_wakeup_hint() -> None:
     assert notification["conversation_id"] == str(conversation.id)
     assert notification["message_id"] == response.json()["message_id"]
     assert "ciphertext" not in notification
+
+
+def test_typing_is_authorized_ephemeral_and_not_written_to_sync() -> None:
+    application, state, clock = build_test_application()
+    alice = next(iter(state.users.values()))
+    bob = User.create(username="bob", display_name="Bob", now=clock.instant)
+    charlie = User.create(username="charlie", display_name="Charlie", now=clock.instant)
+    for user in (bob, charlie):
+        state.users[user.id] = user
+        state.password_hashes[user.id] = "$argon2id$fake-hash"
+    conversation = Conversation.create_direct(
+        created_by=alice.id,
+        other_user_id=bob.id,
+        now=clock.instant,
+    )
+    state.conversations[conversation.id] = conversation
+
+    with (
+        TestClient(application, base_url="https://test") as alice_client,
+        TestClient(application, base_url="https://test") as bob_client,
+        TestClient(application, base_url="https://test") as charlie_client,
+    ):
+        login_as(alice_client, "alice")
+        login_as(bob_client, "bob")
+        login_as(charlie_client, "charlie")
+        with (
+            bob_client.websocket_connect(
+                "/api/v1/realtime",
+                headers=authenticated_headers(bob_client),
+            ) as bob_socket,
+            alice_client.websocket_connect(
+                "/api/v1/realtime",
+                headers=authenticated_headers(alice_client),
+            ) as alice_socket,
+        ):
+            assert bob_socket.receive_json() == {"type": "hello"}
+            assert alice_socket.receive_json() == {"type": "hello"}
+            alice_socket.send_json(
+                {
+                    "type": "typing",
+                    "conversation_id": str(conversation.id),
+                    "active": True,
+                }
+            )
+            started = bob_socket.receive_json()
+            assert set(started) == {
+                "type",
+                "event_id",
+                "conversation_id",
+                "message_id",
+                "actor_user_id",
+                "active",
+                "expires_at",
+            }
+            assert started["type"] == "typing"
+            assert started["actor_user_id"] == str(alice.id)
+            assert started["active"] is True
+            assert started["expires_at"] == "2026-08-11T12:00:05+00:00"
+            alice_socket.send_json(
+                {
+                    "type": "typing",
+                    "conversation_id": str(conversation.id),
+                    "active": False,
+                }
+            )
+            stopped = bob_socket.receive_json()
+            assert stopped["active"] is False
+            assert stopped["expires_at"] == "2026-08-11T12:00:00+00:00"
+
+        sync = bob_client.get("/api/v1/sync?after=0&limit=10")
+        assert sync.status_code == 200
+        assert sync.json()["events"] == []
+
+        with charlie_client.websocket_connect(
+            "/api/v1/realtime",
+            headers=authenticated_headers(charlie_client),
+        ) as foreign_socket:
+            assert foreign_socket.receive_json() == {"type": "hello"}
+            foreign_socket.send_json(
+                {
+                    "type": "typing",
+                    "conversation_id": str(conversation.id),
+                    "active": True,
+                }
+            )
+            with pytest.raises(WebSocketDisconnect) as forbidden:
+                foreign_socket.receive_json()
+            assert forbidden.value.code == 4403
+
+
+def test_typing_frame_rejects_client_claimed_actor_or_expiry() -> None:
+    application, _, _ = build_test_application()
+    with TestClient(application, base_url="https://test") as client:
+        login(client)
+        with client.websocket_connect(
+            "/api/v1/realtime",
+            headers=authenticated_headers(client),
+        ) as websocket:
+            assert websocket.receive_json() == {"type": "hello"}
+            websocket.send_json(
+                {
+                    "type": "typing",
+                    "conversation_id": str(uuid4()),
+                    "active": True,
+                    "actor_user_id": str(uuid4()),
+                }
+            )
+            with pytest.raises(WebSocketDisconnect) as malformed:
+                websocket.receive_json()
+            assert malformed.value.code == 4400
