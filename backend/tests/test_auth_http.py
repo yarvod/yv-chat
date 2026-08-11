@@ -96,7 +96,9 @@ from tests.application.fakes import (
     SequentialActivationSecrets,
 )
 
-NOW = datetime(2026, 8, 11, 12, 0, tzinfo=UTC)
+# Keep cookie expiry in the future for the real httpx cookie jar while every
+# application decision still goes through the injected deterministic clock.
+NOW = datetime.now(UTC).replace(microsecond=0)
 PASSWORD = "correct horse battery staple"
 POLICY = SessionPolicy(
     idle_timeout=timedelta(hours=2),

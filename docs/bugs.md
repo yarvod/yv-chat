@@ -39,6 +39,39 @@
 
 ## Resolved
 
+### BUG-032 — CI сравнивал platform-dependent WASM binary byte-for-byte
+
+- Статус: `verified`.
+- Найдено в: GitHub Actions `CI #8`, production rollout после `WP-041`.
+- Severity: `high`.
+- Условия воспроизведения: сгенерировать browser WASM package одинаковыми pinned
+  Rust/wasm-bindgen версиями на macOS и Linux.
+- Ожидаемое поведение: CI проверяет pinned toolchain, release compilation, required
+  public API и отсутствие forbidden debug/private exports.
+- Фактическое поведение: internal Rust closure hashes и итоговый WASM отличались
+  между host platforms, поэтому `git diff --exit-code` отклонял совместимый package.
+- Причина: byte identity ошибочно использовалась как cross-platform semantic gate.
+- Исправление: Linux CI по-прежнему пересобирает package, но проверяет non-empty WASM,
+  required sealed-state API и отсутствие private snapshot exports; pinned toolchain,
+  lockfile, clippy/tests и sensitive-feature gate сохранены.
+- Проверка: local crypto `make ci` и повторный GitHub Actions run.
+
+### BUG-031 — HTTP security tests зависели от реальной даты expiry cookie
+
+- Статус: `verified`.
+- Найдено в: GitHub Actions `CI #8`, production rollout после `WP-041`.
+- Severity: `high`.
+- Условия воспроизведения: запустить suite после `2026-08-11T15:00:00Z`.
+- Ожидаемое поведение: application time полностью задаётся injected test Clock, а
+  реальный httpx cookie jar не считает только что выданную cookie истёкшей.
+- Фактическое поведение: фиксированное `NOW=12:00Z` и absolute lifetime 3 часа
+  превратили cookie в expired ровно в 15:00Z; 20 HTTP/WebSocket тестов получили 401.
+- Причина: доменное тестовое время одновременно попало в реальный HTTP `Expires`.
+- Исправление: module-scoped UTC clock берётся при старте suite и остаётся
+  детерминированным для всех application assertions; PostgreSQL setup дополнительно
+  flush-ит parent users до child devices.
+- Проверка: 16 HTTP/realtime regressions и полный PostgreSQL suite — `199 passed`.
+
 ### BUG-029 — Длинный timeline мог растягивать document и сдвигать messenger chrome
 
 - Статус: `verified`.

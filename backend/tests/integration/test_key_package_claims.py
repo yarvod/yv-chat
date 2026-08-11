@@ -111,6 +111,7 @@ async def test_claim_concurrency_preserves_exact_retry_and_single_consumption() 
                     for user_id, username in ((ALICE_ID, "kp-alice"), (BOB_ID, "kp-bob"))
                 ]
             )
+            await session.flush()
             session.add_all(
                 [
                     DeviceModel(

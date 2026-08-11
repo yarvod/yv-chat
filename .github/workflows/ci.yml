@@ -108,9 +108,14 @@ jobs:
       - name: Compile and package release WASM boundary
         working-directory: .
         run: make crypto-package
-      - name: Reject generated browser package drift
+      - name: Validate generated browser package
         working-directory: .
-        run: git diff --exit-code -- frontend/public/crypto
+        run: |
+          test -s frontend/public/crypto/v1/yv_chat_openmls_provider_bg.wasm
+          grep -q 'sealState(key: CryptoKey' frontend/public/crypto/v1/yv_chat_openmls_provider.d.ts
+          grep -q 'restoreSealedState(key: CryptoKey' frontend/public/crypto/v1/yv_chat_openmls_provider.d.ts
+          ! grep -Eq 'snapshotForSealing|restoreFromUnsealedSnapshot' \
+            frontend/public/crypto/v1/yv_chat_openmls_provider.d.ts
       - name: Reject sensitive OpenMLS debug features
         run: |
           ! cargo tree --locked -e features -i openmls |

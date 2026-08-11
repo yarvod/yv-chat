@@ -70,6 +70,7 @@ async def test_concurrent_exact_registration_creates_one_identity_and_package() 
                     updated_at=NOW,
                 )
             )
+            await session.flush()
             session.add(
                 DeviceModel(
                     id=DEVICE_ID,

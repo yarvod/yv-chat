@@ -1,6 +1,7 @@
 """WebSocket handshake security tests."""
 
 import base64
+from datetime import timedelta
 from uuid import UUID, uuid4
 
 import pytest
@@ -8,7 +9,7 @@ from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from messenger.domain.entities import Conversation, User
-from tests.test_auth_http import PASSWORD, build_test_application
+from tests.test_auth_http import NOW, PASSWORD, build_test_application
 
 
 def login(client: TestClient) -> None:
@@ -212,7 +213,7 @@ def test_typing_is_authorized_ephemeral_and_not_written_to_sync() -> None:
             assert started["type"] == "typing"
             assert started["actor_user_id"] == str(alice.id)
             assert started["active"] is True
-            assert started["expires_at"] == "2026-08-11T12:00:05+00:00"
+            assert started["expires_at"] == (NOW + timedelta(seconds=5)).isoformat()
             alice_socket.send_json(
                 {
                     "type": "typing",
@@ -222,7 +223,7 @@ def test_typing_is_authorized_ephemeral_and_not_written_to_sync() -> None:
             )
             stopped = bob_socket.receive_json()
             assert stopped["active"] is False
-            assert stopped["expires_at"] == "2026-08-11T12:00:00+00:00"
+            assert stopped["expires_at"] == NOW.isoformat()
 
         sync = bob_client.get("/api/v1/sync?after=0&limit=10")
         assert sync.status_code == 200
