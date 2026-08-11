@@ -27,6 +27,9 @@ from messenger.application.ports.identity import (
 )
 from messenger.application.ports.messages import MessageRepository, MessagingUnitOfWork
 from messenger.application.ports.session_credentials import GeneratedSessionCredential
+from messenger.application.ports.sync import SyncRepository, SyncUnitOfWork
+from messenger.application.sync import PendingSyncEvent, SyncEvent
+from messenger.application.sync.events import SyncStreamPage
 from messenger.domain.entities import (
     ActivationToken,
     Conversation,
@@ -50,6 +53,8 @@ class IdentityState:
     security_events: dict[UUID, SecurityEvent] = field(default_factory=dict)
     conversations: dict[UUID, Conversation] = field(default_factory=dict)
     messages: dict[UUID, Message] = field(default_factory=dict)
+    sync_events: list[SyncEvent] = field(default_factory=list)
+    sync_cursors: dict[UUID, int] = field(default_factory=dict)
     commits: int = 0
 
 
@@ -407,6 +412,7 @@ class FakeConversationUnitOfWork:
         self._state = state
         self.conversations: ConversationRepository = FakeConversationRepository(state)
         self.users: UserRepository = FakeUserRepository(state)
+        self.sync_events: SyncRepository = FakeSyncRepository(state)
 
     async def __aenter__(self) -> Self:
         return self
@@ -479,6 +485,61 @@ class FakeMessageRepository:
         )[:limit]
 
 
+class FakeSyncRepository:
+    def __init__(self, state: IdentityState) -> None:
+        self._state = state
+
+    async def append(self, events: list[PendingSyncEvent]) -> None:
+        ordered_events = [
+            event
+            for user_id in sorted({item.user_id for item in events}, key=lambda value: value.int)
+            for event in events
+            if event.user_id == user_id
+        ]
+        for event in ordered_events:
+            cursor = self._state.sync_cursors.get(event.user_id, 0) + 1
+            self._state.sync_cursors[event.user_id] = cursor
+            self._state.sync_events.append(
+                SyncEvent(
+                    event_id=event.event_id,
+                    user_id=event.user_id,
+                    cursor=cursor,
+                    event_type=event.event_type,
+                    conversation_id=event.conversation_id,
+                    message_id=event.message_id,
+                    created_at=event.created_at,
+                    expires_at=event.expires_at,
+                )
+            )
+
+    async def list_after(
+        self,
+        *,
+        user_id: UUID,
+        after_cursor: int,
+        limit: int,
+    ) -> SyncStreamPage:
+        matching = sorted(
+            (
+                event
+                for event in self._state.sync_events
+                if event.user_id == user_id and event.cursor > after_cursor
+            ),
+            key=lambda event: event.cursor,
+        )[:limit]
+        existing = [event.cursor for event in self._state.sync_events if event.user_id == user_id]
+        return SyncStreamPage(
+            events=tuple(matching),
+            stream_cursor=self._state.sync_cursors.get(user_id, 0),
+            oldest_cursor=min(existing, default=None),
+        )
+
+    async def prune_expired(self, now: datetime) -> None:
+        self._state.sync_events = [
+            event for event in self._state.sync_events if event.expires_at > now
+        ]
+
+
 class FakeMessagingUnitOfWork:
     def __init__(self, state: IdentityState) -> None:
         self._state = state
@@ -486,6 +547,7 @@ class FakeMessagingUnitOfWork:
         self.conversations: ConversationRepository = FakeConversationRepository(state)
         self.users: UserRepository = FakeUserRepository(state)
         self.devices: DeviceRepository = FakeDeviceRepository(state)
+        self.sync_events: SyncRepository = FakeSyncRepository(state)
 
     async def __aenter__(self) -> Self:
         return self
@@ -508,6 +570,35 @@ class FakeMessagingUnitOfWorkFactory:
 
     def __call__(self) -> MessagingUnitOfWork:
         return FakeMessagingUnitOfWork(self._state)
+
+
+class FakeSyncUnitOfWork:
+    def __init__(self, state: IdentityState) -> None:
+        self._state = state
+        self.users: UserRepository = FakeUserRepository(state)
+        self.sync_events: SyncRepository = FakeSyncRepository(state)
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        del exc_type, exc_value, traceback
+
+    async def commit(self) -> None:
+        self._state.commits += 1
+
+
+class FakeSyncUnitOfWorkFactory:
+    def __init__(self, state: IdentityState) -> None:
+        self._state = state
+
+    def __call__(self) -> SyncUnitOfWork:
+        return FakeSyncUnitOfWork(self._state)
 
 
 @dataclass(frozen=True, slots=True)

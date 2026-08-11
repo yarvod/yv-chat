@@ -29,6 +29,7 @@ from messenger.application.errors import (
     ConversationNotFoundError,
     DuplicateDirectConversationError,
 )
+from messenger.application.sync import SyncPolicy
 from messenger.domain.entities import Conversation, ConversationMemberRole, User
 from messenger.infrastructure.persistence.conversation_uow import (
     SqlAlchemyConversationUnitOfWorkFactory,
@@ -43,6 +44,8 @@ from messenger.infrastructure.persistence.models import (
     MessageModel,
     SecurityEventModel,
     SessionModel,
+    SyncEventModel,
+    SyncStreamModel,
     UserModel,
 )
 from tests.application.fakes import FixedClock
@@ -59,6 +62,8 @@ def configured_database_url() -> str:
 
 async def reset_tables(session_factory: async_sessionmaker[AsyncSession]) -> None:
     async with session_factory.begin() as session:
+        await session.execute(delete(SyncEventModel))
+        await session.execute(delete(SyncStreamModel))
         await session.execute(delete(MessageModel))
         await session.execute(delete(ConversationMemberModel))
         await session.execute(delete(ConversationModel))
@@ -159,10 +164,12 @@ async def run_flow(database_url: str) -> None:
         await AddConversationMember(
             unit_of_work=unit_of_work_factory,
             clock=FixedClock(NOW + timedelta(minutes=4)),
+            sync_policy=SyncPolicy(),
         ).execute(AddConversationMemberCommand(alice.id, group.id, charlie.id))
         await ChangeConversationMemberRole(
             unit_of_work=unit_of_work_factory,
             clock=FixedClock(NOW + timedelta(minutes=5)),
+            sync_policy=SyncPolicy(),
         ).execute(
             ChangeConversationMemberRoleCommand(
                 alice.id,
@@ -175,6 +182,7 @@ async def run_flow(database_url: str) -> None:
             await ChangeConversationMemberRole(
                 unit_of_work=unit_of_work_factory,
                 clock=FixedClock(NOW + timedelta(minutes=6)),
+                sync_policy=SyncPolicy(),
             ).execute(
                 ChangeConversationMemberRoleCommand(
                     charlie.id,
@@ -186,6 +194,7 @@ async def run_flow(database_url: str) -> None:
         await LeaveConversation(
             unit_of_work=unit_of_work_factory,
             clock=FixedClock(NOW + timedelta(minutes=7)),
+            sync_policy=SyncPolicy(),
         ).execute(LeaveConversationCommand(charlie.id, group.id))
         with pytest.raises(ConversationNotFoundError):
             await GetConversation(unit_of_work=unit_of_work_factory).execute(

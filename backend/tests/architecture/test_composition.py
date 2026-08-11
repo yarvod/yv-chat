@@ -29,9 +29,11 @@ from messenger.application.messaging.list_messages import ListMessages
 from messenger.application.messaging.send_message import SendOpaqueMessage
 from messenger.application.ports.conversations import ConversationUnitOfWorkFactory
 from messenger.application.ports.messages import MessagingUnitOfWorkFactory
+from messenger.application.ports.sync import SyncUnitOfWorkFactory
 from messenger.application.sessions.authenticate import AuthenticateSession
 from messenger.application.sessions.login import Login
 from messenger.application.sessions.logout import Logout
+from messenger.application.sync.list_events import ListSyncEvents
 from messenger.bootstrap.container import create_container
 from messenger.bootstrap.settings import AppEnvironment, AppSettings
 
@@ -64,6 +66,7 @@ async def test_production_graph_resolves_every_application_operation() -> None:
         ChangeConversationMemberRole,
         SendOpaqueMessage,
         ListMessages,
+        ListSyncEvents,
         Login,
         AuthenticateSession,
         Logout,
@@ -81,9 +84,11 @@ async def test_production_graph_resolves_every_application_operation() -> None:
             ]
             conversation_unit_of_work = await request_container.get(ConversationUnitOfWorkFactory)
             messaging_unit_of_work = await request_container.get(MessagingUnitOfWorkFactory)
+            sync_unit_of_work = await request_container.get(SyncUnitOfWorkFactory)
     finally:
         await container.close()
 
     assert tuple(type(operation) for operation in operations) == operation_types
     assert conversation_unit_of_work() is not None
     assert messaging_unit_of_work() is not None
+    assert sync_unit_of_work() is not None

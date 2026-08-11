@@ -24,6 +24,8 @@ def test_persistence_metadata_contains_expected_tables() -> None:
         "messages",
         "security_events",
         "sessions",
+        "sync_events",
+        "sync_streams",
         "users",
     }
 
@@ -143,3 +145,17 @@ def test_message_schema_is_bounded_opaque_ciphertext_only() -> None:
     }.issubset(check_names)
     assert {"plaintext", "text", "decrypted_body", "message_key"}.isdisjoint(messages.columns)
     assert "ix_messages_conversation_created" in {index.name for index in messages.indexes}
+
+
+def test_sync_schema_has_per_user_cursor_and_opaque_routing_fields_only() -> None:
+    streams = Base.metadata.tables["sync_streams"]
+    events = Base.metadata.tables["sync_events"]
+
+    assert set(streams.columns.keys()) == {"user_id", "last_cursor"}
+    assert {column.name for column in events.primary_key} == {"user_id", "cursor"}
+    assert {"event_id", "event_type", "conversation_id", "message_id"}.issubset(
+        events.columns.keys()
+    )
+    assert {"ciphertext", "plaintext", "text", "message_key", "payload"}.isdisjoint(
+        events.columns.keys()
+    )

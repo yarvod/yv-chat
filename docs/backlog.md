@@ -10,16 +10,6 @@
 
 ## Messaging foundation
 
-### BL-008 — Cursor sync и offline catch-up
-
-Результат: состояние полностью восстанавливается после сна, reconnect и пропущенных realtime events.
-
-- `GET /api/v1/sync?after=<cursor>` с `next_cursor`/`has_more`;
-- bounded pagination и retention-aware gaps;
-- conversation/message/membership/deletion events;
-- client apply semantics и idempotent event handling;
-- главный test: WebSocket выключен → события созданы → sync восстанавливает всё без дублей.
-
 ### BL-009 — Receipts, unread state, typing и presence
 
 Результат: read state согласуется между устройствами, а ephemeral indicators не становятся durable truth.
@@ -314,6 +304,10 @@
 - решение о native wrapper только при подтверждённой необходимости.
 
 ## Completed
+
+### BL-008 — Cursor sync и offline catch-up
+
+Per-user cursor streams и recipient event rows, atomic message+events, conversation/membership emission включая removed member, bounded `/api/v1/sync`, high-water/oldest-retained gap detection и idempotent retention cleanup. HTTP test восстанавливает conversation/message routing без WebSocket; PostgreSQL concurrency подтверждает cursor/event uniqueness.
 
 ### BL-007 — Idempotent message creation и ordering
 

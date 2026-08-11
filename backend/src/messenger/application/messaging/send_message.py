@@ -15,6 +15,8 @@ from messenger.application.errors import (
 from messenger.application.messaging.policy import MessageEnvelopePolicy
 from messenger.application.ports.clock import Clock
 from messenger.application.ports.messages import MessagingUnitOfWorkFactory
+from messenger.application.sync import SyncEventType, SyncPolicy
+from messenger.application.sync.emission import events_for_users
 from messenger.domain.entities import Message
 
 
@@ -47,10 +49,12 @@ class SendOpaqueMessage:
         unit_of_work: MessagingUnitOfWorkFactory,
         clock: Clock,
         message_policy: MessageEnvelopePolicy,
+        sync_policy: SyncPolicy,
     ) -> None:
         self._unit_of_work = unit_of_work
         self._clock = clock
         self._policy = message_policy
+        self._sync_policy = sync_policy
 
     async def execute(self, command: SendOpaqueMessageCommand) -> SendOpaqueMessageResult:
         self._policy.validate(command.protocol_version, command.ciphertext)
@@ -96,6 +100,16 @@ class SendOpaqueMessage:
                 now=self._clock.now(),
             )
             await unit_of_work.messages.add(message)
+            await unit_of_work.sync_events.append(
+                events_for_users(
+                    {member.user_id for member in conversation.members if member.is_active},
+                    event_type=SyncEventType.MESSAGE_CREATED,
+                    conversation_id=conversation.id,
+                    message_id=message.id,
+                    now=message.created_at,
+                    policy=self._sync_policy,
+                )
+            )
             await unit_of_work.commit()
         return result_from(message)
 

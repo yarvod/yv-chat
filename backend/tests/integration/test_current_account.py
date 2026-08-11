@@ -30,6 +30,8 @@ from messenger.infrastructure.persistence.models import (
     MessageModel,
     SecurityEventModel,
     SessionModel,
+    SyncEventModel,
+    SyncStreamModel,
     UserModel,
 )
 from tests.application.fakes import FixedClock
@@ -56,6 +58,8 @@ def configured_database_url() -> str:
 
 async def reset_tables(session_factory: async_sessionmaker[AsyncSession]) -> None:
     async with session_factory.begin() as session:
+        await session.execute(delete(SyncEventModel))
+        await session.execute(delete(SyncStreamModel))
         await session.execute(delete(MessageModel))
         await session.execute(delete(ConversationMemberModel))
         await session.execute(delete(ConversationModel))

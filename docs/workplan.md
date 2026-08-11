@@ -2,52 +2,52 @@
 
 Этот файл содержит только одну текущую фичу. Перед началом следующей фичи завершённая работа фиксируется коммитом, а новый пункт переносится сюда из `backlog.md`.
 
-## WP-013 — Idempotent message creation и ordering
+## WP-014 — Durable cursor sync и offline catch-up
 
 Статус: **completed**
-Backlog item: `BL-007`
-Цель: сделать retry безопасным, а порядок concurrent messages стабильным и пригодным для cursor pagination.
+Backlog item: `BL-008`
+Цель: сделать PostgreSQL event stream источником восстановления после сна, reconnect и полностью пропущенного realtime.
 
 ### Результат
 
-Каждая device отправляет client-generated UUID; повтор идентичного envelope возвращает тот же message, конфликтующее переиспользование ID отклоняется. Conversation row lock сериализует выделение monotonically increasing sequence. Authenticated members читают bounded ascending pages после sequence.
+У каждого пользователя есть monotonic stream cursor. Message и соответствующие recipient events записываются атомарно; conversation/membership changes создают routing events для затронутых пользователей. `/api/v1/sync?after=` отдаёт bounded page, `next_cursor`, `has_more` и retention-gap signal.
 
 ### Invariants
 
-1. Idempotency key уникален в scope sender device.
-2. Идентичный retry не создаёт новый row/sequence.
-3. Тот же key с другим conversation/version/ciphertext даёт conflict.
-4. Sequence положителен и уникален внутри conversation.
-5. Conversation row lock сериализует concurrent allocation.
-6. Ordering не зависит от client timestamp.
-7. Pagination bounded, строго ascending `(sequence, id)` и membership-authorized.
-8. Message create и sequence allocation находятся в одной transaction.
-9. List возвращает ciphertext только как base64 opaque envelope.
-10. Plaintext/key fields по-прежнему отсутствуют.
+1. Cursor монотонен и уникален в stream конкретного пользователя.
+2. Event visibility фиксируется recipient row в момент операции, а не вычисляется по текущему membership задним числом.
+3. Message row и `message_created` events находятся в одной transaction.
+4. Exact message retry не создаёт duplicate event.
+5. Conversation create/update/member removal создаёт idempotently applicable event с opaque IDs.
+6. Removed member получает событие, позволяющее удалить inaccessible conversation локально.
+7. Sync payload не содержит ciphertext/plaintext/keys; content загружается через authorized resource API.
+8. Pagination строго cursor-ascending и bounded; duplicate application безопасна по stable event ID/cursor.
+9. Retention cleanup idempotent; слишком старый cursor получает explicit reset/gap signal.
+10. WebSocket не участвует в correctness tests.
 
 ### План
 
-- [x] Расширить Message client ID/sequence invariants и tests.
-- [x] Расширить repository port/adapter idempotency lookup, next sequence и list-after.
-- [x] Добавить migration `0009` с backfill и unique constraints.
-- [x] Обновить send use case для row lock и exact retry comparison.
-- [x] Добавить ListMessages use case и bounded HTTP pagination.
-- [x] Добавить concurrency/retry/application/HTTP/PostgreSQL tests.
-- [x] Проверить migration roundtrip/base→head, full CI и Docker head.
-- [x] Обновить docs и создать отдельный commit.
+- [x] Добавить typed pending/persisted sync event records и policy.
+- [x] Добавить SyncRepository/Messaging/Conversation UoW ports.
+- [x] Добавить `sync_streams`/`sync_events` models и Alembic `0010`.
+- [x] Реализовать atomic per-user cursor allocation и retention-aware list.
+- [x] Emit message events для всех active recipients без duplicate retry.
+- [x] Emit conversation/membership events, включая removed member.
+- [x] Добавить ListSyncEvents use case и `/api/v1/sync` DTO.
+- [x] Добавить unit/HTTP/PostgreSQL offline catch-up/gap/concurrency tests.
+- [x] Проверить migration/full CI/Docker, обновить docs и создать commit.
 
 ### Не входит в scope
 
-- global sync event cursor/WebSocket;
-- edits/deletes/receipts;
-- TTL;
-- actual E2EE;
-- frontend timeline.
+- WebSocket/presence/typing/receipts;
+- message deletion/tombstone producer (event type резервируется для `BL-010`);
+- frontend IndexedDB apply engine;
+- E2EE.
 
 ### Проверка готовности
 
-- concurrent sends получают разные последовательные sequence;
-- exact retry возвращает исходный ID/sequence и один DB row;
-- conflicting retry даёт 409;
-- list-after не пропускает/не дублирует rows;
-- full checks зелёные и отдельный commit создан.
+- при полностью выключенном WebSocket message/conversation events восстанавливаются через sync;
+- retry не удваивает message event;
+- removed member получает update, но больше не читает conversation;
+- stale cursor явно сигнализирует gap;
+- проверки зелёные и отдельный commit создан.

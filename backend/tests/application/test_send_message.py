@@ -17,6 +17,7 @@ from messenger.application.messaging.send_message import (
     SendOpaqueMessage,
     SendOpaqueMessageCommand,
 )
+from messenger.application.sync import SyncPolicy
 from messenger.domain.entities import Conversation, Device, User
 from tests.application.fakes import FakeMessagingUnitOfWorkFactory, FixedClock, IdentityState
 
@@ -47,6 +48,7 @@ async def test_send_persists_only_opaque_envelope_metadata() -> None:
         unit_of_work=FakeMessagingUnitOfWorkFactory(state),
         clock=FixedClock(NOW + timedelta(seconds=1)),
         message_policy=MessageEnvelopePolicy(),
+        sync_policy=SyncPolicy(),
     )
     client_message_id = uuid4()
     command = SendOpaqueMessageCommand(
@@ -102,6 +104,7 @@ async def test_send_rejects_non_member_and_foreign_or_revoked_device() -> None:
         unit_of_work=FakeMessagingUnitOfWorkFactory(state),
         clock=FixedClock(NOW + timedelta(seconds=1)),
         message_policy=MessageEnvelopePolicy(),
+        sync_policy=SyncPolicy(),
     )
     charlie_device = Device.create(user_id=charlie.id, name="Charlie device", now=NOW)
     state.devices[charlie_device.id] = charlie_device
@@ -148,6 +151,7 @@ async def test_send_rejects_unsupported_empty_and_oversized_envelopes() -> None:
         unit_of_work=FakeMessagingUnitOfWorkFactory(state),
         clock=FixedClock(NOW),
         message_policy=MessageEnvelopePolicy(max_ciphertext_bytes=8),
+        sync_policy=SyncPolicy(),
     )
     for version, ciphertext in ((2, b"opaque"), (1, b""), (1, b"x" * 9)):
         with pytest.raises(InvalidMessageEnvelopeError):

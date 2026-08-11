@@ -43,11 +43,14 @@ from messenger.application.ports.identity import IdentityUnitOfWorkFactory
 from messenger.application.ports.messages import MessagingUnitOfWorkFactory
 from messenger.application.ports.passwords import PasswordHasher
 from messenger.application.ports.session_credentials import SessionCredentialService
+from messenger.application.ports.sync import SyncUnitOfWorkFactory
 from messenger.application.security_events.policy import SecurityEventPolicy
 from messenger.application.sessions.authenticate import AuthenticateSession
 from messenger.application.sessions.login import Login
 from messenger.application.sessions.logout import Logout
 from messenger.application.sessions.policy import SessionPolicy
+from messenger.application.sync import SyncPolicy
+from messenger.application.sync.list_events import ListSyncEvents
 from messenger.bootstrap.app import create_app
 from messenger.bootstrap.settings import AppEnvironment, AppSettings
 from messenger.domain.entities import Device, Session, User
@@ -56,6 +59,7 @@ from tests.application.fakes import (
     FakeIdentityUnitOfWorkFactory,
     FakeMessagingUnitOfWorkFactory,
     FakePasswordHasher,
+    FakeSyncUnitOfWorkFactory,
     FixedSessionCredentials,
     IdentityState,
     SequentialActivationSecrets,
@@ -92,6 +96,7 @@ class HttpTestProvider(Provider):
         unit_of_work: IdentityUnitOfWorkFactory,
         conversation_unit_of_work: ConversationUnitOfWorkFactory,
         messaging_unit_of_work: MessagingUnitOfWorkFactory,
+        sync_unit_of_work: SyncUnitOfWorkFactory,
         clock: Clock,
         passwords: PasswordHasher,
         credentials: SessionCredentialService,
@@ -102,6 +107,7 @@ class HttpTestProvider(Provider):
         self._unit_of_work = unit_of_work
         self._conversation_unit_of_work = conversation_unit_of_work
         self._messaging_unit_of_work = messaging_unit_of_work
+        self._sync_unit_of_work = sync_unit_of_work
         self._clock = clock
         self._passwords = passwords
         self._credentials = credentials
@@ -124,8 +130,16 @@ class HttpTestProvider(Provider):
         return self._messaging_unit_of_work
 
     @provide(scope=Scope.APP)
+    def sync_unit_of_work(self) -> SyncUnitOfWorkFactory:
+        return self._sync_unit_of_work
+
+    @provide(scope=Scope.APP)
     def message_policy(self) -> MessageEnvelopePolicy:
         return MessageEnvelopePolicy()
+
+    @provide(scope=Scope.APP)
+    def sync_policy(self) -> SyncPolicy:
+        return SyncPolicy()
 
     @provide(scope=Scope.APP)
     def clock(self) -> Clock:
@@ -185,6 +199,7 @@ class HttpTestProvider(Provider):
     )
     send_opaque_message = provide(SendOpaqueMessage, scope=Scope.REQUEST)
     list_messages = provide(ListMessages, scope=Scope.REQUEST)
+    list_sync_events = provide(ListSyncEvents, scope=Scope.REQUEST)
 
 
 def build_test_application(
@@ -224,6 +239,7 @@ def build_test_application(
             unit_of_work=factory,
             conversation_unit_of_work=FakeConversationUnitOfWorkFactory(state),
             messaging_unit_of_work=FakeMessagingUnitOfWorkFactory(state),
+            sync_unit_of_work=FakeSyncUnitOfWorkFactory(state),
             clock=clock,
             passwords=passwords,
             credentials=credentials,

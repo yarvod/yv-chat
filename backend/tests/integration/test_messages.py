@@ -19,6 +19,7 @@ from messenger.application.ports.identity import IdentityUnitOfWork
 from messenger.application.security_events.policy import SecurityEventPolicy
 from messenger.application.sessions.login import Login, LoginCommand
 from messenger.application.sessions.policy import SessionPolicy
+from messenger.application.sync import SyncPolicy
 from messenger.domain.entities import Conversation, User
 from messenger.infrastructure.auth.passwords import Argon2PasswordHasher
 from messenger.infrastructure.auth.session_credentials import SecureSessionCredentialService
@@ -36,6 +37,8 @@ from messenger.infrastructure.persistence.models import (
     MessageModel,
     SecurityEventModel,
     SessionModel,
+    SyncEventModel,
+    SyncStreamModel,
     UserModel,
 )
 from tests.application.fakes import FixedClock
@@ -61,6 +64,8 @@ def configured_database_url() -> str:
 
 async def reset_tables(session_factory: async_sessionmaker[AsyncSession]) -> None:
     async with session_factory.begin() as session:
+        await session.execute(delete(SyncEventModel))
+        await session.execute(delete(SyncStreamModel))
         await session.execute(delete(MessageModel))
         await session.execute(delete(ConversationMemberModel))
         await session.execute(delete(ConversationModel))
@@ -119,6 +124,7 @@ async def run_flow(database_url: str) -> None:
             unit_of_work=SqlAlchemyMessagingUnitOfWorkFactory(session_factory),
             clock=FixedClock(NOW + timedelta(seconds=1)),
             message_policy=MessageEnvelopePolicy(),
+            sync_policy=SyncPolicy(),
         )
         ciphertext = b"\x00\xffopaque-postgresql-envelope"
         client_message_id = uuid4()
@@ -170,12 +176,27 @@ async def run_flow(database_url: str) -> None:
         async with session_factory() as session:
             stored = await session.get(MessageModel, result.message_id)
             count = await session.scalar(select(func.count(MessageModel.id)))
+            alice_event_count = await session.scalar(
+                select(func.count(SyncEventModel.event_id)).where(
+                    SyncEventModel.user_id == alice.id
+                )
+            )
+            bob_event_count = await session.scalar(
+                select(func.count(SyncEventModel.event_id)).where(SyncEventModel.user_id == bob.id)
+            )
+            charlie_event_count = await session.scalar(
+                select(func.count(SyncEventModel.event_id)).where(
+                    SyncEventModel.user_id == charlie.id
+                )
+            )
         assert stored is not None
         assert stored.ciphertext == ciphertext
         assert stored.sender_user_id == alice.id
         assert stored.sender_device_id == alice_session.device_id
         assert count == 3
         assert {item.sequence for item in concurrent} == {2, 3}
+        assert alice_event_count == bob_event_count == 3
+        assert charlie_event_count == 0
     finally:
         await reset_tables(session_factory)
         await engine.dispose()

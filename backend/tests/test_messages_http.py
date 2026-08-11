@@ -83,6 +83,14 @@ async def test_send_opaque_message_and_reject_invalid_or_non_member_envelopes() 
         )
         assert conflict.status_code == 409
 
+        sync = await alice_client.get("/api/v1/sync?after=0&limit=10")
+        assert sync.status_code == 200
+        assert [event["event_type"] for event in sync.json()["events"]] == [
+            "conversation_updated",
+            "message_created",
+        ]
+        assert sync.json()["events"][-1]["message_id"] == sent.json()["message_id"]
+
         page = await alice_client.get(
             f"/api/v1/conversations/{conversation_id}/messages?after_sequence=0&limit=10"
         )

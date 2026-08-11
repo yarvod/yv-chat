@@ -7,10 +7,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from messenger.application.ports.conversations import ConversationRepository
 from messenger.application.ports.identity import DeviceRepository, UserRepository
 from messenger.application.ports.messages import MessageRepository, MessagingUnitOfWork
+from messenger.application.ports.sync import SyncRepository
 from messenger.infrastructure.persistence.repositories import (
     SqlAlchemyConversationRepository,
     SqlAlchemyDeviceRepository,
     SqlAlchemyMessageRepository,
+    SqlAlchemySyncRepository,
     SqlAlchemyUserRepository,
 )
 
@@ -23,6 +25,7 @@ class SqlAlchemyMessagingUnitOfWork:
         self.conversations: ConversationRepository
         self.users: UserRepository
         self.devices: DeviceRepository
+        self.sync_events: SyncRepository
 
     async def __aenter__(self) -> "SqlAlchemyMessagingUnitOfWork":
         self._session = self._session_factory()
@@ -30,6 +33,7 @@ class SqlAlchemyMessagingUnitOfWork:
         self.conversations = SqlAlchemyConversationRepository(self._session)
         self.users = SqlAlchemyUserRepository(self._session)
         self.devices = SqlAlchemyDeviceRepository(self._session)
+        self.sync_events = SqlAlchemySyncRepository(self._session)
         return self
 
     async def __aexit__(

@@ -1,33 +1,26 @@
-"""SQLAlchemy transaction boundary for conversation operations."""
+"""SQLAlchemy transaction boundary for sync reads and retention cleanup."""
 
 from types import TracebackType
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from messenger.application.ports.conversations import (
-    ConversationRepository,
-    ConversationUnitOfWork,
-)
 from messenger.application.ports.identity import UserRepository
-from messenger.application.ports.sync import SyncRepository
+from messenger.application.ports.sync import SyncRepository, SyncUnitOfWork
 from messenger.infrastructure.persistence.repositories import (
-    SqlAlchemyConversationRepository,
     SqlAlchemySyncRepository,
     SqlAlchemyUserRepository,
 )
 
 
-class SqlAlchemyConversationUnitOfWork:
+class SqlAlchemySyncUnitOfWork:
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
         self._session: AsyncSession | None = None
-        self.conversations: ConversationRepository
         self.users: UserRepository
         self.sync_events: SyncRepository
 
-    async def __aenter__(self) -> "SqlAlchemyConversationUnitOfWork":
+    async def __aenter__(self) -> "SqlAlchemySyncUnitOfWork":
         self._session = self._session_factory()
-        self.conversations = SqlAlchemyConversationRepository(self._session)
         self.users = SqlAlchemyUserRepository(self._session)
         self.sync_events = SqlAlchemySyncRepository(self._session)
         return self
@@ -50,9 +43,9 @@ class SqlAlchemyConversationUnitOfWork:
         await self._session.commit()
 
 
-class SqlAlchemyConversationUnitOfWorkFactory:
+class SqlAlchemySyncUnitOfWorkFactory:
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
 
-    def __call__(self) -> ConversationUnitOfWork:
-        return SqlAlchemyConversationUnitOfWork(self._session_factory)
+    def __call__(self) -> SyncUnitOfWork:
+        return SqlAlchemySyncUnitOfWork(self._session_factory)

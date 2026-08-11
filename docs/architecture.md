@@ -327,6 +327,10 @@ GET /api/v1/sync?after=<cursor>
 → events, next_cursor, has_more
 ```
 
+Реализованный durable stream использует независимый monotonic cursor каждого пользователя: `sync_streams(user_id, last_cursor)` и recipient-specific `sync_events(user_id, cursor)`. Atomic PostgreSQL upsert выделяет cursor, сохраняя event order внутри user stream и стабильный user lock order между recipients. Visibility фиксируется при записи события, поэтому удалённый member получает финальный `conversation_updated`, хотя последующий conversation GET уже возвращает not-found.
+
+Message row и все `message_created` recipient events коммитятся одним Messaging UoW; exact retry не создаёт повторных events. Sync payload содержит только stable event/conversation/message IDs и timestamps, без ciphertext/plaintext/key data. Cleanup удаляет expired events, но сохраняет stream high-water mark; `/api/v1/sync` сравнивает `after`, oldest retained cursor и stream cursor и выставляет `reset_required`, когда нужен полный resource resync.
+
 Правильность любой realtime-фичи проверяется при отключённом WebSocket. Duplicate WebSocket/Push/sync delivery применяется идемпотентно.
 
 ## 10. E2EE trust boundary

@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from messenger.application.ports.conversations import ConversationUnitOfWorkFactory
 from messenger.application.ports.identity import IdentityUnitOfWorkFactory
 from messenger.application.ports.messages import MessagingUnitOfWorkFactory
+from messenger.application.ports.sync import SyncUnitOfWorkFactory
 from messenger.bootstrap.settings import AppSettings
 from messenger.infrastructure.persistence.conversation_uow import (
     SqlAlchemyConversationUnitOfWorkFactory,
@@ -17,6 +18,7 @@ from messenger.infrastructure.persistence.identity_uow import SqlAlchemyIdentity
 from messenger.infrastructure.persistence.messaging_uow import (
     SqlAlchemyMessagingUnitOfWorkFactory,
 )
+from messenger.infrastructure.persistence.sync_uow import SqlAlchemySyncUnitOfWorkFactory
 
 
 class PersistenceProvider(Provider):
@@ -57,3 +59,10 @@ class PersistenceProvider(Provider):
         session_factory: async_sessionmaker[AsyncSession],
     ) -> MessagingUnitOfWorkFactory:
         return SqlAlchemyMessagingUnitOfWorkFactory(session_factory)
+
+    @provide(scope=Scope.APP)
+    def sync_unit_of_work_factory(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> SyncUnitOfWorkFactory:
+        return SqlAlchemySyncUnitOfWorkFactory(session_factory)

@@ -18,6 +18,8 @@ from messenger.application.errors import (
 )
 from messenger.application.ports.clock import Clock
 from messenger.application.ports.conversations import ConversationUnitOfWorkFactory
+from messenger.application.sync import SyncEventType, SyncPolicy
+from messenger.application.sync.emission import events_for_users
 from messenger.domain.entities import ConversationMemberRole
 
 
@@ -34,9 +36,11 @@ class RemoveConversationMember:
         *,
         unit_of_work: ConversationUnitOfWorkFactory,
         clock: Clock,
+        sync_policy: SyncPolicy,
     ) -> None:
         self._unit_of_work = unit_of_work
         self._clock = clock
+        self._sync_policy = sync_policy
 
     async def execute(
         self,
@@ -64,8 +68,20 @@ class RemoveConversationMember:
                 and target.role is not ConversationMemberRole.MEMBER
             ):
                 raise AuthorizationDeniedError("admin can remove ordinary members only")
-            updated = conversation.remove_member(command.target_user_id, self._clock.now())
+            now = self._clock.now()
+            recipients = {member.user_id for member in conversation.members if member.is_active}
+            updated = conversation.remove_member(command.target_user_id, now)
             await unit_of_work.conversations.update(updated)
+            await unit_of_work.sync_events.append(
+                events_for_users(
+                    recipients,
+                    event_type=SyncEventType.CONVERSATION_UPDATED,
+                    conversation_id=updated.id,
+                    message_id=None,
+                    now=now,
+                    policy=self._sync_policy,
+                )
+            )
             result = await build_conversation_result(updated, unit_of_work.users)
             await unit_of_work.commit()
         return result

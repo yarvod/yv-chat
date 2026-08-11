@@ -18,6 +18,8 @@ from messenger.application.errors import (
 )
 from messenger.application.ports.clock import Clock
 from messenger.application.ports.conversations import ConversationUnitOfWorkFactory
+from messenger.application.sync import SyncEventType, SyncPolicy
+from messenger.application.sync.emission import events_for_users
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,9 +35,11 @@ class AddConversationMember:
         *,
         unit_of_work: ConversationUnitOfWorkFactory,
         clock: Clock,
+        sync_policy: SyncPolicy,
     ) -> None:
         self._unit_of_work = unit_of_work
         self._clock = clock
+        self._sync_policy = sync_policy
 
     async def execute(self, command: AddConversationMemberCommand) -> ConversationResult:
         async with self._unit_of_work() as unit_of_work:
@@ -53,8 +57,19 @@ class AddConversationMember:
                 raise ConversationParticipantNotFoundError("participant not found")
             if any(member.user_id == command.target_user_id for member in conversation.members):
                 raise ConversationMembershipConflictError("participant already has membership")
-            updated = conversation.add_member(command.target_user_id, self._clock.now())
+            now = self._clock.now()
+            updated = conversation.add_member(command.target_user_id, now)
             await unit_of_work.conversations.update(updated)
+            await unit_of_work.sync_events.append(
+                events_for_users(
+                    {member.user_id for member in updated.members if member.is_active},
+                    event_type=SyncEventType.CONVERSATION_UPDATED,
+                    conversation_id=updated.id,
+                    message_id=None,
+                    now=now,
+                    policy=self._sync_policy,
+                )
+            )
             result = await build_conversation_result(updated, unit_of_work.users)
             await unit_of_work.commit()
         return result

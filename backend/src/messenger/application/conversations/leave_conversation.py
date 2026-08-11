@@ -10,6 +10,8 @@ from messenger.application.conversations.authorization import (
 from messenger.application.errors import AuthorizationDeniedError
 from messenger.application.ports.clock import Clock
 from messenger.application.ports.conversations import ConversationUnitOfWorkFactory
+from messenger.application.sync import SyncEventType, SyncPolicy
+from messenger.application.sync.emission import events_for_users
 from messenger.domain.entities import ConversationMemberRole, ConversationType
 
 
@@ -25,9 +27,11 @@ class LeaveConversation:
         *,
         unit_of_work: ConversationUnitOfWorkFactory,
         clock: Clock,
+        sync_policy: SyncPolicy,
     ) -> None:
         self._unit_of_work = unit_of_work
         self._clock = clock
+        self._sync_policy = sync_policy
 
     async def execute(self, command: LeaveConversationCommand) -> None:
         async with self._unit_of_work() as unit_of_work:
@@ -43,7 +47,19 @@ class LeaveConversation:
                 raise AuthorizationDeniedError("direct conversation membership is immutable")
             if actor.role is ConversationMemberRole.OWNER:
                 raise AuthorizationDeniedError("group owner cannot leave")
+            now = self._clock.now()
+            recipients = {member.user_id for member in conversation.members if member.is_active}
             await unit_of_work.conversations.update(
-                conversation.remove_member(command.actor_user_id, self._clock.now())
+                conversation.remove_member(command.actor_user_id, now)
+            )
+            await unit_of_work.sync_events.append(
+                events_for_users(
+                    recipients,
+                    event_type=SyncEventType.CONVERSATION_UPDATED,
+                    conversation_id=conversation.id,
+                    message_id=None,
+                    now=now,
+                    policy=self._sync_policy,
+                )
             )
             await unit_of_work.commit()

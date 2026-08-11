@@ -12,6 +12,7 @@ from messenger.infrastructure.persistence.repositories.security_events import (
     SqlAlchemySecurityEventRepository,
 )
 from messenger.infrastructure.persistence.repositories.sessions import SqlAlchemySessionRepository
+from messenger.infrastructure.persistence.repositories.sync import SqlAlchemySyncRepository
 from messenger.infrastructure.persistence.repositories.users import SqlAlchemyUserRepository
 
 __all__ = [
@@ -21,5 +22,6 @@ __all__ = [
     "SqlAlchemyMessageRepository",
     "SqlAlchemySecurityEventRepository",
     "SqlAlchemySessionRepository",
+    "SqlAlchemySyncRepository",
     "SqlAlchemyUserRepository",
 ]

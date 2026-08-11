@@ -6,6 +6,7 @@ from typing import Protocol, Self
 from messenger.application.ports.conversations import ConversationRepository
 from messenger.application.ports.identity import DeviceRepository, UserRepository
 from messenger.application.ports.messages.repository import MessageRepository
+from messenger.application.ports.sync import SyncRepository
 
 
 class MessagingUnitOfWork(Protocol):
@@ -13,6 +14,7 @@ class MessagingUnitOfWork(Protocol):
     conversations: ConversationRepository
     users: UserRepository
     devices: DeviceRepository
+    sync_events: SyncRepository
 
     async def __aenter__(self) -> Self: ...
 
