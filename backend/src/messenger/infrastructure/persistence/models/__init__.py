@@ -6,6 +6,11 @@ from messenger.infrastructure.persistence.models.conversation import (
     ConversationMemberModel,
     ConversationModel,
 )
+from messenger.infrastructure.persistence.models.conversation_crypto import (
+    ConversationCryptoGenerationModel,
+    ConversationCryptoRequiredDeviceModel,
+    ConversationCryptoWelcomeModel,
+)
 from messenger.infrastructure.persistence.models.conversation_delivery_state import (
     ConversationDeliveryStateModel,
 )
@@ -29,6 +34,9 @@ __all__ = [
     "Base",
     "ConversationMemberModel",
     "ConversationModel",
+    "ConversationCryptoGenerationModel",
+    "ConversationCryptoRequiredDeviceModel",
+    "ConversationCryptoWelcomeModel",
     "ConversationDeliveryStateModel",
     "ConversationReadStateModel",
     "DeviceModel",

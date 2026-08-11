@@ -22,6 +22,9 @@ def test_persistence_metadata_contains_expected_tables() -> None:
         "activation_tokens",
         "conversation_members",
         "conversation_delivery_states",
+        "conversation_crypto_generations",
+        "conversation_crypto_required_devices",
+        "conversation_crypto_welcomes",
         "conversation_read_states",
         "conversations",
         "devices",
@@ -89,6 +92,24 @@ def test_device_crypto_schema_contains_only_public_bounded_material() -> None:
     assert {"private_key", "sealed_state", "wrapping_key"}.isdisjoint(
         set(identities.columns.keys()) | set(key_packages.columns.keys())
     )
+
+
+def test_conversation_crypto_schema_stores_only_bounded_public_mls_wire_data() -> None:
+    generations = Base.metadata.tables["conversation_crypto_generations"]
+    required_devices = Base.metadata.tables["conversation_crypto_required_devices"]
+    welcomes = Base.metadata.tables["conversation_crypto_welcomes"]
+
+    assert {"commit_message", "ratchet_tree"}.issubset(generations.columns.keys())
+    assert {"generation_id", "device_id", "key_package_id"}.issubset(
+        required_devices.columns.keys()
+    )
+    assert {"welcome_message", "expires_at", "acknowledged_at"}.issubset(welcomes.columns.keys())
+    all_columns = (
+        set(generations.columns.keys())
+        | set(required_devices.columns.keys())
+        | set(welcomes.columns.keys())
+    )
+    assert {"plaintext", "message_key", "private_key", "sealed_state"}.isdisjoint(all_columns)
 
 
 def test_user_schema_enforces_normalized_unique_username() -> None:
