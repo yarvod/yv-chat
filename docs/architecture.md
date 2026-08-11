@@ -682,10 +682,23 @@ state API и не экспортирует private snapshot entrypoints. Browser
 Внутри Rust crate существует private unsealed snapshot prerequisite. Формат имеет
 fixed magic, format/provider versions, monotonic non-zero revision, canonical
 identity/public KeyPackage anchors и bounded deterministic sorted storage records.
-Restore exact-сверяет ожидаемые user/device UUID, повторно валидирует KeyPackage,
-находит Ed25519 signer и private KeyPackage bundle только в restored OpenMLS storage
-и доказывает usable signer. Unsupported/truncated/trailing/duplicate/oversized или
-inconsistent state переводится в typed fail-closed error.
+Restore exact-сверяет ожидаемые user/device UUID, повторно валидирует public
+KeyPackage и находит Ed25519 signer только в restored OpenMLS storage. Private
+one-time KeyPackage bundle обязателен до claim/join, но OpenMLS намеренно удаляет
+его после принятия Welcome; его отсутствие после этого не делает сохранённые group
+state и ratchets повреждёнными. Unsupported/truncated/trailing/duplicate/oversized
+или inconsistent state переводится в typed fail-closed error.
+
+Native conversation core создаёт deterministic `GroupId` из 16 bytes conversation
+UUID, фиксирует exact ciphersuite и `PURE_CIPHERTEXT_WIRE_FORMAT_POLICY`, принимает
+только TLS-валидированные one-time KeyPackages, выдаёт opaque Commit/Welcome/ratchet
+tree и присоединяет recipient через staged Welcome с повторной сверкой group/suite.
+Application AAD имеет точный формат
+`"yv-chat-mls-v2" || 0x00 || conversation UUID || client-message UUID`; mismatch,
+не-application record, trailing/corrupt wire data и replay закрываются без plaintext
+наружу. Native Alice/Bob tests доказывают round-trip и продолжение sender/receiver
+ratchets после sealed snapshot restore. Этот core ещё не экспортирован в WASM и не
+переключает production transport до server generation/Welcome coordination.
 
 Unsealed snapshot содержит private MLS material. Он не является public API, не имеет
 `wasm_bindgen` export и не может записываться в IndexedDB/файл или логироваться.

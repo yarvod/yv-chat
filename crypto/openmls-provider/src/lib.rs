@@ -20,7 +20,10 @@ use uuid::Uuid;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
+mod conversation;
 mod snapshot;
+
+pub use conversation::{AddMembersOutput, ConversationError, ProtectedApplicationMessage};
 
 #[cfg(any(test, target_arch = "wasm32"))]
 mod sealing;

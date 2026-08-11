@@ -13,7 +13,7 @@ use openmls::{
 };
 use openmls_basic_credential::SignatureKeyPair;
 use openmls_rust_crypto::OpenMlsRustCrypto;
-use openmls_traits::{storage::StorageProvider, OpenMlsProvider};
+use openmls_traits::OpenMlsProvider;
 use tls_codec::Deserialize;
 
 use super::{
@@ -180,14 +180,11 @@ pub(super) fn restore(
             .map_err(|_| BootstrapError::SnapshotCorrupt)?
             .validate(provider.crypto(), openmls::prelude::ProtocolVersion::Mls10)
             .map_err(|_| BootstrapError::SnapshotCorrupt)?;
-    let hash_ref = parsed_key_package
-        .hash_ref(provider.crypto())
-        .map_err(|_| BootstrapError::SnapshotCorrupt)?;
-    let stored: Option<openmls::key_packages::KeyPackageBundle> = provider
-        .storage()
-        .key_package(&hash_ref)
-        .map_err(|_| BootstrapError::StorageUnavailable)?;
-    if stored.is_none() || parsed_key_package.ciphersuite() != CIPHERSUITE {
+    // OpenMLS removes a one-time KeyPackage bundle after consuming the Welcome.
+    // The immutable public package remains part of the device registration, but
+    // its private init key is correctly absent after use and must not make an
+    // otherwise complete MLS group snapshot unrestorable.
+    if parsed_key_package.ciphersuite() != CIPHERSUITE {
         return Err(BootstrapError::SnapshotCorrupt);
     }
     let fingerprint = public_fingerprint(&provider, &identity, &signature_public_key)?;

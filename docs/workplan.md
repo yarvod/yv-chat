@@ -53,8 +53,11 @@ synthetic v1 payload виден серверу; положить туда file k
 - [ ] Добавить atomic bootstrap operation, required-device snapshot, KeyPackage
   claims и per-device opaque Welcome queue/ack.
 - [ ] Добавить authorized opaque MLS handshake record routing и ordered sync events.
-- [ ] Расширить Rust core: create group, add validated packages, accept Welcome,
-  stage/validate/merge Commit, protect/unprotect application message.
+- [x] Расширить native Rust core: deterministic create group, add validated
+  packages + merge, accept Welcome с exact group/suite/tree binding и
+  protect/unprotect application message с outer AAD.
+- [ ] Добавить обработку Commit существующими members, remove/re-add leaf и
+  безопасные WASM bindings поверх проверенного native контракта.
 - [ ] Расширить closed Worker protocol; все state-changing crypto operations должны
   checkpoint-ить sealed provider state до success наружу.
 - [ ] Добавить frontend bootstrap/reconcile coordinator и typed server gateways;
