@@ -81,6 +81,33 @@ jobs:
       - name: Build
         run: npm run build
 
+  crypto:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: crypto
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install pinned Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
+        with:
+          toolchain: 1.91.0
+          target: wasm32-unknown-unknown
+          components: rustfmt, clippy
+          cache-workspaces: crypto
+      - name: Check formatting
+        run: cargo fmt --check
+      - name: Lint native targets
+        run: cargo clippy --all-targets --locked -- -D warnings
+      - name: Test native provider
+        run: cargo test --locked
+      - name: Compile release WASM
+        run: cargo build --target wasm32-unknown-unknown --release --locked
+      - name: Reject sensitive OpenMLS debug features
+        run: |
+          ! cargo tree --locked -e features -i openmls |
+            grep -Eq 'openmls feature "(content-debug|crypto-debug|test-utils)"'
+
   compose:
     runs-on: ubuntu-latest
     steps:

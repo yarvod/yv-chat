@@ -4,82 +4,103 @@
 завершённая работа фиксируется отдельным коммитом, а новый пункт переносится
 сюда из `backlog.md`.
 
-## WP-030 — Async crypto boundary и fail-closed protocol dispatch
+## WP-031 — Pinned OpenMLS provider и device bootstrap proof
 
 Статус: **completed**
-Backlog item: `BL-013` (foundation slice)
-Цель: подготовить frontend к async Rust/WASM crypto, убрать encode/decode из Vue UI
-и гарантировать, что MLS v2/unknown/corrupt envelope никогда не декодируется
-synthetic v1 adapter как plaintext fallback.
+Backlog item: `BL-013` (provider/device-bootstrap slice)
+Цель: добавить минимальный repository-owned Rust core, который с pinned stable
+OpenMLS создаёт canonical MLS device identity и one-time KeyPackage, компилируется
+native и в `wasm32-unknown-unknown`, но ещё не подключается к production messages и
+не объявляется production-ready E2EE.
 
-### Invariants
+### Проверенный upstream baseline
 
-1. Vue components получают только presentation-ready content и protection metadata;
-   они не импортируют codec/WebCrypto/WASM/IndexedDB adapters.
-2. Application service маршрутизирует строго по `protocol_version`; каждый adapter
-   объявляет ровно одну version, duplicates запрещены.
-3. Текущий outgoing protocol остаётся explicit v1 synthetic и сохраняет постоянное
-   предупреждение. Он не переименовывается в secure.
-4. Зарезервированный MLS v2 adapter fail closed как unavailable до реального
-   OpenMLS implementation; он не вызывает v1 decoder и не возвращает ciphertext.
-5. Unknown version, malformed base64/UTF-8 и unavailable provider дают bounded safe
-   placeholder per message, не raw error/bytes и не глобальный crash timeline.
-6. Send передаёт выбранный `protocol_version` из application result в gateway;
-   infrastructure больше не hard-code-ит `1` скрыто.
-7. Decrypted plaintext существует только в reactive in-memory timeline view, не в
-   domain opaque DTO, transport parser, logs или persistence.
-8. Tombstone никогда не передаётся в decrypt adapter.
-9. API/backend/schema/deployment и cryptographic dependencies в этом slice не
-   меняются.
+- OpenMLS stable `0.8.1`, release tag `openmls-v0.8.1`, commit
+  `47dbedecad0c1fd8eb5368d582250ebfcc1e1ce6`;
+- `openmls_rust_crypto = 0.5.1`, `openmls_traits = 0.5.0`,
+  `openmls_basic_credential = 0.5.0`;
+- prerelease `0.9.0-rc.2` намеренно не выбран;
+- ciphersuite только
+  `MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519`;
+- `crypto-debug`, `content-debug`, test-utils и upstream experimental binding не
+  входят в production dependency features.
+
+### Security invariants
+
+1. BasicCredential identity — fixed schema bytes: version `1` + canonical user UUID
+   + canonical device UUID; display name/username не участвуют.
+2. Private signature/init keys никогда не возвращаются через Rust public DTO,
+   JavaScript binding, logs или test snapshots.
+3. Public bootstrap result содержит только bounded credential identity, signature
+   public key, TLS-serialized KeyPackage и non-secret fingerprint.
+4. KeyPackage использует ровно MLS 1.0 и выбранный MTI ciphersuite; другой suite или
+   malformed UUID отклоняется.
+5. Каждый bootstrap создаёт новый independent device keypair/KeyPackage; private
+   material не копируется между devices.
+6. Provider state в этом proof остаётся memory-only и поэтому не используется
+   production frontend. Persistence/worker binding — следующий отдельный slice.
+7. Все dependencies exact-pinned в Cargo manifest+lock; no floating git dependency.
+8. Native tests и `wasm32-unknown-unknown` compile обязательны. Browser/WASM runtime,
+   encrypted IndexedDB и server upload остаются release gates, не симулируются.
+9. Synthetic protocol v1 остаётся outgoing и с постоянным insecure warning.
 
 ### План
 
-- [x] Typed `MessageProtocolAdapter` port, protection commands/results/errors.
-- [x] `ProtocolMessageProtection` exact-version router с async API.
-- [x] Synthetic v1 adapter и explicit unavailable MLS v2 adapter.
-- [x] Protocol-aware gateway send contract без hidden version constant.
-- [x] Presentation timeline model + async application decode before Vue render.
-- [x] Удалить `MessageCodec` prop/import и direct decode из `MessagePanel.vue`.
-- [x] Unit/composable/component tests для happy path, corrupt/unknown/v2 fail closed.
-- [x] Architecture/backlog/bugs/workplan sync и full CI.
+- [x] Добавить scoped Rust workspace/crate и pinned `rust-toolchain.toml`.
+- [x] Реализовать typed identity encoder без unstructured JSON/string identity.
+- [x] Реализовать OpenMLS provider bootstrap и safe public result/error taxonomy.
+- [x] TLS-serialize и validate generated KeyPackage; вычислить public fingerprint.
+- [x] Native tests: deterministic identity layout, distinct devices, exact suite,
+  valid signature/KeyPackage, malformed UUID/identity rejection.
+- [x] Minimal WASM export без private-state serialization и raw internal errors.
+- [x] Проверить native lint/test, release WASM compilation и forbidden feature graph.
+- [x] Добавить CI/Makefile gates без увеличения production VPS runtime footprint.
+- [x] Architecture/backlog/bugs/workplan sync и full repository CI.
 
 ### Не входит в этот slice
 
-- OpenMLS dependency/Rust toolchain/WASM binary;
-- real device key generation или IndexedDB crypto state;
-- backend KeyPackage/Welcome/credential endpoints;
-- MLS group bootstrap/Commit processing;
-- переключение production conversations на protocol v2.
+- encrypted IndexedDB `StorageProvider` и Web Worker lifecycle;
+- загрузка public credentials/KeyPackages на backend;
+- MLS group create/add/remove/Commit/Welcome;
+- application message encrypt/decrypt и переключение outgoing protocol на v2;
+- claim, что текущий messenger уже E2EE.
 
 ### Definition of Done
 
-- UI не имеет доступа к concrete protocol adapter;
-- all crypto operations application-facing и async;
-- v2/unknown/corrupt input никогда не проходит synthetic decoder;
-- gateway получает explicit version из protection result;
-- synthetic warning и per-message unavailable UX проверены Vitest;
-- lint/typecheck/tests/build и repository CI зелёные.
+- repository воспроизводимо строит и тестирует exact OpenMLS core;
+- public API не может экспортировать private/provider state;
+- canonical device credential и KeyPackage проверены OpenMLS validation;
+- forbidden debug feature gate и dependency pins проверяются CI;
+- `wasm32-unknown-unknown` release compile зелёный;
+- docs честно отделяют provider proof от secure messenger milestone.
 
 ### Реализовано
 
-- Application-facing `ProtocolMessageProtection` маршрутизирует async operations
-  только в adapter с точной версией; invalid/duplicate registration отклоняется при
-  composition.
-- Synthetic v1 остаётся явно insecure, reserved MLS v2 возвращает typed
-  `provider-unavailable`; unknown version и повреждённые canonical base64/UTF-8
-  envelopes не имеют fallback.
-- Gateway принимает version из protection result. `TimelineMessage` отделяет opaque
-  transport от transient decrypted view и даёт Vue только bounded presentation
-  state; tombstones обходят decrypt.
-- `MessagePanel` не импортирует codec и не получает ciphertext decoder. Safe
-  unavailable UX не показывает raw envelope или внутреннюю ошибку.
+- Добавлены exact-pinned Rust workspace/lock/toolchain и repository-owned
+  `yv-chat-openmls-provider`; upstream experimental binding не импортирован.
+- `DeviceBootstrap` владеет memory provider, Ed25519 signer и private KeyPackage
+  bundle как opaque non-serializable value. Наружу доступны только public credential
+  bytes, signature public key, validated TLS KeyPackage и bounded fingerprint.
+- Canonical BasicCredential layout фиксирует schema/user/device binding. KeyPackage
+  создаётся только с MLS 1.0 MTI AES-128-GCM suite и повторно разбирается/проверяется
+  OpenMLS; trailing/corrupt bytes fail closed.
+- `wasm_bindgen` surface возвращает те же public values и bounded typed error text;
+  provider/private key getters отсутствуют. Runtime остаётся memory-only и не
+  подключён к outgoing message path.
+- Makefile и отдельный CI job проверяют format, Clippy `-D warnings`, native tests,
+  locked release WASM compilation и отсутствие sensitive OpenMLS debug features.
 
 ### Проверено
 
-- `rtk env UV_CACHE_DIR=/tmp/yv-chat-uv-cache make ci`:
+- `rtk env CARGO_HOME=/tmp/yv-chat-cargo RUSTUP_HOME=/tmp/yv-chat-rustup make
+  crypto-check CARGO=/tmp/yv-chat-cargo/bin/cargo`: 5 Rust tests, Clippy/format,
+  release `wasm32-unknown-unknown`, forbidden feature graph — passed; WASM artifact
+  `1.1M` до wasm-bindgen glue/size optimization следующего slice.
+- `rtk env CARGO_HOME=/tmp/yv-chat-cargo RUSTUP_HOME=/tmp/yv-chat-rustup
+  UV_CACHE_DIR=/tmp/yv-chat-uv-cache make ci CARGO=/tmp/yv-chat-cargo/bin/cargo`:
   backend Ruff/format/import-linter/mypy, `172 passed, 6 skipped`; frontend
-  ESLint/Nuxt typecheck, `37 passed`, production PWA build; dev/default/prod Compose,
-  deploy scripts и documentation contracts.
-- Skipped backend tests — PostgreSQL integration/concurrency suite без доступного
-  локального container runtime; это остаётся обязательным CI/release gate и данным
-  frontend-only slice не изменялось.
+  ESLint/Nuxt typecheck, `37 passed`, production PWA build; crypto gates,
+  dev/default/prod Compose, deploy scripts и documentation contracts.
+- Шесть backend PostgreSQL integration/concurrency tests локально skipped из-за
+  недоступного container runtime; новый crypto slice базы данных не меняет, а эти
+  тесты остаются обязательным GitHub CI/release gate.

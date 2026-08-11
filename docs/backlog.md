@@ -109,15 +109,18 @@ Implementation и desktop browser smoke завершены; physical 390px scree
 
 ### BL-013 — Frontend crypto adapter и device identity
 
-Статус: **in progress** (`WP-030` завершил async fail-closed boundary; OpenMLS/WASM,
-device identity и encrypted storage следуют отдельными slice).
+Статус: **in progress** (`WP-030` завершил async fail-closed boundary; `WP-031`
+завершил pinned OpenMLS provider/device-bootstrap proof; encrypted persistent
+storage следует отдельным slice).
 
 Результат: UI работает с intent-level crypto API, private material не выходит из изолированного слоя.
 
 - [x] async `protectText/unprotectText` exact-version boundary без downgrade;
 - [ ] `encryptAttachment/decryptAttachment` и MLS membership boundary;
-- создание/хранение device identity и protocol state;
-- safe IndexedDB persistence, memory/plaintext lifecycle и log redaction;
+- [x] pinned OpenMLS native/WASM provider и canonical memory-only device identity/
+  KeyPackage proof (`WP-031`);
+- [ ] encrypted persistent device identity и protocol state;
+- [ ] safe IndexedDB persistence, memory/plaintext lifecycle и log redaction;
 - [ ] known-answer/interop test vectors реального MLS provider;
 - [x] corruption/version-mismatch/no-fallback tests для protocol dispatch;
 - [x] отсутствие crypto primitives и ciphertext decoding в Vue components.

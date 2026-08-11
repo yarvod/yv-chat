@@ -1,0 +1,24 @@
+[package]
+name = "yv-chat-openmls-provider"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+hex = "=0.4.3"
+openmls = { version = "=0.8.1", default-features = false, features = ["js"] }
+openmls_basic_credential = "=0.5.0"
+openmls_rust_crypto = "=0.5.1"
+openmls_traits = "=0.5.0"
+thiserror = "=2.0.20"
+tls_codec = "=0.4.2"
+uuid = { version = "=1.24.0", default-features = false, features = ["std"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom_old = { package = "getrandom", version = "=0.2.15", features = ["js"] }
+wasm-bindgen = "=0.2.127"

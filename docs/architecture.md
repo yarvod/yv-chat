@@ -619,6 +619,22 @@ binding review. Upstream experimental WASM binding не выдаётся за pr
 До выполнения `BL-013/014` synthetic protocol v1 остаётся явно insecure и не имеет
 silent downgrade/fallback права.
 
+Первый provider proof находится в `crypto/openmls-provider`. Это отдельный pinned
+Rust workspace: Rust `1.91.0`, OpenMLS `0.8.1`, `openmls_rust_crypto 0.5.1` и exact
+lockfile. Crate создаёт BasicCredential identity фиксированной длины
+`schema_version(1 byte) || user UUID(16) || device UUID(16)`, отдельную Ed25519
+signature key и one-time KeyPackage только для принятого AES-128-GCM ciphersuite.
+Он заново валидирует TLS bytes через OpenMLS и выдаёт наружу только public identity,
+signature key, KeyPackage и SHA-256 public fingerprint. Provider/signature/init
+private state удерживается opaque object без serialization/getter/debug API.
+
+Этот proof намеренно memory-only: его native tests и release WASM compilation
+доказывают provider/toolchain compatibility, но не crash-safe persistence и не
+browser runtime readiness. Он не подключён к `ProtocolMessageProtection`, не меняет
+outgoing v1 и не получает E2EE badge. Следующий slice должен дать repository-owned
+WASM glue/Worker и encrypted versioned IndexedDB storage; терять memory provider при
+reload и молча генерировать новую identity под тем же device ID запрещено.
+
 UI не вызывает concrete crypto adapter: application-facing async operations
 `protectText/unprotectText` получают intent DTO с conversation/client-message
 binding и возвращают versioned result. Exact-version router fail closed; tombstone
