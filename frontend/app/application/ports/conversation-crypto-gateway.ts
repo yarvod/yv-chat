@@ -59,6 +59,10 @@ export interface FinalizeConversationCryptoCommand {
 
 export interface ConversationCryptoGateway {
   getCurrent(conversationId: string): Promise<ConversationCryptoGeneration | null>
+  listReadyAfter(
+    conversationId: string,
+    afterGenerationNumber: number,
+  ): Promise<readonly ConversationCryptoGeneration[]>
   begin(conversationId: string, bootstrapRequestId: string): Promise<ConversationCryptoGeneration>
   finalize(command: FinalizeConversationCryptoCommand): Promise<ConversationCryptoGeneration>
   acknowledgeWelcome(conversationId: string, generationId: string): Promise<void>

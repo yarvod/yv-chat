@@ -101,6 +101,9 @@ async def test_bootstrap_finalize_and_device_bound_welcome_flow() -> None:
             },
         )
         ready_for_bob = await bob_client.get(path)
+        updates_for_bob = await bob_client.get(
+            f"{path}/updates?after_generation_number=0&limit=100"
+        )
         acknowledged = await bob_client.post(
             f"{path}/generations/{generation_id}/welcome-ack",
             headers={
@@ -120,6 +123,9 @@ async def test_bootstrap_finalize_and_device_bound_welcome_flow() -> None:
         b"welcome-for-bob"
     )
     assert UUID(ready_for_bob.json()["welcome"]["target_device_id"]) == bob_device.id
+    assert updates_for_bob.status_code == 200
+    assert [item["generation_number"] for item in updates_for_bob.json()["generations"]] == [1]
+    assert updates_for_bob.json()["generations"][0]["welcome"] is not None
     assert acknowledged.status_code == 204
     forbidden = {"private_key", "sealed_state", "message_key", "plaintext"}
     assert all(field not in bootstrap.text for field in forbidden)

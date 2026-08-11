@@ -53,22 +53,23 @@ synthetic v1 payload виден серверу; положить туда file k
   schema без plaintext/private fields.
 - [x] Добавить atomic bootstrap operation, required-device snapshot, KeyPackage
   claims и per-device opaque Welcome queue/ack.
-- [ ] Добавить authorized opaque MLS handshake record routing и ordered sync events.
+- [x] Добавить authorized ordered MLS update routing: device получает только ready
+  generations, в roster которых он состоял, после явного generation cursor;
+  durable `conversation_updated` будит clients при membership/device revoke/logout.
 - [x] Расширить native Rust core: deterministic create group, add validated
   packages + merge, accept Welcome с exact group/suite/tree binding и
   protect/unprotect application message с outer AAD.
 - [x] Экспортировать initial create/add/Welcome и protect/unprotect через безопасные
   WASM bindings поверх проверенного native контракта.
-- [ ] Завершить обработку membership: Commit существующим members уже применяется
-  и реальный native/release-WASM тест доказывает add/remove + запрет future decrypt
-  удалённому leaf; остаются ordered catch-up через несколько generation и безопасный
-  rejoin того же device после remove/re-add.
+- [x] Обработать Commit существующим members, ordered catch-up нескольких generation
+  и explicit same-device rejoin после remove/re-add; native/release-WASM тест
+  доказывает add/remove, запрет future decrypt удалённому leaf и восстановление.
 - [x] Расширить closed Worker protocol; все state-changing crypto operations должны
   checkpoint-ить sealed provider state до success наружу.
 - [x] Добавить frontend bootstrap/reconcile coordinator, typed server gateway и
   encrypted crash-safe local checkpoint для finalize/Welcome ack.
-- [ ] Показать в UI pending/ready/blocked generation state и безопасное действие
-  для missing identity/KeyPackage.
+- [x] Показывать per-conversation checking/pending/ready/blocked state; E2EE label
+  появляется только после ready, missing identity/KeyPackage объясняется отдельно.
 - [x] Перевести outgoing/incoming protocol v2 на MLS с exact outer AAD без silent
   fallback; synthetic v1 оставлен только read-only для исторических сообщений.
 - [x] Привязать каждый v2 transport envelope/outbox/DB row к exact server
@@ -79,19 +80,19 @@ synthetic v1 payload виден серверу; положить туда file k
 - [x] Добавить bounded KeyPackage generation/replenishment до production cutover;
   foreground target — восемь уникальных one-time packages из sealed provider,
   refresh выполняется при initialization и перед новой conversation reconciliation.
-- [ ] Согласовать group rename/member add/remove и device revoke с MLS Commit;
-  group add/remove уже invalidates frontend state и создаёт exact roster Commit;
-  остаются proactive revoke routing и negative fork/catch-up tests.
-- [ ] Покрыть two-user/two-device, offline Welcome, reconnect, duplicate delivery,
+- [x] Согласовать group member add/remove и explicit device revoke/logout с MLS
+  Commit: durable sync invalidates clients, а backend блокирует send при любом
+  расхождении actual active-device roster с current MLS snapshot. Rename epoch не меняет.
+- [x] Покрыть two-user/two-device, offline Welcome, reconnect, duplicate delivery,
   corrupted state/message, missing package и removed-device сценарии.
 - [ ] Обновить ADR/architecture/backlog/bugs/README и release checklist.
 - [ ] Прогнать Rust/native+WASM, backend PostgreSQL, frontend browser/storage tests,
   полный CI, commit/push, production deploy и acceptance без E2EE overclaim.
 
 Текущий инкремент: полный локальный CI зелёный (210 backend tests, 20 Rust tests,
-155 frontend tests, native+release WASM build, PWA precache/build, compose/deploy/docs
-checks). Production deploy остаётся закрыт до ordered multi-generation catch-up,
-same-device rejoin и browser acceptance.
+157 frontend tests, native+release WASM build, PWA precache/build, compose/deploy/docs
+checks). Production deploy остаётся закрыт до browser acceptance, PostgreSQL
+migration smoke и финального security/log review.
 
 ### Definition of Done
 

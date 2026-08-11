@@ -5,7 +5,7 @@ from datetime import datetime
 from uuid import UUID
 
 from dishka.integrations.fastapi import DishkaRoute, FromDishka
-from fastapi import APIRouter, HTTPException, Request, Response, status
+from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
 
 from messenger.application.conversation_crypto.acknowledge_welcome import (
@@ -26,11 +26,16 @@ from messenger.application.conversation_crypto.get_current import (
     GetCurrentConversationCrypto,
     GetCurrentConversationCryptoQuery,
 )
+from messenger.application.conversation_crypto.list_updates import (
+    ListConversationCryptoUpdates,
+    ListConversationCryptoUpdatesQuery,
+)
 from messenger.application.errors import (
     ConversationCryptoConflictError,
     ConversationCryptoNotFoundError,
     ConversationCryptoNotReadyError,
     ConversationNotFoundError,
+    InvalidConversationCryptoUpdateBoundsError,
     OwnedDeviceNotFoundError,
 )
 from messenger.application.sessions.authenticate import AuthenticateSession
@@ -98,6 +103,10 @@ class ConversationCryptoResponse(BaseModel):
     ready_at: datetime | None
     required_devices: list[RequiredDeviceCryptoResponse]
     welcome: DeviceWelcomeResponse | None
+
+
+class ConversationCryptoUpdatesResponse(BaseModel):
+    generations: list[ConversationCryptoResponse]
 
 
 def _encode_optional(value: bytes | None) -> str | None:
@@ -225,6 +234,39 @@ async def get_current_conversation_crypto(
     ) as error:
         raise translate_crypto_error(error) from error
     return crypto_response(result)
+
+
+@router.get("/updates", response_model=ConversationCryptoUpdatesResponse)
+async def list_conversation_crypto_updates(
+    conversation_id: UUID,
+    request: Request,
+    response: Response,
+    settings: FromDishka[AppSettings],
+    authenticate_session: FromDishka[AuthenticateSession],
+    use_case: FromDishka[ListConversationCryptoUpdates],
+    after_generation_number: int = Query(ge=0),
+    limit: int = Query(default=100, ge=1, le=100),
+) -> ConversationCryptoUpdatesResponse:
+    principal = await authenticate_request(request, response, settings, authenticate_session)
+    try:
+        results = await use_case.execute(
+            ListConversationCryptoUpdatesQuery(
+                principal.user_id,
+                principal.device_id,
+                conversation_id,
+                after_generation_number,
+                limit,
+            )
+        )
+    except (
+        ConversationNotFoundError,
+        OwnedDeviceNotFoundError,
+        InvalidConversationCryptoUpdateBoundsError,
+    ) as error:
+        raise translate_crypto_error(error) from error
+    return ConversationCryptoUpdatesResponse(
+        generations=[crypto_response(result) for result in results]
+    )
 
 
 @router.put("/generations/{generation_id}", response_model=ConversationCryptoResponse)

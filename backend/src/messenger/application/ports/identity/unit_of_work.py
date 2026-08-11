@@ -1,7 +1,9 @@
 """Identity transaction boundary port."""
 
+from __future__ import annotations
+
 from types import TracebackType
-from typing import Protocol, Self
+from typing import TYPE_CHECKING, Protocol, Self
 
 from messenger.application.ports.identity.activation_tokens import ActivationTokenRepository
 from messenger.application.ports.identity.devices import DeviceRepository
@@ -9,6 +11,10 @@ from messenger.application.ports.identity.password_reset_tokens import PasswordR
 from messenger.application.ports.identity.security_events import SecurityEventRepository
 from messenger.application.ports.identity.sessions import SessionRepository
 from messenger.application.ports.identity.users import UserRepository
+
+if TYPE_CHECKING:
+    from messenger.application.ports.conversations import ConversationRepository
+    from messenger.application.ports.sync import SyncRepository
 
 
 class IdentityUnitOfWork(Protocol):
@@ -18,6 +24,8 @@ class IdentityUnitOfWork(Protocol):
     password_reset_tokens: PasswordResetTokenRepository
     sessions: SessionRepository
     security_events: SecurityEventRepository
+    conversations: ConversationRepository
+    sync_events: SyncRepository
 
     async def __aenter__(self) -> Self: ...
 

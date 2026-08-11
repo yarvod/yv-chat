@@ -1,6 +1,7 @@
 import { computed, reactive, readonly } from 'vue'
 
 import { ApplicationError } from '../../application/errors'
+import type { ReconcileConversationCryptoResult } from '../../application/conversation-crypto/reconcile-conversation-crypto'
 import {
   ConversationHistory,
   type ConversationHistoryWindow,
@@ -39,6 +40,7 @@ import {
 } from './useMessageOutbox'
 
 type MessengerPhase = 'loading' | 'ready' | 'offline' | 'error'
+type ConversationCryptoPhase = 'checking' | 'ready' | 'pending' | 'blocked' | 'unavailable'
 
 interface MessengerState {
   phase: MessengerPhase
@@ -56,6 +58,8 @@ interface MessengerState {
   creating: boolean
   deletingMessageId: string | null
   groupMutating: boolean
+  conversationCryptoPhase: ConversationCryptoPhase
+  conversationCryptoBlockReason: string | null
   message: string | null
 }
 
@@ -76,6 +80,9 @@ export interface MessengerDependencies extends MessageOutboxDependencies {
   leaveGroup: LeaveGroup
   pageVisibility: PageVisibility
   initializeDeviceCrypto?: () => Promise<unknown>
+  reconcileConversationCrypto?: (
+    conversationId: string,
+  ) => Promise<ReconcileConversationCryptoResult>
   invalidateConversationCrypto?: (conversationId: string) => void
 }
 
@@ -113,6 +120,9 @@ export function useMessenger(
         userId: actorUserId,
         deviceId: actorDeviceId,
       }),
+      reconcileConversationCrypto: conversationId => (
+        $frontend.deviceCryptoSession.reconcileConversation(conversationId)
+      ),
       invalidateConversationCrypto: conversationId => (
         $frontend.deviceCryptoSession.invalidateConversation(conversationId)
       ),
@@ -151,6 +161,8 @@ export function useMessenger(
     creating: false,
     deletingMessageId: null,
     groupMutating: false,
+    conversationCryptoPhase: 'checking',
+    conversationCryptoBlockReason: null,
     message: null,
   })
   const history = new ConversationHistory(
@@ -175,6 +187,44 @@ export function useMessenger(
   const activeOutgoingMessages = computed(() => outbox.state.messages.filter(message => (
     message.conversationId === state.activeConversationId
   )))
+  const conversationProtectionSecure = computed(() => (
+    messageProtection.secure && state.conversationCryptoPhase === 'ready'
+  ))
+  const conversationProtectionLabel = computed(() => {
+    if (!messageProtection.secure) return messageProtection.label
+    if (state.conversationCryptoPhase === 'ready') return 'MLS E2EE готово'
+    if (state.conversationCryptoPhase === 'pending') return 'Защищённая группа обновляется'
+    if (state.conversationCryptoPhase === 'blocked') {
+      return state.conversationCryptoBlockReason === 'missing_key_package'
+        ? 'Не хватает одноразового ключа одного из устройств'
+        : state.conversationCryptoBlockReason === 'missing_identity'
+          ? 'Одно из устройств ещё не подготовило криптомодуль'
+          : 'Защищённая группа требует восстановления'
+    }
+    if (state.conversationCryptoPhase === 'checking') return 'Проверяем защищённую группу'
+    return 'Защищённая группа недоступна на этом устройстве'
+  })
+
+  async function refreshConversationCrypto(conversationId: string): Promise<void> {
+    const reconcile = dependencies.reconcileConversationCrypto
+    if (!messageProtection.secure || !reconcile) {
+      state.conversationCryptoPhase = 'unavailable'
+      state.conversationCryptoBlockReason = null
+      return
+    }
+    state.conversationCryptoPhase = 'checking'
+    state.conversationCryptoBlockReason = null
+    try {
+      const result = await reconcile(conversationId)
+      if (state.activeConversationId !== conversationId) return
+      state.conversationCryptoPhase = result.status
+      state.conversationCryptoBlockReason = result.blockReason
+    } catch {
+      if (state.activeConversationId !== conversationId) return
+      state.conversationCryptoPhase = 'unavailable'
+      state.conversationCryptoBlockReason = null
+    }
+  }
 
   function fail(error: unknown): void {
     if (error instanceof ApplicationError && error.status === 401) {
@@ -456,6 +506,7 @@ export function useMessenger(
         ) {
           await loadLatestHistory(state.activeConversationId)
         }
+        if (state.activeConversationId) await refreshConversationCrypto(state.activeConversationId)
         return
       }
       const syncBaseline = await gateway.listSync(0)
@@ -472,6 +523,7 @@ export function useMessenger(
       state.activeConversationId = conversations[0]?.conversationId ?? null
       resetHistoryWindow()
       if (state.activeConversationId) await loadLatestHistory(state.activeConversationId)
+      if (state.activeConversationId) await refreshConversationCrypto(state.activeConversationId)
       state.syncCursor = syncBaseline.streamCursor
       state.phase = 'ready'
       await persistSnapshot()
@@ -482,7 +534,10 @@ export function useMessenger(
   }
 
   async function selectConversation(conversationId: string): Promise<void> {
-    if (conversationId === state.activeConversationId) return
+    if (conversationId === state.activeConversationId) {
+      await refreshConversationCrypto(conversationId)
+      return
+    }
     state.activeConversationId = conversationId
     resetHistoryWindow()
     state.message = null
@@ -496,6 +551,7 @@ export function useMessenger(
       } else {
         await loadLatestHistory(conversationId)
       }
+      await refreshConversationCrypto(conversationId)
       state.phase = 'ready'
     } catch (error) {
       fail(error)
@@ -547,6 +603,9 @@ export function useMessenger(
         item.conversationId === conversation.conversationId ? conversation : item
       ))
       await persistSnapshot()
+      if (state.activeConversationId === conversation.conversationId) {
+        await refreshConversationCrypto(conversation.conversationId)
+      }
       state.phase = 'ready'
       return true
     } catch (error) {
@@ -707,6 +766,9 @@ export function useMessenger(
         pages += 1
       }
       if (conversationsChanged) await reloadConversations()
+      if (conversationsChanged && state.activeConversationId) {
+        await refreshConversationCrypto(state.activeConversationId)
+      }
       for (const event of deletedMessageEvents.values()) {
         let tombstone: TimelineMessage
         try {
@@ -755,8 +817,8 @@ export function useMessenger(
     activeOutgoingMessages,
     actorUserId,
     protection: {
-      secure: messageProtection.secure,
-      label: messageProtection.label,
+      secure: conversationProtectionSecure,
+      label: conversationProtectionLabel,
     },
     load,
     poll,

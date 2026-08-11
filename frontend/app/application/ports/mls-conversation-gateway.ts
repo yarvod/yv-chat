@@ -70,6 +70,7 @@ export interface MlsConversationGateway {
     command: BootstrapMlsConversationCommand,
   ): Promise<BootstrapMlsConversationResult>
   joinConversation(command: JoinMlsConversationCommand): Promise<MlsConversationStateResult>
+  rejoinConversation(command: JoinMlsConversationCommand): Promise<MlsConversationStateResult>
   updateConversation(command: UpdateMlsConversationCommand): Promise<UpdateMlsConversationResult>
   applyCommit(command: ApplyMlsCommitCommand): Promise<MlsConversationStateResult>
   protectMessage(command: ProtectMlsMessageCommand): Promise<ProtectMlsMessageResult>

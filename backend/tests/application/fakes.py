@@ -588,6 +588,8 @@ class FakeIdentityUnitOfWork:
         self.devices: DeviceRepository = FakeDeviceRepository(state)
         self.sessions: SessionRepository = FakeSessionRepository(state)
         self.security_events: SecurityEventRepository = FakeSecurityEventRepository(state)
+        self.conversations: ConversationRepository = FakeConversationRepository(state)
+        self.sync_events: SyncRepository = FakeSyncRepository(state)
 
     async def __aenter__(self) -> Self:
         return self
@@ -748,6 +750,24 @@ class FakeConversationCryptoGenerationRepository:
             and item.status is ConversationCryptoStatus.READY
         ]
         return max(matching, key=lambda item: item.generation_number, default=None)
+
+    async def list_ready_for_device_after(
+        self,
+        *,
+        conversation_id: UUID,
+        device_id: UUID,
+        after_generation_number: int,
+        limit: int,
+    ) -> list[ConversationCryptoGeneration]:
+        matching = [
+            item
+            for item in self._state.conversation_crypto_generations.values()
+            if item.conversation_id == conversation_id
+            and item.status is ConversationCryptoStatus.READY
+            and item.generation_number > after_generation_number
+            and (item.id, device_id) in self._state.conversation_crypto_required_devices
+        ]
+        return sorted(matching, key=lambda item: item.generation_number)[:limit]
 
     async def get_by_bootstrap_request(
         self,

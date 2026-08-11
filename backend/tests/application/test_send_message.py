@@ -471,6 +471,19 @@ async def test_v2_send_requires_ready_generation_and_sender_leaf() -> None:
     with pytest.raises(ConversationCryptoNotReadyError):
         await use_case.execute(replace(bound_command, client_message_id=uuid4()))
 
+    bob = next(user for user in state.users.values() if user.username == "bob")
+    bob_device = Device.create(user_id=bob.id, name="New Bob device", now=NOW)
+    state.devices[bob_device.id] = bob_device
+    with pytest.raises(ConversationCryptoNotReadyError):
+        await use_case.execute(
+            replace(
+                bound_command,
+                client_message_id=uuid4(),
+                crypto_generation_id=next_generation.id,
+                crypto_epoch=2,
+            )
+        )
+
     state.conversation_crypto_required_devices.clear()
     with pytest.raises(ConversationCryptoNotReadyError):
         await use_case.execute(

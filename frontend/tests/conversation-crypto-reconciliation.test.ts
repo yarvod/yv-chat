@@ -42,6 +42,7 @@ const memberUserId = 'd8f16ee6-7063-494e-a71b-558392476527'
 const requestId = 'b24a030d-a3f0-4eed-a463-a1722920615c'
 const secondGenerationId = 'e109d71c-8e4f-43fa-aafd-7ef7d16b2475'
 const newDeviceId = '3ce72df7-3921-4c03-8ba8-4f1c0370bca9'
+const fourthGenerationId = 'd7e13aed-0bf8-47cf-bcf4-4ff25b96d7e8'
 
 class MemoryState implements ConversationCryptoStateRepository {
   value: ConversationCryptoLocalState | null = null
@@ -106,6 +107,10 @@ class FakeMls implements MlsConversationGateway {
     _command: JoinMlsConversationCommand,
   ): Promise<MlsConversationStateResult> => ({ epoch: 2, revision: 2 }))
 
+  readonly rejoinConversation = vi.fn(async (
+    _command: JoinMlsConversationCommand,
+  ): Promise<MlsConversationStateResult> => ({ epoch: 5, revision: 5 }))
+
   readonly updateConversation = vi.fn(async (
     _command: UpdateMlsConversationCommand,
   ): Promise<UpdateMlsConversationResult> => ({
@@ -141,6 +146,10 @@ class CoordinatorServer implements ConversationCryptoGateway {
     return generation('pending', coordinatorDeviceId)
   }
 
+  async listReadyAfter(): Promise<readonly ConversationCryptoGeneration[]> {
+    return []
+  }
+
   async finalize(_command: FinalizeConversationCryptoCommand): Promise<ConversationCryptoGeneration> {
     this.finalizeAttempts += 1
     if (this.failFirstFinalize && this.finalizeAttempts === 1) throw new Error('network lost')
@@ -162,6 +171,15 @@ class MemberServer implements ConversationCryptoGateway {
 
   async begin(): Promise<ConversationCryptoGeneration> {
     return generation('ready', coordinatorDeviceId, memberDeviceId)
+  }
+
+  async listReadyAfter(
+    _conversationId: string,
+    afterGenerationNumber: number,
+  ): Promise<readonly ConversationCryptoGeneration[]> {
+    return afterGenerationNumber < 1
+      ? [generation('ready', coordinatorDeviceId, memberDeviceId)]
+      : []
   }
 
   finalize(): Promise<ConversationCryptoGeneration> {
@@ -232,6 +250,7 @@ describe('conversation crypto reconciliation', () => {
     const pending = generation('pending', coordinatorDeviceId)
     const server: ConversationCryptoGateway = {
       getCurrent: vi.fn(async () => null),
+      listReadyAfter: vi.fn(async () => []),
       begin: vi.fn(async () => pending),
       finalize: vi.fn(async () => generation('ready', coordinatorDeviceId)),
       acknowledgeWelcome: vi.fn(async () => undefined),
@@ -261,6 +280,7 @@ describe('conversation crypto reconciliation', () => {
     const finalize = vi.fn(async () => incrementalGeneration('ready'))
     const server: ConversationCryptoGateway = {
       getCurrent: vi.fn(),
+      listReadyAfter: vi.fn(async () => []),
       begin: vi.fn(async () => pending),
       finalize,
       acknowledgeWelcome: vi.fn(),
@@ -294,6 +314,7 @@ describe('conversation crypto reconciliation', () => {
     const ready = incrementalGeneration('ready')
     const server: ConversationCryptoGateway = {
       getCurrent: vi.fn(),
+      listReadyAfter: vi.fn(async () => [ready]),
       begin: vi.fn(async () => ready),
       finalize: vi.fn(),
       acknowledgeWelcome: vi.fn(),
@@ -316,6 +337,42 @@ describe('conversation crypto reconciliation', () => {
     })
     expect(mls.joinConversation).not.toHaveBeenCalled()
     expect(state.saveCalls.map(item => item.phase)).toEqual(['commit-applied', 'ready'])
+  })
+
+  it('applies ordered missed commits and safely rejoins after a removal gap', async () => {
+    const state = new MemoryState()
+    state.value = readyLocalState(memberDeviceId)
+    const second = incrementalGeneration('ready')
+    const fourth = readdedGeneration()
+    const server: ConversationCryptoGateway = {
+      getCurrent: vi.fn(async () => fourth),
+      begin: vi.fn(async () => fourth),
+      listReadyAfter: vi.fn(async (_conversation, after) => (
+        after < 2 ? [second, fourth] : after < 4 ? [fourth] : []
+      )),
+      finalize: vi.fn(),
+      acknowledgeWelcome: vi.fn(async () => undefined),
+    }
+    const mls = new FakeMls()
+    const useCase = new ReconcileConversationCrypto(
+      server,
+      state,
+      new FakeDeviceCrypto(),
+      mls,
+      new FixedIds([requestId]),
+    )
+
+    await expect(useCase.execute({ conversationId, deviceId: memberDeviceId }))
+      .resolves.toMatchObject({ status: 'ready', generationNumber: 4, epoch: 5 })
+    expect(mls.applyCommit).toHaveBeenCalledOnce()
+    expect(mls.rejoinConversation).toHaveBeenCalledWith({
+      conversationId,
+      welcome: new Uint8Array([42]),
+      ratchetTree: new Uint8Array([43]),
+    })
+    expect(mls.joinConversation).not.toHaveBeenCalled()
+    expect(server.acknowledgeWelcome).toHaveBeenCalledWith(conversationId, fourthGenerationId)
+    expect(state.value).toMatchObject({ phase: 'ready', generationNumber: 4, epoch: 5 })
   })
 })
 
@@ -359,6 +416,25 @@ function incrementalGeneration(status: 'pending' | 'ready'): ConversationCryptoG
         keyPackage: new Uint8Array([12]),
       },
     ],
+  }
+}
+
+function readdedGeneration(): ConversationCryptoGeneration {
+  const base = generation('ready', coordinatorDeviceId, memberDeviceId)
+  return {
+    ...base,
+    generationId: fourthGenerationId,
+    generationNumber: 4,
+    epoch: 5,
+    commit: new Uint8Array([41]),
+    ratchetTree: new Uint8Array([43]),
+    welcome: {
+      targetDeviceId: memberDeviceId,
+      welcome: new Uint8Array([42]),
+      createdAt: '2026-08-11T12:04:00Z',
+      expiresAt: '2026-08-12T12:04:00Z',
+      acknowledgedAt: null,
+    },
   }
 }
 

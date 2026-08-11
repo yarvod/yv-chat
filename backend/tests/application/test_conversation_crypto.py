@@ -23,6 +23,10 @@ from messenger.application.conversation_crypto.get_current import (
     GetCurrentConversationCrypto,
     GetCurrentConversationCryptoQuery,
 )
+from messenger.application.conversation_crypto.list_updates import (
+    ListConversationCryptoUpdates,
+    ListConversationCryptoUpdatesQuery,
+)
 from messenger.application.errors import ConversationCryptoConflictError
 from messenger.domain.entities import (
     Conversation,
@@ -308,3 +312,27 @@ async def test_ready_roster_drift_creates_incremental_generation_and_only_claims
     )
     assert ready.generation.status is ConversationCryptoStatus.READY
     assert (second.generation.id, BOB_LAPTOP_ID) in state.conversation_crypto_welcomes
+
+    updates = ListConversationCryptoUpdates(unit_of_work=factory)
+    alice_laptop_updates = await updates.execute(
+        ListConversationCryptoUpdatesQuery(
+            ALICE_ID,
+            ALICE_LAPTOP_ID,
+            CONVERSATION_ID,
+            after_generation_number=0,
+        )
+    )
+    assert [item.generation.generation_number for item in alice_laptop_updates] == [1, 2]
+    assert alice_laptop_updates[0].welcome is not None
+    assert alice_laptop_updates[1].welcome is None
+
+    bob_laptop_updates = await updates.execute(
+        ListConversationCryptoUpdatesQuery(
+            BOB_ID,
+            BOB_LAPTOP_ID,
+            CONVERSATION_ID,
+            after_generation_number=0,
+        )
+    )
+    assert [item.generation.generation_number for item in bob_laptop_updates] == [2]
+    assert bob_laptop_updates[0].welcome is not None

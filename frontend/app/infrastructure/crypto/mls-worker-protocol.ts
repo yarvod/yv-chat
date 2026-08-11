@@ -28,6 +28,7 @@ interface WorkerRequestBase {
 export type MlsWorkerRequest =
   | (WorkerRequestBase & { type: 'mls-bootstrap', command: BootstrapMlsConversationCommand })
   | (WorkerRequestBase & { type: 'mls-join', command: JoinMlsConversationCommand })
+  | (WorkerRequestBase & { type: 'mls-rejoin', command: JoinMlsConversationCommand })
   | (WorkerRequestBase & { type: 'mls-update', command: UpdateMlsConversationCommand })
   | (WorkerRequestBase & { type: 'mls-apply-commit', command: ApplyMlsCommitCommand })
   | (WorkerRequestBase & { type: 'mls-protect', command: ProtectMlsMessageCommand })
@@ -147,6 +148,9 @@ export function parseMlsWorkerRequest(value: unknown): MlsWorkerRequest | null {
     return { version: PROTOCOL_VERSION, requestId: candidate.requestId, type: candidate.type, command: candidate.command }
   }
   if (candidate.type === 'mls-join' && validJoinCommand(candidate.command)) {
+    return { version: PROTOCOL_VERSION, requestId: candidate.requestId, type: candidate.type, command: candidate.command }
+  }
+  if (candidate.type === 'mls-rejoin' && validJoinCommand(candidate.command)) {
     return { version: PROTOCOL_VERSION, requestId: candidate.requestId, type: candidate.type, command: candidate.command }
   }
   if (candidate.type === 'mls-update' && validUpdateCommand(candidate.command)) {

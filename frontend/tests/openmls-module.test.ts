@@ -19,6 +19,7 @@ function moduleFixture(initialize: () => Promise<unknown>): OpenMlsModule {
     updateMembersAndMerge: vi.fn(),
     applyCommitAndMerge: vi.fn(),
     joinConversation: vi.fn(),
+    rejoinConversation: vi.fn(),
     protectApplicationMessage: vi.fn(),
     unprotectApplicationMessage: vi.fn(),
   })

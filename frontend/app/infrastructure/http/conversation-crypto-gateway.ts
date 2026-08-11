@@ -159,6 +159,19 @@ export class HttpConversationCryptoGateway implements ConversationCryptoGateway 
     }
   }
 
+  async listReadyAfter(
+    conversationId: string,
+    afterGenerationNumber: number,
+  ): Promise<readonly ConversationCryptoGeneration[]> {
+    if (!Number.isSafeInteger(afterGenerationNumber) || afterGenerationNumber < 0) {
+      throw new TypeError('invalid MLS generation cursor')
+    }
+    const payload = record(await this.api.request(
+      `${path(conversationId)}/updates?after_generation_number=${afterGenerationNumber}&limit=100`,
+    ))
+    return arrayField(payload, 'generations').map(parseConversationCryptoGeneration)
+  }
+
   async begin(
     conversationId: string,
     bootstrapRequestId: string,

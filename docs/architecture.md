@@ -751,8 +751,8 @@ dispose. Composition root предоставляет один lazy authenticated
 initialize сходятся в один promise, а logout/device change детерминированно dispose-ит
 старый scope. Worker не стартует на public login/activation page.
 
-Runtime v5 также реализует intent-level bounded KeyPackage generation и
-create/join/update/apply-commit/protect/unprotect. Каждая state-changing операция
+Runtime v6 также реализует intent-level bounded KeyPackage generation и
+create/join/rejoin/update/apply-commit/protect/unprotect. Каждая state-changing операция
 считается успешной
 только после следующего optimistic vault revision и
 atomic sealed-state commit. Commit/Welcome/ciphertext/plaintext копируются наружу
@@ -761,7 +761,7 @@ atomic sealed-state commit. Commit/Welcome/ciphertext/plaintext копируют
 через restore последнего подтверждённого snapshot. Это предотвращает ratchet/epoch
 rollback после частичного сбоя и повторное использование неподтверждённого state.
 Main-thread gateway достигает этих операций только через exact Worker envelopes
-`mls-bootstrap`, `mls-join`, `mls-update`, `mls-apply-commit`, `mls-protect`,
+`mls-bootstrap`, `mls-join`, `mls-rejoin`, `mls-update`, `mls-apply-commit`, `mls-protect`,
 `mls-unprotect`. Каждый command/result
 variant имеет закрытый набор полей, canonical UUID, bounded binary sizes и safe
 integer epoch/revision. Лишнее поле делает весь envelope invalid; private state не
@@ -869,11 +869,21 @@ Exact retry уже сохранённого envelope возвращает исх
 перехода на следующую generation; новый client message со старой binding получает
 conflict. Non-v2 rows обязаны иметь оба поля `NULL`.
 
-Текущий release gate: сервер хранит поколения и Commit, но клиенту ещё нужен
-authorized ordered catch-up API для применения нескольких пропущенных generations,
-а повторно добавленному тому же device — явный verified rejoin вместо конфликта с
-локальной старой group. До закрытия этих пунктов production не объявляется secure
-multi-device messaging.
+`GET .../crypto/updates?after_generation_number=N` авторизует current active device
+и возвращает по возрастанию только READY generations, immutable roster которых
+содержит этот device. Client применяет каждый Commit последовательно; Welcome после
+generation gap означает remove/re-add и вызывает отдельный `rejoin`, а не попытку
+перезаписать group неявно. OpenMLS удаляет старую persisted group перед join только
+внутри state-changing runtime operation. Invalid Welcome уничтожает mutated runtime,
+поэтому durable vault остаётся на последнем подтверждённом snapshot. Welcome ack
+resume идемпотентен после crash и выполняется до перехода к следующей generation.
+
+Каждый новый v2 send дополнительно сравнивает current required-device snapshot с
+фактическими non-revoked devices всех active conversation members. Поэтому READY
+generation со stale roster не создаёт окно отправки старому leaf. Explicit device
+revoke и logout в одной transaction добавляют durable `conversation_updated` для
+каждого active recipient; realtime остаётся только wake-up, cursor stream — source
+of truth. Следующий reconciliation создаёт Commit и rotation.
 
 Подготовка history page параллельна, поэтому `DeviceCryptoSession` применяет
 single-flight по conversation: concurrent decrypt делят одну reconciliation, а
@@ -900,9 +910,9 @@ inventory target 8 → generate/seal unique packages → upload public bytes →
 private signer. Substitution/malformed package/Worker/storage failure не получают
 synthetic fallback для secure operations. Private key, wrapping key и sealed state
 остаются исключительно client-side. Initial bootstrap/Welcome lifecycle, pool
-replenishment и existing-member Commit реализованы; ordered catch-up, same-device
-remove/re-add, fork handling и production multi-device acceptance остаются release
-gates.
+replenishment, existing-member Commit, ordered catch-up и same-device rejoin
+реализованы. Fork/KAT review, browser + PostgreSQL production-like acceptance и
+финальный log/security audit остаются release gates.
 
 UI не вызывает concrete crypto adapter: application-facing async operations
 `protectText/unprotectText` получают intent DTO с conversation/client-message

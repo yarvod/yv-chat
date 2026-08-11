@@ -69,6 +69,9 @@ describe('shared authenticated device crypto session', () => {
     const begin = vi.fn(async () => readyGeneration())
     const conversations: ConversationCryptoGateway = {
       getCurrent: vi.fn(async () => readyGeneration()),
+      listReadyAfter: vi.fn(async (_conversationId, after) => (
+        after < 1 ? [readyGeneration()] : []
+      )),
       begin,
       finalize: vi.fn(),
       acknowledgeWelcome: vi.fn(async () => undefined),
@@ -82,6 +85,7 @@ describe('shared authenticated device crypto session', () => {
       generateKeyPackages: vi.fn(),
       bootstrapConversation: vi.fn(),
       joinConversation,
+      rejoinConversation: vi.fn(),
       updateConversation: vi.fn(),
       applyCommit: vi.fn(),
       protectMessage: vi.fn(),

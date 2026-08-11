@@ -127,6 +127,14 @@ export class CryptoWorkerClient implements DeviceCryptoGateway, MlsConversationG
     return result
   }
 
+  async rejoinConversation(
+    command: JoinMlsConversationCommand,
+  ): Promise<MlsConversationStateResult> {
+    const result = await this.send(mlsRequestEnvelope(this.requestId(), 'mls-rejoin', command))
+    if (!isConversationState(result)) throw new DeviceCryptoError('worker-protocol')
+    return result
+  }
+
   async updateConversation(
     command: UpdateMlsConversationCommand,
   ): Promise<UpdateMlsConversationResult> {

@@ -46,6 +46,8 @@ scope.addEventListener('message', async (event: MessageEvent<unknown>) => {
       result = await current.bootstrapConversation(request.command)
     } else if (request.type === 'mls-join') {
       result = await current.joinConversation(request.command)
+    } else if (request.type === 'mls-rejoin') {
+      result = await current.rejoinConversation(request.command)
     } else if (request.type === 'mls-update') {
       result = await current.updateConversation(request.command)
     } else if (request.type === 'mls-apply-commit') {

@@ -127,7 +127,19 @@ class SendOpaqueMessage:
                 required = await unit_of_work.crypto_required_devices.list_by_generation(
                     generation.id
                 )
-                if command.actor_device_id not in {item.device_id for item in required}:
+                required_device_ids = {item.device_id for item in required}
+                active_user_ids = {
+                    member.user_id for member in conversation.members if member.is_active
+                }
+                active_device_ids = {
+                    item.id
+                    for item in await unit_of_work.devices.list_active_for_users(active_user_ids)
+                }
+                if required_device_ids != active_device_ids:
+                    raise ConversationCryptoNotReadyError(
+                        "MLS roster does not match active conversation devices"
+                    )
+                if command.actor_device_id not in required_device_ids:
                     raise ConversationCryptoNotReadyError(
                         "sender device is outside current MLS roster"
                     )

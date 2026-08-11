@@ -195,9 +195,11 @@ versioned package и isolated Worker runtime; `WP-040` — server one-time deliv
 - [x] create/join group crypto state и sealed crash-safe checkpoint;
 - [x] initial multi-device fan-out и add/remove membership Commit в native/WASM;
 - [x] exact message binding к current READY generation/epoch и sender leaf;
-- [ ] ordered catch-up нескольких пропущенных Commit/Welcome generations;
-- [ ] same-device remove/re-add rejoin без epoch rollback;
-- [ ] proactive device revocation routing и key rotation acceptance;
+- [x] ordered catch-up нескольких пропущенных Commit/Welcome generations;
+- [x] same-device remove/re-add rejoin без epoch rollback;
+- [x] durable explicit device revoke/logout routing, exact active roster send gate
+  и последующий key rotation; admin-wide reset/deactivation использует тот же send
+  gate, а унификация proactive notification остаётся hardening;
 - protocol-version compatibility/error UX;
 - удаление synthetic shortcuts до объявления secure milestone готовым.
 

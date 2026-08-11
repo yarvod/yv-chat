@@ -31,6 +31,7 @@ from messenger.application.sessions.authenticate import (
 from messenger.application.sessions.login import Login, LoginCommand
 from messenger.application.sessions.logout import Logout, LogoutCommand
 from messenger.application.sessions.policy import SessionPolicy
+from messenger.application.sync import SyncPolicy
 from messenger.infrastructure.auth.passwords import Argon2PasswordHasher
 from messenger.infrastructure.auth.session_credentials import SecureSessionCredentialService
 from messenger.infrastructure.persistence.database import create_engine, create_session_factory
@@ -47,7 +48,7 @@ from messenger.infrastructure.persistence.models import (
     SyncStreamModel,
     UserModel,
 )
-from tests.application.fakes import FixedClock
+from tests.application.fakes import FixedClock, RecordingRealtimeNotifier
 
 NOW = datetime(2026, 8, 11, 12, 0, tzinfo=UTC)
 PASSWORD = "correct horse battery staple"
@@ -229,6 +230,8 @@ async def run_flow(database_url: str) -> None:
             unit_of_work=unit_of_work,
             clock=FixedClock(NOW + timedelta(days=2, seconds=30)),
             event_policy=EVENT_POLICY,
+            sync_policy=SyncPolicy(),
+            realtime_notifier=RecordingRealtimeNotifier(),
         )
 
         async def revoke_others_once() -> RevokeOtherSessionsResult:
@@ -257,6 +260,8 @@ async def run_flow(database_url: str) -> None:
             clock=FixedClock(logout_at),
             credentials=credentials,
             event_policy=EVENT_POLICY,
+            sync_policy=SyncPolicy(),
+            realtime_notifier=RecordingRealtimeNotifier(),
         ).execute(LogoutCommand(session_credential=second_login.session_credential))
         async with session_factory() as session:
             logged_out = await session.get(SessionModel, second_login.session_id)

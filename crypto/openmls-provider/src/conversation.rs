@@ -302,6 +302,29 @@ impl DeviceBootstrap {
         Ok(group.epoch().as_u64())
     }
 
+    /// Replace a stale local group with a fresh Welcome for the same device.
+    ///
+    /// The caller must use this only after an authorized generation gap proves
+    /// that this leaf was removed and later added again. If joining fails, the
+    /// outer runtime discards this mutated instance and restores its last sealed
+    /// snapshot, so an invalid Welcome cannot durably erase the old group.
+    pub fn rejoin_conversation(
+        &mut self,
+        conversation_id: &str,
+        serialized_welcome: &[u8],
+        serialized_ratchet_tree: &[u8],
+    ) -> Result<u64, ConversationError> {
+        let group_id = canonical_group_id(conversation_id)?;
+        if let Some(mut group) = MlsGroup::load(self._provider.storage(), &group_id)
+            .map_err(|_| ConversationError::StorageUnavailable)?
+        {
+            group
+                .delete(self._provider.storage())
+                .map_err(|_| ConversationError::StorageUnavailable)?;
+        }
+        self.join_conversation(conversation_id, serialized_welcome, serialized_ratchet_tree)
+    }
+
     pub fn protect_application_message(
         &mut self,
         conversation_id: &str,
@@ -647,6 +670,36 @@ mod tests {
         assert_eq!(
             bob.unprotect_application_message(CONVERSATION, MESSAGE_TWO, &future.ciphertext),
             Err(ConversationError::InvalidApplicationMessage),
+        );
+
+        let bob_rejoin_package = bob.generate_key_packages(1).unwrap().remove(0);
+        let restored_roster = vec![
+            ALICE_DEVICE.to_owned(),
+            BOB_DEVICE.to_owned(),
+            CHARLIE_DEVICE.to_owned(),
+        ];
+        let readded = alice
+            .update_members_and_merge(CONVERSATION, &restored_roster, &[bob_rejoin_package])
+            .unwrap();
+        assert_eq!(readded.epoch, 4);
+        assert_eq!(
+            charlie
+                .apply_commit_and_merge(CONVERSATION, &readded.commit, &restored_roster)
+                .unwrap(),
+            4,
+        );
+        assert_eq!(
+            bob.rejoin_conversation(CONVERSATION, &readded.welcome, &readded.ratchet_tree)
+                .unwrap(),
+            4,
+        );
+        let after_rejoin = alice
+            .protect_application_message(CONVERSATION, MESSAGE_ONE, b"after rejoin")
+            .unwrap();
+        assert_eq!(
+            bob.unprotect_application_message(CONVERSATION, MESSAGE_ONE, &after_rejoin.ciphertext,)
+                .unwrap(),
+            b"after rejoin",
         );
     }
 }

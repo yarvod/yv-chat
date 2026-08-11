@@ -237,6 +237,23 @@ export class DeviceCryptoRuntime {
     }))
   }
 
+  async rejoinConversation(
+    command: JoinMlsConversationCommand,
+  ): Promise<MlsConversationStateResult> {
+    if (
+      !UUID_PATTERN.test(command.conversationId)
+      || !validWireBytes(command.welcome)
+      || !validWireBytes(command.ratchetTree)
+    ) throw new DeviceCryptoError('invalid-request')
+    return await this.mutateAndCheckpoint(active => ({
+      epoch: safeUnsignedInteger(active.rejoinConversation(
+        command.conversationId,
+        command.welcome,
+        command.ratchetTree,
+      )),
+    }))
+  }
+
   async updateConversation(
     command: UpdateMlsConversationCommand,
   ): Promise<UpdateMlsConversationResult> {

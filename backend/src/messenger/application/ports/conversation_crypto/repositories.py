@@ -30,6 +30,15 @@ class ConversationCryptoGenerationRepository(Protocol):
         conversation_id: UUID,
     ) -> ConversationCryptoGeneration | None: ...
 
+    async def list_ready_for_device_after(
+        self,
+        *,
+        conversation_id: UUID,
+        device_id: UUID,
+        after_generation_number: int,
+        limit: int,
+    ) -> list[ConversationCryptoGeneration]: ...
+
     async def get_by_bootstrap_request(
         self,
         *,

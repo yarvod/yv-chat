@@ -4,18 +4,46 @@
 
 ## Active
 
+### BUG-046 — Device roster мог измениться раньше создания следующей MLS generation
+
+- Статус: `fixed`, ожидает multi-device browser acceptance.
+- Найдено в: `WP-047`, аудит revoke/logout и фоновой outbox отправки.
+- Severity: `critical`; старая generation оставалась READY в коротком окне до
+  клиентского reconciliation и server проверял только наличие sender leaf.
+- Исправление: каждый новый v2 send сравнивает exact required-device snapshot с
+  фактическими non-revoked devices всех active members. Любой drift даёт conflict.
+  Explicit device revoke/logout дополнительно создают durable `conversation_updated`
+  для всех active участников и realtime wake-up после commit.
+- Проверка: негативный send test добавляет новое active device после READY generation
+  и подтверждает отказ; revoke test проверяет per-recipient sync и notifications.
+
+### BUG-045 — Offline device не мог применить несколько Commit или rejoin после remove/re-add
+
+- Статус: `fixed`, ожидает multi-device browser acceptance.
+- Найдено в: `WP-047`, reconnect/re-add release-gate audit.
+- Severity: `critical`; клиент принимал только текущую generation и требовал ровно
+  `local + 1`, а повторный Welcome конфликтовал с сохранённой group того же UUID.
+- Исправление: authorized `/crypto/updates` возвращает ordered READY generations,
+  где current device входит в immutable roster. Client последовательно checkpoint-ит
+  Commit, а Welcome после доказанного generation gap вызывает explicit rejoin:
+  старую group удаляет OpenMLS, новый state сохраняется только после valid Welcome.
+  При ошибке runtime уничтожается и восстанавливает последний sealed snapshot.
+- Проверка: application tests покрывают ordered filtering и ack crash resume;
+  native и release-WASM проходят add → remove → future decrypt denial → same-device
+  re-add/rejoin → successful decrypt.
+
 ### BUG-044 — Текущий OpenMLS WASM не помещался в стандартный Workbox precache limit
 
 - Статус: `fixed`, ожидает installed-PWA acceptance.
-- Найдено в: `WP-047`, production Nuxt build immutable `/crypto/v5/`.
+- Найдено в: `WP-047`, production Nuxt build immutable `/crypto/v5/` и `/crypto/v6/`.
 - Severity: `high`; build завершался ошибкой, а исключение WASM из app shell снова
   сделало бы crypto runtime зависимым от сети после установки/перезапуска PWA.
 - Причина: release WASM вырос до 2.16 MiB после membership operations, а Workbox по
   умолчанию принимает в precache не более 2 MiB.
-- Исправление: локальный явный limit поднят до 3 MiB; rolling v1–v4 исключены, а
-  только binding-compatible v5 JS/WASM входит в текущий service worker precache.
+- Исправление: локальный явный limit поднят до 3 MiB; rolling v1–v5 исключены, а
+  только binding-compatible v6 JS/WASM входит в текущий service worker precache.
 - Проверка: production build содержит 51 precache entry и Makefile проверяет exact
-  v5 WASM path в `sw.js`.
+  v6 WASM path в `sw.js`.
 
 ### BUG-043 — Старый MLS outbox мог пережить rotation без точной server binding
 

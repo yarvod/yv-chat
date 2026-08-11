@@ -116,6 +116,32 @@ class SqlAlchemyConversationCryptoGenerationRepository:
         )
         return _map_generation(model) if model is not None else None
 
+    async def list_ready_for_device_after(
+        self,
+        *,
+        conversation_id: UUID,
+        device_id: UUID,
+        after_generation_number: int,
+        limit: int,
+    ) -> list[ConversationCryptoGeneration]:
+        models = await self._session.scalars(
+            select(ConversationCryptoGenerationModel)
+            .join(
+                ConversationCryptoRequiredDeviceModel,
+                ConversationCryptoRequiredDeviceModel.generation_id
+                == ConversationCryptoGenerationModel.id,
+            )
+            .where(
+                ConversationCryptoGenerationModel.conversation_id == conversation_id,
+                ConversationCryptoGenerationModel.status == ConversationCryptoStatus.READY.value,
+                ConversationCryptoGenerationModel.generation_number > after_generation_number,
+                ConversationCryptoRequiredDeviceModel.device_id == device_id,
+            )
+            .order_by(ConversationCryptoGenerationModel.generation_number)
+            .limit(limit)
+        )
+        return [_map_generation(model) for model in models]
+
     async def get_by_bootstrap_request(
         self,
         *,

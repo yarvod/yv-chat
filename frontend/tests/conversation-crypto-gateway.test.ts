@@ -126,6 +126,19 @@ describe('HTTP conversation crypto gateway', () => {
     })
   })
 
+  it('loads ordered ready generations from an explicit cursor', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ generations: [response()] }))
+    vi.stubGlobal('fetch', fetchMock)
+    const gateway = new HttpConversationCryptoGateway(new ApiClient())
+
+    await expect(gateway.listReadyAfter(conversationId, 0)).resolves.toMatchObject([
+      { generationId, generationNumber: 1, status: 'ready' },
+    ])
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      `/api/v1/conversations/${conversationId}/crypto/updates?after_generation_number=0&limit=100`,
+    )
+  })
+
   it('acknowledges only the current device welcome and maps explicit absence', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(null, { status: 404 }))

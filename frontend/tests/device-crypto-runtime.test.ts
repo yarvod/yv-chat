@@ -13,7 +13,7 @@ import { IndexedDbCryptoVault } from '../app/infrastructure/storage/indexeddb-cr
 import initOpenMls, {
   DeviceBootstrap,
   validatePublicKeyPackage,
-} from '../public/crypto/v5/yv_chat_openmls_provider.js'
+} from '../public/crypto/v6/yv_chat_openmls_provider.js'
 
 const userId = '1b0a32e8-144f-4f60-bcb6-112f71bd5316'
 const deviceId = '50d6b08a-84ae-4bd7-829a-f40f38e9a2c1'
@@ -43,7 +43,7 @@ function vault(indexedDb: IDBFactory): IndexedDbCryptoVault {
 }
 
 beforeAll(async () => {
-  const wasm = await readFile('public/crypto/v5/yv_chat_openmls_provider_bg.wasm')
+  const wasm = await readFile('public/crypto/v6/yv_chat_openmls_provider_bg.wasm')
   await initOpenMls({ module_or_path: wasm })
 })
 
@@ -322,6 +322,39 @@ describe('device crypto runtime with the release OpenMLS WASM', () => {
       clientMessageId: futureMessageId,
       ciphertext: future.ciphertext,
     })).rejects.toMatchObject({ code: 'operation-failed' })
+
+    await bob.restore({ userId: otherUserId, deviceId: otherDeviceId })
+    const bobRejoinPackages = await bob.generateKeyPackages({ count: 1 })
+    const restoredRoster = [deviceId, otherDeviceId, thirdDeviceId]
+    const readded = await alice.updateConversation({
+      conversationId,
+      desiredDeviceIds: restoredRoster,
+      keyPackages: [bobRejoinPackages.keyPackages[0]!],
+    })
+    expect(readded).toMatchObject({ epoch: 4 })
+    await expect(charlie.applyCommit({
+      conversationId,
+      commit: readded.commit,
+      desiredDeviceIds: restoredRoster,
+    })).resolves.toMatchObject({ epoch: 4 })
+    if (readded.welcome === null) throw new Error('re-added leaf requires Welcome')
+    await expect(bob.rejoinConversation({
+      conversationId,
+      welcome: readded.welcome,
+      ratchetTree: readded.ratchetTree,
+    })).resolves.toMatchObject({ epoch: 4 })
+
+    const rejoinedMessageId = '9bef9594-6e42-447f-b252-e2921cb323a7'
+    const afterRejoin = await alice.protectMessage({
+      conversationId,
+      clientMessageId: rejoinedMessageId,
+      plaintext: new TextEncoder().encode('after rejoin'),
+    })
+    await expect(bob.unprotectMessage({
+      conversationId,
+      clientMessageId: rejoinedMessageId,
+      ciphertext: afterRejoin.ciphertext,
+    })).resolves.toMatchObject({ plaintext: new TextEncoder().encode('after rejoin') })
     alice.dispose()
     bob.dispose()
     charlie.dispose()

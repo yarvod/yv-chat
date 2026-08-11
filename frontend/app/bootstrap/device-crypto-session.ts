@@ -106,6 +106,10 @@ export class DeviceCryptoSession implements MlsConversationGateway {
     return this.requireActive().gateway.joinConversation(command)
   }
 
+  rejoinConversation(command: JoinMlsConversationCommand): Promise<MlsConversationStateResult> {
+    return this.requireActive().gateway.rejoinConversation(command)
+  }
+
   updateConversation(command: UpdateMlsConversationCommand): Promise<UpdateMlsConversationResult> {
     return this.requireActive().gateway.updateConversation(command)
   }

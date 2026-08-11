@@ -49,11 +49,120 @@ export class ReconcileConversationCrypto {
     }
     const generation = await this.server.begin(command.conversationId, bootstrapRequestId)
     this.assertGenerationBinding(generation, command.conversationId)
+    local = await this.resumeAppliedCheckpoint(command, local)
     if (generation.status === 'blocked') return result(generation)
+    local = await this.catchUpReadyGenerations(command, local, generation.generationNumber)
     if (generation.coordinatorDeviceId === command.deviceId) {
       return await this.reconcileCoordinator(command, generation, local, bootstrapRequestId)
     }
     return await this.reconcileMember(command, generation, local)
+  }
+
+  private async resumeAppliedCheckpoint(
+    command: ReconcileConversationCryptoCommand,
+    local: ConversationCryptoLocalState,
+  ): Promise<ConversationCryptoLocalState> {
+    if (local.phase !== 'joined' && local.phase !== 'commit-applied') return local
+    if (
+      local.generationId === null
+      || local.generationNumber === null
+      || local.epoch === null
+    ) throw new DeviceCryptoError('corrupt-state')
+    if (local.phase === 'joined') {
+      await this.server.acknowledgeWelcome(command.conversationId, local.generationId)
+    }
+    const ready: ConversationCryptoLocalState = {
+      ...local,
+      phase: 'ready',
+      updatedAt: new Date().toISOString(),
+    }
+    await this.state.save(ready)
+    return ready
+  }
+
+  private async catchUpReadyGenerations(
+    command: ReconcileConversationCryptoCommand,
+    initial: ConversationCryptoLocalState,
+    observedGenerationNumber: number,
+  ): Promise<ConversationCryptoLocalState> {
+    let local = initial
+    let cursor = local.generationNumber ?? 0
+    while (cursor < observedGenerationNumber) {
+      const updates = await this.server.listReadyAfter(command.conversationId, cursor)
+      if (updates.length === 0) break
+      let advanced = false
+      for (const generation of updates) {
+        this.assertGenerationBinding(generation, command.conversationId)
+        if (
+          generation.status !== 'ready'
+          || generation.epoch === null
+          || generation.generationNumber <= cursor
+          || generation.generationNumber > observedGenerationNumber
+          || !generation.requiredDevices.some(device => device.deviceId === command.deviceId)
+        ) throw new DeviceCryptoError('conflict')
+        local = await this.applyReadyGeneration(command, local, generation)
+        cursor = generation.generationNumber
+        advanced = true
+        if (cursor === observedGenerationNumber) break
+      }
+      if (!advanced || updates.length < 100) break
+    }
+    return local
+  }
+
+  private async applyReadyGeneration(
+    command: ReconcileConversationCryptoCommand,
+    local: ConversationCryptoLocalState,
+    generation: ConversationCryptoGeneration,
+  ): Promise<ConversationCryptoLocalState> {
+    const welcome = generation.welcome
+    let checkpoint: ConversationCryptoLocalState
+    if (welcome !== null) {
+      if (
+        welcome.targetDeviceId !== command.deviceId
+        || generation.ratchetTree === null
+      ) throw new DeviceCryptoError('conflict')
+      const priorGenerationNumber = local.generationNumber
+      if (
+        priorGenerationNumber !== null
+        && generation.generationNumber <= priorGenerationNumber + 1
+      ) throw new DeviceCryptoError('conflict')
+      const joined = priorGenerationNumber === null
+        ? await this.mls.joinConversation({
+            conversationId: command.conversationId,
+            welcome: welcome.welcome,
+            ratchetTree: generation.ratchetTree,
+          })
+        : await this.mls.rejoinConversation({
+            conversationId: command.conversationId,
+            welcome: welcome.welcome,
+            ratchetTree: generation.ratchetTree,
+          })
+      if (joined.epoch !== generation.epoch) throw new DeviceCryptoError('conflict')
+      checkpoint = generationState(local, generation, 'joined')
+      await this.state.save(checkpoint)
+      if (welcome.acknowledgedAt === null) {
+        await this.server.acknowledgeWelcome(command.conversationId, generation.generationId)
+      }
+    } else {
+      if (
+        local.phase !== 'ready'
+        || local.generationNumber === null
+        || generation.generationNumber !== local.generationNumber + 1
+        || generation.commit === null
+      ) throw new DeviceCryptoError('conflict')
+      const applied = await this.mls.applyCommit({
+        conversationId: command.conversationId,
+        commit: generation.commit,
+        desiredDeviceIds: generation.requiredDevices.map(device => device.deviceId),
+      })
+      if (applied.epoch !== generation.epoch) throw new DeviceCryptoError('conflict')
+      checkpoint = generationState(local, generation, 'commit-applied')
+      await this.state.save(checkpoint)
+    }
+    const ready = readyState(checkpoint, generation)
+    await this.state.save(ready)
+    return ready
   }
 
   private async reconcileCoordinator(
@@ -289,7 +398,28 @@ function readyState(
 ): ConversationCryptoLocalState {
   return {
     ...local,
+    generationId: generation.generationId,
+    generationNumber: generation.generationNumber,
     phase: 'ready',
+    epoch: generation.epoch,
+    commit: null,
+    ratchetTree: null,
+    welcome: null,
+    targetDeviceIds: [],
+    updatedAt: new Date().toISOString(),
+  }
+}
+
+function generationState(
+  local: ConversationCryptoLocalState,
+  generation: ConversationCryptoGeneration,
+  phase: 'joined' | 'commit-applied',
+): ConversationCryptoLocalState {
+  return {
+    ...local,
+    generationId: generation.generationId,
+    generationNumber: generation.generationNumber,
+    phase,
     epoch: generation.epoch,
     commit: null,
     ratchetTree: null,

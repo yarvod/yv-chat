@@ -27,6 +27,7 @@ from messenger.application.conversation_crypto import (
     BeginConversationCrypto,
     FinalizeConversationCrypto,
     GetCurrentConversationCrypto,
+    ListConversationCryptoUpdates,
 )
 from messenger.application.conversations.add_member import AddConversationMember
 from messenger.application.conversations.change_member_role import (
@@ -304,6 +305,10 @@ class HttpTestProvider(Provider):
     finalize_conversation_crypto = provide(FinalizeConversationCrypto, scope=Scope.REQUEST)
     get_current_conversation_crypto = provide(
         GetCurrentConversationCrypto,
+        scope=Scope.REQUEST,
+    )
+    list_conversation_crypto_updates = provide(
+        ListConversationCryptoUpdates,
         scope=Scope.REQUEST,
     )
     acknowledge_conversation_crypto_welcome = provide(

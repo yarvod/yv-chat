@@ -473,6 +473,17 @@ impl DeviceBootstrap {
             .map_err(|error| JsError::new(error.to_string().as_str()))
     }
 
+    #[wasm_bindgen(js_name = rejoinConversation)]
+    pub fn wasm_rejoin_conversation(
+        &mut self,
+        conversation_id: &str,
+        welcome: &[u8],
+        ratchet_tree: &[u8],
+    ) -> Result<u64, JsError> {
+        self.rejoin_conversation(conversation_id, welcome, ratchet_tree)
+            .map_err(|error| JsError::new(error.to_string().as_str()))
+    }
+
     #[wasm_bindgen(js_name = protectApplicationMessage)]
     pub fn wasm_protect_application_message(
         &mut self,

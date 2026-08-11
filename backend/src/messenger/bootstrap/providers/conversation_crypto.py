@@ -7,6 +7,7 @@ from messenger.application.conversation_crypto import (
     BeginConversationCrypto,
     FinalizeConversationCrypto,
     GetCurrentConversationCrypto,
+    ListConversationCryptoUpdates,
 )
 
 
@@ -14,6 +15,7 @@ class ConversationCryptoUseCaseProvider(Provider):
     begin = provide(BeginConversationCrypto, scope=Scope.REQUEST)
     finalize = provide(FinalizeConversationCrypto, scope=Scope.REQUEST)
     get_current = provide(GetCurrentConversationCrypto, scope=Scope.REQUEST)
+    list_updates = provide(ListConversationCryptoUpdates, scope=Scope.REQUEST)
     acknowledge_welcome = provide(
         AcknowledgeConversationCryptoWelcome,
         scope=Scope.REQUEST,

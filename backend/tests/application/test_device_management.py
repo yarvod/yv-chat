@@ -27,8 +27,21 @@ from messenger.application.errors import (
     OwnedDeviceNotFoundError,
 )
 from messenger.application.security_events.policy import SecurityEventPolicy
-from messenger.domain.entities import Device, SecurityEvent, SecurityEventType, Session, User
-from tests.application.fakes import FakeIdentityUnitOfWorkFactory, FixedClock, IdentityState
+from messenger.application.sync import SyncEventType, SyncPolicy
+from messenger.domain.entities import (
+    Conversation,
+    Device,
+    SecurityEvent,
+    SecurityEventType,
+    Session,
+    User,
+)
+from tests.application.fakes import (
+    FakeIdentityUnitOfWorkFactory,
+    FixedClock,
+    IdentityState,
+    RecordingRealtimeNotifier,
+)
 
 NOW = datetime(2026, 8, 11, 12, 0, tzinfo=UTC)
 EVENT_POLICY = SecurityEventPolicy(retention=timedelta(days=90))
@@ -137,10 +150,15 @@ async def test_revoke_one_blocks_current_and_foreign_device_ids() -> None:
     current = add_active_session(state, user_id=alice.id, name="Current")
     other = add_active_session(state, user_id=alice.id, name="Other")
     foreign = add_active_session(state, user_id=bob.id, name="Foreign")
+    conversation = Conversation.create_direct(created_by=alice.id, other_user_id=bob.id, now=NOW)
+    state.conversations[conversation.id] = conversation
+    notifier = RecordingRealtimeNotifier()
     use_case = RevokeMyDevice(
         unit_of_work=FakeIdentityUnitOfWorkFactory(state),
         clock=FixedClock(NOW + timedelta(minutes=1)),
         event_policy=EVENT_POLICY,
+        sync_policy=SyncPolicy(),
+        realtime_notifier=notifier,
     )
 
     with pytest.raises(CurrentDeviceRevocationError):
@@ -154,6 +172,12 @@ async def test_revoke_one_blocks_current_and_foreign_device_ids() -> None:
     assert state.sessions[other.id].revoked_at == NOW + timedelta(minutes=1)
     assert state.devices[other.device_id].revoked_at == NOW + timedelta(minutes=1)
     assert state.sessions[foreign.id].revoked_at is None
+    assert [event.event_type for event in state.sync_events] == [
+        SyncEventType.CONVERSATION_UPDATED,
+        SyncEventType.CONVERSATION_UPDATED,
+    ]
+    assert {event.user_id for event in state.sync_events} == {alice.id, bob.id}
+    assert len(notifier.notifications) == 2
 
 
 async def test_revoke_others_preserves_current_and_is_idempotent() -> None:
@@ -166,6 +190,8 @@ async def test_revoke_others_preserves_current_and_is_idempotent() -> None:
         unit_of_work=FakeIdentityUnitOfWorkFactory(state),
         clock=FixedClock(NOW + timedelta(minutes=1)),
         event_policy=EVENT_POLICY,
+        sync_policy=SyncPolicy(),
+        realtime_notifier=RecordingRealtimeNotifier(),
     )
     command = RevokeOtherSessionsCommand(alice.id, current.id)
 

@@ -1,6 +1,9 @@
 """SQLAlchemy transaction boundary for identity operations."""
 
+from __future__ import annotations
+
 from types import TracebackType
+from typing import TYPE_CHECKING
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -15,12 +18,18 @@ from messenger.application.ports.identity import (
 )
 from messenger.infrastructure.persistence.repositories import (
     SqlAlchemyActivationTokenRepository,
+    SqlAlchemyConversationRepository,
     SqlAlchemyDeviceRepository,
     SqlAlchemyPasswordResetTokenRepository,
     SqlAlchemySecurityEventRepository,
     SqlAlchemySessionRepository,
+    SqlAlchemySyncRepository,
     SqlAlchemyUserRepository,
 )
+
+if TYPE_CHECKING:
+    from messenger.application.ports.conversations import ConversationRepository
+    from messenger.application.ports.sync import SyncRepository
 
 
 class SqlAlchemyIdentityUnitOfWork:
@@ -35,8 +44,10 @@ class SqlAlchemyIdentityUnitOfWork:
         self.password_reset_tokens: PasswordResetTokenRepository
         self.sessions: SessionRepository
         self.security_events: SecurityEventRepository
+        self.conversations: ConversationRepository
+        self.sync_events: SyncRepository
 
-    async def __aenter__(self) -> "SqlAlchemyIdentityUnitOfWork":
+    async def __aenter__(self) -> SqlAlchemyIdentityUnitOfWork:
         self._session = self._session_factory()
         self.users = SqlAlchemyUserRepository(self._session)
         self.activation_tokens = SqlAlchemyActivationTokenRepository(self._session)
@@ -44,6 +55,8 @@ class SqlAlchemyIdentityUnitOfWork:
         self.password_reset_tokens = SqlAlchemyPasswordResetTokenRepository(self._session)
         self.sessions = SqlAlchemySessionRepository(self._session)
         self.security_events = SqlAlchemySecurityEventRepository(self._session)
+        self.conversations = SqlAlchemyConversationRepository(self._session)
+        self.sync_events = SqlAlchemySyncRepository(self._session)
         return self
 
     async def __aexit__(

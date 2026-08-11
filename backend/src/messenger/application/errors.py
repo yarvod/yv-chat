@@ -81,6 +81,10 @@ class ConversationCryptoNotReadyError(ApplicationError):
     """The current MLS generation cannot accept this lifecycle transition."""
 
 
+class InvalidConversationCryptoUpdateBoundsError(ApplicationError):
+    """Ordered MLS update pagination bounds are invalid."""
+
+
 class CurrentDeviceRevocationError(ApplicationError):
     """The current device must be terminated through logout, not remote revoke."""
 

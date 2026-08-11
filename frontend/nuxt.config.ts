@@ -89,6 +89,7 @@ export default defineNuxtConfig({
         'crypto/v2/**/*',
         'crypto/v3/**/*',
         'crypto/v4/**/*',
+        'crypto/v5/**/*',
       ],
     },
   },

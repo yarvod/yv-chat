@@ -1,8 +1,8 @@
 import { DeviceCryptoError } from '../../application/device-crypto/errors'
 
 // A new immutable path is mandatory whenever the generated JS/WASM binding changes.
-// v5 adds authenticated membership Commit/apply; v1-v4 remain rolling assets.
-const MODULE_URL = '/crypto/v5/yv_chat_openmls_provider.js'
+// v6 adds explicit same-device rejoin; v1-v5 remain rolling assets.
+const MODULE_URL = '/crypto/v6/yv_chat_openmls_provider.js'
 
 export interface OpenMlsSealedSnapshot {
   readonly revision: bigint
@@ -34,6 +34,11 @@ export interface OpenMlsDeviceBootstrap {
     desiredDeviceIds: string[],
   ): bigint
   joinConversation(
+    conversationId: string,
+    welcome: Uint8Array,
+    ratchetTree: Uint8Array,
+  ): bigint
+  rejoinConversation(
     conversationId: string,
     welcome: Uint8Array,
     ratchetTree: Uint8Array,
@@ -108,6 +113,7 @@ function isOpenMlsModule(value: unknown): value is OpenMlsModule {
     && typeof prototype.updateMembersAndMerge === 'function'
     && typeof prototype.applyCommitAndMerge === 'function'
     && typeof prototype.joinConversation === 'function'
+    && typeof prototype.rejoinConversation === 'function'
     && typeof prototype.protectApplicationMessage === 'function'
     && typeof prototype.unprotectApplicationMessage === 'function'
 }

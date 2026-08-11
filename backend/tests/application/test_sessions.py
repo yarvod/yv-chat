@@ -18,6 +18,7 @@ from messenger.application.sessions.authenticate import (
 from messenger.application.sessions.login import Login, LoginCommand
 from messenger.application.sessions.logout import Logout, LogoutCommand
 from messenger.application.sessions.policy import SessionPolicy
+from messenger.application.sync import SyncPolicy
 from messenger.domain.entities import SecurityEventType, User
 from tests.application.fakes import (
     FakeIdentityUnitOfWorkFactory,
@@ -25,6 +26,7 @@ from tests.application.fakes import (
     FixedClock,
     FixedSessionCredentials,
     IdentityState,
+    RecordingRealtimeNotifier,
 )
 
 NOW = datetime(2026, 8, 11, 12, 0, tzinfo=UTC)
@@ -270,6 +272,8 @@ async def test_idle_expiry_and_logout_revoke_session_idempotently() -> None:
         clock=FixedClock(NOW + timedelta(hours=2, minutes=1)),
         credentials=credentials,
         event_policy=EVENT_POLICY,
+        sync_policy=SyncPolicy(),
+        realtime_notifier=RecordingRealtimeNotifier(),
     )
     await logout.execute(LogoutCommand(session_credential=plaintext))
     await logout.execute(LogoutCommand(session_credential="unknown"))
