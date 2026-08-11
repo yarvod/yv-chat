@@ -150,7 +150,7 @@ async def test_bootstrap_snapshots_all_active_devices_and_claims_each_target_onc
     assert state.commits == 1
 
 
-async def test_unenrolled_legacy_device_does_not_block_capable_devices() -> None:
+async def test_member_without_any_capable_device_blocks_direct_conversation() -> None:
     state = bootstrap_state(omit_identity=BOB_PHONE_ID)
     factory = FakeConversationCryptoUnitOfWorkFactory(state)
     use_case = BeginConversationCrypto(
@@ -160,15 +160,33 @@ async def test_unenrolled_legacy_device_does_not_block_capable_devices() -> None
 
     result = await use_case.execute(begin_command())
 
-    assert result.generation.status is ConversationCryptoStatus.PENDING
+    assert result.generation.status is ConversationCryptoStatus.BLOCKED
+    assert result.generation.block_reason is ConversationCryptoBlockReason.MISSING_IDENTITY
     assert {item.device_id for item in result.required_devices} == {
         ALICE_PHONE_ID,
         ALICE_LAPTOP_ID,
     }
     claimed = [item for item in state.device_key_packages.values() if item.is_claimed]
-    assert {item.device_id for item in claimed} == {ALICE_LAPTOP_ID}
+    assert claimed == []
     assert len(state.conversation_crypto_generations) == 1
     assert state.commits == 1
+
+
+async def test_unenrolled_legacy_device_does_not_block_member_with_capable_device() -> None:
+    state = bootstrap_state(omit_identity=ALICE_LAPTOP_ID)
+    factory = FakeConversationCryptoUnitOfWorkFactory(state)
+    result = await BeginConversationCrypto(
+        unit_of_work=factory,
+        clock=FixedClock(NOW),
+    ).execute(begin_command())
+
+    assert result.generation.status is ConversationCryptoStatus.PENDING
+    assert {item.device_id for item in result.required_devices} == {
+        ALICE_PHONE_ID,
+        BOB_PHONE_ID,
+    }
+    claimed = [item for item in state.device_key_packages.values() if item.is_claimed]
+    assert {item.device_id for item in claimed} == {BOB_PHONE_ID}
 
 
 async def test_current_device_without_identity_is_blocked_without_consuming_packages() -> None:

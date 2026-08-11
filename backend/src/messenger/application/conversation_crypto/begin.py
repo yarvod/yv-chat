@@ -80,6 +80,8 @@ class BeginConversationCrypto:
                 )
             }
             current_device_has_identity = command.device_id in identity_ids
+            capable_user_ids = {item.user_id for item in active_devices if item.id in identity_ids}
+            member_without_capable_device = bool(active_user_ids - capable_user_ids)
             required_devices = (
                 [item for item in active_devices if item.id in identity_ids]
                 if current_device_has_identity
@@ -94,6 +96,7 @@ class BeginConversationCrypto:
             if (
                 current is not None
                 and current.status is not ConversationCryptoStatus.BLOCKED
+                and not member_without_capable_device
                 and {item.device_id for item in current_required} == active_device_ids
             ):
                 return await materialize_generation(uow, current)
@@ -146,7 +149,7 @@ class BeginConversationCrypto:
             )
             if not any(item.is_coordinator for item in required):
                 raise OwnedDeviceNotFoundError("current device is unavailable")
-            if not current_device_has_identity:
+            if not current_device_has_identity or member_without_capable_device:
                 generation = generation.block(ConversationCryptoBlockReason.MISSING_IDENTITY, now)
             else:
                 # The coordinator already owns the local MLS state that will create

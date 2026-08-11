@@ -4,9 +4,22 @@
 
 ## Active
 
-### BUG-051 — Full direct roster rotation caused bootstrap 422
+### BUG-052 — Direct generation could omit a participant with no capable device
 
 - Статус: `fixed and full-CI verified; production rollout pending`.
+- Severity: `critical security/availability`; incremental enrollment filtered active
+  devices without crypto identity, but did not require at least one capable device for
+  every direct participant. A self-only READY roster could therefore accept a message
+  that the other user could never decrypt later.
+- Исправление: generation remains `blocked/missing_identity` until every active member
+  has at least one active crypto identity. Extra legacy devices do not block a member
+  who already has another capable device.
+- Tests: absent peer identity blocks without consuming packages; one capable device
+  plus an extra legacy device remains valid and claims only the peer package.
+
+### BUG-051 — Full direct roster rotation caused bootstrap 422
+
+- Статус: `fixed and production-verified in 194090f`.
 - Severity: `critical`; existing direct conversation became unable to send when every
   device from the latest READY MLS generation had been revoked and both users logged
   in from replacement devices.
