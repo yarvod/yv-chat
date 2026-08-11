@@ -14,6 +14,8 @@ from messenger.domain.entities import Session
 class SessionRepository(Protocol):
     async def add(self, session: Session) -> None: ...
 
+    async def get_by_id(self, session_id: UUID) -> Session | None: ...
+
     async def get_by_token_hash_for_update(
         self,
         token_hash: str,

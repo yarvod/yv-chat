@@ -1,0 +1,137 @@
+import { describe, expect, it, vi } from 'vitest'
+
+import { RealtimeSyncService } from '../app/application/messaging/realtime-sync-service'
+import type {
+  RealtimeCallbacks,
+  RealtimeConnection,
+  RealtimeGateway,
+} from '../app/application/ports/realtime-gateway'
+import type { ScheduledTask, Scheduler } from '../app/application/ports/scheduler'
+import { ApplicationError } from '../app/application/errors'
+import { BrowserRealtimeGateway } from '../app/infrastructure/realtime/browser-realtime-gateway'
+import { parseRealtimeFrame } from '../app/infrastructure/realtime/realtime-parser'
+
+class FakeScheduledTask implements ScheduledTask {
+  cancelled = false
+
+  constructor(
+    readonly delay: number,
+    readonly callback: () => void,
+  ) {}
+
+  cancel(): void {
+    this.cancelled = true
+  }
+
+  run(): void {
+    if (!this.cancelled) this.callback()
+  }
+}
+
+class FakeScheduler implements Scheduler {
+  onceTasks: FakeScheduledTask[] = []
+  repeatTasks: FakeScheduledTask[] = []
+
+  once(delayMs: number, callback: () => void): ScheduledTask {
+    const task = new FakeScheduledTask(delayMs, callback)
+    this.onceTasks.push(task)
+    return task
+  }
+
+  repeat(intervalMs: number, callback: () => void): ScheduledTask {
+    const task = new FakeScheduledTask(intervalMs, callback)
+    this.repeatTasks.push(task)
+    return task
+  }
+}
+
+class FakeRealtimeGateway implements RealtimeGateway {
+  callbacks: RealtimeCallbacks[] = []
+  close = vi.fn()
+
+  connect(callbacks: RealtimeCallbacks): RealtimeConnection {
+    this.callbacks.push(callbacks)
+    return { close: this.close }
+  }
+}
+
+class FakeWebSocket extends EventTarget {
+  static instances: FakeWebSocket[] = []
+  readonly url: string
+  sent: string[] = []
+  close = vi.fn()
+
+  constructor(url: string | URL) {
+    super()
+    this.url = String(url)
+    FakeWebSocket.instances.push(this)
+  }
+
+  send(value: string): void {
+    this.sent.push(value)
+  }
+}
+
+describe('realtime sync', () => {
+  it('strictly parses only bounded routing frames', () => {
+    expect(parseRealtimeFrame({ type: 'hello' })).toEqual({ type: 'hello' })
+    expect(parseRealtimeFrame({
+      type: 'new_message',
+      event_id: 'event',
+      conversation_id: 'conversation',
+      message_id: 'message',
+      token_hash: 'must-not-escape',
+    })).toEqual({
+      type: 'new_message',
+      eventId: 'event',
+      conversationId: 'conversation',
+      messageId: 'message',
+    })
+    expect(() => parseRealtimeFrame({ type: 'typing', user_id: 'arbitrary' }))
+      .toThrow(ApplicationError)
+  })
+
+  it('keeps one connection, catches up on hints and reconnects with backoff', async () => {
+    const gateway = new FakeRealtimeGateway()
+    const scheduler = new FakeScheduler()
+    const catchUp = vi.fn().mockResolvedValue(undefined)
+    const unauthorized = vi.fn()
+    const service = new RealtimeSyncService(gateway, scheduler)
+
+    service.start(catchUp, unauthorized)
+    service.start(catchUp, unauthorized)
+    expect(gateway.callbacks).toHaveLength(1)
+    expect(scheduler.repeatTasks[0]?.delay).toBe(30_000)
+    gateway.callbacks[0]?.onFrame({ type: 'hello' })
+    await vi.waitFor(() => expect(catchUp).toHaveBeenCalledTimes(1))
+
+    gateway.callbacks[0]?.onClose({ unauthorized: false })
+    expect(scheduler.onceTasks[0]?.delay).toBe(1_000)
+    scheduler.onceTasks[0]?.run()
+    await vi.waitFor(() => expect(gateway.callbacks).toHaveLength(2))
+    expect(catchUp).toHaveBeenCalledTimes(2)
+
+    gateway.callbacks[1]?.onClose({ unauthorized: true })
+    expect(unauthorized).toHaveBeenCalledOnce()
+    expect(scheduler.repeatTasks[0]?.cancelled).toBe(true)
+    expect(scheduler.onceTasks).toHaveLength(1)
+  })
+
+  it('builds a same-origin credential-free socket URL and answers ping', () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    vi.stubGlobal('window', { location: { href: 'https://chat.example/settings' } })
+    const callbacks = {
+      onFrame: vi.fn(),
+      onOpen: vi.fn(),
+      onClose: vi.fn(),
+    }
+    new BrowserRealtimeGateway().connect(callbacks)
+    const socket = FakeWebSocket.instances.at(-1)
+    expect(socket?.url).toBe('wss://chat.example/api/v1/realtime')
+    expect(socket?.url).not.toContain('?')
+    socket?.dispatchEvent(new MessageEvent('message', { data: '{"type":"ping"}' }))
+    expect(socket?.sent).toEqual(['{"type":"pong"}'])
+    expect(callbacks.onFrame).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
+  })
+})

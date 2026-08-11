@@ -305,6 +305,15 @@ API adapter всегда использует относительный `/api/v
 
 Auth composable моделирует только конечные состояния `booting`, `signed-out`, `submitting`, `authenticated`, `offline`. `401` означает signed-out/revoked credential, network failure даёт retry без ложного logout, а logout очищает client state даже при потере соединения. Следующие conversation/sync services используют тот же transport и собственные typed parsers вместо raw `fetch` в components.
 
+Foreground realtime также отделён от Vue components. `BrowserRealtimeGateway`
+создаёт только same-origin `/api/v1/realtime` URL без query credential, строго
+разбирает закрытый набор frames и отвечает на application-level ping. Application
+`RealtimeSyncService` владеет единственным connection lifecycle, bounded
+deterministic reconnect и редким 30-секундным fallback poll. Любой `hello`,
+durable hint или reconnect вызывает тот же cursor catch-up; повторные wake-ups
+coalesce, но не заменяют `/sync`. `ChatWorkspace` только запускает/останавливает
+service вместе со своим lifecycle.
+
 Messaging UI разделён на typed transport parsers/services, `useMessenger` orchestration и небольшие chat components. Authenticated `GET /api/v1/users` проходит через отдельный `ListUserDirectory` use case и `UserRepository.list_active`; наружу выходят только `user_id`, `username`, `display_name`. SQLAlchemy, admin status, activation/password/session fields не пересекают boundary.
 
 Frontend initial catch-up использует race-free порядок:
@@ -438,7 +447,7 @@ created_at / expires_at / deleted_at
 
 Колонки `text`, `plaintext`, `decrypted_body`, `message_key` запрещены.
 
-Message creation idempotent по client-generated UUID в scope sender device. Exact retry возвращает исходные `message_id/sequence`; повтор ключа с иным immutable envelope даёт conflict. Под row lock conversation backend выделяет следующий positive sequence, а unique `(conversation_id, sequence)` страхует invariant в БД. List API выдаёт bounded ascending page `sequence > after_sequence`; client timestamp не участвует. Следующий sync этап добавит атомарный message + global sync event cursor.
+Message creation idempotent по client-generated UUID в scope sender device. Exact retry возвращает исходные `message_id/sequence`; повтор ключа с иным immutable envelope даёт conflict. Под row lock conversation backend выделяет следующий positive sequence, а unique `(conversation_id, sequence)` страхует invariant в БД. List API выдаёт bounded ascending page `sequence > after_sequence`; client timestamp не участвует. Message и recipient-specific sync events записываются одной транзакцией.
 
 PostgreSQL — source of truth для server-side sync state только в retention window. WebSocket — notification channel. После reconnect/sleep/lost events клиент выполняет cursor catch-up:
 
@@ -450,6 +459,18 @@ GET /api/v1/sync?after=<cursor>
 Реализованный durable stream использует независимый monotonic cursor каждого пользователя: `sync_streams(user_id, last_cursor)` и recipient-specific `sync_events(user_id, cursor)`. Atomic PostgreSQL upsert выделяет cursor, сохраняя event order внутри user stream и стабильный user lock order между recipients. Visibility фиксируется при записи события, поэтому удалённый member получает финальный `conversation_updated`, хотя последующий conversation GET уже возвращает not-found.
 
 Message row и все `message_created` recipient events коммитятся одним Messaging UoW; exact retry не создаёт повторных events. Sync payload содержит только stable event/conversation/message IDs и timestamps, без ciphertext/plaintext/key data. Cleanup удаляет expired events, но сохраняет stream high-water mark; `/api/v1/sync` сравнивает `after`, oldest retained cursor и stream cursor и выставляет `reset_required`, когда нужен полный resource resync.
+
+`/api/v1/realtime` принимает WebSocket только после exact Origin и opaque-cookie
+handshake. Handshake может выполнить throttled session touch, но не вращает cookie
+credential; heartbeat/pong не касается session state. Уже установленное соединение
+пассивно проверяет logical session/user/device и expiry, поэтому последующая HTTP
+credential rotation не превращает старый socket credential в ложный replay.
+Process-local `InMemoryRealtimeHub` держит bounded queue на connection и удаляет
+slow consumer. После durable commit application публикует только `event_id`,
+`conversation_id`, optional `message_id` и typed `new_message`,
+`conversation_updated` либо `message_deleted`; failure notifier логируется без
+content и не меняет committed result. Это сознательно single-process решение без
+Redis. Ephemeral typing/presence/read receipts появятся вместе с их domain model.
 
 Правильность любой realtime-фичи проверяется при отключённом WebSocket. Duplicate WebSocket/Push/sync delivery применяется идемпотентно.
 
@@ -510,7 +531,7 @@ read IndexedDB → render immediately
 
 Outbox имеет `pending/sending/sent/failed`, persistent idempotency key и reconcile после reconnect. Service Worker/IndexedDB migrations versioned и совместимы при update.
 
-WebSocket обслуживает foreground realtime. Web Push будит background Service Worker. Sync восстанавливает correctness.
+WebSocket обслуживает foreground realtime и передаёт только wake-up hints. Web Push будит background Service Worker. Sync восстанавливает correctness. Current implementation сохраняет редкий HTTP fallback poll, поэтому недоступный WebSocket ухудшает latency, но не correctness.
 
 Push subscription принадлежит device/install, не User целиком. VAPID private key — production secret. Payload содержит только opaque routing hint (`event_id`, `conversation_id`, `message_id`, `sync_required`), никогда plaintext preview. Permanent invalid subscriptions отключаются; push failure не откатывает committed message.
 

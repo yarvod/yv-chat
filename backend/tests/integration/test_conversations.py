@@ -48,7 +48,7 @@ from messenger.infrastructure.persistence.models import (
     SyncStreamModel,
     UserModel,
 )
-from tests.application.fakes import FixedClock
+from tests.application.fakes import FixedClock, RecordingRealtimeNotifier
 
 NOW = datetime(2026, 8, 11, 12, 0, tzinfo=UTC)
 
@@ -165,11 +165,13 @@ async def run_flow(database_url: str) -> None:
             unit_of_work=unit_of_work_factory,
             clock=FixedClock(NOW + timedelta(minutes=4)),
             sync_policy=SyncPolicy(),
+            realtime_notifier=RecordingRealtimeNotifier(),
         ).execute(AddConversationMemberCommand(alice.id, group.id, charlie.id))
         await ChangeConversationMemberRole(
             unit_of_work=unit_of_work_factory,
             clock=FixedClock(NOW + timedelta(minutes=5)),
             sync_policy=SyncPolicy(),
+            realtime_notifier=RecordingRealtimeNotifier(),
         ).execute(
             ChangeConversationMemberRoleCommand(
                 alice.id,
@@ -183,6 +185,7 @@ async def run_flow(database_url: str) -> None:
                 unit_of_work=unit_of_work_factory,
                 clock=FixedClock(NOW + timedelta(minutes=6)),
                 sync_policy=SyncPolicy(),
+                realtime_notifier=RecordingRealtimeNotifier(),
             ).execute(
                 ChangeConversationMemberRoleCommand(
                     charlie.id,
@@ -195,6 +198,7 @@ async def run_flow(database_url: str) -> None:
             unit_of_work=unit_of_work_factory,
             clock=FixedClock(NOW + timedelta(minutes=7)),
             sync_policy=SyncPolicy(),
+            realtime_notifier=RecordingRealtimeNotifier(),
         ).execute(LeaveConversationCommand(charlie.id, group.id))
         with pytest.raises(ConversationNotFoundError):
             await GetConversation(unit_of_work=unit_of_work_factory).execute(

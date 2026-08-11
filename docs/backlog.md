@@ -97,6 +97,8 @@ Implementation и desktop browser smoke завершены; physical 390px scree
 
 ### BL-011 — Authenticated WebSocket notifications
 
+Статус: **in progress** (`WP-023`, authenticated durable wake-up foundation).
+
 Результат: WebSocket ускоряет доставку, но не заменяет sync.
 
 - same-origin cookie handshake, active-session и exact Origin validation;

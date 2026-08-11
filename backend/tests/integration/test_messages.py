@@ -41,7 +41,7 @@ from messenger.infrastructure.persistence.models import (
     SyncStreamModel,
     UserModel,
 )
-from tests.application.fakes import FixedClock
+from tests.application.fakes import FixedClock, RecordingRealtimeNotifier
 
 NOW = datetime(2026, 8, 11, 12, 0, tzinfo=UTC)
 PASSWORD = "correct horse battery staple"
@@ -125,6 +125,7 @@ async def run_flow(database_url: str) -> None:
             clock=FixedClock(NOW + timedelta(seconds=1)),
             message_policy=MessageEnvelopePolicy(),
             sync_policy=SyncPolicy(),
+            realtime_notifier=RecordingRealtimeNotifier(),
         )
         ciphertext = b"\x00\xffopaque-postgresql-envelope"
         client_message_id = uuid4()

@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import datetime
+from enum import StrEnum
 from uuid import UUID
 
 from messenger.application.errors import (
@@ -16,12 +17,18 @@ from messenger.application.sessions.policy import SessionPolicy
 from messenger.domain.entities import SecurityEvent, SecurityEventType
 
 
+class SessionActivity(StrEnum):
+    HTTP = "http"
+    WEBSOCKET_HANDSHAKE = "websocket_handshake"
+
+
 @dataclass(frozen=True, slots=True)
 class AuthenticateSessionCommand:
     """Presented credential and best-effort request metadata."""
 
     session_credential: str
     client_ip: str | None = None
+    activity: SessionActivity = SessionActivity.HTTP
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,9 +110,13 @@ class AuthenticateSession:
             else:
                 rotated_plaintext: str | None = None
                 changed = False
-                if not matched.matched_previous and session.rotation_is_due(
-                    now,
-                    self._policy.rotation_interval,
+                if (
+                    command.activity is SessionActivity.HTTP
+                    and not matched.matched_previous
+                    and session.rotation_is_due(
+                        now,
+                        self._policy.rotation_interval,
+                    )
                 ):
                     generated = self._credentials.generate()
                     session = session.rotate(

@@ -9,7 +9,8 @@ import MessagePanel from './MessagePanel.vue'
 const props = defineProps<{ user: CurrentAccount }>()
 const emit = defineEmits<{ sessionExpired: [] }>()
 const messenger = useMessenger(props.user.userId, () => emit('sessionExpired'))
-let pollTimer: ReturnType<typeof setInterval> | null = null
+const { $frontend } = useNuxtApp()
+const realtime = $frontend.createRealtimeSync()
 const mobilePane = ref<'list' | 'conversation'>('list')
 
 function selectConversation(conversationId: string): void {
@@ -19,11 +20,11 @@ function selectConversation(conversationId: string): void {
 
 onMounted(async () => {
   await messenger.load()
-  pollTimer = setInterval(() => void messenger.poll(), 3000)
+  realtime.start(messenger.poll, () => emit('sessionExpired'))
 })
 
 onBeforeUnmount(() => {
-  if (pollTimer) clearInterval(pollTimer)
+  realtime.stop()
 })
 </script>
 

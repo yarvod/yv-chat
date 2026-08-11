@@ -19,7 +19,12 @@ from messenger.application.messaging.send_message import (
 )
 from messenger.application.sync import SyncPolicy
 from messenger.domain.entities import Conversation, Device, User
-from tests.application.fakes import FakeMessagingUnitOfWorkFactory, FixedClock, IdentityState
+from tests.application.fakes import (
+    FakeMessagingUnitOfWorkFactory,
+    FixedClock,
+    IdentityState,
+    RecordingRealtimeNotifier,
+)
 
 NOW = datetime(2026, 8, 11, 12, 0, tzinfo=UTC)
 
@@ -49,6 +54,7 @@ async def test_send_persists_only_opaque_envelope_metadata() -> None:
         clock=FixedClock(NOW + timedelta(seconds=1)),
         message_policy=MessageEnvelopePolicy(),
         sync_policy=SyncPolicy(),
+        realtime_notifier=RecordingRealtimeNotifier(),
     )
     client_message_id = uuid4()
     command = SendOpaqueMessageCommand(
@@ -105,6 +111,7 @@ async def test_send_rejects_non_member_and_foreign_or_revoked_device() -> None:
         clock=FixedClock(NOW + timedelta(seconds=1)),
         message_policy=MessageEnvelopePolicy(),
         sync_policy=SyncPolicy(),
+        realtime_notifier=RecordingRealtimeNotifier(),
     )
     charlie_device = Device.create(user_id=charlie.id, name="Charlie device", now=NOW)
     state.devices[charlie_device.id] = charlie_device
@@ -152,6 +159,7 @@ async def test_send_rejects_unsupported_empty_and_oversized_envelopes() -> None:
         clock=FixedClock(NOW),
         message_policy=MessageEnvelopePolicy(max_ciphertext_bytes=8),
         sync_policy=SyncPolicy(),
+        realtime_notifier=RecordingRealtimeNotifier(),
     )
     for version, ciphertext in ((2, b"opaque"), (1, b""), (1, b"x" * 9)):
         with pytest.raises(InvalidMessageEnvelopeError):
@@ -166,3 +174,28 @@ async def test_send_rejects_unsupported_empty_and_oversized_envelopes() -> None:
                 )
             )
     assert state.messages == {}
+
+
+async def test_realtime_failure_does_not_rollback_committed_message() -> None:
+    state, alice, _, _, device, conversation = messaging_state()
+    notifier = RecordingRealtimeNotifier(fail=True)
+    use_case = SendOpaqueMessage(
+        unit_of_work=FakeMessagingUnitOfWorkFactory(state),
+        clock=FixedClock(NOW + timedelta(seconds=1)),
+        message_policy=MessageEnvelopePolicy(),
+        sync_policy=SyncPolicy(),
+        realtime_notifier=notifier,
+    )
+    result = await use_case.execute(
+        SendOpaqueMessageCommand(
+            alice.id,
+            device.id,
+            conversation.id,
+            uuid4(),
+            1,
+            b"opaque",
+        )
+    )
+
+    assert state.messages[result.message_id].ciphertext == b"opaque"
+    assert state.commits == 1

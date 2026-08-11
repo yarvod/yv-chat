@@ -35,6 +35,10 @@ class SqlAlchemySessionRepository:
         )
         await self._session.flush()
 
+    async def get_by_id(self, session_id: UUID) -> Session | None:
+        model = await self._session.get(SessionModel, session_id)
+        return map_session(model) if model is not None else None
+
     async def get_by_token_hash_for_update(
         self,
         token_hash: str,

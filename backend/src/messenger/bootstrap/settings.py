@@ -56,6 +56,9 @@ class AppSettings(BaseSettings):
     session_previous_token_grace_seconds: int = Field(default=60, gt=0)
     session_touch_interval_seconds: int = Field(default=300, gt=0)
     security_event_retention_seconds: int = Field(default=7_776_000, gt=0, le=31_536_000)
+    realtime_queue_size: int = Field(default=64, ge=1, le=1_024)
+    realtime_heartbeat_seconds: int = Field(default=25, ge=5, le=120)
+    realtime_revalidation_seconds: int = Field(default=30, ge=5, le=300)
 
     @field_validator("allowed_origins")
     @classmethod

@@ -103,3 +103,7 @@ class InvalidMessageEnvelopeError(ApplicationError):
 
 class MessageIdempotencyConflictError(ApplicationError):
     """A client message ID was reused for different immutable envelope data."""
+
+
+class RealtimeSubscriptionClosedError(ApplicationError):
+    """A realtime connection was removed because its bounded inbox closed."""

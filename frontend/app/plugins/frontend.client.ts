@@ -18,6 +18,7 @@ import { RevokeOtherSessions } from '../application/accounts/revoke-other-sessio
 import { SecurityReset } from '../application/accounts/security-reset'
 import { SetManagedUserActive } from '../application/accounts/set-user-active'
 import { UpdateProfile } from '../application/accounts/update-profile'
+import { RealtimeSyncService } from '../application/messaging/realtime-sync-service'
 import { LoadCurrentAccount } from '../application/auth/load-current-account'
 import { Login } from '../application/auth/login'
 import { Logout } from '../application/auth/logout'
@@ -26,6 +27,7 @@ import { BrowserClientIdGenerator } from '../infrastructure/browser/client-id-ge
 import { BrowserDeviceInfo } from '../infrastructure/browser/device-info'
 import { BrowserHaptics } from '../infrastructure/browser/haptics'
 import { BrowserLocation } from '../infrastructure/browser/browser-location'
+import { BrowserScheduler } from '../infrastructure/browser/scheduler'
 import { BrowserThemePreferences } from '../infrastructure/browser/theme-preferences'
 import { syntheticMessageCodec } from '../infrastructure/crypto/synthetic-message-codec'
 import { HttpAdminAccountsGateway } from '../infrastructure/http/admin-accounts-gateway'
@@ -33,6 +35,7 @@ import { HttpAccountSecurityGateway } from '../infrastructure/http/account-secur
 import { ApiClient } from '../infrastructure/http/api-client'
 import { HttpAuthGateway } from '../infrastructure/http/auth-gateway'
 import { HttpMessagingGateway } from '../infrastructure/http/messaging-gateway'
+import { BrowserRealtimeGateway } from '../infrastructure/realtime/browser-realtime-gateway'
 
 export default defineNuxtPlugin(() => {
   const apiClient = new ApiClient()
@@ -42,6 +45,8 @@ export default defineNuxtPlugin(() => {
   const messagingGateway = new HttpMessagingGateway(apiClient)
   const deviceInfo = new BrowserDeviceInfo()
   const haptics = new BrowserHaptics()
+  const realtimeGateway = new BrowserRealtimeGateway()
+  const scheduler = new BrowserScheduler()
   const themePreferences = new BrowserThemePreferences()
   const browserLocation = new BrowserLocation()
   const themePreference = themePreferences.load()
@@ -79,6 +84,7 @@ export default defineNuxtPlugin(() => {
         changePassword: new ChangePassword(accountSecurityGateway),
         securityReset: new SecurityReset(accountSecurityGateway),
         listSecurityEvents: new ListSecurityEvents(accountSecurityGateway),
+        createRealtimeSync: () => new RealtimeSyncService(realtimeGateway, scheduler),
       },
     },
   }

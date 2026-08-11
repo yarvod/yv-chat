@@ -47,6 +47,7 @@ from messenger.application.ports.identity import IdentityUnitOfWorkFactory
 from messenger.application.ports.messages import MessagingUnitOfWorkFactory
 from messenger.application.ports.password_reset_secrets import PasswordResetSecretService
 from messenger.application.ports.passwords import PasswordHasher
+from messenger.application.ports.realtime import RealtimeHub, RealtimeNotifier
 from messenger.application.ports.session_credentials import SessionCredentialService
 from messenger.application.ports.sync import SyncUnitOfWorkFactory
 from messenger.application.security_events.policy import SecurityEventPolicy
@@ -54,6 +55,7 @@ from messenger.application.sessions.authenticate import AuthenticateSession
 from messenger.application.sessions.login import Login
 from messenger.application.sessions.logout import Logout
 from messenger.application.sessions.policy import SessionPolicy
+from messenger.application.sessions.validate_active import ValidateActiveSession
 from messenger.application.sync import SyncPolicy
 from messenger.application.sync.list_events import ListSyncEvents
 from messenger.bootstrap.app import create_app
@@ -62,6 +64,7 @@ from messenger.domain.entities import Device, Session, User
 from messenger.infrastructure.auth.password_reset_secrets import (
     SecurePasswordResetSecretService,
 )
+from messenger.infrastructure.realtime import InMemoryRealtimeHub
 from tests.application.fakes import (
     FakeConversationUnitOfWorkFactory,
     FakeIdentityUnitOfWorkFactory,
@@ -120,6 +123,7 @@ class HttpTestProvider(Provider):
         self._passwords = passwords
         self._credentials = credentials
         self._activation_secrets = activation_secrets
+        self._realtime_hub = InMemoryRealtimeHub()
 
     @provide(scope=Scope.APP)
     def settings(self) -> AppSettings:
@@ -185,8 +189,17 @@ class HttpTestProvider(Provider):
     def event_policy(self) -> SecurityEventPolicy:
         return EVENT_POLICY
 
+    @provide(scope=Scope.APP)
+    def realtime_hub(self) -> RealtimeHub:
+        return self._realtime_hub
+
+    @provide(scope=Scope.APP)
+    def realtime_notifier(self) -> RealtimeNotifier:
+        return self._realtime_hub
+
     login = provide(Login, scope=Scope.REQUEST)
     authenticate_session = provide(AuthenticateSession, scope=Scope.REQUEST)
+    validate_active_session = provide(ValidateActiveSession, scope=Scope.REQUEST)
     logout = provide(Logout, scope=Scope.REQUEST)
     list_my_sessions = provide(ListMySessions, scope=Scope.REQUEST)
     list_security_events = provide(ListSecurityEvents, scope=Scope.REQUEST)

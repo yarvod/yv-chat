@@ -31,6 +31,7 @@ from messenger.application.ports.messages import MessageRepository, MessagingUni
 from messenger.application.ports.password_reset_secrets import GeneratedPasswordResetSecret
 from messenger.application.ports.session_credentials import GeneratedSessionCredential
 from messenger.application.ports.sync import SyncRepository, SyncUnitOfWork
+from messenger.application.realtime import RealtimeNotification
 from messenger.application.sync import PendingSyncEvent, SyncEvent
 from messenger.application.sync.events import SyncStreamPage
 from messenger.domain.entities import (
@@ -279,12 +280,26 @@ class FakeDeviceRepository:
         self._state.devices[device.id] = device
 
 
+@dataclass(slots=True)
+class RecordingRealtimeNotifier:
+    notifications: list[RealtimeNotification] = field(default_factory=list)
+    fail: bool = False
+
+    async def publish(self, notifications: tuple[RealtimeNotification, ...]) -> None:
+        if self.fail:
+            raise RuntimeError("simulated realtime failure")
+        self.notifications.extend(notifications)
+
+
 class FakeSessionRepository:
     def __init__(self, state: IdentityState) -> None:
         self._state = state
 
     async def add(self, session: Session) -> None:
         self._state.sessions[session.id] = session
+
+    async def get_by_id(self, session_id: UUID) -> Session | None:
+        return self._state.sessions.get(session_id)
 
     async def get_by_token_hash_for_update(
         self,

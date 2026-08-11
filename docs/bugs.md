@@ -22,6 +22,24 @@
 
 ## Resolved
 
+### BUG-013 — Скрытый haptics checkbox расширял mobile settings viewport
+
+- Статус: `verified`.
+- Найдено в: `WP-022`, in-app browser QA при viewport 390×844.
+- Severity: `medium`.
+- Условия воспроизведения: открыть `/settings` на ширине 390 px и сравнить
+  `documentElement.scrollWidth` с `clientWidth`.
+- Ожидаемое поведение: карточки и скрытые form controls не создают горизонтальный
+  scroll.
+- Фактическое поведение: общий `input { width: 100% }` применялся к абсолютно
+  позиционированному прозрачному checkbox внутри switch и расширял страницу до
+  395 px.
+- Причина: visually hidden native control не имел собственного bounded размера.
+- Исправление: input/textarea получили `min-width: 0`, а switch checkbox — явный
+  доступный 1×1 px box без pointer events.
+- Проверка: повторная production-build QA показала `scrollWidth === clientWidth
+  === 390`, zero overflowing elements и пустой warning log.
+
 ### BUG-012 — Invite fragment попадал в Vue Router warning как CSS selector
 
 - Статус: `verified`.
