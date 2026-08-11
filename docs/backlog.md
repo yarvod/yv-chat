@@ -190,6 +190,8 @@ versioned package и isolated Worker runtime; `WP-040` — server one-time deliv
 
 ### BL-014 — E2EE conversations, membership changes и rotation
 
+Статус: **completed** (`WP-047`, commits `91a6765`–`881f648`, production accepted).
+
 Результат: direct/group сообщения шифруются выбранным протоколом на каждом авторизованном устройстве.
 
 - [x] create/join group crypto state и sealed crash-safe checkpoint;
@@ -200,8 +202,12 @@ versioned package и isolated Worker runtime; `WP-040` — server one-time deliv
 - [x] durable explicit device revoke/logout routing, exact active roster send gate
   и последующий key rotation; admin-wide reset/deactivation использует тот же send
   gate, а унификация proactive notification остаётся hardening;
-- protocol-version compatibility/error UX;
-- удаление synthetic shortcuts до объявления secure milestone готовым.
+- [x] protocol-version compatibility/error UX с per-conversation
+  checking/pending/blocked/ready состояниями;
+- [x] synthetic v1 удалён из новых sends и оставлен только read-only для явно
+  помеченной исторической записи; downgrade v2→v1 отсутствует;
+- [x] production-like two-origin/device exchange + reload decrypt, PostgreSQL
+  migrations/integration suite, полный CI и immutable production rollout.
 
 ### BL-015 — Secure device-to-device history transfer
 

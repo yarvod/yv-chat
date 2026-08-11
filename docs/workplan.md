@@ -6,7 +6,7 @@
 
 ## WP-047 — MLS v2 conversation lifecycle и E2EE сообщений
 
-Статус: **in progress**
+Статус: **completed** (`881f648`, production run `31536319585`)
 Backlog: `BL-014`
 Цель: заменить synthetic v1 для новых сообщений на реальный MLS 1.0 lifecycle,
 где каждый device — отдельный leaf, server маршрутизирует только opaque records,
@@ -86,7 +86,7 @@ synthetic v1 payload виден серверу; положить туда file k
 - [x] Покрыть two-user/two-device, offline Welcome, reconnect, duplicate delivery,
   corrupted state/message, missing package и removed-device сценарии.
 - [x] Обновить ADR/architecture/backlog/bugs/README и release checklist.
-- [ ] Прогнать Rust/native+WASM, backend PostgreSQL, frontend browser/storage tests,
+- [x] Прогнать Rust/native+WASM, backend PostgreSQL, frontend browser/storage tests,
   полный CI, commit/push, production deploy и acceptance без E2EE overclaim.
 
 Текущий инкремент: полный локальный CI зелёный (210 backend tests, 20 Rust tests,
@@ -96,7 +96,10 @@ precache/build, compose/deploy/docs checks). Fresh PostgreSQL прошёл migra
 credentials или private MLS state. Production-like browser acceptance на двух
 чистых origin/device подтвердил provisioning, KeyPackage pool, двусторонний MLS v2
 exchange и reload decrypt; найденный lifecycle race `BUG-047` исправлен и повторно
-проверен. Остались commit/push и production deploy + acceptance без E2EE overclaim.
+проверен. GitHub Actions production run `31536319585` завершён успешно: immutable
+`sha-881f648…` backend/frontend healthy, Alembic `0018` head, public health,
+versioned JS/WASM MIME+CSP и отсутствие прежнего route-level 404 подтверждены.
+Host Nginx соседних `yoowee.ru`/`s3.yoowee.ru` не изменялся и оба vhost отвечают.
 
 ### Definition of Done
 

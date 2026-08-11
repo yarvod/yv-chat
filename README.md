@@ -10,12 +10,13 @@
 purpose-bound password recovery, authorized direct/group conversations,
 ordered/idempotent transport, cursor sync и usable local-first PWA. История,
 conversation index и offline outbox хранятся в bounded AES-GCM encrypted IndexedDB.
-[ADR-0001](docs/adr/0001-e2ee-mls.md) принял MLS 1.0; текущий `WP-047` реализовал
-server generation/Welcome coordination, Rust/OpenMLS group bootstrap/join и v2
-protect/unprotect через isolated Worker. Новые sends в текущей ветке не имеют
-downgrade на synthetic v1. Исторический synthetic v1 codec сохраняется только для
-чтения старых записей: он **не шифрует сообщения и не является E2EE**. Production
-rollout и multi-device acceptance остаются release gate и не объявлены пройденными.
+[ADR-0001](docs/adr/0001-e2ee-mls.md) принял MLS 1.0; `WP-047` внедрил и развернул
+server generation/Welcome coordination, Rust/OpenMLS group lifecycle и v2
+protect/unprotect через isolated browser Worker. Новые сообщения не имеют downgrade
+на synthetic v1; server хранит opaque MLS records, а private state остаётся в
+sealed device-local vault. Исторический synthetic v1 codec сохраняется только для
+чтения старых записей: он **не шифрует сообщения и не является E2EE**. Вложения пока
+не поддерживаются и являются текущим следующим vertical slice.
 
 Install assets адаптированы для Android circle/squircle и Apple Dock. После смены
 launcher icon уже установленную Android PWA может потребоваться удалить и установить
@@ -27,7 +28,7 @@ launcher icon уже установленную Android PWA может потр�
 
 - Backend: Python 3.13, FastAPI, Dishka, Pydantic, `uv`.
 - Frontend: Nuxt 4, Vue 3, TypeScript, PWA.
-- Client crypto core: Rust 1.91, OpenMLS 0.8.1, WebAssembly (release-gated).
+- Client crypto core: Rust 1.91, OpenMLS 0.8.1, WebAssembly.
 - Runtime: PostgreSQL, Docker Compose, Nginx.
 - Quality: Ruff, mypy, pytest, ESLint, Vitest, Nuxt typecheck.
 
@@ -85,9 +86,9 @@ crypto package перед frontend tests/build. Public device crypto anchor ре
 идемпотентно через `/api/v1/devices/current/crypto-identity`; atomic one-time
 KeyPackage inventory/replenishment/claim lifecycle уже реализован. Authenticated
 device provisioning использует exact consumer-side OpenMLS validation и пополняет
-bounded one-time package pool из того же sealed provider. MLS v2 transport включён
-в текущей ветке, но остаётся до production acceptance в `WP-047`. Backend-команды используют
-только `uv`; Python dependency
+bounded one-time package pool из того же sealed provider. MLS v2 transport прошёл
+two-device browser reload acceptance и production rollout в `WP-047`.
+Backend-команды используют только `uv`; Python dependency
 source of truth — `backend/pyproject.toml` и `backend/uv.lock`, Rust —
 `crypto/Cargo.toml` и `crypto/Cargo.lock`.
 
