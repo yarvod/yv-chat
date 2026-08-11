@@ -4,6 +4,12 @@ Production target: `chat.yoowee.ru` on `ru1`. The VPS also runs unrelated servic
 yv-chat is isolated as Docker Compose project `yv-chat` and must never manage
 containers, networks, volumes or vhosts belonging to another project.
 
+The chat vhost CSP must retain `script-src 'wasm-unsafe-eval'`: the browser
+OpenMLS adapter is WebAssembly. This narrowly enables WASM compilation and must
+not be replaced with the broader JavaScript `unsafe-eval`. Without it, public
+crypto assets still return HTTP 200 but device provisioning stops before the
+`PUT /api/v1/devices/current/crypto-identity` registration request.
+
 ## Topology
 
 ```text

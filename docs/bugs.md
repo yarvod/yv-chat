@@ -4,6 +4,25 @@
 
 ## Active
 
+### BUG-040 — CSP блокировал OpenMLS WASM до регистрации устройства
+
+- Статус: `fixed`, ожидает retest affected device.
+- Найдено в: production после `WP-045`.
+- Severity: `high`; все новые устройства оставались без crypto identity.
+- Симптом: после каждого открытия PWA отображалось «Криптомодуль этого устройства
+  не готов», а Network показывал только повторяющийся
+  `GET /api/v1/devices/current/crypto-identity` → `404`.
+- Причина: `404` корректно запускал первичное provisioning, но production CSP не
+  содержал `script-src 'wasm-unsafe-eval'`. Браузер загружал Worker, JS glue и WASM
+  с HTTP 200, затем запрещал компиляцию WebAssembly; поэтому локальный sealed state
+  не создавался и обязательный `PUT` регистрации не выполнялся.
+- Исправление: chat-only host Nginx CSP разрешает узкий `'wasm-unsafe-eval'`,
+  сохраняя запрет более широкого `'unsafe-eval'`; deploy-check фиксирует оба
+  инварианта. Соседние vhost `yoowee.ru` и `s3.yoowee.ru` не меняются.
+- Приёмка: после применения vhost и полного перезапуска PWA один первоначальный
+  `GET 404` должен сопровождаться успешным `PUT 200`; следующие запуски получают
+  `GET 200`, а криптомодуль переходит в `ready`.
+
 ### BUG-039 — Device crypto warning не объясняет причину и безопасное восстановление
 
 - Статус: `fixed`, ожидает user retest конкретного device.
