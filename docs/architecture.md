@@ -583,9 +583,27 @@ plaintext exists only on authorized client devices
 
 Backend хранит ciphertext, public protocol data, IDs/timestamps/membership и минимальную metadata. Он не хранит plaintext, decrypted attachments, message keys или device private identity keys и не имеет `decrypt_message()` для пользовательского content.
 
-Crypto protocol не изобретается. До реализации создаётся ADR/threat model с выбранным зрелым protocol/implementation, device enrollment, direct/group establishment, membership removal, recovery, rotation, metadata leakage, persistence и version upgrades. Предпочтительное исследование — MLS/OpenMLS + WASM, но выбор принимается только после review.
+Protocol decision принят в [ADR-0001](adr/0001-e2ee-mls.md): MLS 1.0 по RFC
+9420, один independent MLS client на device и один MLS group на conversation,
+включая direct. Выбранный ciphersuite — mandatory-to-implement
+`MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519`; TreeKEM, HPKE, signatures,
+ratchets и key schedule не реализуются project code. ADR фиксирует AS/DS threat
+model, metadata leakage, KeyPackage/Welcome lifecycle, v2 framing, multi-device,
+recovery и provider release gates.
 
-UI вызывает intent-level crypto adapter. Plaintext существует в RAM только пока нужен. Persistent local archive дополнительно шифруется device-local storage key.
+Protocol accepted не означает, что текущий transport стал E2EE. OpenMLS core +
+minimal Rust/WASM adapter является implementation path только после KAT/interop,
+browser persistence/corruption, license/dependency, CSP/supply-chain и independent
+binding review. Upstream experimental WASM binding не выдаётся за production-ready.
+До выполнения `BL-013/014` synthetic protocol v1 остаётся явно insecure и не имеет
+silent downgrade/fallback права.
+
+UI вызывает intent-level crypto adapter. Plaintext существует в RAM только пока
+нужен. Persistent local archive дополнительно шифруется device-local storage key.
+MLS/WebCrypto/IndexedDB находятся за dedicated adapter/worker boundary; worker и
+non-extractable wrapping key уменьшают accidental exposure, но не защищают от
+arbitrary same-origin XSS. Потеря всех device states не восстанавливается password
+reset: это visible identity reset и потеря недоступной server history.
 
 ## 11. Attachments и media storage
 

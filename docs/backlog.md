@@ -107,17 +107,6 @@ Implementation и desktop browser smoke завершены; physical 390px scree
 
 ## E2EE и multi-device history
 
-### BL-012 — E2EE protocol ADR и security review
-
-Результат: до crypto-кода утверждён проверяемый зрелый протокол, приоритетно исследован MLS/OpenMLS + WASM.
-
-- device identity и trust model;
-- second-device enrollment, direct/group establishment;
-- membership removal, key rotation, recovery и compromise behavior;
-- metadata, видимые серверу, protocol framing/version upgrades;
-- browser/WASM persistence, test vectors и threat model;
-- отдельное review: никакой самодельной комбинации primitives.
-
 ### BL-013 — Frontend crypto adapter и device identity
 
 Результат: UI работает с intent-level crypto API, private material не выходит из изолированного слоя.
@@ -349,6 +338,18 @@ images проверены; все соседние `infra-*` containers сохр
 - решение о native wrapper только при подтверждённой необходимости.
 
 ## Completed
+
+### BL-012 — E2EE protocol ADR и security review
+
+[ADR-0001](adr/0001-e2ee-mls.md) принимает MLS 1.0/RFC 9420 для direct и group,
+отдельный MLS client на каждый device и MTI X25519/AES-128-GCM/SHA-256/Ed25519
+ciphersuite. Threat model разделяет client, recipient, Authentication Service,
+Delivery Service, storage, XSS и supply-chain adversaries; честно фиксирует metadata
+leakage и malicious-AS limitation. Описаны KeyPackage/Welcome, v1→v2 cutover/AAD,
+multi-device enrollment, membership/epoch reconciliation, recovery/persistence и
+fail-closed UX. OpenMLS core выбран только как gated Rust/WASM implementation path:
+его experimental bindings не считаются production-ready без pinned build,
+KAT/interop, browser/corruption, license/dependency и independent binding review.
 
 ### BL-010 — Delete-for-everyone и message tombstones
 

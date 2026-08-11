@@ -1,7 +1,7 @@
 .PHONY: dev down logs backend-install backend-dev backend-lint backend-format \
 	backend-typecheck backend-test frontend-install frontend-dev frontend-lint \
 	frontend-typecheck frontend-test frontend-build migrate migration-sql bootstrap-admin \
-	test ci compose-check deploy-check
+	test ci compose-check deploy-check docs-check
 
 dev:
 	@echo "Run 'make backend-dev' and 'make frontend-dev' in separate terminals."
@@ -86,4 +86,11 @@ deploy-check:
 	! grep -q 'StrictHostKeyChecking=no' .github/workflows/deploy.yml
 	! grep -Eq 'docker system prune|docker compose down|--remove-orphans' deploy/remote-deploy.sh deploy/bootstrap-server.sh
 
-ci: backend-lint backend-typecheck backend-test frontend-lint frontend-typecheck frontend-test frontend-build compose-check deploy-check
+docs-check:
+	test "$$(grep -c '^## WP-' docs/workplan.md)" -eq 1
+	grep -q 'Статус: \*\*accepted for protocol; implementation release-gated\*\*' docs/adr/0001-e2ee-mls.md
+	grep -q 'https://www.rfc-editor.org/rfc/rfc9420.html' docs/adr/0001-e2ee-mls.md
+	grep -q 'https://www.rfc-editor.org/rfc/rfc9750.html' docs/adr/0001-e2ee-mls.md
+	grep -q 'не шифрует сообщения и не является E2EE' README.md
+
+ci: backend-lint backend-typecheck backend-test frontend-lint frontend-typecheck frontend-test frontend-build compose-check deploy-check docs-check
