@@ -20,7 +20,16 @@ describe('auth shell', () => {
   it('bootstraps signed-out state and authenticates without exposing a credential', async () => {
     vi.spyOn(authService, 'current').mockRejectedValue(new ApiError(401, 'http', 'unauthorized'))
     const login = vi.spyOn(authService, 'login').mockResolvedValue(account)
-    const wrapper = mount(App)
+    const wrapper = mount(App, {
+      global: {
+        stubs: {
+          ChatWorkspace: {
+            props: ['user'],
+            template: '<section>{{ user.displayName }} @{{ user.username }}</section>',
+          },
+        },
+      },
+    })
     await flushPromises()
 
     expect(wrapper.get('h1').text()).toBe('yv-chat')
@@ -37,5 +46,18 @@ describe('auth shell', () => {
     expect(wrapper.text()).toContain('Alice')
     expect(wrapper.text()).toContain('@alice')
     expect(wrapper.html()).not.toContain('correct horse battery staple')
+  })
+
+  it('does not describe an HTTP rejection as a network outage', async () => {
+    vi.spyOn(authService, 'current').mockRejectedValue(new ApiError(403, 'http', 'origin rejected'))
+    const wrapper = mount(App, {
+      global: {
+        stubs: { ChatWorkspace: { template: '<section>workspace</section>' } },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Не удалось проверить сессию')
+    expect(wrapper.text()).not.toContain('Сервер недоступен')
   })
 })

@@ -9,20 +9,52 @@ export interface CurrentAccount {
   updatedAt: string
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function record(value: unknown): Record<string, unknown> {
+export function record(value: unknown): Record<string, unknown> {
   if (!isRecord(value)) {
     throw new ApiError(200, 'invalid-response', 'expected object')
   }
   return value
 }
 
-function stringField(value: Record<string, unknown>, name: string): string {
+export function stringField(value: Record<string, unknown>, name: string): string {
   const field = value[name]
   if (typeof field !== 'string' || field.length === 0) {
+    throw new ApiError(200, 'invalid-response', `invalid ${name}`)
+  }
+  return field
+}
+
+export function nullableStringField(value: Record<string, unknown>, name: string): string | null {
+  const field = value[name]
+  if (field !== null && typeof field !== 'string') {
+    throw new ApiError(200, 'invalid-response', `invalid ${name}`)
+  }
+  return field
+}
+
+export function integerField(value: Record<string, unknown>, name: string): number {
+  const field = value[name]
+  if (!Number.isSafeInteger(field) || Number(field) < 0) {
+    throw new ApiError(200, 'invalid-response', `invalid ${name}`)
+  }
+  return Number(field)
+}
+
+export function booleanField(value: Record<string, unknown>, name: string): boolean {
+  const field = value[name]
+  if (typeof field !== 'boolean') {
+    throw new ApiError(200, 'invalid-response', `invalid ${name}`)
+  }
+  return field
+}
+
+export function arrayField(value: Record<string, unknown>, name: string): unknown[] {
+  const field = value[name]
+  if (!Array.isArray(field)) {
     throw new ApiError(200, 'invalid-response', `invalid ${name}`)
   }
   return field

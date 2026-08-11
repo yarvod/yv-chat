@@ -13,6 +13,7 @@ from messenger.application.accounts.activate import ActivateAccount
 from messenger.application.accounts.change_password import ChangeCurrentPassword
 from messenger.application.accounts.get_current import GetCurrentAccount
 from messenger.application.accounts.invite import CreateUserInvitation
+from messenger.application.accounts.list_directory import ListUserDirectory
 from messenger.application.accounts.list_users import ListManagedUsers
 from messenger.application.accounts.reissue_activation import ReissueActivation
 from messenger.application.accounts.security_reset import SecurityReset
@@ -179,6 +180,7 @@ class HttpTestProvider(Provider):
     revoke_other_sessions = provide(RevokeOtherSessions, scope=Scope.REQUEST)
     activate_account = provide(ActivateAccount, scope=Scope.REQUEST)
     create_user_invitation = provide(CreateUserInvitation, scope=Scope.REQUEST)
+    list_user_directory = provide(ListUserDirectory, scope=Scope.REQUEST)
     list_managed_users = provide(ListManagedUsers, scope=Scope.REQUEST)
     reissue_activation = provide(ReissueActivation, scope=Scope.REQUEST)
     update_managed_user = provide(UpdateManagedUser, scope=Scope.REQUEST)

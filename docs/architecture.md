@@ -233,6 +233,20 @@ API adapter всегда использует относительный `/api/v
 
 Auth composable моделирует только конечные состояния `booting`, `signed-out`, `submitting`, `authenticated`, `offline`. `401` означает signed-out/revoked credential, network failure даёт retry без ложного logout, а logout очищает client state даже при потере соединения. Следующие conversation/sync services используют тот же transport и собственные typed parsers вместо raw `fetch` в components.
 
+Messaging UI разделён на typed transport parsers/services, `useMessenger` orchestration и небольшие chat components. Authenticated `GET /api/v1/users` проходит через отдельный `ListUserDirectory` use case и `UserRepository.list_active`; наружу выходят только `user_id`, `username`, `display_name`. SQLAlchemy, admin status, activation/password/session fields не пересекают boundary.
+
+Frontend initial catch-up использует race-free порядок:
+
+```text
+capture stream cursor baseline
+→ fetch directory/conversations/active timeline snapshot
+→ poll events strictly after baseline
+```
+
+Событие, появившееся до baseline, уже покрывается последующим snapshot; событие после baseline будет применено poll. `reset_required` аналогично фиксирует server cursor до full resource reload. Timeline объединяет messages по stable ID и сортирует только по authoritative server `sequence`.
+
+До crypto ADR доступен только development/MVP synthetic codec protocol v1: UTF-8 payload кодируется base64 для opaque transport compatibility, но это **не шифрование и не E2EE**. Boundary уже имеет `MessageCodec.encode/decode`, UI показывает постоянное предупреждение, persistent plaintext отсутствует. Этот adapter удаляется при `BL-012`–`BL-014`; production secure milestone не может быть объявлен с ним.
+
 ## 7. Identity, devices и sessions
 
 `User` и `Device` — разные сущности. Один пользователь имеет несколько browser installations/physical devices. Device-specific state включает session, crypto identity, push subscription и last-seen metadata.

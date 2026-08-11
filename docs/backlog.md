@@ -124,16 +124,6 @@
 
 ## Local-first PWA
 
-### BL-021 — Conversations и messaging UI
-
-Результат: usable direct/group chat поверх application services, не смешивающий UI, crypto и persistence.
-
-- conversation list, message timeline, composer, reply/attachment states;
-- pagination и stable sequence rendering;
-- unread/read indicators, typing/presence как best effort;
-- accessibility, mobile layout и reconnect states;
-- component tests критичных interactions.
-
 ### BL-022 — IndexedDB encrypted local archive
 
 Результат: startup сначала показывает локальную историю, затем применяет sync delta.
@@ -290,6 +280,10 @@
 - решение о native wrapper только при подтверждённой необходимости.
 
 ## Completed
+
+### BL-021 — Conversations и messaging UI
+
+Authenticated PWA показывает active-user directory, direct/group conversation list, server-sequence timeline и idempotent composer. Runtime parsers отделяют untrusted transport DTO, services инкапсулируют API, `useMessenger` координирует snapshot/cursor polling/reset, а небольшие Vue-компоненты отвечают только за interaction/rendering. Initial sync фиксирует baseline cursor до resource snapshot, исключая lost-event race. Temporary protocol v1 codec изолирован, явно помечен non-E2EE и не сохраняет локальный plaintext; secure milestone остаётся `BL-012`–`BL-014`.
 
 ### BL-020 — Frontend API/service foundation и auth UI
 

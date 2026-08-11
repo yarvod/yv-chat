@@ -5,6 +5,7 @@ from messenger.application.accounts.bootstrap_admin import BootstrapAdmin
 from messenger.application.accounts.change_password import ChangeCurrentPassword
 from messenger.application.accounts.get_current import GetCurrentAccount
 from messenger.application.accounts.invite import CreateUserInvitation
+from messenger.application.accounts.list_directory import ListUserDirectory
 from messenger.application.accounts.list_users import ListManagedUsers
 from messenger.application.accounts.reissue_activation import ReissueActivation
 from messenger.application.accounts.security_reset import SecurityReset
@@ -49,6 +50,7 @@ async def test_production_graph_resolves_every_application_operation() -> None:
         ActivateAccount,
         BootstrapAdmin,
         CreateUserInvitation,
+        ListUserDirectory,
         ListManagedUsers,
         ReissueActivation,
         UpdateManagedUser,

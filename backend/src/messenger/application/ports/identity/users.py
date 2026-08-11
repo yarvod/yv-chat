@@ -8,6 +8,8 @@ from messenger.domain.entities import User
 
 
 class UserRepository(Protocol):
+    async def list_active(self) -> list[User]: ...
+
     async def list_managed(self) -> list[ManagedUserRecord]: ...
 
     async def get_managed_by_id(

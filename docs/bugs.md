@@ -6,7 +6,7 @@
 
 Активных известных дефектов нет.
 
-Последняя сверка: `WP-015` — новых открытых воспроизводимых дефектов нет.
+Последняя сверка: `WP-016` — новых открытых воспроизводимых дефектов нет.
 
 ## Формат записи
 
@@ -23,6 +23,30 @@
 - Проверка: тест или команда, подтверждающая fix.
 
 ## Resolved
+
+### BUG-008 — Frontend называл любой неожиданный HTTP error потерей сети
+
+- Статус: `verified`.
+- Найдено в: `WP-016`, browser smoke с rejected Origin.
+- Severity: `medium`.
+- Условия воспроизведения: auth endpoint возвращает 403 или malformed response вместо network exception.
+- Ожидаемое поведение: offline UX показывается только при `ApiError.kind=network`; HTTP rejection получает нейтральную retry/error формулировку.
+- Фактическое поведение: все ошибки кроме 401 переводили auth state в `offline` и вводили пользователя в заблуждение.
+- Причина: первоначальный auth error mapper различал только unauthorized и общий fallback.
+- Исправление: network, 401 и прочие HTTP/invalid-response outcomes отображаются раздельно без раскрытия server detail.
+- Проверка: Vitest воспроизводит 403 и подтверждает отсутствие сообщения «Сервер недоступен».
+
+### BUG-007 — Frontend bootstrap мог пропустить sync event между snapshot и cursor
+
+- Статус: `verified`.
+- Найдено в: `WP-016`, test initial snapshot/cursor ordering.
+- Severity: `high`.
+- Условия воспроизведения: resource list завершается, затем другой device создаёт сообщение, после чего frontend запрашивает stream cursor и принимает его без применения события.
+- Ожидаемое поведение: любое событие либо уже входит в snapshot, либо приходит последующим cursor catch-up.
+- Фактическое поведение: первоначальный порядок `snapshot → current cursor` создавал окно для безвозвратно пропущенного события.
+- Причина: cursor использовался как отметка после загрузки ресурсов, а не как baseline до snapshot.
+- Исправление: startup сначала фиксирует stream cursor, затем получает resource snapshot и poll выполняет catch-up строго после baseline; reset также фиксирует cursor до полного reload.
+- Проверка: Vitest проверяет порядок вызовов и получение `message_created` с cursor после baseline.
 
 ### BUG-006 — Sync events одного пользователя могли менять причинный порядок
 

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 
+import ChatWorkspace from './components/chat/ChatWorkspace.vue'
 import { useAuth } from './composables/useAuth'
 
 const auth = useAuth()
@@ -115,41 +116,11 @@ async function submitLogin(): Promise<void> {
       </form>
     </section>
 
-    <section
-      v-else
-      class="messenger-shell"
-    >
-      <aside class="sidebar">
-        <div class="brand-row">
-          <span class="brand-mark small">Y</span>
-          <strong>yv-chat</strong>
-        </div>
-        <div class="empty-conversations">
-          <span class="empty-icon">◎</span>
-          <h2>Диалоги появятся здесь</h2>
-          <p>Messaging UI подключается следующим этапом.</p>
-        </div>
-        <footer class="account-row">
-          <span class="avatar">{{ auth.state.user?.displayName.slice(0, 1).toUpperCase() }}</span>
-          <span>
-            <strong>{{ auth.state.user?.displayName }}</strong>
-            <small>@{{ auth.state.user?.username }}</small>
-          </span>
-          <button
-            class="icon-button"
-            type="button"
-            aria-label="Выйти"
-            @click="auth.logout"
-          >
-            ↗
-          </button>
-        </footer>
-      </aside>
-      <div class="conversation-placeholder">
-        <span class="brand-mark large">Y</span>
-        <h2>Приватное пространство готово</h2>
-        <p>Сессия защищена HttpOnly cookie. Credential недоступен JavaScript.</p>
-      </div>
-    </section>
+    <ChatWorkspace
+      v-else-if="auth.state.user"
+      :user="auth.state.user"
+      @logout="auth.logout"
+      @session-expired="auth.sessionExpired"
+    />
   </main>
 </template>

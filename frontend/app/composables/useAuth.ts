@@ -21,8 +21,15 @@ function fail(error: unknown, loginAttempt = false): void {
     state.message = loginAttempt ? 'Неверное имя пользователя или пароль.' : 'Сессия завершена.'
     return
   }
-  state.phase = 'offline'
-  state.message = 'Сервер недоступен. Проверьте соединение и повторите попытку.'
+  if (error instanceof ApiError && error.kind === 'network') {
+    state.phase = 'offline'
+    state.message = 'Сервер недоступен. Проверьте соединение и повторите попытку.'
+    return
+  }
+  state.phase = 'signed-out'
+  state.message = loginAttempt
+    ? 'Не удалось выполнить вход. Повторите попытку.'
+    : 'Не удалось проверить сессию. Обновите страницу.'
 }
 
 export function useAuth() {
@@ -58,6 +65,11 @@ export function useAuth() {
         state.phase = 'signed-out'
         state.message = null
       }
+    },
+    sessionExpired(): void {
+      state.user = null
+      state.phase = 'signed-out'
+      state.message = 'Сессия завершена.'
     },
   }
 }

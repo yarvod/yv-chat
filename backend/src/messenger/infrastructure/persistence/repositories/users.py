@@ -17,6 +17,16 @@ class SqlAlchemyUserRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
+    async def list_active(self) -> list[User]:
+        models = (
+            await self._session.scalars(
+                select(UserModel)
+                .where(UserModel.is_active.is_(True))
+                .order_by(UserModel.username, UserModel.id)
+            )
+        ).all()
+        return [map_user(model) for model in models]
+
     async def list_managed(self) -> list[ManagedUserRecord]:
         models = (
             await self._session.scalars(

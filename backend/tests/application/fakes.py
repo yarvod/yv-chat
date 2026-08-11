@@ -62,6 +62,12 @@ class FakeUserRepository:
     def __init__(self, state: IdentityState) -> None:
         self._state = state
 
+    async def list_active(self) -> list[User]:
+        return sorted(
+            (user for user in self._state.users.values() if user.is_active),
+            key=lambda user: (user.username, user.id),
+        )
+
     async def list_managed(self) -> list[ManagedUserRecord]:
         return [
             ManagedUserRecord(

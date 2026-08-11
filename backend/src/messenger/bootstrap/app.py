@@ -18,6 +18,7 @@ from messenger.presentation.http.health import router as health_router
 from messenger.presentation.http.me import router as me_router
 from messenger.presentation.http.messages import router as messages_router
 from messenger.presentation.http.sync import router as sync_router
+from messenger.presentation.http.users import router as users_router
 
 
 def create_app(
@@ -59,6 +60,7 @@ def create_app(
     application.include_router(devices_router)
     application.include_router(admin_users_router)
     application.include_router(me_router)
+    application.include_router(users_router)
     application.include_router(conversations_router)
     application.include_router(messages_router)
     application.include_router(sync_router)
