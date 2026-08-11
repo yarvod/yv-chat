@@ -4,8 +4,10 @@ import type {
   ConversationMember,
   ConversationRole,
   ConversationType,
+  DeleteMessageResult,
   DirectoryUser,
   OpaqueMessage,
+  MessageDeletionReason,
   SyncEvent,
   SyncEventType,
   SyncPage,
@@ -63,6 +65,17 @@ export function parseConversations(value: unknown): Conversation[] {
 
 export function parseOpaqueMessage(value: unknown): OpaqueMessage {
   const item = record(value)
+  const ciphertextBase64 = nullableStringField(item, 'ciphertext_base64')
+  const deletedAt = nullableStringField(item, 'deleted_at')
+  const deletionReason = item.deletion_reason === null
+    ? null
+    : enumField<MessageDeletionReason>(item, 'deletion_reason', ['manual', 'expired'])
+  if (
+    (ciphertextBase64 !== null && (deletionReason !== null || deletedAt !== null))
+    || (ciphertextBase64 === null && (deletionReason === null || deletedAt === null))
+  ) {
+    throw new ApplicationError(200, 'invalid-response', 'invalid message tombstone shape')
+  }
   return {
     messageId: stringField(item, 'message_id'),
     clientMessageId: stringField(item, 'client_message_id'),
@@ -72,7 +85,24 @@ export function parseOpaqueMessage(value: unknown): OpaqueMessage {
     protocolVersion: integerField(item, 'protocol_version'),
     sequence: integerField(item, 'sequence'),
     createdAt: stringField(item, 'created_at'),
-    ciphertextBase64: stringField(item, 'ciphertext_base64'),
+    expiresAt: stringField(item, 'expires_at'),
+    ciphertextBase64,
+    deletionReason,
+    deletedAt,
+  }
+}
+
+export function parseDeleteMessageResult(value: unknown): DeleteMessageResult {
+  const item = record(value)
+  return {
+    messageId: stringField(item, 'message_id'),
+    conversationId: stringField(item, 'conversation_id'),
+    sequence: integerField(item, 'sequence'),
+    deletionReason: enumField<MessageDeletionReason>(
+      item, 'deletion_reason', ['manual', 'expired'],
+    ),
+    deletedAt: stringField(item, 'deleted_at'),
+    advanced: booleanField(item, 'advanced'),
   }
 }
 

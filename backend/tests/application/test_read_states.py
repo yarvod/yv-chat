@@ -52,6 +52,7 @@ def read_state_fixture() -> tuple[IdentityState, User, User, User, Conversation]
                 sequence=1,
                 ciphertext=b"opaque-1",
                 now=NOW,
+                retention=timedelta(days=30),
             ),
             Message.create(
                 conversation_id=conversation.id,
@@ -62,6 +63,7 @@ def read_state_fixture() -> tuple[IdentityState, User, User, User, Conversation]
                 sequence=2,
                 ciphertext=b"opaque-2",
                 now=NOW + timedelta(seconds=1),
+                retention=timedelta(days=30),
             ),
         )
     }

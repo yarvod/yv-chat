@@ -35,7 +35,7 @@ unset GHCR_TOKEN
 
 export BACKEND_IMAGE FRONTEND_IMAGE IMAGE_TAG
 compose config --quiet
-compose pull postgres api frontend gateway
+compose pull postgres api cleanup frontend gateway
 compose up -d --wait postgres
 compose run --rm --no-deps api uv run alembic upgrade head
 
@@ -57,7 +57,7 @@ if ! compose up -d --wait --wait-timeout 120; then
     if test -n "$previous_tag"; then
         IMAGE_TAG="$previous_tag"
         export IMAGE_TAG
-        compose pull api frontend || true
+        compose pull api cleanup frontend || true
         compose up -d --wait --wait-timeout 120 || true
     fi
     exit 1

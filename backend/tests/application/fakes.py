@@ -68,6 +68,7 @@ class IdentityState:
     security_events: dict[UUID, SecurityEvent] = field(default_factory=dict)
     conversations: dict[UUID, Conversation] = field(default_factory=dict)
     messages: dict[UUID, Message] = field(default_factory=dict)
+    message_sequences: dict[UUID, int] = field(default_factory=dict)
     delivery_states: dict[tuple[UUID, UUID], ConversationDeliveryState] = field(
         default_factory=dict
     )
@@ -504,6 +505,16 @@ class FakeConversationRepository:
             None,
         )
 
+    async def get_by_ids(self, conversation_ids: set[UUID]) -> list[Conversation]:
+        return sorted(
+            (
+                conversation
+                for conversation_id, conversation in self._state.conversations.items()
+                if conversation_id in conversation_ids
+            ),
+            key=lambda conversation: conversation.id.int,
+        )
+
     async def list_active_for_user(self, user_id: UUID) -> list[Conversation]:
         return sorted(
             (
@@ -572,13 +583,30 @@ class FakeMessageRepository:
             None,
         )
 
+    async def get_by_id(
+        self,
+        message_id: UUID,
+        *,
+        for_update: bool = False,
+    ) -> Message | None:
+        del for_update
+        return self._state.messages.get(message_id)
+
     async def next_sequence(self, conversation_id: UUID) -> int:
-        sequences = [
-            message.sequence
-            for message in self._state.messages.values()
-            if message.conversation_id == conversation_id
-        ]
-        return max(sequences, default=0) + 1
+        current = self._state.message_sequences.get(
+            conversation_id,
+            max(
+                (
+                    message.sequence
+                    for message in self._state.messages.values()
+                    if message.conversation_id == conversation_id
+                ),
+                default=0,
+            ),
+        )
+        sequence = current + 1
+        self._state.message_sequences[conversation_id] = sequence
+        return sequence
 
     async def exists_at_sequence(
         self,
@@ -606,6 +634,46 @@ class FakeMessageRepository:
             ),
             key=lambda message: (message.sequence, message.id),
         )[:limit]
+
+    async def update(self, message: Message) -> None:
+        if message.id not in self._state.messages:
+            raise RuntimeError("locked message disappeared during update")
+        self._state.messages[message.id] = message
+
+    async def list_expired_active(
+        self,
+        *,
+        now: datetime,
+        limit: int,
+    ) -> list[Message]:
+        return sorted(
+            (
+                message
+                for message in self._state.messages.values()
+                if not message.is_deleted and message.expires_at <= now
+            ),
+            key=lambda message: (message.expires_at, message.id),
+        )[:limit]
+
+    async def purge_expired_tombstones(
+        self,
+        *,
+        now: datetime,
+        limit: int,
+    ) -> int:
+        expired = sorted(
+            (
+                message
+                for message in self._state.messages.values()
+                if message.is_deleted
+                and message.tombstone_expires_at is not None
+                and message.tombstone_expires_at <= now
+            ),
+            key=lambda message: (message.tombstone_expires_at, message.id),
+        )[:limit]
+        for message in expired:
+            del self._state.messages[message.id]
+        return len(expired)
 
 
 class FakeConversationReadStateRepository:
@@ -644,8 +712,14 @@ class FakeConversationReadStateRepository:
                 ConversationReadSummary(
                     conversation_id=conversation_id,
                     last_read_sequence=last_read,
-                    latest_sequence=max((message.sequence for message in messages), default=0),
-                    unread_count=sum(message.sequence > last_read for message in messages),
+                    latest_sequence=self._state.message_sequences.get(
+                        conversation_id,
+                        max((message.sequence for message in messages), default=0),
+                    ),
+                    unread_count=sum(
+                        message.sequence > last_read and not message.is_deleted
+                        for message in messages
+                    ),
                 )
             )
         return summaries

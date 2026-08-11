@@ -22,6 +22,25 @@
 
 ## Resolved
 
+### BUG-020 — Cleanup process пытался публиковать в изолированный realtime hub
+
+- Статус: `verified`.
+- Найдено в: `WP-028`, composition review отдельного cleanup process.
+- Severity: `medium`.
+- Условия воспроизведения: запустить TTL cleanup отдельным Compose service и создать
+  automatic tombstone.
+- Ожидаемое поведение: deletion гарантирован durable sync; realtime является только
+  best-effort ускорением внутри API process.
+- Фактическое поведение: первоначальный use case принимал process-local notifier и
+  после commit публиковал в hub, в котором нет browser connections.
+- Причина: ручной delete и automatic cleanup ошибочно получили одинаковый
+  post-commit delivery path, хотя работают в разных OS processes без Redis.
+- Исправление: cleanup пишет только atomic recipient sync events; reconnect и
+  30-second HTTP fallback доставляют deletion корректно. Manual HTTP delete сохраняет
+  post-commit realtime publish в API process.
+- Проверка: Dishka composition, application tests и production topology review;
+  frontend durable hint path остаётся cursor-based и идемпотентным.
+
 ### BUG-019 — Alembic revision не помещался в `alembic_version.version_num`
 
 - Статус: `verified`.

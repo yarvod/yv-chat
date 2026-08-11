@@ -9,8 +9,10 @@ from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from messenger.application.accounts.password_reset_policy import PasswordResetPolicy
+from messenger.application.messaging.retention import MessageRetentionPolicy
 from messenger.application.security_events.policy import SecurityEventPolicy
 from messenger.application.sessions.policy import SessionPolicy
+from messenger.application.sync.policy import SyncPolicy
 
 
 def missing_database_url() -> str:
@@ -56,6 +58,11 @@ class AppSettings(BaseSettings):
     session_previous_token_grace_seconds: int = Field(default=60, gt=0)
     session_touch_interval_seconds: int = Field(default=300, gt=0)
     security_event_retention_seconds: int = Field(default=7_776_000, gt=0, le=31_536_000)
+    sync_event_retention_seconds: int = Field(default=2_592_000, gt=0, le=31_536_000)
+    message_ciphertext_retention_seconds: int = Field(default=2_592_000, gt=0, le=31_536_000)
+    message_tombstone_retention_seconds: int = Field(default=7_776_000, gt=0, le=63_072_000)
+    message_cleanup_batch_size: int = Field(default=200, ge=1, le=1_000)
+    message_cleanup_interval_seconds: int = Field(default=300, ge=10, le=86_400)
     realtime_queue_size: int = Field(default=64, ge=1, le=1_024)
     realtime_heartbeat_seconds: int = Field(default=25, ge=5, le=120)
     realtime_revalidation_seconds: int = Field(default=30, ge=5, le=300)
@@ -94,6 +101,13 @@ class AppSettings(BaseSettings):
             not origin.startswith("https://") for origin in self.allowed_origins
         ):
             raise ValueError("production allowed origins must use HTTPS")
+        if self.message_tombstone_retention_seconds <= max(
+            self.message_ciphertext_retention_seconds,
+            self.sync_event_retention_seconds,
+        ):
+            raise ValueError(
+                "message tombstone retention must exceed ciphertext and sync retention"
+            )
         return self
 
     @property
@@ -127,6 +141,18 @@ class AppSettings(BaseSettings):
         """Build the bounded account security-event policy."""
         return SecurityEventPolicy(
             retention=timedelta(seconds=self.security_event_retention_seconds)
+        )
+
+    @property
+    def sync_policy(self) -> SyncPolicy:
+        return SyncPolicy(retention=timedelta(seconds=self.sync_event_retention_seconds))
+
+    @property
+    def message_retention_policy(self) -> MessageRetentionPolicy:
+        return MessageRetentionPolicy(
+            ciphertext_retention=timedelta(seconds=self.message_ciphertext_retention_seconds),
+            tombstone_retention=timedelta(seconds=self.message_tombstone_retention_seconds),
+            cleanup_batch_size=self.message_cleanup_batch_size,
         )
 
 

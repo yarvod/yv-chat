@@ -5,6 +5,7 @@ import type { HapticsPort } from '../app/application/ports/haptics'
 import type { ClientIdGenerator } from '../app/application/ports/client-id-generator'
 import { ListConversationReadStates } from '../app/application/messaging/list-conversation-read-states'
 import { MarkConversationRead } from '../app/application/messaging/mark-conversation-read'
+import { DeleteMessageForEveryone } from '../app/application/messaging/delete-message-for-everyone'
 import { ListParticipantDeliveryStates } from '../app/application/messaging/list-participant-delivery-states'
 import { MarkConversationDelivered } from '../app/application/messaging/mark-conversation-delivered'
 import type { ConversationReadStateGateway } from '../app/application/ports/conversation-read-state-gateway'
@@ -33,6 +34,9 @@ const message = {
   sequence: 1,
   createdAt: '2026-08-11T12:00:01Z',
   ciphertextBase64: 'aGVsbG8=',
+  expiresAt: '2026-09-10T12:00:01Z',
+  deletionReason: null,
+  deletedAt: null,
 }
 
 let gateway: MessagingGateway
@@ -78,6 +82,14 @@ beforeEach(() => {
     createGroup: vi.fn(),
     listMessages: vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([message]),
     sendMessage: vi.fn(),
+    deleteMessage: vi.fn().mockResolvedValue({
+      messageId: 'message-1',
+      conversationId: 'conversation-1',
+      sequence: 1,
+      deletionReason: 'manual',
+      deletedAt: '2026-08-11T12:01:00Z',
+      advanced: true,
+    }),
     listSync: vi.fn()
       .mockResolvedValueOnce({ events: [], nextCursor: 4, streamCursor: 4, hasMore: false, resetRequired: false })
       .mockResolvedValueOnce({
@@ -103,6 +115,7 @@ describe('messenger orchestration', () => {
       markConversationRead: new MarkConversationRead(readStateGateway),
       listParticipantDeliveryStates: new ListParticipantDeliveryStates(deliveryStateGateway),
       markConversationDelivered: new MarkConversationDelivered(deliveryStateGateway),
+      deleteMessageForEveryone: new DeleteMessageForEveryone(gateway),
       pageVisibility,
     })
 
@@ -117,6 +130,10 @@ describe('messenger orchestration', () => {
     expect(messenger.state.syncCursor).toBe(5)
     expect(readStateGateway.mark).toHaveBeenCalledWith('conversation-1', 1)
     expect(deliveryStateGateway.mark).toHaveBeenCalledWith('conversation-1', 1)
+    expect(await messenger.deleteMessage('message-1')).toBe(true)
+    expect(gateway.deleteMessage).toHaveBeenCalledWith('conversation-1', 'message-1')
+    expect(messenger.state.messages[0]?.ciphertextBase64).toBeNull()
+    expect(messenger.state.messages[0]?.deletionReason).toBe('manual')
   })
 
   it('does not mark a background timeline until the page becomes visible', async () => {
@@ -134,6 +151,7 @@ describe('messenger orchestration', () => {
       markConversationRead: new MarkConversationRead(readStateGateway),
       listParticipantDeliveryStates: new ListParticipantDeliveryStates(deliveryStateGateway),
       markConversationDelivered: new MarkConversationDelivered(deliveryStateGateway),
+      deleteMessageForEveryone: new DeleteMessageForEveryone(gateway),
       pageVisibility,
     })
 

@@ -13,12 +13,13 @@ from messenger.application.errors import (
 )
 from messenger.application.messaging.list_messages import ListMessages, ListMessagesQuery
 from messenger.application.messaging.policy import MessageEnvelopePolicy
+from messenger.application.messaging.retention import MessageRetentionPolicy
 from messenger.application.messaging.send_message import (
     SendOpaqueMessage,
     SendOpaqueMessageCommand,
 )
 from messenger.application.sync import SyncEventType, SyncPolicy
-from messenger.domain.entities import Conversation, Device, User
+from messenger.domain.entities import Conversation, Device, MessageDeletionReason, User
 from tests.application.fakes import (
     FakeMessagingUnitOfWorkFactory,
     FixedClock,
@@ -27,6 +28,7 @@ from tests.application.fakes import (
 )
 
 NOW = datetime(2026, 8, 11, 12, 0, tzinfo=UTC)
+RETENTION = MessageRetentionPolicy(timedelta(days=30), timedelta(days=90))
 
 
 def messaging_state() -> tuple[IdentityState, User, User, User, Device, Conversation]:
@@ -53,6 +55,7 @@ async def test_send_persists_only_opaque_envelope_metadata() -> None:
         unit_of_work=FakeMessagingUnitOfWorkFactory(state),
         clock=FixedClock(NOW + timedelta(seconds=1)),
         message_policy=MessageEnvelopePolicy(),
+        retention_policy=RETENTION,
         sync_policy=SyncPolicy(),
         realtime_notifier=RecordingRealtimeNotifier(),
     )
@@ -126,6 +129,7 @@ async def test_send_rejects_non_member_and_foreign_or_revoked_device() -> None:
         unit_of_work=FakeMessagingUnitOfWorkFactory(state),
         clock=FixedClock(NOW + timedelta(seconds=1)),
         message_policy=MessageEnvelopePolicy(),
+        retention_policy=RETENTION,
         sync_policy=SyncPolicy(),
         realtime_notifier=RecordingRealtimeNotifier(),
     )
@@ -168,12 +172,48 @@ async def test_send_rejects_non_member_and_foreign_or_revoked_device() -> None:
     assert state.messages == {}
 
 
+async def test_send_retry_remains_idempotent_after_ciphertext_is_scrubbed() -> None:
+    state, alice, _, _, device, conversation = messaging_state()
+    use_case = SendOpaqueMessage(
+        unit_of_work=FakeMessagingUnitOfWorkFactory(state),
+        clock=FixedClock(NOW),
+        message_policy=MessageEnvelopePolicy(),
+        retention_policy=RETENTION,
+        sync_policy=SyncPolicy(),
+        realtime_notifier=RecordingRealtimeNotifier(),
+    )
+    command = SendOpaqueMessageCommand(alice.id, device.id, conversation.id, uuid4(), 1, b"opaque")
+    sent = await use_case.execute(command)
+    stored = state.messages[sent.message_id]
+    state.messages[sent.message_id] = stored.to_tombstone(
+        now=NOW + timedelta(minutes=1),
+        tombstone_retention=timedelta(days=90),
+        reason=MessageDeletionReason.MANUAL,
+        deleted_by_user_id=alice.id,
+    )
+
+    assert await use_case.execute(command) == sent
+    with pytest.raises(MessageIdempotencyConflictError):
+        await use_case.execute(
+            SendOpaqueMessageCommand(
+                alice.id,
+                device.id,
+                conversation.id,
+                command.client_message_id,
+                1,
+                b"different",
+            )
+        )
+    assert len(state.messages) == 1
+
+
 async def test_send_rejects_unsupported_empty_and_oversized_envelopes() -> None:
     state, alice, _, _, device, conversation = messaging_state()
     use_case = SendOpaqueMessage(
         unit_of_work=FakeMessagingUnitOfWorkFactory(state),
         clock=FixedClock(NOW),
         message_policy=MessageEnvelopePolicy(max_ciphertext_bytes=8),
+        retention_policy=RETENTION,
         sync_policy=SyncPolicy(),
         realtime_notifier=RecordingRealtimeNotifier(),
     )
@@ -199,6 +239,7 @@ async def test_realtime_failure_does_not_rollback_committed_message() -> None:
         unit_of_work=FakeMessagingUnitOfWorkFactory(state),
         clock=FixedClock(NOW + timedelta(seconds=1)),
         message_policy=MessageEnvelopePolicy(),
+        retention_policy=RETENTION,
         sync_policy=SyncPolicy(),
         realtime_notifier=notifier,
     )

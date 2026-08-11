@@ -52,6 +52,7 @@ def delivery_fixture() -> tuple[
                 sequence=1,
                 ciphertext=b"one",
                 now=NOW,
+                retention=timedelta(days=30),
             ),
             Message.create(
                 conversation_id=conversation.id,
@@ -62,6 +63,7 @@ def delivery_fixture() -> tuple[
                 sequence=2,
                 ciphertext=b"two",
                 now=NOW + timedelta(seconds=1),
+                retention=timedelta(days=30),
             ),
         )
     }

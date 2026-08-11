@@ -1,12 +1,13 @@
 """SQLAlchemy opaque message repository adapter."""
 
+from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from messenger.domain.entities import Message
-from messenger.infrastructure.persistence.models import MessageModel
+from messenger.domain.entities import Message, MessageDeletionReason
+from messenger.infrastructure.persistence.models import ConversationModel, MessageModel
 
 
 class SqlAlchemyMessageRepository:
@@ -24,7 +25,15 @@ class SqlAlchemyMessageRepository:
                 protocol_version=message.protocol_version,
                 sequence=message.sequence,
                 ciphertext=message.ciphertext,
+                ciphertext_digest=message.ciphertext_digest,
                 created_at=message.created_at,
+                expires_at=message.expires_at,
+                deletion_reason=(
+                    message.deletion_reason.value if message.deletion_reason is not None else None
+                ),
+                deleted_at=message.deleted_at,
+                deleted_by_user_id=message.deleted_by_user_id,
+                tombstone_expires_at=message.tombstone_expires_at,
             )
         )
         await self._session.flush()
@@ -43,13 +52,28 @@ class SqlAlchemyMessageRepository:
         )
         return map_message(model) if model is not None else None
 
+    async def get_by_id(
+        self,
+        message_id: UUID,
+        *,
+        for_update: bool = False,
+    ) -> Message | None:
+        statement = select(MessageModel).where(MessageModel.id == message_id)
+        if for_update:
+            statement = statement.with_for_update()
+        model = await self._session.scalar(statement)
+        return map_message(model) if model is not None else None
+
     async def next_sequence(self, conversation_id: UUID) -> int:
-        maximum = await self._session.scalar(
-            select(func.max(MessageModel.sequence)).where(
-                MessageModel.conversation_id == conversation_id
-            )
+        sequence = await self._session.scalar(
+            update(ConversationModel)
+            .where(ConversationModel.id == conversation_id)
+            .values(last_message_sequence=ConversationModel.last_message_sequence + 1)
+            .returning(ConversationModel.last_message_sequence)
         )
-        return (maximum or 0) + 1
+        if sequence is None:
+            raise RuntimeError("conversation disappeared during sequence allocation")
+        return int(sequence)
 
     async def exists_at_sequence(
         self,
@@ -85,6 +109,61 @@ class SqlAlchemyMessageRepository:
         ).all()
         return [map_message(model) for model in models]
 
+    async def update(self, message: Message) -> None:
+        model = await self._session.get(MessageModel, message.id)
+        if model is None:
+            raise RuntimeError("locked message disappeared during update")
+        model.ciphertext = message.ciphertext
+        model.deletion_reason = (
+            message.deletion_reason.value if message.deletion_reason is not None else None
+        )
+        model.deleted_at = message.deleted_at
+        model.deleted_by_user_id = message.deleted_by_user_id
+        model.tombstone_expires_at = message.tombstone_expires_at
+        await self._session.flush()
+
+    async def list_expired_active(
+        self,
+        *,
+        now: datetime,
+        limit: int,
+    ) -> list[Message]:
+        models = (
+            await self._session.scalars(
+                select(MessageModel)
+                .where(MessageModel.deleted_at.is_(None), MessageModel.expires_at <= now)
+                .order_by(MessageModel.expires_at, MessageModel.id)
+                .limit(limit)
+                .with_for_update(skip_locked=True)
+            )
+        ).all()
+        return [map_message(model) for model in models]
+
+    async def purge_expired_tombstones(
+        self,
+        *,
+        now: datetime,
+        limit: int,
+    ) -> int:
+        message_ids = (
+            select(MessageModel.id)
+            .where(
+                MessageModel.deleted_at.is_not(None),
+                MessageModel.tombstone_expires_at <= now,
+            )
+            .order_by(MessageModel.tombstone_expires_at, MessageModel.id)
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+        )
+        deleted_ids = (
+            await self._session.scalars(
+                delete(MessageModel)
+                .where(MessageModel.id.in_(message_ids))
+                .returning(MessageModel.id)
+            )
+        ).all()
+        return len(deleted_ids)
+
 
 def map_message(model: MessageModel) -> Message:
     return Message(
@@ -96,5 +175,15 @@ def map_message(model: MessageModel) -> Message:
         protocol_version=model.protocol_version,
         sequence=model.sequence,
         ciphertext=model.ciphertext,
+        ciphertext_digest=model.ciphertext_digest,
         created_at=model.created_at,
+        expires_at=model.expires_at,
+        deletion_reason=(
+            MessageDeletionReason(model.deletion_reason)
+            if model.deletion_reason is not None
+            else None
+        ),
+        deleted_at=model.deleted_at,
+        deleted_by_user_id=model.deleted_by_user_id,
+        tombstone_expires_at=model.tombstone_expires_at,
     )

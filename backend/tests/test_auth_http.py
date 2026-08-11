@@ -37,12 +37,15 @@ from messenger.application.devices.list_sessions import ListMySessions
 from messenger.application.devices.rename import RenameMyDevice
 from messenger.application.devices.revoke import RevokeMyDevice
 from messenger.application.devices.revoke_others import RevokeOtherSessions
+from messenger.application.messaging.cleanup_messages import CleanupExpiredMessages
+from messenger.application.messaging.delete_message import DeleteMessageForEveryone
 from messenger.application.messaging.list_delivery_states import ListParticipantDeliveryStates
 from messenger.application.messaging.list_messages import ListMessages
 from messenger.application.messaging.list_read_states import ListConversationReadStates
 from messenger.application.messaging.mark_delivered import MarkConversationDelivered
 from messenger.application.messaging.mark_read import MarkConversationRead
 from messenger.application.messaging.policy import MessageEnvelopePolicy
+from messenger.application.messaging.retention import MessageRetentionPolicy
 from messenger.application.messaging.send_message import SendOpaqueMessage
 from messenger.application.ports.activation_secrets import ActivationSecretService
 from messenger.application.ports.clock import Clock
@@ -160,6 +163,10 @@ class HttpTestProvider(Provider):
         return SyncPolicy()
 
     @provide(scope=Scope.APP)
+    def message_retention_policy(self) -> MessageRetentionPolicy:
+        return MessageRetentionPolicy(timedelta(days=30), timedelta(days=90))
+
+    @provide(scope=Scope.APP)
     def clock(self) -> Clock:
         return self._clock
 
@@ -240,6 +247,8 @@ class HttpTestProvider(Provider):
         scope=Scope.REQUEST,
     )
     send_opaque_message = provide(SendOpaqueMessage, scope=Scope.REQUEST)
+    delete_message_for_everyone = provide(DeleteMessageForEveryone, scope=Scope.REQUEST)
+    cleanup_expired_messages = provide(CleanupExpiredMessages, scope=Scope.REQUEST)
     list_messages = provide(ListMessages, scope=Scope.REQUEST)
     list_conversation_read_states = provide(
         ListConversationReadStates,
@@ -525,6 +534,7 @@ async def test_read_state_transport_requires_csrf_and_returns_actual_unread_coun
             sequence=1,
             ciphertext=b"opaque",
             now=NOW,
+            retention=timedelta(days=30),
         )
         state.users[bob.id] = bob
         state.conversations[conversation.id] = conversation
@@ -580,6 +590,7 @@ async def test_delivery_state_transport_is_device_scoped_and_requires_csrf() -> 
             sequence=1,
             ciphertext=b"opaque",
             now=NOW,
+            retention=timedelta(days=30),
         )
         state.users[bob.id] = bob
         state.conversations[conversation.id] = conversation
@@ -660,3 +671,17 @@ async def test_production_rejects_insecure_origin() -> None:
         assert "HTTPS" in str(error)
     else:
         raise AssertionError("insecure production origin was accepted")
+
+
+def test_settings_require_tombstones_to_outlive_ciphertext_and_sync_events() -> None:
+    try:
+        AppSettings(
+            database_url=DATABASE_URL,
+            sync_event_retention_seconds=200,
+            message_ciphertext_retention_seconds=100,
+            message_tombstone_retention_seconds=200,
+        )
+    except ValueError as error:
+        assert "tombstone retention" in str(error)
+    else:
+        raise AssertionError("short tombstone retention was accepted")

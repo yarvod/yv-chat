@@ -19,6 +19,7 @@ import { SecurityReset } from '../application/accounts/security-reset'
 import { SetManagedUserActive } from '../application/accounts/set-user-active'
 import { UpdateProfile } from '../application/accounts/update-profile'
 import { RealtimeSyncService } from '../application/messaging/realtime-sync-service'
+import { DeleteMessageForEveryone } from '../application/messaging/delete-message-for-everyone'
 import { TypingIndicatorService } from '../application/messaging/typing-indicator-service'
 import { PresenceIndicatorService } from '../application/messaging/presence-indicator-service'
 import type { TypingTransport } from '../application/ports/typing-transport'
@@ -71,6 +72,7 @@ export default defineNuxtPlugin(() => {
     provide: {
       frontend: {
         messagingGateway,
+        deleteMessageForEveryone: new DeleteMessageForEveryone(messagingGateway),
         listConversationReadStates: new ListConversationReadStates(readStateGateway),
         markConversationRead: new MarkConversationRead(readStateGateway),
         listParticipantDeliveryStates: new ListParticipantDeliveryStates(deliveryStateGateway),

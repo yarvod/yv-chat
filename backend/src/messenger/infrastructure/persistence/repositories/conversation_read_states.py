@@ -70,14 +70,16 @@ class SqlAlchemyConversationReadStateRepository:
         if not conversation_ids:
             return []
         read_cursor = func.coalesce(ConversationReadStateModel.last_read_sequence, 0)
-        latest_sequence = func.coalesce(func.max(MessageModel.sequence), 0)
-        unread_count = func.count(MessageModel.id).filter(MessageModel.sequence > read_cursor)
+        unread_count = func.count(MessageModel.id).filter(
+            MessageModel.sequence > read_cursor,
+            MessageModel.deleted_at.is_(None),
+        )
         rows = (
             await self._session.execute(
                 select(
                     ConversationModel.id,
                     read_cursor,
-                    latest_sequence,
+                    ConversationModel.last_message_sequence,
                     unread_count,
                 )
                 .outerjoin(
@@ -92,6 +94,7 @@ class SqlAlchemyConversationReadStateRepository:
                 .group_by(
                     ConversationModel.id,
                     ConversationReadStateModel.last_read_sequence,
+                    ConversationModel.last_message_sequence,
                 )
                 .order_by(ConversationModel.id)
             )

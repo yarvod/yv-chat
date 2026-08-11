@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest'
 
 import { ApplicationError } from '../app/application/errors'
 import { syntheticMessageCodec } from '../app/infrastructure/crypto/synthetic-message-codec'
-import { parseConversation, parseSyncPage } from '../app/infrastructure/http/messaging-parsers'
+import {
+  parseConversation,
+  parseOpaqueMessage,
+  parseSyncPage,
+} from '../app/infrastructure/http/messaging-parsers'
 import { parseConversationReadStates } from '../app/infrastructure/http/conversation-read-state-parsers'
 import { parseParticipantDeliveryStates } from '../app/infrastructure/http/conversation-delivery-state-parsers'
 
@@ -61,6 +65,38 @@ describe('messaging boundaries', () => {
     const plaintext = 'Привет 👋'
     expect(syntheticMessageCodec.secure).toBe(false)
     expect(syntheticMessageCodec.decode(syntheticMessageCodec.encode(plaintext))).toBe(plaintext)
+  })
+
+  it('parses active envelopes and tombstones as disjoint shapes', () => {
+    const base = {
+      message_id: 'message-1',
+      client_message_id: 'client-1',
+      conversation_id: 'conversation-1',
+      sender_user_id: 'alice-id',
+      sender_device_id: 'device-1',
+      protocol_version: 1,
+      sequence: 1,
+      created_at: '2026-08-11T12:00:00Z',
+      expires_at: '2026-09-10T12:00:00Z',
+    }
+    expect(parseOpaqueMessage({
+      ...base,
+      ciphertext_base64: 'b3BhcXVl',
+      deletion_reason: null,
+      deleted_at: null,
+    }).ciphertextBase64).toBe('b3BhcXVl')
+    expect(parseOpaqueMessage({
+      ...base,
+      ciphertext_base64: null,
+      deletion_reason: 'expired',
+      deleted_at: '2026-09-10T12:00:00Z',
+    }).deletionReason).toBe('expired')
+    expect(() => parseOpaqueMessage({
+      ...base,
+      ciphertext_base64: null,
+      deletion_reason: null,
+      deleted_at: null,
+    })).toThrow(ApplicationError)
   })
 
   it('parses bounded read summaries and rejects negative counts', () => {

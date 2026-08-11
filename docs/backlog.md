@@ -91,16 +91,6 @@ Implementation и desktop browser smoke завершены; physical 390px scree
 - [x] best-effort multi-device online presence из active WebSockets (`WP-026`);
 - [x] deduplication и tests после reconnect.
 
-### BL-010 — Delete-for-everyone и tombstones
-
-Результат: удаление доходит до offline devices в пределах документированной политики.
-
-- authorized deletion use case и `message_deleted` sync event;
-- tombstone retention дольше обычного event catch-up window;
-- применение tombstone к локальному archive;
-- отсутствие ложного обещания уничтожить уже просмотренные/screenshotted copies;
-- retry/idempotency/expired-content tests.
-
 ### BL-011 — Authenticated WebSocket notifications
 
 Статус: **in progress** (`WP-023` foundation + `WP-024` durable read receipt;
@@ -181,6 +171,10 @@ Implementation и desktop browser smoke завершены; physical 390px scree
 - server не делает preview/transcoding и не получает keys/plaintext.
 
 ### BL-018 — Server TTL cleanup и tombstone retention
+
+Статус: **частично выполнено** (`WP-028` завершил message ciphertext TTL,
+tombstones, bounded PostgreSQL cleanup и monotonic sequence; media/per-type/forever
+policy остаются).
 
 Результат: expired ciphertext/media удаляются идемпотентно и безопасно повторяются.
 
@@ -355,6 +349,19 @@ images проверены; все соседние `infra-*` containers сохр
 - решение о native wrapper только при подтверждённой необходимости.
 
 ## Completed
+
+### BL-010 — Delete-for-everyone и message tombstones
+
+Sender и group owner/admin могут авторизованно удалить opaque message; direct peer,
+ordinary group member, outsider и foreign conversation/message binding закрыты
+negative tests. Первая операция scrubs ciphertext и атомарно создаёт durable
+recipient-specific `message_deleted`, duplicate retry — no-op. Automatic 30-day TTL
+использует тот же tombstone contract, 90-day tombstone window переживает ordinary
+sync retention, а отдельный conversation high-water не переиспользует sequence после
+physical purge. Frontend strict parser, use case/composable и confirm UI применяют
+manual/expired tombstones без decode `null` и без обещания remote erasure уже
+просмотренных копий. Production Compose/deploy включает изолированный low-memory
+cleanup process.
 
 ### BL-030 — Production images, GHCR и deployment workflow
 

@@ -13,6 +13,7 @@ from messenger.application.errors import (
     MessageIdempotencyConflictError,
 )
 from messenger.application.messaging.policy import MessageEnvelopePolicy
+from messenger.application.messaging.retention import MessageRetentionPolicy
 from messenger.application.ports.clock import Clock
 from messenger.application.ports.messages import MessagingUnitOfWorkFactory
 from messenger.application.ports.realtime import RealtimeNotifier
@@ -21,6 +22,7 @@ from messenger.application.realtime.publish import publish_best_effort
 from messenger.application.sync import SyncEventType, SyncPolicy
 from messenger.application.sync.emission import events_for_users
 from messenger.domain.entities import ConversationDeliveryState, ConversationReadState, Message
+from messenger.domain.entities.message import digest_ciphertext
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +45,7 @@ class SendOpaqueMessageResult:
     protocol_version: int
     sequence: int
     created_at: datetime
+    expires_at: datetime
 
 
 class SendOpaqueMessage:
@@ -52,12 +55,14 @@ class SendOpaqueMessage:
         unit_of_work: MessagingUnitOfWorkFactory,
         clock: Clock,
         message_policy: MessageEnvelopePolicy,
+        retention_policy: MessageRetentionPolicy,
         sync_policy: SyncPolicy,
         realtime_notifier: RealtimeNotifier,
     ) -> None:
         self._unit_of_work = unit_of_work
         self._clock = clock
         self._policy = message_policy
+        self._retention_policy = retention_policy
         self._sync_policy = sync_policy
         self._realtime_notifier = realtime_notifier
 
@@ -87,7 +92,7 @@ class SendOpaqueMessage:
                     existing.conversation_id != conversation.id
                     or existing.sender_user_id != command.actor_user_id
                     or existing.protocol_version != command.protocol_version
-                    or existing.ciphertext != command.ciphertext
+                    or existing.ciphertext_digest != digest_ciphertext(command.ciphertext)
                 ):
                     raise MessageIdempotencyConflictError(
                         "client message ID was reused for different envelope"
@@ -103,6 +108,7 @@ class SendOpaqueMessage:
                 sequence=sequence,
                 ciphertext=command.ciphertext,
                 now=self._clock.now(),
+                retention=self._retention_policy.ciphertext_retention,
             )
             await unit_of_work.messages.add(message)
             current_read_state = await unit_of_work.read_states.get(
@@ -187,4 +193,5 @@ def result_from(message: Message) -> SendOpaqueMessageResult:
         protocol_version=message.protocol_version,
         sequence=message.sequence,
         created_at=message.created_at,
+        expires_at=message.expires_at,
     )

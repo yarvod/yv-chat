@@ -15,6 +15,8 @@ const props = defineProps<{
   sending: boolean
   codec: MessageCodec
   sendMessage: (plaintext: string) => Promise<boolean>
+  deleteMessage: (messageId: string) => Promise<boolean>
+  deletingMessageId: string | null
   typingActorIds: readonly string[]
   onlineActorIds: readonly string[]
   deliveryStates: readonly ParticipantDeliveryState[]
@@ -23,6 +25,7 @@ const props = defineProps<{
 const emit = defineEmits<{ back: [] }>()
 
 const draft = ref('')
+const deleteCandidateId = ref<string | null>(null)
 const timeline = ref<HTMLElement | null>(null)
 
 const typingLabel = computed(() => {
@@ -58,7 +61,11 @@ function senderName(message: OpaqueMessage): string {
 }
 
 function deliveryLabel(message: OpaqueMessage): string | null {
-  if (message.senderUserId !== props.actorUserId || !props.conversation) return null
+  if (
+    message.senderUserId !== props.actorUserId
+    || message.deletedAt !== null
+    || !props.conversation
+  ) return null
   const recipients = props.conversation.members.filter(member => (
     member.userId !== props.actorUserId && member.leftAt === null
   ))
@@ -73,6 +80,20 @@ function deliveryLabel(message: OpaqueMessage): string | null {
     return delivered > 0 ? 'Доставлено' : 'Отправлено'
   }
   return delivered > 0 ? `Доставлено: ${delivered}/${recipients.length}` : 'Отправлено'
+}
+
+function canDelete(message: OpaqueMessage): boolean {
+  if (message.deletedAt !== null || !props.conversation) return false
+  if (message.senderUserId === props.actorUserId) return true
+  if (props.conversation.conversationType !== 'group') return false
+  const actor = props.conversation.members.find(member => (
+    member.userId === props.actorUserId && member.leftAt === null
+  ))
+  return actor?.role === 'owner' || actor?.role === 'admin'
+}
+
+async function confirmDelete(messageId: string): Promise<void> {
+  if (await props.deleteMessage(messageId)) deleteCandidateId.value = null
 }
 
 async function submit(): Promise<void> {
@@ -96,7 +117,10 @@ watch(
   () => props.conversation?.conversationId,
   (conversationId, previousConversationId) => {
     if (previousConversationId) props.setTyping(previousConversationId, false)
-    if (conversationId !== previousConversationId) draft.value = ''
+    if (conversationId !== previousConversationId) {
+      draft.value = ''
+      deleteCandidateId.value = null
+    }
   },
 )
 
@@ -136,7 +160,32 @@ onBeforeUnmount(() => {
         :class="{ own: message.senderUserId === actorUserId }"
       >
         <strong>{{ senderName(message) }}</strong>
-        <p>{{ codec.decode(message.ciphertextBase64) }}</p>
+        <p v-if="message.ciphertextBase64 !== null">
+          {{ codec.decode(message.ciphertextBase64) }}
+        </p>
+        <p v-else class="message-tombstone">
+          {{ message.deletionReason === 'expired' ? 'Срок хранения сообщения истёк' : 'Сообщение удалено для всех' }}
+        </p>
+        <div v-if="canDelete(message)" class="message-actions">
+          <template v-if="deleteCandidateId === message.messageId">
+            <span>Удалить без возможности восстановления?</span>
+            <button
+              type="button"
+              :disabled="deletingMessageId === message.messageId"
+              @click="confirmDelete(message.messageId)"
+            >
+              {{ deletingMessageId === message.messageId ? 'Удаляем…' : 'Да, удалить' }}
+            </button>
+            <button type="button" @click="deleteCandidateId = null">Отмена</button>
+          </template>
+          <button
+            v-else
+            type="button"
+            @click="deleteCandidateId = message.messageId"
+          >
+            Удалить у всех
+          </button>
+        </div>
         <small>
           #{{ message.sequence }} · {{ new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
           <template v-if="deliveryLabel(message)"> · {{ deliveryLabel(message) }}</template>

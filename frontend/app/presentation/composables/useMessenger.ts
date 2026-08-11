@@ -3,6 +3,7 @@ import { computed, reactive, readonly } from 'vue'
 import { ApplicationError } from '../../application/errors'
 import type { ClientIdGenerator } from '../../application/ports/client-id-generator'
 import type { ListConversationReadStates } from '../../application/messaging/list-conversation-read-states'
+import type { DeleteMessageForEveryone } from '../../application/messaging/delete-message-for-everyone'
 import type { ListParticipantDeliveryStates } from '../../application/messaging/list-participant-delivery-states'
 import type { MarkConversationDelivered } from '../../application/messaging/mark-conversation-delivered'
 import type { MarkConversationRead } from '../../application/messaging/mark-conversation-read'
@@ -31,6 +32,7 @@ interface MessengerState {
   syncCursor: number
   sending: boolean
   creating: boolean
+  deletingMessageId: string | null
   message: string | null
 }
 
@@ -47,6 +49,7 @@ export interface MessengerDependencies {
   markConversationRead: MarkConversationRead
   listParticipantDeliveryStates: ListParticipantDeliveryStates
   markConversationDelivered: MarkConversationDelivered
+  deleteMessageForEveryone: DeleteMessageForEveryone
   pageVisibility: PageVisibility
 }
 
@@ -66,6 +69,7 @@ export function useMessenger(
       markConversationRead: $frontend.markConversationRead,
       listParticipantDeliveryStates: $frontend.listParticipantDeliveryStates,
       markConversationDelivered: $frontend.markConversationDelivered,
+      deleteMessageForEveryone: $frontend.deleteMessageForEveryone,
       pageVisibility: $frontend.pageVisibility,
     }
   })()
@@ -78,6 +82,7 @@ export function useMessenger(
     markConversationRead,
     listParticipantDeliveryStates,
     markConversationDelivered,
+    deleteMessageForEveryone,
     pageVisibility,
   } = dependencies
   const state = reactive<MessengerState>({
@@ -91,6 +96,7 @@ export function useMessenger(
     syncCursor: 0,
     sending: false,
     creating: false,
+    deletingMessageId: null,
     message: null,
   })
   let polling = false
@@ -297,6 +303,33 @@ export function useMessenger(
     }
   }
 
+  async function deleteMessage(messageId: string): Promise<boolean> {
+    const conversationId = state.activeConversationId
+    if (!conversationId || !messageId || state.deletingMessageId !== null) return false
+    state.deletingMessageId = messageId
+    state.message = null
+    try {
+      const result = await deleteMessageForEveryone.execute(conversationId, messageId)
+      state.messages = state.messages.map(message => (
+        message.messageId === result.messageId
+          ? {
+              ...message,
+              ciphertextBase64: null,
+              deletionReason: result.deletionReason,
+              deletedAt: result.deletedAt,
+            }
+          : message
+      ))
+      state.phase = 'ready'
+      return true
+    } catch (error) {
+      fail(error)
+      return false
+    } finally {
+      state.deletingMessageId = null
+    }
+  }
+
   async function poll(): Promise<void> {
     if (polling || state.phase === 'loading') return
     polling = true
@@ -305,6 +338,7 @@ export function useMessenger(
       let hasMore = true
       let conversationsChanged = false
       let activeMessagesChanged = false
+      let activeTimelineReset = false
       let readStatesChanged = false
       let deliveryStatesChanged = false
       while (hasMore && pages < 10) {
@@ -325,6 +359,10 @@ export function useMessenger(
             event.eventType === 'message_created'
             && event.conversationId === state.activeConversationId
           )
+          activeTimelineReset ||= (
+            event.eventType === 'message_deleted'
+            && event.conversationId === state.activeConversationId
+          )
           readStatesChanged ||= event.eventType === 'message_created'
             || event.eventType === 'message_deleted'
             || event.eventType === 'read_receipt'
@@ -336,7 +374,10 @@ export function useMessenger(
         pages += 1
       }
       if (conversationsChanged) await reloadConversations()
-      if (activeMessagesChanged && state.activeConversationId) {
+      if (activeTimelineReset && state.activeConversationId) {
+        state.messages = []
+        await loadMessages(state.activeConversationId)
+      } else if (activeMessagesChanged && state.activeConversationId) {
         await loadMessages(state.activeConversationId, state.messages.at(-1)?.sequence ?? 0)
       }
       if (readStatesChanged) await reloadReadStates()
@@ -369,6 +410,7 @@ export function useMessenger(
     createDirect,
     createGroup,
     send,
+    deleteMessage,
     markActiveRead,
   }
 }

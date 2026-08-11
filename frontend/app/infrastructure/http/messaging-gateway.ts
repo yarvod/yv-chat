@@ -1,7 +1,20 @@
 import type { MessagingGateway } from '../../application/ports/messaging-gateway'
-import type { Conversation, DirectoryUser, OpaqueMessage, SyncPage } from '../../domain/messaging/models'
+import type {
+  Conversation,
+  DeleteMessageResult,
+  DirectoryUser,
+  OpaqueMessage,
+  SyncPage,
+} from '../../domain/messaging/models'
 import type { ApiClient } from './api-client'
-import { parseConversation, parseConversations, parseDirectory, parseMessages, parseSyncPage } from './messaging-parsers'
+import {
+  parseConversation,
+  parseConversations,
+  parseDeleteMessageResult,
+  parseDirectory,
+  parseMessages,
+  parseSyncPage,
+} from './messaging-parsers'
 
 export class HttpMessagingGateway implements MessagingGateway {
   constructor(private readonly apiClient: ApiClient) {}
@@ -36,6 +49,18 @@ export class HttpMessagingGateway implements MessagingGateway {
       method: 'POST',
       body: { client_message_id: clientMessageId, protocol_version: 1, ciphertext_base64: ciphertextBase64 },
     })
+  }
+
+  async deleteMessage(
+    conversationId: string,
+    messageId: string,
+  ): Promise<DeleteMessageResult> {
+    return parseDeleteMessageResult(
+      await this.apiClient.request(
+        `/api/v1/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}`,
+        { method: 'DELETE' },
+      ),
+    )
   }
 
   async listSync(after: number): Promise<SyncPage> {

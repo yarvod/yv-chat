@@ -10,6 +10,11 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from messenger.application.errors import ConversationNotFoundError
+from messenger.application.messaging.cleanup_messages import CleanupExpiredMessages
+from messenger.application.messaging.delete_message import (
+    DeleteMessageForEveryone,
+    DeleteMessageForEveryoneCommand,
+)
 from messenger.application.messaging.list_delivery_states import (
     ListParticipantDeliveryStates,
     ListParticipantDeliveryStatesQuery,
@@ -27,6 +32,7 @@ from messenger.application.messaging.mark_read import (
     MarkConversationReadCommand,
 )
 from messenger.application.messaging.policy import MessageEnvelopePolicy
+from messenger.application.messaging.retention import MessageRetentionPolicy
 from messenger.application.messaging.send_message import (
     SendOpaqueMessage,
     SendOpaqueMessageCommand,
@@ -150,6 +156,7 @@ async def run_flow(database_url: str) -> None:
             unit_of_work=SqlAlchemyMessagingUnitOfWorkFactory(session_factory),
             clock=FixedClock(NOW + timedelta(seconds=1)),
             message_policy=MessageEnvelopePolicy(),
+            retention_policy=MessageRetentionPolicy(timedelta(days=30), timedelta(days=90)),
             sync_policy=SyncPolicy(),
             realtime_notifier=RecordingRealtimeNotifier(),
         )
@@ -262,8 +269,76 @@ async def run_flow(database_url: str) -> None:
         bob_delivery = next(item for item in delivery_summaries if item.user_id == bob.id)
         assert bob_delivery.delivered_sequence == 3
 
+        delete_message = DeleteMessageForEveryone(
+            unit_of_work=read_state_factory,
+            clock=FixedClock(NOW + timedelta(seconds=4)),
+            retention_policy=MessageRetentionPolicy(timedelta(days=30), timedelta(days=90)),
+            sync_policy=SyncPolicy(),
+            realtime_notifier=RecordingRealtimeNotifier(),
+        )
+        deleted = await delete_message.execute(
+            DeleteMessageForEveryoneCommand(alice.id, conversation.id, result.message_id)
+        )
+        duplicate_delete = await delete_message.execute(
+            DeleteMessageForEveryoneCommand(alice.id, conversation.id, result.message_id)
+        )
+        assert deleted.advanced is True
+        assert duplicate_delete.advanced is False
+
+        cleanup = CleanupExpiredMessages(
+            unit_of_work=read_state_factory,
+            clock=FixedClock(NOW + timedelta(days=31)),
+            retention_policy=MessageRetentionPolicy(timedelta(days=30), timedelta(days=90)),
+            sync_policy=SyncPolicy(),
+        )
+        expired = await cleanup.execute()
+        duplicate_cleanup = await cleanup.execute()
+        assert expired.expired_messages == 2
+        assert expired.purged_tombstones == 0
+        assert duplicate_cleanup.expired_messages == 0
+
         async with session_factory() as session:
-            stored = await session.get(MessageModel, result.message_id)
+            tombstones = (
+                await session.scalars(select(MessageModel).order_by(MessageModel.sequence))
+            ).all()
+        assert len(tombstones) == 3
+        assert all(item.ciphertext is None for item in tombstones)
+        assert [item.deletion_reason for item in tombstones] == [
+            "manual",
+            "expired",
+            "expired",
+        ]
+
+        purge = CleanupExpiredMessages(
+            unit_of_work=read_state_factory,
+            clock=FixedClock(NOW + timedelta(days=121)),
+            retention_policy=MessageRetentionPolicy(timedelta(days=30), timedelta(days=90)),
+            sync_policy=SyncPolicy(),
+        )
+        purged = await purge.execute()
+        assert purged.purged_tombstones == 3
+        resumed_send = SendOpaqueMessage(
+            unit_of_work=read_state_factory,
+            clock=FixedClock(NOW + timedelta(days=122)),
+            message_policy=MessageEnvelopePolicy(),
+            retention_policy=MessageRetentionPolicy(timedelta(days=30), timedelta(days=90)),
+            sync_policy=SyncPolicy(),
+            realtime_notifier=RecordingRealtimeNotifier(),
+        )
+        resumed = await resumed_send.execute(
+            SendOpaqueMessageCommand(
+                alice.id,
+                alice_session.device_id,
+                conversation.id,
+                uuid4(),
+                1,
+                b"after-purge",
+            )
+        )
+        assert resumed.sequence == 4
+
+        async with session_factory() as session:
+            stored = await session.get(MessageModel, resumed.message_id)
             count = await session.scalar(select(func.count(MessageModel.id)))
             alice_event_count = await session.scalar(
                 select(func.count(SyncEventModel.event_id)).where(
@@ -283,15 +358,15 @@ async def run_flow(database_url: str) -> None:
                 (alice.id, conversation.id),
             )
         assert stored is not None
-        assert stored.ciphertext == ciphertext
+        assert stored.ciphertext == b"after-purge"
         assert stored.sender_user_id == alice.id
         assert stored.sender_device_id == alice_session.device_id
-        assert count == 3
+        assert count == 1
         assert {item.sequence for item in concurrent} == {2, 3}
-        assert alice_event_count == bob_event_count == 13
+        assert alice_event_count == bob_event_count == 19
         assert charlie_event_count == 0
         assert alice_read_state is not None
-        assert alice_read_state.last_read_sequence == 3
+        assert alice_read_state.last_read_sequence == 4
     finally:
         await reset_tables(session_factory)
         await engine.dispose()

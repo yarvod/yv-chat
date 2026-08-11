@@ -105,6 +105,10 @@ class MessageIdempotencyConflictError(ApplicationError):
     """A client message ID was reused for different immutable envelope data."""
 
 
+class MessageNotFoundError(ApplicationError):
+    """A message is absent or outside the authorized conversation."""
+
+
 class RealtimeSubscriptionClosedError(ApplicationError):
     """A realtime connection was removed because its bounded inbox closed."""
 

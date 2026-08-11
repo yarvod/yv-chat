@@ -437,17 +437,36 @@ conversation_id
 sender_user_id / sender_device_id
 protocol_version
 sequence
-ciphertext
-created_at / expires_at / deleted_at
+ciphertext | null
+ciphertext_digest
+created_at / expires_at
+deletion_reason / deleted_at / tombstone_expires_at
 ```
 
-Реализованный foundation пока содержит `id`, conversation/sender user/device, positive `protocol_version`, bounded opaque `ciphertext` и server `created_at`. HTTP принимает ciphertext как strict base64 encoding, декодирует в opaque bytes и не эхоит content в create response. Application повторно проверяет active conversation membership и active owned device текущей session; sender user/device не принимаются как свободные client claims. PostgreSQL ограничивает ciphertext 1 MiB, application policy — 64 KiB и transport version `1`.
+Active row содержит bounded opaque `ciphertext`; tombstone содержит ту же immutable
+routing/order metadata, но `ciphertext = NULL`. `ciphertext_digest` — SHA-256 только
+от opaque ciphertext: он нужен для проверки exact idempotent retry после scrub,
+никогда не выходит через HTTP/sync/logs и не является message key. HTTP принимает
+ciphertext как strict base64, декодирует в opaque bytes и не эхоит content в create
+response. Application повторно проверяет active conversation membership и active
+owned device текущей session; sender user/device не принимаются как свободные client
+claims. PostgreSQL ограничивает ciphertext 1 MiB, application policy — 64 KiB и
+transport version `1`.
 
 Это только non-E2EE transport foundation: version `1` не определяет криптографический протокол, backend ничего не шифрует/дешифрует и secure messaging milestone нельзя считать завершённым до отдельного protocol ADR и client crypto adapter.
 
 Колонки `text`, `plaintext`, `decrypted_body`, `message_key` запрещены.
 
-Message creation idempotent по client-generated UUID в scope sender device. Exact retry возвращает исходные `message_id/sequence`; повтор ключа с иным immutable envelope даёт conflict. Под row lock conversation backend выделяет следующий positive sequence, а unique `(conversation_id, sequence)` страхует invariant в БД. List API выдаёт bounded ascending page `sequence > after_sequence`; client timestamp не участвует. Message и recipient-specific sync events записываются одной транзакцией.
+Message creation idempotent по client-generated UUID в scope sender device. Exact retry возвращает исходные `message_id/sequence` даже после scrub, сравнивая retained digest; повтор ключа с иным immutable envelope даёт conflict. Под row lock conversation backend атомарно увеличивает `conversations.last_message_sequence`, а unique `(conversation_id, sequence)` страхует invariant в БД. Физическое удаление старого tombstone не уменьшает high-water и не разрешает reuse sequence. List API выдаёт bounded ascending page `sequence > after_sequence`; client timestamp не участвует. Message и recipient-specific sync events записываются одной транзакцией.
+
+Delete-for-everyone — отдельный application use case. Sender удаляет собственное
+сообщение; active group owner/admin может модерировать чужое. Direct peer и ordinary
+group member не могут удалить чужой ciphertext. Conversation блокируется до message,
+membership и message/conversation binding проверяются server-side, поэтому foreign
+message ID даёт not-found, а не existence oracle. Первая операция атомарно scrubs
+ciphertext, записывает manual tombstone и recipient-specific `message_deleted`;
+duplicate retry возвращает `advanced=false` без commit/event. Уже просмотренную,
+скопированную или экспортированную remote copy система уничтожить не обещает.
 
 PostgreSQL — source of truth для server-side sync state только в retention window. WebSocket — notification channel. После reconnect/sleep/lost events клиент выполняет cursor catch-up:
 
@@ -473,9 +492,9 @@ Shared read state хранится в `conversation_read_states` по ключу
 существующую server sequence и может только увеличиваться. `MarkConversationRead`
 сериализуется conversation row lock, atomic upsert защищён PK/check/FK и lower/equal
 retry является no-op без нового receipt. Batch repository одним set-based query
-возвращает `last_read_sequence`, фактический `latest_sequence` и count реально
-существующих message rows после cursor — без N+1 и без арифметики `latest - read`,
-которая сломалась бы после TTL gaps.
+возвращает `last_read_sequence`, persistent conversation high-water как
+`latest_sequence` и count только active ciphertext rows после cursor — без N+1 и без
+арифметики `latest - read`, которая сломалась бы после delete/TTL gaps.
 
 Frontend получает read summaries через отдельный typed gateway и application use
 cases. `useMessenger` помечает только active conversation, только до последней
@@ -598,7 +617,35 @@ Device-local archive не является безусловным backup: site d
 
 Local text retention может быть longer/forever. Media cache byte-bounded, LRU и имеет explicit pinned policy.
 
-Server TTL cleanup идемпотентно удаляет expired encrypted files/metadata/ciphertext и терпит missing files. `Delete for everyone` создаёт tombstone с достаточной catch-up retention. Backup retention не должна сохранять TTL-deleted content бесконечно.
+Message retention задаётся typed bootstrap settings. Текущие defaults:
+
+```text
+ciphertext TTL        30 days
+sync event retention  30 days
+tombstone retention   90 days (strictly greater than both values above)
+cleanup batch         200 rows
+cleanup cadence       5 minutes
+```
+
+`expires_at` вычисляется server-side при создании. Отдельный low-memory `cleanup`
+process из того же backend image сначала purges bounded expired tombstones, затем
+берёт bounded active expiry batch через `FOR UPDATE SKIP LOCKED`, scrubs ciphertext и
+атомарно пишет те же recipient-specific `message_deleted` events. Повторный или
+concurrent run безопасен; process пишет только structured counts без IDs/content.
+Automatic tombstone получает `deleted_at = expires_at`, поэтому retention считается
+от server expiry, а не от случайной задержки worker. Cleanup — отдельный process и не
+имеет общего in-memory WebSocket hub с API: он не симулирует realtime publish.
+Durable sync/reconnect и 30-секундный frontend fallback poll являются correctness
+path; WebSocket нужен только для уменьшения latency ручного удаления в API process.
+
+После tombstone retention row удаляется физически, но conversation high-water остаётся.
+В течение tombstone window full message resync возвращает deletion marker даже после
+истечения ordinary sync events. После этого новый device не получает более старую
+server history — она возможна только через будущий secure device-to-device transfer.
+Backup retention не должна сохранять TTL-deleted ciphertext бесконечно.
+
+Attachment/media TTL ещё не реализован: будущий cleanup должен идемпотентно удалять
+expired encrypted blobs и терпеть already-missing storage keys через `MediaStorage`.
 
 ## 13. PWA, realtime и Web Push
 

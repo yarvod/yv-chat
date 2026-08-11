@@ -130,6 +130,7 @@ def test_conversation_schema_enforces_direct_pair_and_membership_lifecycle() -> 
 
     assert {
         "ck_conversations_direct_pair_ordered",
+        "ck_conversations_last_message_sequence_non_negative",
         "ck_conversations_shape_matches_type",
         "ck_conversations_title_length",
     }.issubset(conversation_checks)
@@ -155,10 +156,26 @@ def test_message_schema_is_bounded_opaque_ciphertext_only() -> None:
     assert "ciphertext" in messages.columns
     assert {
         "ck_messages_ciphertext_size",
+        "ck_messages_ciphertext_digest_format",
+        "ck_messages_expires_after_created",
         "ck_messages_protocol_version_range",
+        "ck_messages_tombstone_shape",
     }.issubset(check_names)
+    assert messages.columns["ciphertext"].nullable is True
+    assert {
+        "ciphertext_digest",
+        "expires_at",
+        "deletion_reason",
+        "deleted_at",
+        "deleted_by_user_id",
+        "tombstone_expires_at",
+    }.issubset(messages.columns.keys())
     assert {"plaintext", "text", "decrypted_body", "message_key"}.isdisjoint(messages.columns)
-    assert "ix_messages_conversation_created" in {index.name for index in messages.indexes}
+    assert {
+        "ix_messages_conversation_created",
+        "ix_messages_expiry_active",
+        "ix_messages_tombstone_expiry",
+    }.issubset({index.name for index in messages.indexes})
 
 
 def test_sync_schema_has_per_user_cursor_and_opaque_routing_fields_only() -> None:

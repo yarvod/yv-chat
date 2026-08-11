@@ -76,6 +76,9 @@ deploy-check:
 	sh -n deploy/bootstrap-server.sh
 	grep -q '127.0.0.1:$${YV_CHAT_BIND_PORT:-18080}:80' compose.prod.yml
 	grep -q '172.30.242.10/32' compose.prod.yml
+	grep -q '^  cleanup:' compose.prod.yml
+	grep -q 'messenger.cleanup_messages' compose.prod.yml
+	grep -q 'compose pull postgres api cleanup frontend gateway' deploy/remote-deploy.sh
 	grep -q 'server_name chat.yoowee.ru' deploy/nginx/host-chat.http.conf
 	grep -q 'Strict-Transport-Security' deploy/nginx/host-chat.conf
 	grep -q 'proxy_pass http://127.0.0.1:18080' deploy/nginx/host-chat.conf

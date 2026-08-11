@@ -32,7 +32,21 @@ export interface OpaqueMessage {
   protocolVersion: number
   sequence: number
   createdAt: string
-  ciphertextBase64: string
+  expiresAt: string
+  ciphertextBase64: string | null
+  deletionReason: MessageDeletionReason | null
+  deletedAt: string | null
+}
+
+export type MessageDeletionReason = 'manual' | 'expired'
+
+export interface DeleteMessageResult {
+  messageId: string
+  conversationId: string
+  sequence: number
+  deletionReason: MessageDeletionReason
+  deletedAt: string
+  advanced: boolean
 }
 
 export interface ConversationReadState {
