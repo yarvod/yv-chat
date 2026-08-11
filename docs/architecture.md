@@ -748,8 +748,10 @@ ciphertext и vault record в response schema невозможны. Main-thread 
 request correlation, bounded timeout, sanitized error taxonomy и deterministic
 dispose. Composition root предоставляет один lazy authenticated
 `DeviceCryptoSession`: layout и messenger делят один Worker/runtime, concurrent
-initialize сходятся в один promise, а logout/device change детерминированно dispose-ит
-старый scope. Worker не стартует на public login/activation page.
+same-device initialize сходятся в один promise и не имеют права предварительно
+dispose-ить общий runtime; logout/unmount либо фактическая смена device binding
+детерминированно dispose-ят старый scope. Worker не стартует на public
+login/activation page.
 
 Runtime v6 также реализует intent-level bounded KeyPackage generation и
 create/join/rejoin/update/apply-commit/protect/unprotect. Каждая state-changing операция
@@ -773,8 +775,11 @@ IndexedDB, включая reload, concurrent provision и tamper. Отдельн
 smoke подтвердил production Worker asset, same-origin module/WASM fetch,
 non-extractable key structured clone, exact restore и revision `1 → 2`. Чистый
 Firefox smoke под production CSP отдельно подтвердил import, WASM compilation и
-OpenMLS bootstrap. Текущая ветка переключает новые sends на v2 без fallback, но
-production rollout остаётся закрыт до multi-device acceptance. Safari,
+OpenMLS bootstrap. Production-like browser acceptance дополнительно подтвердил два
+чистых origin/device, initial `GET 404 → PUT 200 → GET 200`, KeyPackage pool,
+двусторонний MLS v2 exchange и decrypt из encrypted cache после reload обоих
+devices. Текущая ветка переключает новые sends на v2 без fallback, но production
+rollout остаётся отдельным gate. Safari,
 storage-denial/update tests и MLS KAT/interop всё ещё обязательны.
 
 Backend registry хранит только public device anchors. `PUT/GET

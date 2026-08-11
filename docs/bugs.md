@@ -4,6 +4,26 @@
 
 ## Active
 
+### BUG-047 — Layout мог уничтожить MLS runtime во время cache-first восстановления
+
+- Статус: `verified` в production-like two-origin browser acceptance `WP-047`.
+- Severity: `critical`; live MLS v2 обмен работал, но после reload оба сообщения
+  отображались как «Защищённое сообщение недоступно на этом устройстве».
+- Условия воспроизведения: два чистых browser origin/device создают direct
+  conversation, обмениваются MLS v2 сообщениями, затем отправитель перезагружает
+  active conversation с encrypted local archive.
+- Причина: layout lifecycle и messenger startup одновременно владели одним
+  `DeviceCryptoSession`. Layout перед каждым same-device `initialize()` сначала
+  вызывал `dispose()`, поэтому мог остановить Worker между cache hydration и
+  `unprotectMessage`; два одинаковых `GET crypto-identity` в access-log подтвердили
+  конкурирующие initialization paths.
+- Исправление: same-account lifecycle переиспользует idempotent/single-flight
+  `DeviceCryptoSession.initialize`; dispose выполняется только при исчезновении
+  authenticated account либо unmount.
+- Проверка: два browser origin/device повторно показывают исходное и ответное MLS
+  v2 сообщение после reload; warning/console errors отсутствуют. Unit regression
+  требует отсутствие dispose перед same-account initialize.
+
 ### BUG-046 — Device roster мог измениться раньше создания следующей MLS generation
 
 - Статус: `fixed`, ожидает multi-device browser acceptance.

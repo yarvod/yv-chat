@@ -3,6 +3,7 @@ import { onBeforeUnmount, onMounted, reactive, readonly, watch, type ComputedRef
 import type { CurrentAccount } from '../../domain/accounts/account'
 import { ApplicationError } from '../../application/errors'
 import { DeviceCryptoError, type DeviceCryptoErrorCode } from '../../application/device-crypto/errors'
+import type { DeviceCryptoIdentityCommand } from '../../application/ports/device-crypto-gateway'
 
 export type DeviceCryptoLifecycleIssue =
   | DeviceCryptoErrorCode
@@ -13,6 +14,25 @@ export type DeviceCryptoLifecycleIssue =
 interface DeviceCryptoLifecycleState {
   status: 'idle' | 'initializing' | 'ready' | 'unavailable'
   issue: DeviceCryptoLifecycleIssue | null
+}
+
+export interface DeviceCryptoLifecycleSession {
+  initialize(command: DeviceCryptoIdentityCommand): Promise<unknown>
+  dispose(): Promise<void>
+}
+
+export async function synchronizeDeviceCryptoSession(
+  session: DeviceCryptoLifecycleSession,
+  current: CurrentAccount | null,
+): Promise<void> {
+  if (!current) {
+    await session.dispose()
+    return
+  }
+  await session.initialize({
+    userId: current.userId,
+    deviceId: current.deviceId,
+  })
 }
 
 export function deviceCryptoIssueMessage(issue: DeviceCryptoLifecycleIssue | null): string {
@@ -79,12 +99,13 @@ export function useDeviceCryptoLifecycle(user: ComputedRef<CurrentAccount | null
   async function initialize(): Promise<void> {
     const current = user.value
     const operation = ++generation
-    try {
-      await $frontend.deviceCryptoSession.dispose()
-    } catch {
-      // A failed Worker is replaced below; no private state leaves its boundary.
-    }
     if (!current) {
+      try {
+        await synchronizeDeviceCryptoSession($frontend.deviceCryptoSession, null)
+      } catch {
+        // Logout/unmount still clears the shared session reference even if a
+        // failed Worker cannot acknowledge disposal.
+      }
       state.status = 'idle'
       state.issue = null
       return
@@ -92,10 +113,7 @@ export function useDeviceCryptoLifecycle(user: ComputedRef<CurrentAccount | null
     state.status = 'initializing'
     state.issue = null
     try {
-      await $frontend.deviceCryptoSession.initialize({
-        userId: current.userId,
-        deviceId: current.deviceId,
-      })
+      await synchronizeDeviceCryptoSession($frontend.deviceCryptoSession, current)
       if (operation === generation) {
         state.status = 'ready'
         state.issue = null

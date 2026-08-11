@@ -85,14 +85,18 @@ synthetic v1 payload виден серверу; положить туда file k
   расхождении actual active-device roster с current MLS snapshot. Rename epoch не меняет.
 - [x] Покрыть two-user/two-device, offline Welcome, reconnect, duplicate delivery,
   corrupted state/message, missing package и removed-device сценарии.
-- [ ] Обновить ADR/architecture/backlog/bugs/README и release checklist.
+- [x] Обновить ADR/architecture/backlog/bugs/README и release checklist.
 - [ ] Прогнать Rust/native+WASM, backend PostgreSQL, frontend browser/storage tests,
   полный CI, commit/push, production deploy и acceptance без E2EE overclaim.
 
 Текущий инкремент: полный локальный CI зелёный (210 backend tests, 20 Rust tests,
-157 frontend tests, native+release WASM build, PWA precache/build, compose/deploy/docs
-checks). Production deploy остаётся закрыт до browser acceptance, PostgreSQL
-migration smoke и финального security/log review.
+159 frontend tests с regression BUG-047, native+release WASM build, PWA
+precache/build, compose/deploy/docs checks). Fresh PostgreSQL прошёл migrations
+`base → 0018` и integration suite. Финальный log/security review не нашёл plaintext,
+credentials или private MLS state. Production-like browser acceptance на двух
+чистых origin/device подтвердил provisioning, KeyPackage pool, двусторонний MLS v2
+exchange и reload decrypt; найденный lifecycle race `BUG-047` исправлен и повторно
+проверен. Остались commit/push и production deploy + acceptance без E2EE overclaim.
 
 ### Definition of Done
 
