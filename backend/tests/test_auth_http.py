@@ -13,9 +13,12 @@ from messenger.application.accounts.activate import ActivateAccount
 from messenger.application.accounts.change_password import ChangeCurrentPassword
 from messenger.application.accounts.get_current import GetCurrentAccount
 from messenger.application.accounts.invite import CreateUserInvitation
+from messenger.application.accounts.issue_password_reset import IssuePasswordReset
 from messenger.application.accounts.list_directory import ListUserDirectory
 from messenger.application.accounts.list_users import ListManagedUsers
+from messenger.application.accounts.password_reset_policy import PasswordResetPolicy
 from messenger.application.accounts.reissue_activation import ReissueActivation
+from messenger.application.accounts.reset_password import ResetPasswordWithToken
 from messenger.application.accounts.security_reset import SecurityReset
 from messenger.application.accounts.update_profile import UpdateCurrentProfile
 from messenger.application.accounts.update_user import UpdateManagedUser
@@ -42,6 +45,7 @@ from messenger.application.ports.clock import Clock
 from messenger.application.ports.conversations import ConversationUnitOfWorkFactory
 from messenger.application.ports.identity import IdentityUnitOfWorkFactory
 from messenger.application.ports.messages import MessagingUnitOfWorkFactory
+from messenger.application.ports.password_reset_secrets import PasswordResetSecretService
 from messenger.application.ports.passwords import PasswordHasher
 from messenger.application.ports.session_credentials import SessionCredentialService
 from messenger.application.ports.sync import SyncUnitOfWorkFactory
@@ -55,6 +59,9 @@ from messenger.application.sync.list_events import ListSyncEvents
 from messenger.bootstrap.app import create_app
 from messenger.bootstrap.settings import AppEnvironment, AppSettings
 from messenger.domain.entities import Device, Session, User
+from messenger.infrastructure.auth.password_reset_secrets import (
+    SecurePasswordResetSecretService,
+)
 from tests.application.fakes import (
     FakeConversationUnitOfWorkFactory,
     FakeIdentityUnitOfWorkFactory,
@@ -159,12 +166,20 @@ class HttpTestProvider(Provider):
         return self._activation_secrets
 
     @provide(scope=Scope.APP)
+    def password_reset_secrets(self) -> PasswordResetSecretService:
+        return SecurePasswordResetSecretService()
+
+    @provide(scope=Scope.APP)
     def activation_ttl(self) -> timedelta:
         return timedelta(hours=24)
 
     @provide(scope=Scope.APP)
     def session_policy(self) -> SessionPolicy:
         return POLICY
+
+    @provide(scope=Scope.APP)
+    def password_reset_policy(self) -> PasswordResetPolicy:
+        return PasswordResetPolicy(ttl=timedelta(hours=1))
 
     @provide(scope=Scope.APP)
     def event_policy(self) -> SecurityEventPolicy:
@@ -182,6 +197,8 @@ class HttpTestProvider(Provider):
     create_user_invitation = provide(CreateUserInvitation, scope=Scope.REQUEST)
     list_user_directory = provide(ListUserDirectory, scope=Scope.REQUEST)
     list_managed_users = provide(ListManagedUsers, scope=Scope.REQUEST)
+    issue_password_reset = provide(IssuePasswordReset, scope=Scope.REQUEST)
+    reset_password_with_token = provide(ResetPasswordWithToken, scope=Scope.REQUEST)
     reissue_activation = provide(ReissueActivation, scope=Scope.REQUEST)
     update_managed_user = provide(UpdateManagedUser, scope=Scope.REQUEST)
     get_current_account = provide(GetCurrentAccount, scope=Scope.REQUEST)

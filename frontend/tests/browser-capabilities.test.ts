@@ -59,6 +59,7 @@ describe('browser capability adapters', () => {
     const location = new BrowserLocation(locationRef, { replaceState } as unknown as History)
 
     expect(location.activationUrl('one-time secret')).toBe('https://chat.example/activate#token=one-time+secret')
+    expect(location.passwordResetUrl('reset secret')).toBe('https://chat.example/reset-password#token=reset+secret')
     expect(location.consumeFragmentValue('token')).toBe('one-time secret')
     expect(replaceState).toHaveBeenCalledWith(null, '', '/activate')
   })

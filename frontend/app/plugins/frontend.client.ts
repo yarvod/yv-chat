@@ -1,7 +1,15 @@
 import { ActivateAccount } from '../application/accounts/activate-account'
 import { BuildInvitationLink, ConsumeActivationFragment } from '../application/accounts/invitation-links'
 import { InviteUser } from '../application/accounts/invite-user'
+import { IssuePasswordReset } from '../application/accounts/issue-password-reset'
 import { ListManagedUsers } from '../application/accounts/list-managed-users'
+import {
+  BuildPasswordResetLink,
+  ConsumePasswordResetFragment,
+} from '../application/accounts/password-reset-links'
+import { ReissueActivation } from '../application/accounts/reissue-activation'
+import { ResetPassword } from '../application/accounts/reset-password'
+import { SetManagedUserActive } from '../application/accounts/set-user-active'
 import { LoadCurrentAccount } from '../application/auth/load-current-account'
 import { Login } from '../application/auth/login'
 import { Logout } from '../application/auth/logout'
@@ -45,8 +53,14 @@ export default defineNuxtPlugin(() => {
         activateAccount: new ActivateAccount(authGateway, haptics),
         listManagedUsers: new ListManagedUsers(adminAccountsGateway),
         inviteUser: new InviteUser(adminAccountsGateway, haptics),
+        setManagedUserActive: new SetManagedUserActive(adminAccountsGateway, haptics),
+        reissueActivation: new ReissueActivation(adminAccountsGateway, haptics),
+        issuePasswordReset: new IssuePasswordReset(adminAccountsGateway, haptics),
+        resetPassword: new ResetPassword(authGateway, haptics),
         buildInvitationLink: new BuildInvitationLink(browserLocation),
         consumeActivationFragment: new ConsumeActivationFragment(browserLocation),
+        buildPasswordResetLink: new BuildPasswordResetLink(browserLocation),
+        consumePasswordResetFragment: new ConsumePasswordResetFragment(browserLocation),
       },
     },
   }

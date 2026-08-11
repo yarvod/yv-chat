@@ -7,6 +7,7 @@ const props = defineProps<{
   offline: boolean
   deviceLabel: string
   activationComplete?: boolean
+  passwordResetComplete?: boolean
 }>()
 const emit = defineEmits<{
   submit: [payload: { username: string, password: string }]
@@ -34,6 +35,9 @@ function submit(): void {
 
     <p v-if="activationComplete" class="notice notice--success" role="status">
       Аккаунт активирован. Теперь войдите с новым паролем.
+    </p>
+    <p v-else-if="passwordResetComplete" class="notice notice--success" role="status">
+      Пароль изменён, старые сеансы завершены. Войдите заново.
     </p>
 
     <label class="field">

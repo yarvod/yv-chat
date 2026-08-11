@@ -23,6 +23,7 @@ async function login(payload: { username: string, password: string }): Promise<v
     :offline="auth.state.value.phase === 'offline'"
     :device-label="deviceLabel"
     :activation-complete="route.query.activated === '1'"
+    :password-reset-complete="route.query.reset === '1'"
     @submit="login"
     @retry="auth.bootstrap(true)"
   />

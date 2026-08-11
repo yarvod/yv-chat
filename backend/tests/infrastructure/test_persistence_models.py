@@ -22,6 +22,7 @@ def test_persistence_metadata_contains_expected_tables() -> None:
         "conversations",
         "devices",
         "messages",
+        "password_reset_tokens",
         "security_events",
         "sessions",
         "sync_events",
@@ -76,6 +77,17 @@ def test_activation_schema_stores_digest_without_plaintext_secret() -> None:
     assert "token" not in activation_tokens.columns
     assert "revoked_at" in activation_tokens.columns
     assert activation_tokens.columns["token_hash"].unique is True
+
+
+def test_password_reset_schema_is_purpose_bound_and_stores_only_digest() -> None:
+    reset_tokens = Base.metadata.tables["password_reset_tokens"]
+
+    assert "token_hash" in reset_tokens.columns
+    assert "reset_secret" not in reset_tokens.columns
+    assert "token" not in reset_tokens.columns
+    assert "used_at" in reset_tokens.columns
+    assert "revoked_at" in reset_tokens.columns
+    assert reset_tokens.columns["token_hash"].unique is True
 
 
 def test_session_schema_stores_only_hashes_and_binds_device_owner() -> None:

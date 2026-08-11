@@ -36,3 +36,10 @@ class SessionRepository(Protocol):
     ) -> DeviceSessionRecord | None: ...
 
     async def list_for_user_for_update(self, user_id: UUID) -> list[DeviceSessionRecord]: ...
+
+    async def count_active_for_users(
+        self,
+        user_ids: set[UUID],
+        *,
+        now: datetime,
+    ) -> dict[UUID, int]: ...

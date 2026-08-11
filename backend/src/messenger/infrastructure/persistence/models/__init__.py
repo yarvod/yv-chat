@@ -8,6 +8,7 @@ from messenger.infrastructure.persistence.models.conversation import (
 )
 from messenger.infrastructure.persistence.models.device import DeviceModel
 from messenger.infrastructure.persistence.models.message import MessageModel
+from messenger.infrastructure.persistence.models.password_reset_token import PasswordResetTokenModel
 from messenger.infrastructure.persistence.models.security_event import SecurityEventModel
 from messenger.infrastructure.persistence.models.session import SessionModel
 from messenger.infrastructure.persistence.models.sync import SyncEventModel, SyncStreamModel
@@ -20,6 +21,7 @@ __all__ = [
     "ConversationModel",
     "DeviceModel",
     "MessageModel",
+    "PasswordResetTokenModel",
     "SecurityEventModel",
     "SessionModel",
     "SyncEventModel",

@@ -17,6 +17,8 @@ class SecurityEventType(StrEnum):
     DEVICE_REVOKED = "device_revoked"
     OTHER_SESSIONS_REVOKED = "other_sessions_revoked"
     PASSWORD_CHANGED = "password_changed"
+    PASSWORD_RESET_ISSUED = "password_reset_issued"
+    PASSWORD_RESET_COMPLETED = "password_reset_completed"
     SECURITY_RESET = "security_reset"
 
 

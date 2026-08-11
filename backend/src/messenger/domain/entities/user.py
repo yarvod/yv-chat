@@ -140,3 +140,10 @@ class User:
         if not self.is_active:
             raise DomainValidationError("inactive user credentials cannot be changed")
         return replace(self, updated_at=timestamp)
+
+    def credentials_reset(self, now: datetime) -> "User":
+        """Record an authorized recovery while preserving blocked account state."""
+        timestamp = require_aware_datetime(now, "now")
+        if timestamp < self.updated_at:
+            raise DomainValidationError("updated_at cannot move backwards")
+        return replace(self, updated_at=timestamp)

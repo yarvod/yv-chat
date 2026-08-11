@@ -59,9 +59,16 @@ async def test_admin_invite_reissue_activate_deactivate_and_reactivate_flow() ->
 
         users = await admin_client.get("/api/v1/admin/users")
         assert users.status_code == 200
-        bob_item = next(item for item in users.json() if item["user_id"] == str(bob_id))
+        assert users.json()["total"] == 2
+        bob_item = next(item for item in users.json()["items"] if item["user_id"] == str(bob_id))
         assert bob_item["activation_pending"] is True
-        assert all(FORBIDDEN_FIELDS.isdisjoint(item) for item in users.json())
+        assert bob_item["active_sessions"] == 0
+        assert all(FORBIDDEN_FIELDS.isdisjoint(item) for item in users.json()["items"])
+
+        searched = await admin_client.get("/api/v1/admin/users?search=BO&limit=1&offset=0")
+        assert searched.status_code == 200
+        assert searched.json()["total"] == 1
+        assert [item["username"] for item in searched.json()["items"]] == ["bob"]
 
         cannot_bypass_activation = await admin_client.patch(
             f"/api/v1/admin/users/{bob_id}",
@@ -132,12 +139,91 @@ async def test_admin_invite_reissue_activate_deactivate_and_reactivate_flow() ->
         assert reactivated.status_code == 200
         assert reactivated.json()["is_active"] is True
 
+        reset_missing_csrf = await admin_client.post(
+            f"/api/v1/admin/users/{bob_id}/password-reset",
+            headers={"Origin": ORIGIN},
+        )
+        assert reset_missing_csrf.status_code == 403
+
+        bob_login_again = await member_client.post(
+            "/api/v1/auth/login",
+            headers={"Origin": ORIGIN},
+            json={"username": "bob", "password": PASSWORD, "device_name": "Bob laptop"},
+        )
+        assert bob_login_again.status_code == 200
+
+        reset_issued = await admin_client.post(
+            f"/api/v1/admin/users/{bob_id}/password-reset",
+            headers=write_headers,
+        )
+        assert reset_issued.status_code == 200
+        reset_secret = reset_issued.json()["reset_secret"]
+        assert reset_issued.json()["revoked_sessions"] == 1
+        assert all(
+            reset_secret != token.token_hash for token in state.password_reset_tokens.values()
+        )
+        assert (await member_client.get("/api/v1/auth/session")).status_code == 401
+
+        activation_is_not_reset = await member_client.post(
+            "/api/v1/auth/reset-password",
+            headers={"Origin": ORIGIN},
+            json={"reset_secret": second_secret, "new_password": "new safe password for bob"},
+        )
+        assert activation_is_not_reset.status_code == 400
+        assert activation_is_not_reset.json() == {"detail": "password reset failed"}
+
+        reset_without_origin = await member_client.post(
+            "/api/v1/auth/reset-password",
+            json={"reset_secret": reset_secret, "new_password": "new safe password for bob"},
+        )
+        assert reset_without_origin.status_code == 403
+
+        password_reset = await member_client.post(
+            "/api/v1/auth/reset-password",
+            headers={"Origin": ORIGIN},
+            json={"reset_secret": reset_secret, "new_password": "new safe password for bob"},
+        )
+        assert password_reset.status_code == 200
+        assert password_reset.json()["user_id"] == str(bob_id)
+        assert "reset_secret" not in password_reset.json()
+
+        reset_replay = await member_client.post(
+            "/api/v1/auth/reset-password",
+            headers={"Origin": ORIGIN},
+            json={"reset_secret": reset_secret, "new_password": "another safe password for bob"},
+        )
+        assert reset_replay.status_code == 400
+        assert reset_replay.json() == {"detail": "password reset failed"}
+
+        old_password_login = await member_client.post(
+            "/api/v1/auth/login",
+            headers={"Origin": ORIGIN},
+            json={"username": "bob", "password": PASSWORD, "device_name": "Old secret"},
+        )
+        assert old_password_login.status_code == 401
+        new_password_login = await member_client.post(
+            "/api/v1/auth/login",
+            headers={"Origin": ORIGIN},
+            json={
+                "username": "bob",
+                "password": "new safe password for bob",
+                "device_name": "Recovered browser",
+            },
+        )
+        assert new_password_login.status_code == 200
+
         self_deactivate = await admin_client.patch(
             f"/api/v1/admin/users/{admin_id}",
             headers=write_headers,
             json={"is_active": False},
         )
         assert self_deactivate.status_code == 409
+
+        self_reset = await admin_client.post(
+            f"/api/v1/admin/users/{admin_id}/password-reset",
+            headers=write_headers,
+        )
+        assert self_reset.status_code == 409
 
 
 async def test_admin_openapi_does_not_publish_secret_hash_fields() -> None:
@@ -149,9 +235,12 @@ async def test_admin_openapi_does_not_publish_secret_hash_fields() -> None:
     schemas = openapi["components"]["schemas"]
     response_schema_names = {
         "ManagedUserResponse",
+        "ManagedUsersPageResponse",
         "InvitationResponse",
         "ReissueActivationResponse",
         "ActivateAccountResponse",
+        "PasswordResetResponse",
+        "ResetPasswordResponse",
     }
     for name in response_schema_names:
         properties = schemas[name]["properties"]

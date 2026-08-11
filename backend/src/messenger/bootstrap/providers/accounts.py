@@ -5,9 +5,11 @@ from dishka import Provider, Scope, provide
 from messenger.application.accounts.activate import ActivateAccount
 from messenger.application.accounts.bootstrap_admin import BootstrapAdmin
 from messenger.application.accounts.invite import CreateUserInvitation
+from messenger.application.accounts.issue_password_reset import IssuePasswordReset
 from messenger.application.accounts.list_directory import ListUserDirectory
 from messenger.application.accounts.list_users import ListManagedUsers
 from messenger.application.accounts.reissue_activation import ReissueActivation
+from messenger.application.accounts.reset_password import ResetPasswordWithToken
 from messenger.application.accounts.update_user import UpdateManagedUser
 
 
@@ -19,5 +21,7 @@ class AccountUseCaseProvider(Provider):
     create_user_invitation = provide(CreateUserInvitation, scope=Scope.REQUEST)
     list_user_directory = provide(ListUserDirectory, scope=Scope.REQUEST)
     list_managed_users = provide(ListManagedUsers, scope=Scope.REQUEST)
+    issue_password_reset = provide(IssuePasswordReset, scope=Scope.REQUEST)
+    reset_password_with_token = provide(ResetPasswordWithToken, scope=Scope.REQUEST)
     reissue_activation = provide(ReissueActivation, scope=Scope.REQUEST)
     update_managed_user = provide(UpdateManagedUser, scope=Scope.REQUEST)

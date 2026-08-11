@@ -7,7 +7,15 @@ export class BrowserLocation implements BrowserLocationPort {
   ) {}
 
   activationUrl(secret: string): string {
-    const url = new URL('/activate', this.locationRef.origin)
+    return this.secretUrl('/activate', secret)
+  }
+
+  passwordResetUrl(secret: string): string {
+    return this.secretUrl('/reset-password', secret)
+  }
+
+  private secretUrl(path: string, secret: string): string {
+    const url = new URL(path, this.locationRef.origin)
     url.hash = new URLSearchParams({ token: secret }).toString()
     return url.toString()
   }

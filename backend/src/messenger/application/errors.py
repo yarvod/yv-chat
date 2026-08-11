@@ -69,6 +69,14 @@ class AccountActivationRequiredError(ApplicationError):
     """An invited account must complete activation before it can become active."""
 
 
+class InvalidPasswordResetSecretError(ApplicationError):
+    """A reset credential is unknown, expired, consumed or revoked."""
+
+
+class SelfPasswordResetError(ApplicationError):
+    """An admin must use the authenticated step-up flow for its own password."""
+
+
 class DuplicateDirectConversationError(ApplicationError):
     """A direct conversation already exists for the unordered user pair."""
 

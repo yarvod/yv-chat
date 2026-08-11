@@ -72,3 +72,14 @@ export function parseActivation(value: unknown): { userId: string, activatedAt: 
     activatedAt: stringField(item, 'activated_at'),
   }
 }
+
+export function parsePasswordReset(
+  value: unknown,
+): { userId: string, resetAt: string, revokedSessions: number } {
+  const item = record(value)
+  return {
+    userId: stringField(item, 'user_id'),
+    resetAt: stringField(item, 'reset_at'),
+    revokedSessions: integerField(item, 'revoked_sessions'),
+  }
+}

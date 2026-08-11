@@ -8,6 +8,7 @@ from urllib.parse import urlsplit
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from messenger.application.accounts.password_reset_policy import PasswordResetPolicy
 from messenger.application.security_events.policy import SecurityEventPolicy
 from messenger.application.sessions.policy import SessionPolicy
 
@@ -48,6 +49,7 @@ class AppSettings(BaseSettings):
     csrf_cookie_name: str = Field(default="__Host-yv_csrf", pattern=r"^__Host-")
     csrf_header_name: str = Field(default="X-CSRF-Token", min_length=1)
     activation_token_ttl_seconds: int = Field(default=86_400, gt=0, le=604_800)
+    password_reset_token_ttl_seconds: int = Field(default=3_600, gt=0, le=86_400)
     session_idle_timeout_seconds: int = Field(default=2_592_000, gt=0)
     session_absolute_lifetime_seconds: int = Field(default=7_776_000, gt=0)
     session_rotation_interval_seconds: int = Field(default=86_400, gt=0)
@@ -100,6 +102,11 @@ class AppSettings(BaseSettings):
     def activation_token_ttl(self) -> timedelta:
         """Return the validated activation lifetime."""
         return timedelta(seconds=self.activation_token_ttl_seconds)
+
+    @property
+    def password_reset_policy(self) -> PasswordResetPolicy:
+        """Build the bounded password-reset credential policy."""
+        return PasswordResetPolicy(ttl=timedelta(seconds=self.password_reset_token_ttl_seconds))
 
     @property
     def session_policy(self) -> SessionPolicy:

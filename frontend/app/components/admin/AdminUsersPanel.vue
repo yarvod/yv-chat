@@ -1,27 +1,54 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 
 import { ApplicationError } from '../../application/errors'
-import type { Invitation, ManagedUser } from '../../domain/accounts/managed-user'
+import type { ManagedUser } from '../../domain/accounts/managed-user'
+import ManagedUserRow from './ManagedUserRow.vue'
+import TransientCredentialCard from './TransientCredentialCard.vue'
 
-withDefaults(defineProps<{ embedded?: boolean }>(), { embedded: false })
+withDefaults(defineProps<{ embedded?: boolean, currentUserId?: string | null }>(), {
+  embedded: false,
+  currentUserId: null,
+})
 const emit = defineEmits<{ close: [] }>()
 const { $frontend } = useNuxtApp()
 const users = ref<ManagedUser[]>([])
 const username = ref('')
 const displayName = ref('')
-const invitation = ref<Invitation | null>(null)
+const search = ref('')
+const total = ref(0)
+const offset = ref(0)
+const pageSize = 20
 const loading = ref(true)
-const busy = ref(false)
+const busyUserId = ref<string | null>(null)
+const inviteBusy = ref(false)
 const message = ref<string | null>(null)
-const invitationLink = ref<string | null>(null)
 const copied = ref(false)
+const credential = ref<{
+  title: string
+  description: string
+  link: string
+  expiresAt: string
+} | null>(null)
+const pendingAction = ref<{ kind: 'toggle' | 'reset', item: ManagedUser } | null>(null)
 
-async function load(): Promise<void> {
+function clearCredential(): void {
+  credential.value = null
+  copied.value = false
+}
+
+async function load(nextOffset = offset.value): Promise<void> {
   loading.value = true
   message.value = null
   try {
-    users.value = await $frontend.listManagedUsers.execute()
+    const page = await $frontend.listManagedUsers.execute(
+      search.value.trim() || null,
+      pageSize,
+      nextOffset,
+    )
+    users.value = page.items
+    total.value = page.total
+    offset.value = page.offset
   } catch {
     message.value = 'Не удалось загрузить пользователей.'
   } finally {
@@ -30,38 +57,97 @@ async function load(): Promise<void> {
 }
 
 async function invite(): Promise<void> {
-  busy.value = true
+  inviteBusy.value = true
   message.value = null
-  invitation.value = null
+  clearCredential()
   try {
-    invitation.value = await $frontend.inviteUser.execute(
+    const invitation = await $frontend.inviteUser.execute(
       username.value.trim().toLowerCase(),
       displayName.value.trim(),
     )
-    invitationLink.value = $frontend.buildInvitationLink.execute(invitation.value.activationSecret)
-    copied.value = false
+    credential.value = {
+      title: `Одноразовое приглашение для @${invitation.username}`,
+      description: 'Секрет находится после # и не отправляется серверу при открытии ссылки.',
+      link: $frontend.buildInvitationLink.execute(invitation.activationSecret),
+      expiresAt: invitation.expiresAt,
+    }
     username.value = ''
     displayName.value = ''
-    await load()
+    await load(0)
   } catch (error) {
     message.value = error instanceof ApplicationError && error.status === 409
       ? 'Это имя пользователя уже занято.'
       : 'Не удалось создать приглашение.'
   } finally {
-    busy.value = false
+    inviteBusy.value = false
+  }
+}
+
+async function reissueActivation(item: ManagedUser): Promise<void> {
+  busyUserId.value = item.userId
+  message.value = null
+  clearCredential()
+  try {
+    const result = await $frontend.reissueActivation.execute(item.userId)
+    credential.value = {
+      title: `Новое приглашение для @${item.username}`,
+      description: 'Предыдущая ссылка отозвана. Передайте пользователю только эту ссылку.',
+      link: $frontend.buildInvitationLink.execute(result.activationSecret),
+      expiresAt: result.expiresAt,
+    }
+  } catch {
+    message.value = 'Не удалось перевыпустить приглашение.'
+  } finally {
+    busyUserId.value = null
+  }
+}
+
+function requestToggle(item: ManagedUser): void {
+  pendingAction.value = { kind: 'toggle', item }
+}
+
+function requestReset(item: ManagedUser): void {
+  pendingAction.value = { kind: 'reset', item }
+}
+
+async function executePending(): Promise<void> {
+  const action = pendingAction.value
+  if (!action) return
+  pendingAction.value = null
+  busyUserId.value = action.item.userId
+  message.value = null
+  clearCredential()
+  try {
+    if (action.kind === 'toggle') {
+      await $frontend.setManagedUserActive.execute(action.item.userId, !action.item.isActive)
+      await load(offset.value)
+      return
+    }
+    const result = await $frontend.issuePasswordReset.execute(action.item.userId)
+    credential.value = {
+      title: `Восстановление доступа для @${action.item.username}`,
+      description: `Все сеансы пользователя завершены (${result.revokedSessions}). Администратор не задаёт и не видит новый пароль.`,
+      link: $frontend.buildPasswordResetLink.execute(result.resetSecret),
+      expiresAt: result.expiresAt,
+    }
+  } catch (error) {
+    message.value = error instanceof ApplicationError && error.status === 409
+      ? 'Операция конфликтует с текущим состоянием аккаунта.'
+      : 'Не удалось выполнить действие.'
+  } finally {
+    busyUserId.value = null
   }
 }
 
 function close(): void {
-  invitation.value = null
-  invitationLink.value = null
+  clearCredential()
   emit('close')
 }
 
-async function copyInvitation(): Promise<void> {
-  if (!invitationLink.value) return
+async function copyCredential(): Promise<void> {
+  if (!credential.value) return
   try {
-    await $frontend.clipboard.writeText(invitationLink.value)
+    await $frontend.clipboard.writeText(credential.value.link)
     copied.value = true
     $frontend.haptics.perform('success')
   } catch {
@@ -70,6 +156,7 @@ async function copyInvitation(): Promise<void> {
 }
 
 onMounted(load)
+onBeforeUnmount(clearCredential)
 </script>
 
 <template>
@@ -92,34 +179,66 @@ onMounted(load)
           <span>Отображаемое имя</span>
           <input v-model="displayName" required maxlength="80" autocomplete="off">
         </label>
-        <button class="primary-button compact" type="submit" :disabled="busy">
-          {{ busy ? 'Создаём…' : 'Создать приглашение' }}
+        <button class="primary-button compact" type="submit" :disabled="inviteBusy">
+          {{ inviteBusy ? 'Создаём…' : 'Создать приглашение' }}
         </button>
       </form>
 
-      <p v-if="message" class="form-message" role="alert">{{ message }}</p>
+      <p v-if="message" class="form-message notice" role="alert">{{ message }}</p>
 
-      <section v-if="invitation" class="invitation-result" aria-live="polite">
-        <strong>Одноразовая ссылка для @{{ invitation.username }}</strong>
-        <p>Секрет находится после # и не отправляется серверу при открытии ссылки.</p>
-        <code>{{ invitationLink }}</code>
-        <small>Действует до {{ new Date(invitation.expiresAt).toLocaleString() }}</small>
-        <div class="inline-actions"><button class="button button--primary button--compact" type="button" @click="copyInvitation">{{ copied ? 'Скопировано' : 'Скопировать ссылку' }}</button><button class="text-button" type="button" @click="invitation = null; invitationLink = null">Скрыть</button></div>
+      <TransientCredentialCard
+        v-if="credential"
+        :title="credential.title"
+        :description="credential.description"
+        :link="credential.link"
+        :expires-at="credential.expiresAt"
+        :copied="copied"
+        @copy="copyCredential"
+        @hide="clearCredential"
+      />
+
+      <section v-if="pendingAction" class="admin-confirm" role="alertdialog" aria-labelledby="confirm-title">
+        <div>
+          <strong id="confirm-title">
+            {{ pendingAction.kind === 'reset' ? 'Завершить все сеансы пользователя?' : pendingAction.item.isActive ? 'Заблокировать пользователя?' : 'Разблокировать пользователя?' }}
+          </strong>
+          <p v-if="pendingAction.kind === 'reset'">@{{ pendingAction.item.username }} сразу выйдет на всех устройствах. Затем передайте одноразовую ссылку.</p>
+          <p v-else>Аккаунт @{{ pendingAction.item.username }} {{ pendingAction.item.isActive ? 'потеряет доступ до явной разблокировки' : 'снова сможет входить' }}.</p>
+        </div>
+        <div class="inline-actions">
+          <button class="text-button" type="button" @click="pendingAction = null">Отмена</button>
+          <button class="button button--primary button--compact" type="button" @click="executePending">Подтвердить</button>
+        </div>
       </section>
+
+      <form class="admin-search" role="search" @submit.prevent="load(0)">
+        <label>
+          <span class="sr-only">Поиск пользователей</span>
+          <input v-model="search" type="search" maxlength="80" placeholder="Поиск по имени или логину" autocomplete="off">
+        </label>
+        <button class="button button--secondary button--compact" type="submit">Найти</button>
+      </form>
 
       <div class="managed-users" aria-live="polite">
         <p v-if="loading">Загружаем пользователей…</p>
-        <article v-for="item in users" v-else :key="item.userId" class="managed-user-row">
-          <span class="avatar">{{ item.displayName.slice(0, 1).toUpperCase() }}</span>
-          <span>
-            <strong>{{ item.displayName }}</strong>
-            <small>@{{ item.username }}</small>
-          </span>
-          <span class="status-pill" :class="{ active: item.isActive }">
-            {{ item.isAdmin ? 'admin' : item.isActive ? 'active' : item.activationPending ? 'invited' : 'disabled' }}
-          </span>
-        </article>
+        <p v-else-if="users.length === 0" class="muted">Пользователи не найдены.</p>
+        <ManagedUserRow
+          v-for="item in users"
+          v-else
+          :key="item.userId"
+          :item="item"
+          :current-user-id="currentUserId"
+          :busy="busyUserId === item.userId"
+          @toggle="requestToggle"
+          @reissue="reissueActivation"
+          @reset="requestReset"
+        />
       </div>
+      <nav v-if="total > pageSize" class="admin-pagination" aria-label="Страницы пользователей">
+        <button class="button button--secondary button--compact" type="button" :disabled="offset === 0 || loading" @click="load(Math.max(0, offset - pageSize))">Назад</button>
+        <span>{{ offset + 1 }}–{{ Math.min(offset + users.length, total) }} из {{ total }}</span>
+        <button class="button button--secondary button--compact" type="button" :disabled="offset + pageSize >= total || loading" @click="load(offset + pageSize)">Дальше</button>
+      </nav>
     </section>
   </div>
 </template>

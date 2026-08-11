@@ -9,6 +9,7 @@ from messenger.domain.entities.conversation import (
 )
 from messenger.domain.entities.device import Device
 from messenger.domain.entities.message import Message
+from messenger.domain.entities.password_reset_token import PasswordResetToken
 from messenger.domain.entities.security_event import SecurityEvent, SecurityEventType
 from messenger.domain.entities.session import Session
 from messenger.domain.entities.user import User
@@ -20,6 +21,7 @@ __all__ = [
     "ConversationMemberRole",
     "ConversationType",
     "Message",
+    "PasswordResetToken",
     "Device",
     "SecurityEvent",
     "SecurityEventType",

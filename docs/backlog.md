@@ -8,7 +8,7 @@
 
 ### BL-038 — Native-feeling PWA shell и frontend Clean Architecture
 
-Статус: **in progress** (`WP-020`).
+Статус: **completed** (`WP-020`, commit `c9c7bcf`).
 
 Результат: frontend имеет явные `domain/application/infrastructure/presentation`
 boundaries, Nuxt pages/layouts вместо монолитного `app.vue` и responsive shell,
@@ -25,7 +25,13 @@ boundaries, Nuxt pages/layouts вместо монолитного `app.vue` и 
 - runtime DTO parsers и отсутствие raw HTTP/browser APIs в components;
 - mobile/desktop visual QA, Vitest, lint/typecheck/build.
 
+Implementation и desktop browser smoke завершены; physical 390px screenshot не
+был сфальсифицирован при заблокированном test Mac и остаётся acceptance-пунктом
+`BL-041`/`BL-033`, не блокирующим независимые backend vertical slices.
+
 ### BL-039 — Admin account lifecycle и password recovery
+
+Статус: **completed** (`WP-021`).
 
 Результат: администратор управляет пользователями через отдельную страницу, но
 не получает и не задаёт чужой постоянный пароль.

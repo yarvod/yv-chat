@@ -106,7 +106,7 @@ Backend package layout следует capabilities и dependency rule:
 
 ```text
 application/
-├── accounts/          # bootstrap, invitation, activation operations
+├── accounts/          # bootstrap, invitation, activation/recovery operations
 ├── sessions/          # login/authenticate/logout + session policy
 ├── devices/           # list/rename/revoke/event queries
 ├── security_events/   # cross-capability retention policy
@@ -343,13 +343,19 @@ active admin session
       ├── list bounded account state
       ├── create invitation → plaintext secret returned once
       ├── reissue → previous unconsumed secrets revoked atomically
-      └── deactivate → all target sessions/devices revoked atomically
+      ├── deactivate → all target sessions/devices revoked atomically
+      └── password-reset → target sessions/devices revoked + secret returned once
 
 invited user
   └── /api/v1/auth/activate → one-time secret + new password
+
+activated user after admin recovery action
+  └── /api/v1/auth/reset-password → separate one-time secret + new password
 ```
 
 Activation-token persistence различает `used_at` и `revoked_at`; состояния взаимоисключающие. List/update DTO не содержат password hash или activation digest. Reactivation через admin API разрешена только account с уже настроенным password; первоначальное приглашение нельзя обойти выставлением `is_active`.
+
+Password recovery purpose-bound и не переиспользует activation credential. `password_reset_tokens` хранит только SHA-256 digest, TTL и взаимоисключающие `used_at`/`revoked_at`; row lock делает consume single-use при concurrent requests. Admin не задаёт чужой пароль: выдача reset-link немедленно завершает все target sessions/devices, пользователь сам задаёт новый Argon2id password, а blocked account не активируется скрыто. Admin self-reset запрещён этим transport и выполняется через authenticated step-up current-account flow. Typed `password_reset_issued`/`password_reset_completed` events не содержат secret или password.
 
 Browser auth использует opaque random credential + server-side state, потому что продукту нужны instant revoke, active-device list и logout-all-others. JWT не добавляется без реальной distributed/resource-server причины.
 
@@ -371,7 +377,7 @@ Active-device API выводит только non-revoked/non-expired sessions �
 
 Current-account API получает identity исключительно из authenticated principal. `GET/PATCH /api/v1/me` возвращает/изменяет только bounded profile fields. Password change и explicit security reset используют текущий пароль как step-up factor внутри row-locked identity transaction; IP/GeoIP/User-Agent не участвуют. Password change обновляет Argon2id hash и отзывает все остальные sessions/devices, сохраняя current session. Security reset отзывает все sessions/devices, включая current, после чего transport удаляет auth/CSRF cookies. Обе операции создают typed bounded audit events без password/token payload. E2EE identity/key reset в эту account-операцию не входит и проектируется только после protocol ADR.
 
-PWA замыкает закрытый onboarding без public registration: admin-only panel вызывает существующие `ListManagedUsers`/`CreateUserInvitation`, а logged-out activation form — `ActivateAccount`. Plaintext activation secret существует в frontend state только в момент ввода или одноразового admin response, не попадает в URL, localStorage, IndexedDB или logs и удаляется при success/скрытии/закрытии/reload. Новый password и confirmation очищаются до ожидания response. Видимость admin control в UI — только UX; серверная `require_active_admin` остаётся authorization boundary.
+PWA замыкает закрытый onboarding без public registration: admin-only panel вызывает отдельные list/invite/reissue/block/reset use cases, а logged-out формы — `ActivateAccount` и `ResetPassword`. Admin list использует server-side bounded search/pagination и batch session summary без N+1. Plaintext activation/reset secret существует в frontend state только в момент ввода или одноразового admin response, находится в URL только после fragment marker, не попадает в HTTP/referrer, localStorage, IndexedDB или logs и удаляется при success/скрытии/unmount/reload. Новый password и confirmation очищаются до ожидания response. Опасные admin actions требуют явного UI confirmation; видимость controls остаётся только UX, серверная `require_active_admin` — authorization boundary.
 
 ## 8. Conversation и authorization model
 

@@ -71,15 +71,38 @@ def management_state() -> IdentityState:
 
 async def test_list_requires_active_admin_and_never_returns_password_hash() -> None:
     state = management_state()
-    use_case = ListManagedUsers(unit_of_work=FakeIdentityUnitOfWorkFactory(state))
+    use_case = ListManagedUsers(
+        unit_of_work=FakeIdentityUnitOfWorkFactory(state),
+        clock=FixedClock(NOW),
+    )
 
-    users = await use_case.execute(ListManagedUsersQuery(actor_user_id=ADMIN_ID))
+    page = await use_case.execute(ListManagedUsersQuery(actor_user_id=ADMIN_ID))
 
-    assert [user.username for user in users] == ["admin", "alice"]
-    assert all("password" not in field for field in users[0].__dataclass_fields__)
+    assert [user.username for user in page.items] == ["admin", "alice"]
+    assert page.total == 2
+    assert all("password" not in field for field in page.items[0].__dataclass_fields__)
 
     with pytest.raises(AuthorizationDeniedError):
         await use_case.execute(ListManagedUsersQuery(actor_user_id=MEMBER_ID))
+
+
+async def test_list_search_pagination_and_active_session_summary_are_bounded() -> None:
+    state = management_state()
+    add_session(state, MEMBER_ID, 1)
+    use_case = ListManagedUsers(
+        unit_of_work=FakeIdentityUnitOfWorkFactory(state),
+        clock=FixedClock(NOW),
+    )
+
+    page = await use_case.execute(
+        ListManagedUsersQuery(actor_user_id=ADMIN_ID, search="ALI", limit=1, offset=0)
+    )
+
+    assert page.total == 1
+    assert [item.username for item in page.items] == ["alice"]
+    assert page.items[0].active_sessions == 1
+    with pytest.raises(ValueError, match="limit"):
+        await use_case.execute(ListManagedUsersQuery(actor_user_id=ADMIN_ID, limit=51))
 
 
 async def test_deactivate_revokes_every_target_session_and_reactivate_preserves_admin() -> None:

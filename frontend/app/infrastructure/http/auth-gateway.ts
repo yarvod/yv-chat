@@ -1,10 +1,14 @@
 import type { ActivationGateway, ActivationResult } from '../../application/ports/activation-gateway'
 import type { AuthGateway, LoginCredentials } from '../../application/ports/auth-gateway'
+import type {
+  PasswordRecoveryGateway,
+  PasswordResetResult,
+} from '../../application/ports/password-recovery-gateway'
 import type { CurrentAccount } from '../../domain/accounts/account'
 import type { ApiClient } from './api-client'
-import { parseActivation, parseCurrentAccount } from './runtime-parsers'
+import { parseActivation, parseCurrentAccount, parsePasswordReset } from './runtime-parsers'
 
-export class HttpAuthGateway implements AuthGateway, ActivationGateway {
+export class HttpAuthGateway implements AuthGateway, ActivationGateway, PasswordRecoveryGateway {
   constructor(private readonly apiClient: ApiClient) {}
 
   async current(): Promise<CurrentAccount> {
@@ -31,6 +35,13 @@ export class HttpAuthGateway implements AuthGateway, ActivationGateway {
     return parseActivation(await this.apiClient.request('/api/v1/auth/activate', {
       method: 'POST',
       body: { activation_secret: secret, password },
+    }))
+  }
+
+  async resetPassword(secret: string, newPassword: string): Promise<PasswordResetResult> {
+    return parsePasswordReset(await this.apiClient.request('/api/v1/auth/reset-password', {
+      method: 'POST',
+      body: { reset_secret: secret, new_password: newPassword },
     }))
   }
 }

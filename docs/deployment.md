@@ -58,6 +58,11 @@ It uses `openssl rand` and creates, without printing secret values:
 - `.env` — database/runtime configuration, mode `0600`;
 - `.bootstrap-admin.env` — one-time initial administrator credential, mode `0600`.
 
+`PASSWORD_RESET_TOKEN_TTL_SECONDS` задаёт отдельный bounded lifetime reset-link
+(по умолчанию 3600 секунд) и не влияет на invitation TTL. Старый production
+`.env` может не содержать ключ: Compose передаёт безопасный default; при
+следующей контролируемой правке файла значение следует добавить явно.
+
 The first successful deployment runs the bootstrap command in a one-off backend container and atomically renames the latter file to `.initial-admin-credential`. The deploy script never uses that credential again. Retrieve it over the existing trusted SSH channel, then remove it after the administrator has logged in and changed the password. Do not paste it into an issue, Actions log or chat.
 
 Preflight without exposing values:

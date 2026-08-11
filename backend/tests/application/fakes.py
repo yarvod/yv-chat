@@ -18,7 +18,9 @@ from messenger.application.ports.identity import (
     DeviceRepository,
     DeviceSessionRecord,
     IdentityUnitOfWork,
+    ManagedUserPageRecord,
     ManagedUserRecord,
+    PasswordResetTokenRepository,
     SecurityEventRepository,
     SessionCredentialMatch,
     SessionRepository,
@@ -26,6 +28,7 @@ from messenger.application.ports.identity import (
     UserRepository,
 )
 from messenger.application.ports.messages import MessageRepository, MessagingUnitOfWork
+from messenger.application.ports.password_reset_secrets import GeneratedPasswordResetSecret
 from messenger.application.ports.session_credentials import GeneratedSessionCredential
 from messenger.application.ports.sync import SyncRepository, SyncUnitOfWork
 from messenger.application.sync import PendingSyncEvent, SyncEvent
@@ -35,6 +38,7 @@ from messenger.domain.entities import (
     Conversation,
     Device,
     Message,
+    PasswordResetToken,
     SecurityEvent,
     Session,
     User,
@@ -47,6 +51,7 @@ class IdentityState:
 
     users: dict[UUID, User] = field(default_factory=dict)
     tokens: dict[UUID, ActivationToken] = field(default_factory=dict)
+    password_reset_tokens: dict[UUID, PasswordResetToken] = field(default_factory=dict)
     password_hashes: dict[UUID, str] = field(default_factory=dict)
     devices: dict[UUID, Device] = field(default_factory=dict)
     sessions: dict[UUID, Session] = field(default_factory=dict)
@@ -68,8 +73,14 @@ class FakeUserRepository:
             key=lambda user: (user.username, user.id),
         )
 
-    async def list_managed(self) -> list[ManagedUserRecord]:
-        return [
+    async def list_managed(
+        self,
+        *,
+        search: str | None,
+        limit: int,
+        offset: int,
+    ) -> ManagedUserPageRecord:
+        records = [
             ManagedUserRecord(
                 user=user,
                 password_configured=user.id in self._state.password_hashes,
@@ -79,6 +90,18 @@ class FakeUserRepository:
                 key=lambda item: (item.username, item.id),
             )
         ]
+        if search is not None:
+            query = search.lower()
+            records = [
+                record
+                for record in records
+                if query in record.user.username.lower()
+                or query in record.user.display_name.lower()
+            ]
+        return ManagedUserPageRecord(
+            items=records[offset : offset + limit],
+            total=len(records),
+        )
 
     async def get_managed_by_id(
         self,
@@ -196,6 +219,40 @@ class FakeActivationTokenRepository:
         self._state.tokens[token.id] = token
 
 
+class FakePasswordResetTokenRepository:
+    def __init__(self, state: IdentityState) -> None:
+        self._state = state
+
+    async def add(self, token: PasswordResetToken) -> None:
+        self._state.password_reset_tokens[token.id] = token
+
+    async def get_by_hash_for_update(self, token_hash: str) -> PasswordResetToken | None:
+        return next(
+            (
+                token
+                for token in self._state.password_reset_tokens.values()
+                if token.token_hash == token_hash
+            ),
+            None,
+        )
+
+    async def list_unconsumed_for_user_for_update(
+        self,
+        user_id: UUID,
+    ) -> list[PasswordResetToken]:
+        return sorted(
+            (
+                token
+                for token in self._state.password_reset_tokens.values()
+                if token.user_id == user_id and token.used_at is None and token.revoked_at is None
+            ),
+            key=lambda token: token.id,
+        )
+
+    async def update_lifecycle(self, token: PasswordResetToken) -> None:
+        self._state.password_reset_tokens[token.id] = token
+
+
 class FakeDeviceRepository:
     def __init__(self, state: IdentityState) -> None:
         self._state = state
@@ -292,6 +349,24 @@ class FakeSessionRepository:
             for session in sessions
         ]
 
+    async def count_active_for_users(
+        self,
+        user_ids: set[UUID],
+        *,
+        now: datetime,
+    ) -> dict[UUID, int]:
+        counts = {user_id: 0 for user_id in user_ids}
+        for session in self._state.sessions.values():
+            device = self._state.devices[session.device_id]
+            if (
+                session.user_id in user_ids
+                and session.revoked_at is None
+                and not session.is_expired(now)
+                and device.revoked_at is None
+            ):
+                counts[session.user_id] += 1
+        return {user_id: count for user_id, count in counts.items() if count > 0}
+
 
 class FakeSecurityEventRepository:
     def __init__(self, state: IdentityState) -> None:
@@ -331,6 +406,9 @@ class FakeIdentityUnitOfWork:
         self._state = state
         self.users: UserRepository = FakeUserRepository(state)
         self.activation_tokens: ActivationTokenRepository = FakeActivationTokenRepository(state)
+        self.password_reset_tokens: PasswordResetTokenRepository = FakePasswordResetTokenRepository(
+            state
+        )
         self.devices: DeviceRepository = FakeDeviceRepository(state)
         self.sessions: SessionRepository = FakeSessionRepository(state)
         self.security_events: SecurityEventRepository = FakeSecurityEventRepository(state)
@@ -627,6 +705,17 @@ class FixedActivationSecrets:
         return self._generated.digest
 
 
+class FixedPasswordResetSecrets:
+    def __init__(self, plaintext: str, digest: str) -> None:
+        self._generated = GeneratedPasswordResetSecret(plaintext=plaintext, digest=digest)
+
+    def generate(self) -> GeneratedPasswordResetSecret:
+        return self._generated
+
+    def digest(self, plaintext: str) -> str:
+        return hashlib.sha256(plaintext.encode()).hexdigest()
+
+
 class SequentialActivationSecrets:
     """Deterministic unique credentials for reissue specifications."""
 
@@ -671,4 +760,8 @@ class FakePasswordHasher:
         return "$argon2id$fake-hash"
 
     async def verify(self, password_hash: str | None, password: str) -> bool:
-        return password_hash == "$argon2id$fake-hash" and password in self.hashed_passwords
+        return (
+            password_hash == "$argon2id$fake-hash"
+            and bool(self.hashed_passwords)
+            and password == self.hashed_passwords[-1]
+        )

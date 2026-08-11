@@ -5,6 +5,7 @@ from typing import Protocol, Self
 
 from messenger.application.ports.identity.activation_tokens import ActivationTokenRepository
 from messenger.application.ports.identity.devices import DeviceRepository
+from messenger.application.ports.identity.password_reset_tokens import PasswordResetTokenRepository
 from messenger.application.ports.identity.security_events import SecurityEventRepository
 from messenger.application.ports.identity.sessions import SessionRepository
 from messenger.application.ports.identity.users import UserRepository
@@ -14,6 +15,7 @@ class IdentityUnitOfWork(Protocol):
     users: UserRepository
     activation_tokens: ActivationTokenRepository
     devices: DeviceRepository
+    password_reset_tokens: PasswordResetTokenRepository
     sessions: SessionRepository
     security_events: SecurityEventRepository
 

@@ -8,6 +8,7 @@ from messenger.application.ports.identity import (
     ActivationTokenRepository,
     DeviceRepository,
     IdentityUnitOfWork,
+    PasswordResetTokenRepository,
     SecurityEventRepository,
     SessionRepository,
     UserRepository,
@@ -15,6 +16,7 @@ from messenger.application.ports.identity import (
 from messenger.infrastructure.persistence.repositories import (
     SqlAlchemyActivationTokenRepository,
     SqlAlchemyDeviceRepository,
+    SqlAlchemyPasswordResetTokenRepository,
     SqlAlchemySecurityEventRepository,
     SqlAlchemySessionRepository,
     SqlAlchemyUserRepository,
@@ -30,6 +32,7 @@ class SqlAlchemyIdentityUnitOfWork:
         self.users: UserRepository
         self.activation_tokens: ActivationTokenRepository
         self.devices: DeviceRepository
+        self.password_reset_tokens: PasswordResetTokenRepository
         self.sessions: SessionRepository
         self.security_events: SecurityEventRepository
 
@@ -38,6 +41,7 @@ class SqlAlchemyIdentityUnitOfWork:
         self.users = SqlAlchemyUserRepository(self._session)
         self.activation_tokens = SqlAlchemyActivationTokenRepository(self._session)
         self.devices = SqlAlchemyDeviceRepository(self._session)
+        self.password_reset_tokens = SqlAlchemyPasswordResetTokenRepository(self._session)
         self.sessions = SqlAlchemySessionRepository(self._session)
         self.security_events = SqlAlchemySecurityEventRepository(self._session)
         return self

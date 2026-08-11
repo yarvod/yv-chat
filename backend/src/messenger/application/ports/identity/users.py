@@ -3,14 +3,24 @@
 from typing import Protocol
 from uuid import UUID
 
-from messenger.application.ports.identity.records import ManagedUserRecord, UserAuthenticationRecord
+from messenger.application.ports.identity.records import (
+    ManagedUserPageRecord,
+    ManagedUserRecord,
+    UserAuthenticationRecord,
+)
 from messenger.domain.entities import User
 
 
 class UserRepository(Protocol):
     async def list_active(self) -> list[User]: ...
 
-    async def list_managed(self) -> list[ManagedUserRecord]: ...
+    async def list_managed(
+        self,
+        *,
+        search: str | None,
+        limit: int,
+        offset: int,
+    ) -> ManagedUserPageRecord: ...
 
     async def get_managed_by_id(
         self,
