@@ -295,10 +295,12 @@ policy остаются).
 - CSP, `X-Content-Type-Options`, `Referrer-Policy` и минимальное раскрытие backend;
 - PostgreSQL не опубликован наружу.
 
-Production `chat.yoowee.ru` работает через отдельный host Nginx vhost и
-loopback-only gateway `127.0.0.1:18080`. Let’s Encrypt certificate, HTTP→HTTPS,
-HSTS/CSP, trusted proxy boundary, migration-before-rollout и immutable GHCR
-images проверены; все соседние `infra-*` containers сохранили состояние.
+Production `chat.yoowee.ru` работает через отдельный vhost единственного системного
+Nginx: `/api/`/WebSocket направляются в loopback-only API `127.0.0.1:18081`, `/` —
+в loopback-only Nuxt `127.0.0.1:18082`. Let’s Encrypt certificate, HTTP→HTTPS,
+HSTS/CSP, exact trusted proxy boundary, migration-before-rollout и immutable GHCR
+images проверены; production Nginx container удалён, все соседние `infra-*`
+containers сохранили состояние (`WP-038`).
 
 ### BL-031 — Backup/restore и retention-compatible policy
 
@@ -390,7 +392,7 @@ cleanup process.
 
 ### BL-030 — Production images, GHCR и deployment workflow
 
-Immutable `sha-<commit>` backend/frontend images строятся и публикуются в GHCR только GitHub Actions; VPS выполняет scoped pull, PostgreSQL wait, intentional Alembic migration и health-checked rollout. Production Compose имеет отдельные edge/internal networks, единственный loopback bind `127.0.0.1:18080`, pinned PostgreSQL/Nginx digests, non-root app images, resource limits и project-scoped volumes. Remote script требует server-only `.env` mode `0600`, использует temporary Docker auth и пытается вернуть previous image tag при failed healthcheck. Runbook фиксирует GitHub environment, secrets, first-run и rollback.
+Immutable `sha-<commit>` backend/frontend images строятся и публикуются в GHCR только GitHub Actions; VPS выполняет scoped pull, PostgreSQL wait, intentional Alembic migration и health-checked rollout. Production Compose имеет project-owned ingress/internal networks, отдельные loopback binds `127.0.0.1:18081`/`:18082`, не содержит Nginx service, использует pinned PostgreSQL image, non-root app images, resource limits и project-scoped volumes. Remote script требует server-only `.env` mode `0600`, использует temporary Docker auth, проверяет оба direct upstream и пытается вернуть previous image tag при failed healthcheck. Runbook фиксирует GitHub environment, secrets, first-run и rollback.
 
 ### BL-037 — Admin invitations и activation UI
 

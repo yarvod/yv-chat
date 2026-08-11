@@ -25,7 +25,7 @@ services:
       APP_ENV: production
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
       ALLOWED_ORIGINS: '${ALLOWED_ORIGINS:-["https://chat.yoowee.ru"]}'
-      TRUSTED_PROXY_CIDRS: '${TRUSTED_PROXY_CIDRS:-["172.30.242.10/32"]}'
+      TRUSTED_PROXY_CIDRS: '${TRUSTED_PROXY_CIDRS:-["172.30.243.1/32"]}'
       ACTIVATION_TOKEN_TTL_SECONDS: ${ACTIVATION_TOKEN_TTL_SECONDS:-86400}
       PASSWORD_RESET_TOKEN_TTL_SECONDS: ${PASSWORD_RESET_TOKEN_TTL_SECONDS:-3600}
       SESSION_IDLE_TIMEOUT_SECONDS: ${SESSION_IDLE_TIMEOUT_SECONDS:-2592000}
@@ -42,7 +42,9 @@ services:
       MEDIA_ROOT: /data/media
     volumes:
       - media-data:/data/media
-    networks: [private]
+    ports:
+      - 127.0.0.1:${YV_CHAT_API_BIND_PORT:-18081}:8000
+    networks: [ingress, private]
     depends_on:
       postgres:
         condition: service_healthy
@@ -68,7 +70,7 @@ services:
       APP_ENV: production
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
       ALLOWED_ORIGINS: '${ALLOWED_ORIGINS:-["https://chat.yoowee.ru"]}'
-      TRUSTED_PROXY_CIDRS: '${TRUSTED_PROXY_CIDRS:-["172.30.242.10/32"]}'
+      TRUSTED_PROXY_CIDRS: '${TRUSTED_PROXY_CIDRS:-["172.30.243.1/32"]}'
       SYNC_EVENT_RETENTION_SECONDS: ${SYNC_EVENT_RETENTION_SECONDS:-2592000}
       MESSAGE_CIPHERTEXT_RETENTION_SECONDS: ${MESSAGE_CIPHERTEXT_RETENTION_SECONDS:-2592000}
       MESSAGE_TOMBSTONE_RETENTION_SECONDS: ${MESSAGE_TOMBSTONE_RETENTION_SECONDS:-7776000}
@@ -88,7 +90,9 @@ services:
     environment:
       NITRO_HOST: 0.0.0.0
       NITRO_PORT: 3000
-    networks: [private]
+    ports:
+      - 127.0.0.1:${YV_CHAT_FRONTEND_BIND_PORT:-18082}:3000
+    networks: [ingress]
     healthcheck:
       test:
         - CMD
@@ -104,39 +108,11 @@ services:
     pids_limit: 128
     security_opt: ["no-new-privileges:true"]
 
-  gateway:
-    image: nginx:1.29-alpine@sha256:5616878291a2eed594aee8db4dade5878cf7edcb475e59193904b198d9b830de
-    ports:
-      - 127.0.0.1:${YV_CHAT_BIND_PORT:-18080}:80
-    volumes:
-      - ./deploy/nginx/gateway.conf:/etc/nginx/conf.d/default.conf:ro
-    networks:
-      edge:
-      private:
-        ipv4_address: 172.30.242.10
-    depends_on:
-      api:
-        condition: service_healthy
-      frontend:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1/healthz"]
-      interval: 10s
-      timeout: 3s
-      retries: 6
-      start_period: 10s
-    restart: unless-stopped
-    mem_limit: 64m
-    pids_limit: 64
-    read_only: true
-    tmpfs:
-      - /var/cache/nginx:size=16m
-      - /var/run:size=1m
-      - /tmp:size=4m
-    security_opt: ["no-new-privileges:true"]
-
 networks:
-  edge:
+  ingress:
+    ipam:
+      config:
+        - subnet: 172.30.243.0/24
   private:
     internal: true
     ipam:

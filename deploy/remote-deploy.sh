@@ -16,7 +16,6 @@ cd "$DEPLOY_ROOT"
 test -f .env
 test "$(stat -c '%a' .env)" = "600"
 test -f compose.prod.yml
-test -f deploy/nginx/gateway.conf
 
 compose() {
     docker compose -p yv-chat --env-file .env -f compose.prod.yml "$@"
@@ -35,7 +34,7 @@ unset GHCR_TOKEN
 
 export BACKEND_IMAGE FRONTEND_IMAGE IMAGE_TAG
 compose config --quiet
-compose pull postgres api cleanup frontend gateway
+compose pull postgres api cleanup frontend
 compose up -d --wait postgres
 compose run --rm --no-deps api uv run alembic upgrade head
 
@@ -62,6 +61,11 @@ if ! compose up -d --wait --wait-timeout 120; then
     fi
     exit 1
 fi
+
+curl --fail --silent --show-error \
+    "http://127.0.0.1:${YV_CHAT_API_BIND_PORT:-18081}/api/v1/health" >/dev/null
+curl --fail --silent --show-error \
+    "http://127.0.0.1:${YV_CHAT_FRONTEND_BIND_PORT:-18082}/" >/dev/null
 
 printf '%s\n' "$IMAGE_TAG" >.deployed-image-tag
 chmod 600 .deployed-image-tag

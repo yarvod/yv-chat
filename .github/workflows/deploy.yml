@@ -199,7 +199,6 @@ jobs:
             deploy/bootstrap-server.sh deploy/remote-deploy.sh \
             "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_ROOT/deploy/"
           scp "${ssh_options[@]}" -P "$DEPLOY_PORT" \
-            deploy/nginx/gateway.conf \
             deploy/nginx/host-chat.http.conf \
             deploy/nginx/host-chat.conf \
             "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_ROOT/deploy/nginx/"

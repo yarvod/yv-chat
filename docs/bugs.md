@@ -22,6 +22,32 @@
 
 ## Resolved
 
+### BUG-027 — Production container gateway нарушал общий host ingress
+
+- Статус: `verified`.
+- Найдено в: production после `WP-036`; диагностировано и устранено в `WP-038`.
+- Severity: `critical`.
+- Условия воспроизведения: на VPS одновременно работает общий системный Nginx для
+  `yoowee.ru`/`s3.yoowee.ru`/`chat.yoowee.ru` и отдельный production
+  `yv-chat-gateway-1`; после container lifecycle/reload часть доменов перестаёт
+  отвечать, а остановка gateway восстанавливает соседние vhost.
+- Ожидаемое поведение: один системный Nginx владеет public `80/443`, а yv-chat не
+  влияет на ingress других проектов.
+- Фактическое поведение: контейнер `ca1386492b46` мешал общему ingress; после его
+  остановки `yoowee.ru` и `s3.yoowee.ru` восстановились, но chat получал `502`,
+  потому что старый vhost всё ещё смотрел в gateway `127.0.0.1:18080`.
+- Причина: лишний production proxy-hop имел собственный lifecycle/DNS state и делал
+  availability чата и общего ingress зависимой от второго Nginx. Это также
+  воспроизводило `BUG-024` при смене IP API.
+- Исправление: production Compose больше не содержит gateway; host Nginx напрямую
+  разделяет API/WebSocket `127.0.0.1:18081` и frontend `127.0.0.1:18082`. Оба bind
+  доступны только с loopback, API доверяет проверенному bridge peer
+  `172.30.243.1/32`, старый gateway точечно удалён.
+- Проверка: direct/public API и frontend отвечают `200`, корректный unauthenticated
+  WebSocket upgrade достигает application и получает `403`, 40 параллельных health
+  requests проходят, public listeners принадлежат host Nginx, `18080` отсутствует;
+  все восемь исходных `infra-*` container ID сохранились и остаются `Up`.
+
 ### BUG-024 — Gateway сохранял устаревший IP пересозданного API
 
 - Статус: `verified`.

@@ -4,46 +4,52 @@
 завершённая работа фиксируется отдельным коммитом, а новый пункт переносится
 сюда из `backlog.md`.
 
-## WP-036 — Docker gateway upstream re-resolution hotfix
+## WP-038 — Single host-Nginx production ingress
 
 Статус: **completed**
-Bug: `BUG-024`
-Цель: исключить production `502` после пересоздания API/frontend контейнера, не
-затронув соседние Compose projects и не ослабив ingress/security boundaries.
+Bug: `BUG-027`
+Цель: production использует единственный уже установленный host Nginx + system
+Certbot. Контейнерный Nginx остаётся только в local integrated Compose; production
+host напрямую проксирует loopback-only frontend/API ports.
 
-### Инварианты
+### Security and availability invariants
 
-1. Gateway остаётся единственным loopback-published container проекта.
-2. Upstream names разрешаются через Docker embedded DNS во время запросов, а не
-   закрепляются к container IP на момент запуска Nginx.
-3. API/frontend остаются только в internal network; PostgreSQL наружу не публикуется.
-4. Hotfix не выполняет project-wide `down`, `--remove-orphans` или prune и не трогает
-   containers `infra-*`.
+1. Только host Nginx слушает public `80/443`; yv-chat API/frontend публикуются строго
+   на `127.0.0.1`, PostgreSQL/cleanup наружу не публикуются.
+2. `/api/` и `/api/v1/realtime` идут напрямую в API; `/` — во frontend. WebSocket
+   upgrade, original Host, scheme и trusted `X-Forwarded-For` chain сохраняются.
+3. API доверяет только фактическому Docker bridge peer host-proxy, проверенному на
+   production после rollout; arbitrary client XFF не становится authoritative.
+4. Production Compose не содержит gateway service/image. Project-owned non-internal
+   ingress network нужна только для Docker loopback port publishing. Local
+   `compose.yml` сохраняет Nginx для integrated development smoke.
+5. Deploy не выполняет `down`, `--remove-orphans` или prune; старый gateway удаляется
+   только explicit scoped command после успешной прямой проверки обоих upstreams.
+6. Host vhost меняется через temp file + `nginx -t` + atomic install/reload с backup
+   rollback. Certbot certificate paths не меняются.
+7. `infra-*` container IDs/start times и их host vhost остаются неизменны. Устаревший
+   duplicate `sites-enabled/yoowee.ru` отключается только при сохранении рабочего
+   `/etc/nginx/conf.d/esp.conf` route.
+8. Rollback возвращает previous chat vhost и production Compose gateway без изменения
+   database/media volumes.
 
 ### План
 
-- [x] Read-only production diagnosis: host/gateway/API health и scoped logs.
-- [x] Восстановить доступ перезапуском только `yv-chat-gateway-1`.
-- [x] Добавить runtime Docker DNS resolution для API и frontend upstreams.
-- [x] Добавить deploy contract checks, фиксирующие resolver/variable proxy passes.
-- [x] Проверить Nginx syntax/runtime against isolated production network.
-- [x] Прогнать deploy/full repository checks, обновить bug record и сделать commit.
+- [x] Проверить host listeners, оба домена, container baseline и duplicate vhost.
+- [x] Отключить только устаревший duplicate `yoowee.ru` symlink с rollback checks.
+- [x] Перевести production Compose на loopback API/frontend ports без gateway.
+- [x] Обновить host HTTPS/HTTP vhost, deploy script/workflow contracts и runbook.
+- [x] Выполнить local config/tests и server preflight на свободные ports.
+- [x] Scoped production rollout: containers → trusted peer → host vhost → remove gateway.
+- [x] Проверить parallel clients/WebSocket routing, TLS, root/chat и infra invariants.
+- [x] Full CI и docs/bugs sync; отдельный commit/push выполняются после diff review.
 
 ### Definition of Done
 
-- public `/api/v1/health` снова отвечает `200`;
-- новый gateway config проходит `nginx -t` и переживает replacement upstream address;
-- соседние services не перезапущены;
-- CI/deploy contracts зелёные, BUG-024 документирован и commit отправлен.
-
-### Проверка
-
-- production diagnosis: frontend `200`, API routes `502`, API container own health
-  `200/healthy`, gateway log `connect() failed (111)` к прежнему upstream address;
-- scoped recovery: restart только `yv-chat-gateway-1`, public health восстановлен;
-- pinned production Nginx image: `nginx -t` passed с новым config;
-- isolated Docker network: request до replacement `404`, API address принудительно
-  изменён, request после resolver TTL также `404` вместо `502`;
-- live config установлен с backup/automatic rollback guard, `nginx -t`, graceful
-  reload и final public health `200`; соседние `infra-*` не изменялись;
-- repository `make ci` выполняется перед commit.
+- `docker compose -f compose.prod.yml config` не содержит production gateway;
+- host `ss` показывает единственный Nginx owner public 80/443;
+- chat frontend/API/WebSocket работают через разные loopback upstreams;
+- API видит и доверяет только проверенный bridge peer, spoofed XFF tests остаются green;
+- `yoowee.ru` и `chat.yoowee.ru` доступны, duplicate warning исчез;
+- все pre-existing `infra-*` containers имеют прежние IDs и остаются `Up`;
+- CI/deploy checks и live acceptance зелёные.

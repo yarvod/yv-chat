@@ -127,17 +127,20 @@ compose-check:
 deploy-check:
 	sh -n deploy/remote-deploy.sh
 	sh -n deploy/bootstrap-server.sh
-	grep -q '127.0.0.1:$${YV_CHAT_BIND_PORT:-18080}:80' compose.prod.yml
-	grep -q '172.30.242.10/32' compose.prod.yml
+	grep -q '127.0.0.1:$${YV_CHAT_API_BIND_PORT:-18081}:8000' compose.prod.yml
+	grep -q '127.0.0.1:$${YV_CHAT_FRONTEND_BIND_PORT:-18082}:3000' compose.prod.yml
+	grep -q '172.30.243.1/32' compose.prod.yml
+	! grep -q '^  gateway:' compose.prod.yml
 	grep -q '^  cleanup:' compose.prod.yml
 	grep -q 'messenger.cleanup_messages' compose.prod.yml
-	grep -q 'compose pull postgres api cleanup frontend gateway' deploy/remote-deploy.sh
-	grep -q 'resolver 127.0.0.11 valid=10s ipv6=off' deploy/nginx/gateway.conf
-	grep -q 'proxy_pass \$$api_upstream' deploy/nginx/gateway.conf
-	grep -q 'proxy_pass \$$frontend_upstream' deploy/nginx/gateway.conf
+	grep -q 'compose pull postgres api cleanup frontend' deploy/remote-deploy.sh
+	grep -q 'YV_CHAT_API_BIND_PORT:-18081' deploy/remote-deploy.sh
+	grep -q 'YV_CHAT_FRONTEND_BIND_PORT:-18082' deploy/remote-deploy.sh
 	grep -q 'server_name chat.yoowee.ru' deploy/nginx/host-chat.http.conf
 	grep -q 'Strict-Transport-Security' deploy/nginx/host-chat.conf
-	grep -q 'proxy_pass http://127.0.0.1:18080' deploy/nginx/host-chat.conf
+	grep -q 'proxy_pass http://127.0.0.1:18081' deploy/nginx/host-chat.conf
+	grep -q 'proxy_pass http://127.0.0.1:18082' deploy/nginx/host-chat.conf
+	grep -q 'Connection \$$yv_chat_connection_upgrade' deploy/nginx/host-chat.conf
 	ssh-keygen -l -f deploy/ssh_known_hosts >/dev/null
 	! grep -q 'StrictHostKeyChecking=no' .github/workflows/deploy.yml
 	! grep -Eq 'docker system prune|docker compose down|--remove-orphans' deploy/remote-deploy.sh deploy/bootstrap-server.sh

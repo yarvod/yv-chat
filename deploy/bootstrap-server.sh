@@ -31,8 +31,9 @@ printf '%s\n' \
     "POSTGRES_PASSWORD=$database_password" \
     "DATABASE_URL=postgresql+asyncpg://yv_chat:$database_password@postgres:5432/yv_chat" \
     'ALLOWED_ORIGINS=["https://chat.yoowee.ru"]' \
-    'TRUSTED_PROXY_CIDRS=["172.30.242.10/32"]' \
-    'YV_CHAT_BIND_PORT=18080' \
+    'TRUSTED_PROXY_CIDRS=["172.30.243.1/32"]' \
+    'YV_CHAT_API_BIND_PORT=18081' \
+    'YV_CHAT_FRONTEND_BIND_PORT=18082' \
     'ACTIVATION_TOKEN_TTL_SECONDS=86400' \
     'PASSWORD_RESET_TOKEN_TTL_SECONDS=3600' \
     'SESSION_IDLE_TIMEOUT_SECONDS=2592000' \
