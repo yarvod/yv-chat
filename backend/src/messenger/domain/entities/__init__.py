@@ -8,6 +8,7 @@ from messenger.domain.entities.conversation import (
     ConversationType,
 )
 from messenger.domain.entities.device import Device
+from messenger.domain.entities.message import Message
 from messenger.domain.entities.security_event import SecurityEvent, SecurityEventType
 from messenger.domain.entities.session import Session
 from messenger.domain.entities.user import User
@@ -18,6 +19,7 @@ __all__ = [
     "ConversationMember",
     "ConversationMemberRole",
     "ConversationType",
+    "Message",
     "Device",
     "SecurityEvent",
     "SecurityEventType",

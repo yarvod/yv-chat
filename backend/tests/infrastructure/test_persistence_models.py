@@ -21,6 +21,7 @@ def test_persistence_metadata_contains_expected_tables() -> None:
         "conversation_members",
         "conversations",
         "devices",
+        "messages",
         "security_events",
         "sessions",
         "users",
@@ -125,3 +126,20 @@ def test_conversation_schema_enforces_direct_pair_and_membership_lifecycle() -> 
     assert "ix_conversation_members_user_active" in {index.name for index in members.indexes}
     assert "plaintext" not in conversations.columns
     assert "message_key" not in conversations.columns
+
+
+def test_message_schema_is_bounded_opaque_ciphertext_only() -> None:
+    messages = Base.metadata.tables["messages"]
+    check_names = {
+        constraint.name
+        for constraint in messages.constraints
+        if isinstance(constraint, CheckConstraint)
+    }
+
+    assert "ciphertext" in messages.columns
+    assert {
+        "ck_messages_ciphertext_size",
+        "ck_messages_protocol_version_range",
+    }.issubset(check_names)
+    assert {"plaintext", "text", "decrypted_body", "message_key"}.isdisjoint(messages.columns)
+    assert "ix_messages_conversation_created" in {index.name for index in messages.indexes}

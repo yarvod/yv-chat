@@ -7,6 +7,7 @@ from messenger.bootstrap.providers.adapters import SecurityAdapterProvider
 from messenger.bootstrap.providers.conversations import ConversationUseCaseProvider
 from messenger.bootstrap.providers.current_account import CurrentAccountUseCaseProvider
 from messenger.bootstrap.providers.devices import DeviceUseCaseProvider
+from messenger.bootstrap.providers.messaging import MessagingUseCaseProvider
 from messenger.bootstrap.providers.persistence import PersistenceProvider
 from messenger.bootstrap.providers.sessions import SessionUseCaseProvider
 from messenger.bootstrap.providers.settings import SettingsProvider
@@ -22,6 +23,7 @@ def application_providers(settings: AppSettings) -> tuple[Provider, ...]:
         AccountUseCaseProvider(),
         CurrentAccountUseCaseProvider(),
         ConversationUseCaseProvider(),
+        MessagingUseCaseProvider(),
         SessionUseCaseProvider(),
         DeviceUseCaseProvider(),
     )

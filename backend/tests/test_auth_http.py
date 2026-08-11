@@ -33,10 +33,13 @@ from messenger.application.devices.list_sessions import ListMySessions
 from messenger.application.devices.rename import RenameMyDevice
 from messenger.application.devices.revoke import RevokeMyDevice
 from messenger.application.devices.revoke_others import RevokeOtherSessions
+from messenger.application.messaging.policy import MessageEnvelopePolicy
+from messenger.application.messaging.send_message import SendOpaqueMessage
 from messenger.application.ports.activation_secrets import ActivationSecretService
 from messenger.application.ports.clock import Clock
 from messenger.application.ports.conversations import ConversationUnitOfWorkFactory
 from messenger.application.ports.identity import IdentityUnitOfWorkFactory
+from messenger.application.ports.messages import MessagingUnitOfWorkFactory
 from messenger.application.ports.passwords import PasswordHasher
 from messenger.application.ports.session_credentials import SessionCredentialService
 from messenger.application.security_events.policy import SecurityEventPolicy
@@ -50,6 +53,7 @@ from messenger.domain.entities import Device, Session, User
 from tests.application.fakes import (
     FakeConversationUnitOfWorkFactory,
     FakeIdentityUnitOfWorkFactory,
+    FakeMessagingUnitOfWorkFactory,
     FakePasswordHasher,
     FixedSessionCredentials,
     IdentityState,
@@ -86,6 +90,7 @@ class HttpTestProvider(Provider):
         settings: AppSettings,
         unit_of_work: IdentityUnitOfWorkFactory,
         conversation_unit_of_work: ConversationUnitOfWorkFactory,
+        messaging_unit_of_work: MessagingUnitOfWorkFactory,
         clock: Clock,
         passwords: PasswordHasher,
         credentials: SessionCredentialService,
@@ -95,6 +100,7 @@ class HttpTestProvider(Provider):
         self._settings = settings
         self._unit_of_work = unit_of_work
         self._conversation_unit_of_work = conversation_unit_of_work
+        self._messaging_unit_of_work = messaging_unit_of_work
         self._clock = clock
         self._passwords = passwords
         self._credentials = credentials
@@ -111,6 +117,14 @@ class HttpTestProvider(Provider):
     @provide(scope=Scope.APP)
     def conversation_unit_of_work(self) -> ConversationUnitOfWorkFactory:
         return self._conversation_unit_of_work
+
+    @provide(scope=Scope.APP)
+    def messaging_unit_of_work(self) -> MessagingUnitOfWorkFactory:
+        return self._messaging_unit_of_work
+
+    @provide(scope=Scope.APP)
+    def message_policy(self) -> MessageEnvelopePolicy:
+        return MessageEnvelopePolicy()
 
     @provide(scope=Scope.APP)
     def clock(self) -> Clock:
@@ -168,6 +182,7 @@ class HttpTestProvider(Provider):
         ChangeConversationMemberRole,
         scope=Scope.REQUEST,
     )
+    send_opaque_message = provide(SendOpaqueMessage, scope=Scope.REQUEST)
 
 
 def build_test_application(
@@ -206,6 +221,7 @@ def build_test_application(
             settings=settings,
             unit_of_work=factory,
             conversation_unit_of_work=FakeConversationUnitOfWorkFactory(state),
+            messaging_unit_of_work=FakeMessagingUnitOfWorkFactory(state),
             clock=clock,
             passwords=passwords,
             credentials=credentials,

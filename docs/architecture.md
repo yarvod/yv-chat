@@ -312,6 +312,10 @@ ciphertext
 created_at / expires_at / deleted_at
 ```
 
+Реализованный foundation пока содержит `id`, conversation/sender user/device, positive `protocol_version`, bounded opaque `ciphertext` и server `created_at`. HTTP принимает ciphertext как strict base64 encoding, декодирует в opaque bytes и не эхоит content в create response. Application повторно проверяет active conversation membership и active owned device текущей session; sender user/device не принимаются как свободные client claims. PostgreSQL ограничивает ciphertext 1 MiB, application policy — 64 KiB и transport version `1`.
+
+Это только non-E2EE transport foundation: version `1` не определяет криптографический протокол, backend ничего не шифрует/дешифрует и secure messaging milestone нельзя считать завершённым до отдельного protocol ADR и client crypto adapter.
+
 Колонки `text`, `plaintext`, `decrypted_body`, `message_key` запрещены.
 
 Message creation idempotent по client-generated request/message ID. Authoritative ordering выдаёт серверный sequence/cursor, не client timestamp. Message + sync event записываются атомарно.

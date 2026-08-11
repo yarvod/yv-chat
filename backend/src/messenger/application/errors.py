@@ -87,3 +87,7 @@ class ConversationParticipantNotFoundError(ApplicationError):
 
 class ConversationMembershipConflictError(ApplicationError):
     """A requested membership transition conflicts with current state."""
+
+
+class InvalidMessageEnvelopeError(ApplicationError):
+    """An opaque message envelope violates supported version or size bounds."""

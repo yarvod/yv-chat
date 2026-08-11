@@ -7,6 +7,7 @@ from messenger.infrastructure.persistence.models.conversation import (
     ConversationModel,
 )
 from messenger.infrastructure.persistence.models.device import DeviceModel
+from messenger.infrastructure.persistence.models.message import MessageModel
 from messenger.infrastructure.persistence.models.security_event import SecurityEventModel
 from messenger.infrastructure.persistence.models.session import SessionModel
 from messenger.infrastructure.persistence.models.user import UserModel
@@ -17,6 +18,7 @@ __all__ = [
     "ConversationMemberModel",
     "ConversationModel",
     "DeviceModel",
+    "MessageModel",
     "SecurityEventModel",
     "SessionModel",
     "UserModel",

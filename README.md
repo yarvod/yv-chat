@@ -6,7 +6,7 @@
 
 ## Статус
 
-Готовы закрытый account/session lifecycle, self-service security controls и versioned direct/group conversation API с owner/admin/member authorization. Следующий этап — opaque versioned ciphertext message envelope; текущие conversations ещё не передают пользовательские сообщения.
+Готовы закрытый account/session lifecycle, self-service security controls, direct/group conversation API и bounded versioned opaque message envelope. Текущий message transport сохраняет только ciphertext и **не является реализацией E2EE**; следующий этап — idempotent retry и стабильный server sequence/pagination.
 
 Текущая фича и подробный план находятся в [docs/workplan.md](docs/workplan.md). Полный продуктовый backlog — в [docs/backlog.md](docs/backlog.md), архитектура и правила её развития — в [docs/architecture.md](docs/architecture.md), найденные дефекты — в [docs/bugs.md](docs/bugs.md).
 

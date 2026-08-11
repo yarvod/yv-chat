@@ -25,11 +25,13 @@ from messenger.application.ports.identity import (
     UserAuthenticationRecord,
     UserRepository,
 )
+from messenger.application.ports.messages import MessageRepository, MessagingUnitOfWork
 from messenger.application.ports.session_credentials import GeneratedSessionCredential
 from messenger.domain.entities import (
     ActivationToken,
     Conversation,
     Device,
+    Message,
     SecurityEvent,
     Session,
     User,
@@ -47,6 +49,7 @@ class IdentityState:
     sessions: dict[UUID, Session] = field(default_factory=dict)
     security_events: dict[UUID, SecurityEvent] = field(default_factory=dict)
     conversations: dict[UUID, Conversation] = field(default_factory=dict)
+    messages: dict[UUID, Message] = field(default_factory=dict)
     commits: int = 0
 
 
@@ -426,6 +429,45 @@ class FakeConversationUnitOfWorkFactory:
 
     def __call__(self) -> ConversationUnitOfWork:
         return FakeConversationUnitOfWork(self._state)
+
+
+class FakeMessageRepository:
+    def __init__(self, state: IdentityState) -> None:
+        self._state = state
+
+    async def add(self, message: Message) -> None:
+        self._state.messages[message.id] = message
+
+
+class FakeMessagingUnitOfWork:
+    def __init__(self, state: IdentityState) -> None:
+        self._state = state
+        self.messages: MessageRepository = FakeMessageRepository(state)
+        self.conversations: ConversationRepository = FakeConversationRepository(state)
+        self.users: UserRepository = FakeUserRepository(state)
+        self.devices: DeviceRepository = FakeDeviceRepository(state)
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        del exc_type, exc_value, traceback
+
+    async def commit(self) -> None:
+        self._state.commits += 1
+
+
+class FakeMessagingUnitOfWorkFactory:
+    def __init__(self, state: IdentityState) -> None:
+        self._state = state
+
+    def __call__(self) -> MessagingUnitOfWork:
+        return FakeMessagingUnitOfWork(self._state)
 
 
 @dataclass(frozen=True, slots=True)

@@ -46,6 +46,7 @@ from messenger.infrastructure.persistence.models import (
     ConversationMemberModel,
     ConversationModel,
     DeviceModel,
+    MessageModel,
     SecurityEventModel,
     SessionModel,
     UserModel,
@@ -75,6 +76,7 @@ async def reset_identity_tables(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with session_factory.begin() as session:
+        await session.execute(delete(MessageModel))
         await session.execute(delete(ConversationMemberModel))
         await session.execute(delete(ConversationModel))
         await session.execute(delete(SecurityEventModel))

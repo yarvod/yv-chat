@@ -10,16 +10,6 @@
 
 ## Messaging foundation
 
-### BL-006 — Versioned opaque message envelope
-
-Результат: backend принимает и сохраняет только versioned ciphertext envelope, не связанный с UI plaintext schema.
-
-- message identity, conversation/sender device, protocol version, ciphertext bytes, server timestamps;
-- запрет plaintext/message-key columns и logging;
-- временный synthetic ciphertext transport явно помечен non-E2EE и имеет removal path;
-- sender-device ownership и membership authorization;
-- message/attachment envelope DTO versioning и size bounds.
-
 ### BL-007 — Idempotent message creation и ordering
 
 Результат: retry не создаёт дубли, а concurrent messages получают стабильный server order.
@@ -334,6 +324,10 @@
 - решение о native wrapper только при подтверждённой необходимости.
 
 ## Completed
+
+### BL-006 — Versioned opaque message envelope
+
+Отдельный Message domain/application/persistence vertical slice хранит только bounded opaque bytes, version и server/sender metadata. Messaging UoW проверяет active membership и owned active device; strict base64 HTTP не принимает sender claims и не эхоит content. Alembic `0008`, metadata/OpenAPI forbidden-field, HTTP и PostgreSQL tests фиксируют отсутствие plaintext/key contract. Это явно non-E2EE foundation.
 
 ### BL-005 — Conversation API и authorization
 

@@ -25,7 +25,9 @@ from messenger.application.devices.list_sessions import ListMySessions
 from messenger.application.devices.rename import RenameMyDevice
 from messenger.application.devices.revoke import RevokeMyDevice
 from messenger.application.devices.revoke_others import RevokeOtherSessions
+from messenger.application.messaging.send_message import SendOpaqueMessage
 from messenger.application.ports.conversations import ConversationUnitOfWorkFactory
+from messenger.application.ports.messages import MessagingUnitOfWorkFactory
 from messenger.application.sessions.authenticate import AuthenticateSession
 from messenger.application.sessions.login import Login
 from messenger.application.sessions.logout import Logout
@@ -59,6 +61,7 @@ async def test_production_graph_resolves_every_application_operation() -> None:
         RemoveConversationMember,
         LeaveConversation,
         ChangeConversationMemberRole,
+        SendOpaqueMessage,
         Login,
         AuthenticateSession,
         Logout,
@@ -75,8 +78,10 @@ async def test_production_graph_resolves_every_application_operation() -> None:
                 await request_container.get(operation_type) for operation_type in operation_types
             ]
             conversation_unit_of_work = await request_container.get(ConversationUnitOfWorkFactory)
+            messaging_unit_of_work = await request_container.get(MessagingUnitOfWorkFactory)
     finally:
         await container.close()
 
     assert tuple(type(operation) for operation in operations) == operation_types
     assert conversation_unit_of_work() is not None
+    assert messaging_unit_of_work() is not None
