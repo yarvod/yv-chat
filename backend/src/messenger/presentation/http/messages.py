@@ -14,6 +14,11 @@ from messenger.application.errors import (
     ConversationNotFoundError,
     InvalidMessageEnvelopeError,
     MessageIdempotencyConflictError,
+    MessageNotFoundError,
+)
+from messenger.application.messaging.delete_message import (
+    DeleteMessageForEveryone,
+    DeleteMessageForEveryoneCommand,
 )
 from messenger.application.messaging.list_messages import ListMessages, ListMessagesQuery
 from messenger.application.messaging.send_message import (
@@ -22,6 +27,7 @@ from messenger.application.messaging.send_message import (
 )
 from messenger.application.sessions.authenticate import AuthenticateSession
 from messenger.bootstrap.settings import AppSettings
+from messenger.domain.entities import MessageDeletionReason
 from messenger.presentation.http.auth import authenticate_request
 from messenger.presentation.http.security import require_csrf
 
@@ -47,10 +53,22 @@ class SendOpaqueMessageResponse(BaseModel):
     protocol_version: int
     sequence: int
     created_at: datetime
+    expires_at: datetime
 
 
 class OpaqueMessageResponse(SendOpaqueMessageResponse):
-    ciphertext_base64: str
+    ciphertext_base64: str | None
+    deletion_reason: MessageDeletionReason | None
+    deleted_at: datetime | None
+
+
+class DeleteMessageResponse(BaseModel):
+    message_id: UUID
+    conversation_id: UUID
+    sequence: int
+    deletion_reason: MessageDeletionReason
+    deleted_at: datetime
+    advanced: bool
 
 
 def decode_ciphertext(encoded: str) -> bytes:
@@ -106,6 +124,35 @@ async def send_opaque_message(
     return SendOpaqueMessageResponse.model_validate(result, from_attributes=True)
 
 
+@router.delete("/{message_id}", response_model=DeleteMessageResponse)
+async def delete_message_for_everyone(
+    conversation_id: UUID,
+    message_id: UUID,
+    request: Request,
+    response: Response,
+    settings: FromDishka[AppSettings],
+    authenticate_session: FromDishka[AuthenticateSession],
+    use_case: FromDishka[DeleteMessageForEveryone],
+) -> DeleteMessageResponse:
+    require_csrf(request, settings)
+    principal = await authenticate_request(request, response, settings, authenticate_session)
+    try:
+        result = await use_case.execute(
+            DeleteMessageForEveryoneCommand(
+                actor_user_id=principal.user_id,
+                conversation_id=conversation_id,
+                message_id=message_id,
+            )
+        )
+    except ConversationNotFoundError as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "conversation not found") from error
+    except MessageNotFoundError as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "message not found") from error
+    except AuthorizationDeniedError as error:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "forbidden") from error
+    return DeleteMessageResponse.model_validate(result, from_attributes=True)
+
+
 @router.get("", response_model=list[OpaqueMessageResponse])
 async def list_opaque_messages(
     conversation_id: UUID,
@@ -147,7 +194,14 @@ async def list_opaque_messages(
             protocol_version=message.protocol_version,
             sequence=message.sequence,
             created_at=message.created_at,
-            ciphertext_base64=base64.b64encode(message.ciphertext).decode(),
+            expires_at=message.expires_at,
+            ciphertext_base64=(
+                base64.b64encode(message.ciphertext).decode()
+                if message.ciphertext is not None
+                else None
+            ),
+            deletion_reason=message.deletion_reason,
+            deleted_at=message.deleted_at,
         )
         for message in messages
     ]

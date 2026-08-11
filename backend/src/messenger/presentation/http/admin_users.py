@@ -4,12 +4,16 @@ from datetime import datetime
 from uuid import UUID
 
 from dishka.integrations.fastapi import DishkaRoute, FromDishka
-from fastapi import APIRouter, HTTPException, Request, Response, status
+from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field, model_validator
 
 from messenger.application.accounts.invite import (
     CreateUserInvitation,
     CreateUserInvitationCommand,
+)
+from messenger.application.accounts.issue_password_reset import (
+    IssuePasswordReset,
+    IssuePasswordResetCommand,
 )
 from messenger.application.accounts.list_users import ListManagedUsers, ListManagedUsersQuery
 from messenger.application.accounts.reissue_activation import (
@@ -27,6 +31,7 @@ from messenger.application.errors import (
     DuplicateUsernameError,
     ManagedUserNotFoundError,
     SelfDeactivationError,
+    SelfPasswordResetError,
 )
 from messenger.application.sessions.authenticate import AuthenticateSession
 from messenger.bootstrap.settings import AppSettings
@@ -51,6 +56,14 @@ class ManagedUserResponse(BaseModel):
     can_reactivate: bool
     created_at: datetime
     updated_at: datetime
+    active_sessions: int
+
+
+class ManagedUsersPageResponse(BaseModel):
+    items: list[ManagedUserResponse]
+    total: int
+    limit: int
+    offset: int
 
 
 class CreateInvitationRequest(BaseModel):
@@ -92,24 +105,48 @@ class ReissueActivationResponse(BaseModel):
     expires_at: datetime
 
 
+class PasswordResetResponse(BaseModel):
+    user_id: UUID
+    reset_secret: str
+    expires_at: datetime
+    revoked_sessions: int
+
+
 def forbidden(error: AuthorizationDeniedError) -> HTTPException:
     return HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="forbidden")
 
 
-@router.get("", response_model=list[ManagedUserResponse])
+@router.get("", response_model=ManagedUsersPageResponse)
 async def list_users(
     request: Request,
     response: Response,
     settings: FromDishka[AppSettings],
     authenticate_session: FromDishka[AuthenticateSession],
     use_case: FromDishka[ListManagedUsers],
-) -> list[ManagedUserResponse]:
+    search: str | None = Query(default=None, min_length=1, max_length=80),
+    limit: int = Query(default=20, ge=1, le=50),
+    offset: int = Query(default=0, ge=0),
+) -> ManagedUsersPageResponse:
     principal = await authenticate_request(request, response, settings, authenticate_session)
     try:
-        users = await use_case.execute(ListManagedUsersQuery(actor_user_id=principal.user_id))
+        page = await use_case.execute(
+            ListManagedUsersQuery(
+                actor_user_id=principal.user_id,
+                search=search,
+                limit=limit,
+                offset=offset,
+            )
+        )
     except AuthorizationDeniedError as error:
         raise forbidden(error) from error
-    return [ManagedUserResponse.model_validate(user, from_attributes=True) for user in users]
+    return ManagedUsersPageResponse(
+        items=[
+            ManagedUserResponse.model_validate(user, from_attributes=True) for user in page.items
+        ],
+        total=page.total,
+        limit=page.limit,
+        offset=page.offset,
+    )
 
 
 @router.post("", response_model=InvitationResponse, status_code=status.HTTP_201_CREATED)
@@ -223,3 +260,42 @@ async def reissue_activation(
             detail="account is already activated",
         ) from error
     return ReissueActivationResponse.model_validate(result, from_attributes=True)
+
+
+@router.post("/{user_id}/password-reset", response_model=PasswordResetResponse)
+async def issue_password_reset(
+    user_id: UUID,
+    request: Request,
+    response: Response,
+    settings: FromDishka[AppSettings],
+    authenticate_session: FromDishka[AuthenticateSession],
+    use_case: FromDishka[IssuePasswordReset],
+) -> PasswordResetResponse:
+    require_csrf(request, settings)
+    principal = await authenticate_request(request, response, settings, authenticate_session)
+    try:
+        result = await use_case.execute(
+            IssuePasswordResetCommand(
+                actor_user_id=principal.user_id,
+                actor_session_id=principal.session_id,
+                target_user_id=user_id,
+            )
+        )
+    except AuthorizationDeniedError as error:
+        raise forbidden(error) from error
+    except ManagedUserNotFoundError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="user not found",
+        ) from error
+    except AccountActivationRequiredError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="account activation is required",
+        ) from error
+    except SelfPasswordResetError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="use current-account password change",
+        ) from error
+    return PasswordResetResponse.model_validate(result, from_attributes=True)

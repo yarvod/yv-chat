@@ -3,19 +3,20 @@
 import secrets
 from ipaddress import ip_address, ip_network
 
-from fastapi import HTTPException, Request, status
+from fastapi import HTTPException, status
+from starlette.requests import HTTPConnection
 
 from messenger.bootstrap.settings import AppSettings
 
 
-def require_allowed_origin(request: Request, settings: AppSettings) -> None:
+def require_allowed_origin(request: HTTPConnection, settings: AppSettings) -> None:
     """Reject missing and non-exact browser origins for state changes."""
     origin = request.headers.get("origin")
     if origin is None or origin not in settings.allowed_origins:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="request forbidden")
 
 
-def require_csrf(request: Request, settings: AppSettings) -> None:
+def require_csrf(request: HTTPConnection, settings: AppSettings) -> None:
     """Require a double-submit CSRF value in addition to exact Origin."""
     require_allowed_origin(request, settings)
     cookie_value = request.cookies.get(settings.csrf_cookie_name)
@@ -28,7 +29,7 @@ def require_csrf(request: Request, settings: AppSettings) -> None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="request forbidden")
 
 
-def client_ip(request: Request, settings: AppSettings) -> str | None:
+def client_ip(request: HTTPConnection, settings: AppSettings) -> str | None:
     """Resolve peer IP; accept forwarding only from an explicitly trusted chain."""
     if request.client is None:
         return None

@@ -17,6 +17,9 @@ from messenger.application.errors import (
 )
 from messenger.application.ports.clock import Clock
 from messenger.application.ports.conversations import ConversationUnitOfWorkFactory
+from messenger.application.ports.realtime import RealtimeNotifier
+from messenger.application.realtime import notifications_from_sync
+from messenger.application.realtime.publish import publish_best_effort
 from messenger.application.sync import SyncEventType, SyncPolicy
 from messenger.application.sync.emission import events_for_users
 from messenger.domain.entities import ConversationMemberRole, ConversationType
@@ -37,10 +40,12 @@ class ChangeConversationMemberRole:
         unit_of_work: ConversationUnitOfWorkFactory,
         clock: Clock,
         sync_policy: SyncPolicy,
+        realtime_notifier: RealtimeNotifier,
     ) -> None:
         self._unit_of_work = unit_of_work
         self._clock = clock
         self._sync_policy = sync_policy
+        self._realtime_notifier = realtime_notifier
 
     async def execute(
         self,
@@ -71,16 +76,16 @@ class ChangeConversationMemberRole:
                 now,
             )
             await unit_of_work.conversations.update(updated)
-            await unit_of_work.sync_events.append(
-                events_for_users(
-                    {member.user_id for member in updated.members if member.is_active},
-                    event_type=SyncEventType.CONVERSATION_UPDATED,
-                    conversation_id=updated.id,
-                    message_id=None,
-                    now=now,
-                    policy=self._sync_policy,
-                )
+            sync_events = events_for_users(
+                {member.user_id for member in updated.members if member.is_active},
+                event_type=SyncEventType.CONVERSATION_UPDATED,
+                conversation_id=updated.id,
+                message_id=None,
+                now=now,
+                policy=self._sync_policy,
             )
+            await unit_of_work.sync_events.append(sync_events)
             result = await build_conversation_result(updated, unit_of_work.users)
             await unit_of_work.commit()
+        await publish_best_effort(self._realtime_notifier, notifications_from_sync(sync_events))
         return result

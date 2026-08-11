@@ -3,6 +3,7 @@
 from messenger.domain.entities import (
     ActivationToken,
     Device,
+    PasswordResetToken,
     SecurityEvent,
     SecurityEventType,
     Session,
@@ -11,6 +12,7 @@ from messenger.domain.entities import (
 from messenger.infrastructure.persistence.models import (
     ActivationTokenModel,
     DeviceModel,
+    PasswordResetTokenModel,
     SecurityEventModel,
     SessionModel,
     UserModel,
@@ -31,6 +33,18 @@ def map_user(model: UserModel) -> User:
 
 def map_activation_token(model: ActivationTokenModel) -> ActivationToken:
     return ActivationToken(
+        id=model.id,
+        user_id=model.user_id,
+        token_hash=model.token_hash,
+        expires_at=model.expires_at,
+        created_at=model.created_at,
+        used_at=model.used_at,
+        revoked_at=model.revoked_at,
+    )
+
+
+def map_password_reset_token(model: PasswordResetTokenModel) -> PasswordResetToken:
+    return PasswordResetToken(
         id=model.id,
         user_id=model.user_id,
         token_hash=model.token_hash,

@@ -4,29 +4,97 @@
 
 В работу одновременно берётся одна фича. Для неё создаётся подробный `docs/workplan.md`; после реализации, проверок и отдельного коммита пункт переносится в `Completed`. Архитектурные правила не считаются задачами и не дублируются здесь без конкретного проверяемого результата.
 
+## Frontend application и administration
+
+### BL-038 — Native-feeling PWA shell и frontend Clean Architecture
+
+Статус: **completed** (`WP-020`, commit `c9c7bcf`).
+
+Результат: frontend имеет явные `domain/application/infrastructure/presentation`
+boundaries, Nuxt pages/layouts вместо монолитного `app.vue` и responsive shell,
+который ощущается как цельное desktop/mobile приложение.
+
+- routes `/login`, `/activate`, `/chat`, `/settings`, `/admin/users` и guards;
+- desktop navigation rail + mobile bottom navigation с safe-area/touch targets;
+- light/dark/system design tokens, persisted non-secret preference;
+- restrained motion и обязательный `prefers-reduced-motion` fallback;
+- semantic haptics port с Vibration capability/no-op adapter;
+- автоматический bounded device label вместо login input;
+- URL-fragment invite consumption без попадания secret в HTTP/referrer;
+- app-scoped auth/application state без SSR cross-request singleton;
+- runtime DTO parsers и отсутствие raw HTTP/browser APIs в components;
+- mobile/desktop visual QA, Vitest, lint/typecheck/build.
+
+Implementation и desktop browser smoke завершены; physical 390px screenshot не
+был сфальсифицирован при заблокированном test Mac и остаётся acceptance-пунктом
+`BL-041`/`BL-033`, не блокирующим независимые backend vertical slices.
+
+### BL-039 — Admin account lifecycle и password recovery
+
+Статус: **completed** (`WP-021`).
+
+Результат: администратор управляет пользователями через отдельную страницу, но
+не получает и не задаёт чужой постоянный пароль.
+
+- bounded paginated user list/search с role/state/session summary;
+- deactivate/block и explicit reactivate с self/admin safety invariants;
+- admin-triggered password reset: все target sessions/devices revoked atomically;
+- отдельный purpose-bound one-time reset token хранится только hashed, имеет TTL,
+  single-use/revocation/concurrency constraints и не смешивается с activation;
+- reset URL использует fragment/transient client memory; пользователь сам задаёт
+  новый Argon2id password, admin его не видит;
+- one-time invitation URL вместо неудобного raw code, explicit copy/hide/expiry;
+- audit events без token/password и negative authorization/CSRF/guessing tests;
+- Alembic migration, repository/use cases, split Dishka providers и pytest.
+
+### BL-040 — User settings, devices и security center
+
+Статус: **completed** (`WP-022`).
+
+Результат: settings page управляет профилем, темой, haptics и безопасностью
+текущего аккаунта через существующие и новые typed use cases.
+
+- profile/display name и user-editable device display name;
+- current/other active devices с browser/OS/device class/IP/approximate metadata;
+- revoke one, revoke all others, change password и security reset;
+- theme/haptics/motion/notification/privacy preferences;
+- session/token hashes и raw subscription/crypto material никогда не выводятся;
+- best-effort device metadata не используется как authorization factor.
+
+### BL-041 — Visual system, accessibility и PWA polish
+
+Результат: приложение имеет единый визуальный язык, install/update UX и
+доступность, а не набор несвязанных экранов.
+
+- semantic color/spacing/typography/elevation/motion tokens;
+- focus-visible, keyboard navigation, ARIA/live regions и contrast checks;
+- skeleton/empty/error/offline states без layout shift;
+- PWA icons/splash/theme colors для light/dark и standalone safe areas;
+- install/update prompts и migration-compatible service worker lifecycle;
+- visual regression screenshots для основных mobile/desktop состояний.
+
 ## Messaging foundation
 
 ### BL-009 — Receipts, unread state, typing и presence
 
+Статус: **implementation complete; verification pending** (`WP-024` завершил shared read cursor/unread slice;
+`WP-025` завершил ephemeral typing; `WP-026` завершил best-effort presence;
+`WP-027` завершил delivered-per-device).
+
 Результат: read state согласуется между устройствами, а ephemeral indicators не становятся durable truth.
 
-- delivered/read receipt model и per-user/per-conversation cursors;
-- unread counters, согласованные на нескольких devices;
-- typing events с expiry без долговременной истории;
-- best-effort online presence из active WebSockets с heartbeat timeout;
-- deduplication и tests после reconnect.
-
-### BL-010 — Delete-for-everyone и tombstones
-
-Результат: удаление доходит до offline devices в пределах документированной политики.
-
-- authorized deletion use case и `message_deleted` sync event;
-- tombstone retention дольше обычного event catch-up window;
-- применение tombstone к локальному archive;
-- отсутствие ложного обещания уничтожить уже просмотренные/screenshotted copies;
-- retry/idempotency/expired-content tests.
+- [x] shared per-user/per-conversation read cursor и durable `read_receipt`;
+- [x] server-derived unread counters, согласованные на нескольких devices;
+- [x] foreground-only mark-read до реально загруженной server sequence;
+- [x] delivered cursor/receipt на уровне device (`WP-027`);
+- [x] typing events с server expiry без долговременной истории (`WP-025`);
+- [x] best-effort multi-device online presence из active WebSockets (`WP-026`);
+- [x] deduplication и tests после reconnect.
 
 ### BL-011 — Authenticated WebSocket notifications
+
+Статус: **in progress** (`WP-023` foundation + `WP-024` durable read receipt;
+`WP-025` завершил typing; `WP-026` завершил presence; device-revoked hints остаются).
 
 Результат: WebSocket ускоряет доставку, но не заменяет sync.
 
@@ -103,6 +171,10 @@
 - server не делает preview/transcoding и не получает keys/plaintext.
 
 ### BL-018 — Server TTL cleanup и tombstone retention
+
+Статус: **частично выполнено** (`WP-028` завершил message ciphertext TTL,
+tombstones, bounded PostgreSQL cleanup и monotonic sequence; media/per-type/forever
+policy остаются).
 
 Результат: expired ciphertext/media удаляются идемпотентно и безопасно повторяются.
 
@@ -200,7 +272,7 @@
 
 ### BL-029 — Production Nginx, TLS и security headers
 
-Статус: **in progress** (`WP-019`).
+Статус: **completed** (`WP-019`, production workflow `31452613018`).
 
 Результат: наружу опубликованы только HTTPS/WSS через проверенный ingress.
 
@@ -209,6 +281,11 @@
 - upload limits согласованы с application limits;
 - CSP, `X-Content-Type-Options`, `Referrer-Policy` и минимальное раскрытие backend;
 - PostgreSQL не опубликован наружу.
+
+Production `chat.yoowee.ru` работает через отдельный host Nginx vhost и
+loopback-only gateway `127.0.0.1:18080`. Let’s Encrypt certificate, HTTP→HTTPS,
+HSTS/CSP, trusted proxy boundary, migration-before-rollout и immutable GHCR
+images проверены; все соседние `infra-*` containers сохранили состояние.
 
 ### BL-031 — Backup/restore и retention-compatible policy
 
@@ -272,6 +349,19 @@
 - решение о native wrapper только при подтверждённой необходимости.
 
 ## Completed
+
+### BL-010 — Delete-for-everyone и message tombstones
+
+Sender и group owner/admin могут авторизованно удалить opaque message; direct peer,
+ordinary group member, outsider и foreign conversation/message binding закрыты
+negative tests. Первая операция scrubs ciphertext и атомарно создаёт durable
+recipient-specific `message_deleted`, duplicate retry — no-op. Automatic 30-day TTL
+использует тот же tombstone contract, 90-day tombstone window переживает ordinary
+sync retention, а отдельный conversation high-water не переиспользует sequence после
+physical purge. Frontend strict parser, use case/composable и confirm UI применяют
+manual/expired tombstones без decode `null` и без обещания remote erasure уже
+просмотренных копий. Production Compose/deploy включает изолированный low-memory
+cleanup process.
 
 ### BL-030 — Production images, GHCR и deployment workflow
 

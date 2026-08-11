@@ -106,7 +106,7 @@ Backend package layout следует capabilities и dependency rule:
 
 ```text
 application/
-├── accounts/          # bootstrap, invitation, activation operations
+├── accounts/          # bootstrap, invitation, activation/recovery operations
 ├── sessions/          # login/authenticate/logout + session policy
 ├── devices/           # list/rename/revoke/event queries
 ├── security_events/   # cross-capability retention policy
@@ -206,17 +206,89 @@ Schema change всегда включает domain/application impact, ORM mappi
 ## 6. Frontend architecture
 
 ```text
-pages / components
-        ↓
-composables / stores
-        ↓
-client application services
-   ┌────┼──────────┬─────────┐
-   ▼    ▼          ▼         ▼
- API  Crypto    IndexedDB   OPFS/Push
+presentation (Nuxt pages/layouts/components/composables)
+                         ↓
+application (operations/state coordinators/ports)
+                         ↓
+domain (account, device, conversation, message models/invariants)
+
+infrastructure (HTTP, browser capabilities, IndexedDB, OPFS, crypto, push)
+                         └──────── implements application ports
+
+plugins / composition root → creates app-scoped implementations and injects ports
 ```
 
 Vue components отвечают за rendering и interaction. Они не реализуют crypto primitives, raw fetch, IndexedDB migrations, OPFS access, sync reconciliation или push protocol.
+
+Рекомендуемая физическая структура развивается по реальным capabilities, а не
+по одному giant service-файлу:
+
+```text
+app/
+├── domain/
+│   ├── accounts/
+│   ├── devices/
+│   └── messaging/
+├── application/
+│   ├── auth/              # operations + app state
+│   ├── accounts/          # admin/profile operations
+│   ├── messaging/         # sync/send orchestration
+│   └── ports/             # http-agnostic browser/storage/capability contracts
+├── infrastructure/
+│   ├── http/              # DTO, parsers, same-origin adapters
+│   ├── browser/           # device info, theme, haptics, clipboard
+│   └── persistence/       # IndexedDB/OPFS adapters when implemented
+├── presentation/
+│   └── composables/       # Vue/Nuxt bindings to application operations
+├── layouts/
+├── pages/
+├── components/
+└── plugins/               # Nuxt app-scoped composition root
+```
+
+`domain` не импортирует Vue/Nuxt/browser API. `application` может импортировать
+domain и объявляет узкие ports. Infrastructure импортирует contracts/models,
+но presentation не создаёт concrete adapters самостоятельно. Nuxt plugin —
+единственный composition boundary; state не хранится module-global singleton,
+который мог бы пересекать SSR requests.
+
+Проект является browser-first installed PWA с будущими IndexedDB/OPFS и WASM
+crypto dependencies, поэтому client rendering задаётся явно. Route middleware
+опирается только на app-scoped auth state: logged-out routes не открывают private
+screens, admin UI скрывается для обычного пользователя, но backend authorization
+всегда остаётся authoritative.
+
+Transport flow разделён явно:
+
+```text
+HTTP response (`unknown`)
+→ infrastructure runtime parser / transport DTO
+→ application result
+→ domain model or bounded view state
+→ presentation
+```
+
+Theme, haptics, clipboard и device detection — browser capabilities, а не
+component helpers. Для них допустимы маленькие ports, потому что уже существуют
+реальные production/non-browser-test implementations. Theme/haptics preferences
+не являются secrets и могут храниться в `localStorage`; auth credentials,
+passwords, activation/reset tokens и crypto material там запрещены.
+
+Device label вычисляется автоматически и остаётся только best-effort metadata:
+browser family + OS family + device class, bounded до API limit. User-Agent и
+Client Hints не дают authorization claims и не являются доказательством модели
+устройства. Exact model может быть неизвестна; settings позволяют дать понятное
+display name вручную уже после входа.
+
+Semantic haptic intent (`selection`, `success`, `warning`, `error`, `sent`)
+отделён от конкретного механизма. Web adapter может использовать
+`navigator.vibrate` при поддержке и включённой preference, иначе обязан быть
+no-op. Web/PWA не утверждает, что получил прямой доступ к Apple Taptic Engine.
+
+Invite/reset secret разрешён в URL только после `#`: fragment не отправляется
+серверу. Activation/reset page извлекает его один раз, немедленно вызывает
+`history.replaceState` для очистки address bar и хранит значение только в памяти
+до submit/unmount. Query parameters для credentials запрещены.
 
 TypeScript strict. Не использовать необоснованные `any`, `@ts-ignore`, broad casts или non-null assertions. API response остаётся untrusted до parsing/validation на boundary.
 
@@ -232,6 +304,15 @@ Vue app → useAuth state machine → auth service → same-origin API adapter
 API adapter всегда использует относительный `/api/v1/...` URL и `credentials: include`. Для state-changing HTTP вызовов он читает только публичный CSRF cookie `__Host-yv_csrf` и передаёт его в `X-CSRF-Token`; opaque session cookie остаётся недоступной JavaScript. Ошибки HTTP, сети и malformed JSON различаются typed error kind. Runtime parsers допускают в reactive state только явно проверенные account fields. Password очищается из component state до ожидания network response и не попадает в persistent storage или rendered error.
 
 Auth composable моделирует только конечные состояния `booting`, `signed-out`, `submitting`, `authenticated`, `offline`. `401` означает signed-out/revoked credential, network failure даёт retry без ложного logout, а logout очищает client state даже при потере соединения. Следующие conversation/sync services используют тот же transport и собственные typed parsers вместо raw `fetch` в components.
+
+Foreground realtime также отделён от Vue components. `BrowserRealtimeGateway`
+создаёт только same-origin `/api/v1/realtime` URL без query credential, строго
+разбирает закрытый набор frames и отвечает на application-level ping. Application
+`RealtimeSyncService` владеет единственным connection lifecycle, bounded
+deterministic reconnect и редким 30-секундным fallback poll. Любой `hello`,
+durable hint или reconnect вызывает тот же cursor catch-up; повторные wake-ups
+coalesce, но не заменяют `/sync`. `ChatWorkspace` только запускает/останавливает
+service вместе со своим lifecycle.
 
 Messaging UI разделён на typed transport parsers/services, `useMessenger` orchestration и небольшие chat components. Authenticated `GET /api/v1/users` проходит через отдельный `ListUserDirectory` use case и `UserRepository.list_active`; наружу выходят только `user_id`, `username`, `display_name`. SQLAlchemy, admin status, activation/password/session fields не пересекают boundary.
 
@@ -271,13 +352,19 @@ active admin session
       ├── list bounded account state
       ├── create invitation → plaintext secret returned once
       ├── reissue → previous unconsumed secrets revoked atomically
-      └── deactivate → all target sessions/devices revoked atomically
+      ├── deactivate → all target sessions/devices revoked atomically
+      └── password-reset → target sessions/devices revoked + secret returned once
 
 invited user
   └── /api/v1/auth/activate → one-time secret + new password
+
+activated user after admin recovery action
+  └── /api/v1/auth/reset-password → separate one-time secret + new password
 ```
 
 Activation-token persistence различает `used_at` и `revoked_at`; состояния взаимоисключающие. List/update DTO не содержат password hash или activation digest. Reactivation через admin API разрешена только account с уже настроенным password; первоначальное приглашение нельзя обойти выставлением `is_active`.
+
+Password recovery purpose-bound и не переиспользует activation credential. `password_reset_tokens` хранит только SHA-256 digest, TTL и взаимоисключающие `used_at`/`revoked_at`; row lock делает consume single-use при concurrent requests. Admin не задаёт чужой пароль: выдача reset-link немедленно завершает все target sessions/devices, пользователь сам задаёт новый Argon2id password, а blocked account не активируется скрыто. Admin self-reset запрещён этим transport и выполняется через authenticated step-up current-account flow. Typed `password_reset_issued`/`password_reset_completed` events не содержат secret или password.
 
 Browser auth использует opaque random credential + server-side state, потому что продукту нужны instant revoke, active-device list и logout-all-others. JWT не добавляется без реальной distributed/resource-server причины.
 
@@ -297,9 +384,24 @@ Cookie-authenticated writes требуют exact allowed `Origin` и CSRF protec
 
 Active-device API выводит только non-revoked/non-expired sessions текущего пользователя, сервером отмечает current session и позволяет rename, revoke одной не-current device-bound session или atomic revoke-all-others. Ownership всегда ограничивается authenticated `user_id`; guessed foreign UUID возвращает тот же not-found outcome. Typed security events (`login`, `logout`, credential replay и device actions) содержат только opaque IDs/timestamps, имеют configurable bounded retention и не принимают free-form payload.
 
+Frontend security center реализует те же операции через отдельный
+`AccountSecurityGateway`: infrastructure runtime-validates device/event/profile
+DTO, application предоставляет небольшие intent-level use cases, а settings
+components отвечают только за формы и подтверждения. Current device помечается
+сервером и не получает revoke action. Rename/revoke/revoke-others обновляют
+authoritative list после response. IP показывается только как приблизительный
+контекст. Event UI принимает закрытый набор typed event names и не ожидает
+free-form payload.
+
 Current-account API получает identity исключительно из authenticated principal. `GET/PATCH /api/v1/me` возвращает/изменяет только bounded profile fields. Password change и explicit security reset используют текущий пароль как step-up factor внутри row-locked identity transaction; IP/GeoIP/User-Agent не участвуют. Password change обновляет Argon2id hash и отзывает все остальные sessions/devices, сохраняя current session. Security reset отзывает все sessions/devices, включая current, после чего transport удаляет auth/CSRF cookies. Обе операции создают typed bounded audit events без password/token payload. E2EE identity/key reset в эту account-операцию не входит и проектируется только после protocol ADR.
 
-PWA замыкает закрытый onboarding без public registration: admin-only panel вызывает существующие `ListManagedUsers`/`CreateUserInvitation`, а logged-out activation form — `ActivateAccount`. Plaintext activation secret существует в frontend state только в момент ввода или одноразового admin response, не попадает в URL, localStorage, IndexedDB или logs и удаляется при success/скрытии/закрытии/reload. Новый password и confirmation очищаются до ожидания response. Видимость admin control в UI — только UX; серверная `require_active_admin` остаётся authorization boundary.
+Password inputs существуют только в локальных refs соответствующей формы:
+значения копируются в краткоживущие параметры вызова, UI refs очищаются до
+ожидания network response и повторно на unmount. Успешный profile update заменяет
+current-account DTO в auth state без reload; успешный security reset очищает
+auth state и переводит приложение на login. Это не является E2EE key reset.
+
+PWA замыкает закрытый onboarding без public registration: admin-only panel вызывает отдельные list/invite/reissue/block/reset use cases, а logged-out формы — `ActivateAccount` и `ResetPassword`. Admin list использует server-side bounded search/pagination и batch session summary без N+1. Plaintext activation/reset secret существует в frontend state только в момент ввода или одноразового admin response, находится в URL только после fragment marker, не попадает в HTTP/referrer, localStorage, IndexedDB или logs и удаляется при success/скрытии/unmount/reload. Новый password и confirmation очищаются до ожидания response. Опасные admin actions требуют явного UI confirmation; видимость controls остаётся только UX, серверная `require_active_admin` — authorization boundary.
 
 ## 8. Conversation и authorization model
 
@@ -335,17 +437,36 @@ conversation_id
 sender_user_id / sender_device_id
 protocol_version
 sequence
-ciphertext
-created_at / expires_at / deleted_at
+ciphertext | null
+ciphertext_digest
+created_at / expires_at
+deletion_reason / deleted_at / tombstone_expires_at
 ```
 
-Реализованный foundation пока содержит `id`, conversation/sender user/device, positive `protocol_version`, bounded opaque `ciphertext` и server `created_at`. HTTP принимает ciphertext как strict base64 encoding, декодирует в opaque bytes и не эхоит content в create response. Application повторно проверяет active conversation membership и active owned device текущей session; sender user/device не принимаются как свободные client claims. PostgreSQL ограничивает ciphertext 1 MiB, application policy — 64 KiB и transport version `1`.
+Active row содержит bounded opaque `ciphertext`; tombstone содержит ту же immutable
+routing/order metadata, но `ciphertext = NULL`. `ciphertext_digest` — SHA-256 только
+от opaque ciphertext: он нужен для проверки exact idempotent retry после scrub,
+никогда не выходит через HTTP/sync/logs и не является message key. HTTP принимает
+ciphertext как strict base64, декодирует в opaque bytes и не эхоит content в create
+response. Application повторно проверяет active conversation membership и active
+owned device текущей session; sender user/device не принимаются как свободные client
+claims. PostgreSQL ограничивает ciphertext 1 MiB, application policy — 64 KiB и
+transport version `1`.
 
 Это только non-E2EE transport foundation: version `1` не определяет криптографический протокол, backend ничего не шифрует/дешифрует и secure messaging milestone нельзя считать завершённым до отдельного protocol ADR и client crypto adapter.
 
 Колонки `text`, `plaintext`, `decrypted_body`, `message_key` запрещены.
 
-Message creation idempotent по client-generated UUID в scope sender device. Exact retry возвращает исходные `message_id/sequence`; повтор ключа с иным immutable envelope даёт conflict. Под row lock conversation backend выделяет следующий positive sequence, а unique `(conversation_id, sequence)` страхует invariant в БД. List API выдаёт bounded ascending page `sequence > after_sequence`; client timestamp не участвует. Следующий sync этап добавит атомарный message + global sync event cursor.
+Message creation idempotent по client-generated UUID в scope sender device. Exact retry возвращает исходные `message_id/sequence` даже после scrub, сравнивая retained digest; повтор ключа с иным immutable envelope даёт conflict. Под row lock conversation backend атомарно увеличивает `conversations.last_message_sequence`, а unique `(conversation_id, sequence)` страхует invariant в БД. Физическое удаление старого tombstone не уменьшает high-water и не разрешает reuse sequence. List API выдаёт bounded ascending page `sequence > after_sequence`; client timestamp не участвует. Message и recipient-specific sync events записываются одной транзакцией.
+
+Delete-for-everyone — отдельный application use case. Sender удаляет собственное
+сообщение; active group owner/admin может модерировать чужое. Direct peer и ordinary
+group member не могут удалить чужой ciphertext. Conversation блокируется до message,
+membership и message/conversation binding проверяются server-side, поэтому foreign
+message ID даёт not-found, а не existence oracle. Первая операция атомарно scrubs
+ciphertext, записывает manual tombstone и recipient-specific `message_deleted`;
+duplicate retry возвращает `advanced=false` без commit/event. Уже просмотренную,
+скопированную или экспортированную remote copy система уничтожить не обещает.
 
 PostgreSQL — source of truth для server-side sync state только в retention window. WebSocket — notification channel. После reconnect/sleep/lost events клиент выполняет cursor catch-up:
 
@@ -356,7 +477,99 @@ GET /api/v1/sync?after=<cursor>
 
 Реализованный durable stream использует независимый monotonic cursor каждого пользователя: `sync_streams(user_id, last_cursor)` и recipient-specific `sync_events(user_id, cursor)`. Atomic PostgreSQL upsert выделяет cursor, сохраняя event order внутри user stream и стабильный user lock order между recipients. Visibility фиксируется при записи события, поэтому удалённый member получает финальный `conversation_updated`, хотя последующий conversation GET уже возвращает not-found.
 
-Message row и все `message_created` recipient events коммитятся одним Messaging UoW; exact retry не создаёт повторных events. Sync payload содержит только stable event/conversation/message IDs и timestamps, без ciphertext/plaintext/key data. Cleanup удаляет expired events, но сохраняет stream high-water mark; `/api/v1/sync` сравнивает `after`, oldest retained cursor и stream cursor и выставляет `reset_required`, когда нужен полный resource resync.
+Message row, sender read cursor и recipient-specific `message_created` +
+`read_receipt` events коммитятся одним Messaging UoW; отправка означает, что sender
+прочитал timeline до выделенной sequence, поэтому собственное сообщение не становится
+ложно unread. Exact retry не создаёт повторных rows/events. Sync payload содержит
+только stable event/conversation/message/actor IDs, read/delivery sequences и timestamps, без
+ciphertext/plaintext/key data. Cleanup удаляет expired events, но сохраняет stream
+high-water mark; `/api/v1/sync` сравнивает `after`, oldest retained cursor и stream
+cursor и выставляет `reset_required`, когда нужен полный resource resync.
+
+Shared read state хранится в `conversation_read_states` по ключу
+`(user_id, conversation_id)`, то есть принадлежит аккаунту, а не отдельному device.
+Отсутствующая row означает cursor `0`; persisted cursor всегда positive, ссылается на
+существующую server sequence и может только увеличиваться. `MarkConversationRead`
+сериализуется conversation row lock, atomic upsert защищён PK/check/FK и lower/equal
+retry является no-op без нового receipt. Batch repository одним set-based query
+возвращает `last_read_sequence`, persistent conversation high-water как
+`latest_sequence` и count только active ciphertext rows после cursor — без N+1 и без
+арифметики `latest - read`, которая сломалась бы после delete/TTL gaps.
+
+Frontend получает read summaries через отдельный typed gateway и application use
+cases. `useMessenger` помечает только active conversation, только до последней
+фактически загруженной authoritative sequence и только когда page visibility сообщает
+foreground. Повторные submits дедуплицируются; потерянный/duplicate WebSocket hint
+всегда восстанавливается `/sync` и повторным read-state reload.
+
+Delivery state намеренно отделён от read state. Таблица
+`conversation_delivery_states` хранит monotonic cursor по ключу
+`(device_id, conversation_id)`: delivery означает, что конкретная active installation
+успешно получила bounded message page, но не обещает decrypt, foreground/read или
+вечное локальное хранение. `MarkConversationDelivered` берёт user/device только из
+opaque-session principal, проверяет active owned device, active membership и наличие
+server sequence. Future sequence отклоняется, lower/equal retry является no-op.
+
+Публичный participant summary агрегирует `max(last_delivered_sequence)` по active
+devices каждого active member. Поэтому UI трактует его как «доставлено хотя бы на
+одно устройство получателя»; revoked devices и покинувшие conversation участники не
+считаются. API/sync/realtime не раскрывают device ID или metadata другим участникам —
+durable `delivery_receipt` содержит только conversation, actor user и sequence.
+Cursor и recipient-specific events коммитятся в одном Messaging UoW, realtime
+публикуется best-effort после commit. Send также атомарно двигает delivery cursor
+устройства отправителя, не создавая новые rows/events при exact retry.
+
+Frontend использует отдельные DTO/gateway/use cases для delivery, подтверждает
+последнюю sequence после успешного merge message page независимо от visibility и
+дедуплицирует submit по conversation. `delivery_receipt` лишь будит cursor catch-up и
+set-based summary reload; компонент получает готовый aggregate и показывает статус
+только у собственных сообщений. Это transport-level receipt, а не часть ещё не
+выбранного E2EE protocol.
+
+`/api/v1/realtime` принимает WebSocket только после exact Origin и opaque-cookie
+handshake. Handshake может выполнить throttled session touch, но не вращает cookie
+credential; heartbeat/pong не касается session state. Уже установленное соединение
+пассивно проверяет logical session/user/device и expiry, поэтому последующая HTTP
+credential rotation не превращает старый socket credential в ложный replay.
+Process-local `InMemoryRealtimeHub` держит bounded queue на connection и удаляет
+slow consumer. После durable commit application публикует только `event_id`,
+`conversation_id`, optional `message_id` и typed `new_message`,
+`conversation_updated`, `message_deleted`, durable `read_receipt` либо
+`delivery_receipt`; failure notifier
+логируется без content и не меняет committed result. Это сознательно single-process
+решение без Redis. Presence идёт отдельным ephemeral path и не становится durable
+truth.
+
+Typing использует отдельный ephemeral path поверх того же authenticated WebSocket.
+Client frame имеет exact форму `typing(conversation_id, active)` и не может задавать
+actor, recipients или expiry. `PublishTyping` повторно проверяет active actor и
+membership через Messaging UoW, исключает actor из recipients, назначает server TTL
+и публикует hint без commit, DB row или `sync_event`. Transport дедуплицирует слишком
+частые одинаковые transitions и ограничивает число active conversation keys на
+connection; stop transition не задерживается throttle.
+
+Frontend строго отделяет durable frames от typing: `RealtimeSyncService` запускает
+cursor catch-up только для durable hints, а typing передаёт в
+`TypingIndicatorService`. Сервис keyed по conversation+actor, заменяет expiry timer
+при renew, удаляет state по stop/expiry/socket disconnect, а собственный publisher
+renew-ит active draft раз в три секунды и отправляет stop при очистке/switch/unmount.
+Vue-компонент сообщает только intent о непустом draft и отображает готовый transient
+state; draft content никогда не покидает client UI/message-codec boundary.
+
+Presence также остаётся process-local и ephemeral. Hub атомарно отмечает `0 → 1`
+subscription как `became_online`, а удаление последней из нескольких user sessions —
+как `became_offline`; закрытый slow consumer перестаёт считаться online и будит
+transport cleanup. Authorized snapshot пересекает active conversation members с
+`hub.online_user_ids`, поэтому не существует global online-directory endpoint.
+Transition отправляется отдельно для каждой общей conversation, без session/device/IP
+metadata и без DB/sync write. Если новая session появляется во время offline publish,
+transport выполняет post-publish reconciliation и повторяет online, сохраняя верное
+итоговое best-effort состояние.
+
+Frontend хранит presence keyed по conversation+user в отдельном application service.
+Initial snapshot и последующие transitions применяются идемпотентно; socket close
+немедленно очищает весь ephemeral state. Presence frame не запускает `/sync`, не
+продлевает auth session и используется только для UI-индикатора, не авторизации.
 
 Правильность любой realtime-фичи проверяется при отключённом WebSocket. Duplicate WebSocket/Push/sync delivery применяется идемпотентно.
 
@@ -404,7 +617,35 @@ Device-local archive не является безусловным backup: site d
 
 Local text retention может быть longer/forever. Media cache byte-bounded, LRU и имеет explicit pinned policy.
 
-Server TTL cleanup идемпотентно удаляет expired encrypted files/metadata/ciphertext и терпит missing files. `Delete for everyone` создаёт tombstone с достаточной catch-up retention. Backup retention не должна сохранять TTL-deleted content бесконечно.
+Message retention задаётся typed bootstrap settings. Текущие defaults:
+
+```text
+ciphertext TTL        30 days
+sync event retention  30 days
+tombstone retention   90 days (strictly greater than both values above)
+cleanup batch         200 rows
+cleanup cadence       5 minutes
+```
+
+`expires_at` вычисляется server-side при создании. Отдельный low-memory `cleanup`
+process из того же backend image сначала purges bounded expired tombstones, затем
+берёт bounded active expiry batch через `FOR UPDATE SKIP LOCKED`, scrubs ciphertext и
+атомарно пишет те же recipient-specific `message_deleted` events. Повторный или
+concurrent run безопасен; process пишет только structured counts без IDs/content.
+Automatic tombstone получает `deleted_at = expires_at`, поэтому retention считается
+от server expiry, а не от случайной задержки worker. Cleanup — отдельный process и не
+имеет общего in-memory WebSocket hub с API: он не симулирует realtime publish.
+Durable sync/reconnect и 30-секундный frontend fallback poll являются correctness
+path; WebSocket нужен только для уменьшения latency ручного удаления в API process.
+
+После tombstone retention row удаляется физически, но conversation high-water остаётся.
+В течение tombstone window full message resync возвращает deletion marker даже после
+истечения ordinary sync events. После этого новый device не получает более старую
+server history — она возможна только через будущий secure device-to-device transfer.
+Backup retention не должна сохранять TTL-deleted ciphertext бесконечно.
+
+Attachment/media TTL ещё не реализован: будущий cleanup должен идемпотентно удалять
+expired encrypted blobs и терпеть already-missing storage keys через `MediaStorage`.
 
 ## 13. PWA, realtime и Web Push
 
@@ -417,7 +658,7 @@ read IndexedDB → render immediately
 
 Outbox имеет `pending/sending/sent/failed`, persistent idempotency key и reconcile после reconnect. Service Worker/IndexedDB migrations versioned и совместимы при update.
 
-WebSocket обслуживает foreground realtime. Web Push будит background Service Worker. Sync восстанавливает correctness.
+WebSocket обслуживает foreground realtime и передаёт только wake-up hints. Web Push будит background Service Worker. Sync восстанавливает correctness. Current implementation сохраняет редкий HTTP fallback poll, поэтому недоступный WebSocket ухудшает latency, но не correctness.
 
 Push subscription принадлежит device/install, не User целиком. VAPID private key — production secret. Payload содержит только opaque routing hint (`event_id`, `conversation_id`, `message_id`, `sync_required`), никогда plaintext preview. Permanent invalid subscriptions отключаются; push failure не откатывает committed message.
 

@@ -69,6 +69,14 @@ class AccountActivationRequiredError(ApplicationError):
     """An invited account must complete activation before it can become active."""
 
 
+class InvalidPasswordResetSecretError(ApplicationError):
+    """A reset credential is unknown, expired, consumed or revoked."""
+
+
+class SelfPasswordResetError(ApplicationError):
+    """An admin must use the authenticated step-up flow for its own password."""
+
+
 class DuplicateDirectConversationError(ApplicationError):
     """A direct conversation already exists for the unordered user pair."""
 
@@ -95,3 +103,19 @@ class InvalidMessageEnvelopeError(ApplicationError):
 
 class MessageIdempotencyConflictError(ApplicationError):
     """A client message ID was reused for different immutable envelope data."""
+
+
+class MessageNotFoundError(ApplicationError):
+    """A message is absent or outside the authorized conversation."""
+
+
+class RealtimeSubscriptionClosedError(ApplicationError):
+    """A realtime connection was removed because its bounded inbox closed."""
+
+
+class InvalidReadSequenceError(ApplicationError):
+    """A read cursor does not identify an existing authorized message."""
+
+
+class InvalidDeliverySequenceError(ApplicationError):
+    """A delivery cursor does not identify an existing authorized message."""

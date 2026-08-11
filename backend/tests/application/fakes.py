@@ -18,23 +18,37 @@ from messenger.application.ports.identity import (
     DeviceRepository,
     DeviceSessionRecord,
     IdentityUnitOfWork,
+    ManagedUserPageRecord,
     ManagedUserRecord,
+    PasswordResetTokenRepository,
     SecurityEventRepository,
     SessionCredentialMatch,
     SessionRepository,
     UserAuthenticationRecord,
     UserRepository,
 )
-from messenger.application.ports.messages import MessageRepository, MessagingUnitOfWork
+from messenger.application.ports.messages import (
+    ConversationDeliveryStateRepository,
+    ConversationReadStateRepository,
+    ConversationReadSummary,
+    MessageRepository,
+    MessagingUnitOfWork,
+    ParticipantDeliverySummary,
+)
+from messenger.application.ports.password_reset_secrets import GeneratedPasswordResetSecret
 from messenger.application.ports.session_credentials import GeneratedSessionCredential
 from messenger.application.ports.sync import SyncRepository, SyncUnitOfWork
+from messenger.application.realtime import RealtimeNotification
 from messenger.application.sync import PendingSyncEvent, SyncEvent
 from messenger.application.sync.events import SyncStreamPage
 from messenger.domain.entities import (
     ActivationToken,
     Conversation,
+    ConversationDeliveryState,
+    ConversationReadState,
     Device,
     Message,
+    PasswordResetToken,
     SecurityEvent,
     Session,
     User,
@@ -47,12 +61,18 @@ class IdentityState:
 
     users: dict[UUID, User] = field(default_factory=dict)
     tokens: dict[UUID, ActivationToken] = field(default_factory=dict)
+    password_reset_tokens: dict[UUID, PasswordResetToken] = field(default_factory=dict)
     password_hashes: dict[UUID, str] = field(default_factory=dict)
     devices: dict[UUID, Device] = field(default_factory=dict)
     sessions: dict[UUID, Session] = field(default_factory=dict)
     security_events: dict[UUID, SecurityEvent] = field(default_factory=dict)
     conversations: dict[UUID, Conversation] = field(default_factory=dict)
     messages: dict[UUID, Message] = field(default_factory=dict)
+    message_sequences: dict[UUID, int] = field(default_factory=dict)
+    delivery_states: dict[tuple[UUID, UUID], ConversationDeliveryState] = field(
+        default_factory=dict
+    )
+    read_states: dict[tuple[UUID, UUID], ConversationReadState] = field(default_factory=dict)
     sync_events: list[SyncEvent] = field(default_factory=list)
     sync_cursors: dict[UUID, int] = field(default_factory=dict)
     commits: int = 0
@@ -68,8 +88,14 @@ class FakeUserRepository:
             key=lambda user: (user.username, user.id),
         )
 
-    async def list_managed(self) -> list[ManagedUserRecord]:
-        return [
+    async def list_managed(
+        self,
+        *,
+        search: str | None,
+        limit: int,
+        offset: int,
+    ) -> ManagedUserPageRecord:
+        records = [
             ManagedUserRecord(
                 user=user,
                 password_configured=user.id in self._state.password_hashes,
@@ -79,6 +105,18 @@ class FakeUserRepository:
                 key=lambda item: (item.username, item.id),
             )
         ]
+        if search is not None:
+            query = search.lower()
+            records = [
+                record
+                for record in records
+                if query in record.user.username.lower()
+                or query in record.user.display_name.lower()
+            ]
+        return ManagedUserPageRecord(
+            items=records[offset : offset + limit],
+            total=len(records),
+        )
 
     async def get_managed_by_id(
         self,
@@ -196,6 +234,40 @@ class FakeActivationTokenRepository:
         self._state.tokens[token.id] = token
 
 
+class FakePasswordResetTokenRepository:
+    def __init__(self, state: IdentityState) -> None:
+        self._state = state
+
+    async def add(self, token: PasswordResetToken) -> None:
+        self._state.password_reset_tokens[token.id] = token
+
+    async def get_by_hash_for_update(self, token_hash: str) -> PasswordResetToken | None:
+        return next(
+            (
+                token
+                for token in self._state.password_reset_tokens.values()
+                if token.token_hash == token_hash
+            ),
+            None,
+        )
+
+    async def list_unconsumed_for_user_for_update(
+        self,
+        user_id: UUID,
+    ) -> list[PasswordResetToken]:
+        return sorted(
+            (
+                token
+                for token in self._state.password_reset_tokens.values()
+                if token.user_id == user_id and token.used_at is None and token.revoked_at is None
+            ),
+            key=lambda token: token.id,
+        )
+
+    async def update_lifecycle(self, token: PasswordResetToken) -> None:
+        self._state.password_reset_tokens[token.id] = token
+
+
 class FakeDeviceRepository:
     def __init__(self, state: IdentityState) -> None:
         self._state = state
@@ -222,12 +294,26 @@ class FakeDeviceRepository:
         self._state.devices[device.id] = device
 
 
+@dataclass(slots=True)
+class RecordingRealtimeNotifier:
+    notifications: list[RealtimeNotification] = field(default_factory=list)
+    fail: bool = False
+
+    async def publish(self, notifications: tuple[RealtimeNotification, ...]) -> None:
+        if self.fail:
+            raise RuntimeError("simulated realtime failure")
+        self.notifications.extend(notifications)
+
+
 class FakeSessionRepository:
     def __init__(self, state: IdentityState) -> None:
         self._state = state
 
     async def add(self, session: Session) -> None:
         self._state.sessions[session.id] = session
+
+    async def get_by_id(self, session_id: UUID) -> Session | None:
+        return self._state.sessions.get(session_id)
 
     async def get_by_token_hash_for_update(
         self,
@@ -292,6 +378,24 @@ class FakeSessionRepository:
             for session in sessions
         ]
 
+    async def count_active_for_users(
+        self,
+        user_ids: set[UUID],
+        *,
+        now: datetime,
+    ) -> dict[UUID, int]:
+        counts = {user_id: 0 for user_id in user_ids}
+        for session in self._state.sessions.values():
+            device = self._state.devices[session.device_id]
+            if (
+                session.user_id in user_ids
+                and session.revoked_at is None
+                and not session.is_expired(now)
+                and device.revoked_at is None
+            ):
+                counts[session.user_id] += 1
+        return {user_id: count for user_id, count in counts.items() if count > 0}
+
 
 class FakeSecurityEventRepository:
     def __init__(self, state: IdentityState) -> None:
@@ -331,6 +435,9 @@ class FakeIdentityUnitOfWork:
         self._state = state
         self.users: UserRepository = FakeUserRepository(state)
         self.activation_tokens: ActivationTokenRepository = FakeActivationTokenRepository(state)
+        self.password_reset_tokens: PasswordResetTokenRepository = FakePasswordResetTokenRepository(
+            state
+        )
         self.devices: DeviceRepository = FakeDeviceRepository(state)
         self.sessions: SessionRepository = FakeSessionRepository(state)
         self.security_events: SecurityEventRepository = FakeSecurityEventRepository(state)
@@ -396,6 +503,16 @@ class FakeConversationRepository:
                 and {member.user_id for member in conversation.members} == pair
             ),
             None,
+        )
+
+    async def get_by_ids(self, conversation_ids: set[UUID]) -> list[Conversation]:
+        return sorted(
+            (
+                conversation
+                for conversation_id, conversation in self._state.conversations.items()
+                if conversation_id in conversation_ids
+            ),
+            key=lambda conversation: conversation.id.int,
         )
 
     async def list_active_for_user(self, user_id: UUID) -> list[Conversation]:
@@ -466,13 +583,41 @@ class FakeMessageRepository:
             None,
         )
 
+    async def get_by_id(
+        self,
+        message_id: UUID,
+        *,
+        for_update: bool = False,
+    ) -> Message | None:
+        del for_update
+        return self._state.messages.get(message_id)
+
     async def next_sequence(self, conversation_id: UUID) -> int:
-        sequences = [
-            message.sequence
+        current = self._state.message_sequences.get(
+            conversation_id,
+            max(
+                (
+                    message.sequence
+                    for message in self._state.messages.values()
+                    if message.conversation_id == conversation_id
+                ),
+                default=0,
+            ),
+        )
+        sequence = current + 1
+        self._state.message_sequences[conversation_id] = sequence
+        return sequence
+
+    async def exists_at_sequence(
+        self,
+        *,
+        conversation_id: UUID,
+        sequence: int,
+    ) -> bool:
+        return any(
+            message.conversation_id == conversation_id and message.sequence == sequence
             for message in self._state.messages.values()
-            if message.conversation_id == conversation_id
-        ]
-        return max(sequences, default=0) + 1
+        )
 
     async def list_after(
         self,
@@ -489,6 +634,138 @@ class FakeMessageRepository:
             ),
             key=lambda message: (message.sequence, message.id),
         )[:limit]
+
+    async def update(self, message: Message) -> None:
+        if message.id not in self._state.messages:
+            raise RuntimeError("locked message disappeared during update")
+        self._state.messages[message.id] = message
+
+    async def list_expired_active(
+        self,
+        *,
+        now: datetime,
+        limit: int,
+    ) -> list[Message]:
+        return sorted(
+            (
+                message
+                for message in self._state.messages.values()
+                if not message.is_deleted and message.expires_at <= now
+            ),
+            key=lambda message: (message.expires_at, message.id),
+        )[:limit]
+
+    async def purge_expired_tombstones(
+        self,
+        *,
+        now: datetime,
+        limit: int,
+    ) -> int:
+        expired = sorted(
+            (
+                message
+                for message in self._state.messages.values()
+                if message.is_deleted
+                and message.tombstone_expires_at is not None
+                and message.tombstone_expires_at <= now
+            ),
+            key=lambda message: (message.tombstone_expires_at, message.id),
+        )[:limit]
+        for message in expired:
+            del self._state.messages[message.id]
+        return len(expired)
+
+
+class FakeConversationReadStateRepository:
+    def __init__(self, state: IdentityState) -> None:
+        self._state = state
+
+    async def get(
+        self,
+        *,
+        user_id: UUID,
+        conversation_id: UUID,
+    ) -> ConversationReadState | None:
+        return self._state.read_states.get((user_id, conversation_id))
+
+    async def upsert(self, state: ConversationReadState) -> None:
+        current = self._state.read_states.get((state.user_id, state.conversation_id))
+        if current is None or state.last_read_sequence > current.last_read_sequence:
+            self._state.read_states[(state.user_id, state.conversation_id)] = state
+
+    async def list_summaries(
+        self,
+        *,
+        user_id: UUID,
+        conversation_ids: set[UUID],
+    ) -> list[ConversationReadSummary]:
+        summaries: list[ConversationReadSummary] = []
+        for conversation_id in sorted(conversation_ids, key=lambda value: value.int):
+            read = self._state.read_states.get((user_id, conversation_id))
+            last_read = read.last_read_sequence if read else 0
+            messages = [
+                message
+                for message in self._state.messages.values()
+                if message.conversation_id == conversation_id
+            ]
+            summaries.append(
+                ConversationReadSummary(
+                    conversation_id=conversation_id,
+                    last_read_sequence=last_read,
+                    latest_sequence=self._state.message_sequences.get(
+                        conversation_id,
+                        max((message.sequence for message in messages), default=0),
+                    ),
+                    unread_count=sum(
+                        message.sequence > last_read and not message.is_deleted
+                        for message in messages
+                    ),
+                )
+            )
+        return summaries
+
+
+class FakeConversationDeliveryStateRepository:
+    def __init__(self, state: IdentityState) -> None:
+        self._state = state
+
+    async def get(
+        self,
+        *,
+        device_id: UUID,
+        conversation_id: UUID,
+    ) -> ConversationDeliveryState | None:
+        return self._state.delivery_states.get((device_id, conversation_id))
+
+    async def upsert(self, state: ConversationDeliveryState) -> None:
+        key = (state.device_id, state.conversation_id)
+        current = self._state.delivery_states.get(key)
+        if current is None or state.last_delivered_sequence > current.last_delivered_sequence:
+            self._state.delivery_states[key] = state
+
+    async def list_participant_summaries(
+        self,
+        *,
+        conversation_ids: set[UUID],
+    ) -> list[ParticipantDeliverySummary]:
+        sequences: dict[tuple[UUID, UUID], int] = {}
+        for state in self._state.delivery_states.values():
+            if state.conversation_id not in conversation_ids:
+                continue
+            device = self._state.devices.get(state.device_id)
+            if device is None or device.revoked_at is not None:
+                continue
+            conversation = self._state.conversations.get(state.conversation_id)
+            if conversation is None or conversation.active_member(device.user_id) is None:
+                continue
+            key = (state.conversation_id, device.user_id)
+            sequences[key] = max(sequences.get(key, 0), state.last_delivered_sequence)
+        return [
+            ParticipantDeliverySummary(conversation_id, user_id, sequence)
+            for (conversation_id, user_id), sequence in sorted(
+                sequences.items(), key=lambda item: (item[0][0].int, item[0][1].int)
+            )
+        ]
 
 
 class FakeSyncRepository:
@@ -513,6 +790,9 @@ class FakeSyncRepository:
                     event_type=event.event_type,
                     conversation_id=event.conversation_id,
                     message_id=event.message_id,
+                    actor_user_id=event.actor_user_id,
+                    read_sequence=event.read_sequence,
+                    delivery_sequence=event.delivery_sequence,
                     created_at=event.created_at,
                     expires_at=event.expires_at,
                 )
@@ -550,6 +830,12 @@ class FakeMessagingUnitOfWork:
     def __init__(self, state: IdentityState) -> None:
         self._state = state
         self.messages: MessageRepository = FakeMessageRepository(state)
+        self.delivery_states: ConversationDeliveryStateRepository = (
+            FakeConversationDeliveryStateRepository(state)
+        )
+        self.read_states: ConversationReadStateRepository = FakeConversationReadStateRepository(
+            state
+        )
         self.conversations: ConversationRepository = FakeConversationRepository(state)
         self.users: UserRepository = FakeUserRepository(state)
         self.devices: DeviceRepository = FakeDeviceRepository(state)
@@ -627,6 +913,17 @@ class FixedActivationSecrets:
         return self._generated.digest
 
 
+class FixedPasswordResetSecrets:
+    def __init__(self, plaintext: str, digest: str) -> None:
+        self._generated = GeneratedPasswordResetSecret(plaintext=plaintext, digest=digest)
+
+    def generate(self) -> GeneratedPasswordResetSecret:
+        return self._generated
+
+    def digest(self, plaintext: str) -> str:
+        return hashlib.sha256(plaintext.encode()).hexdigest()
+
+
 class SequentialActivationSecrets:
     """Deterministic unique credentials for reissue specifications."""
 
@@ -671,4 +968,8 @@ class FakePasswordHasher:
         return "$argon2id$fake-hash"
 
     async def verify(self, password_hash: str | None, password: str) -> bool:
-        return password_hash == "$argon2id$fake-hash" and password in self.hashed_passwords
+        return (
+            password_hash == "$argon2id$fake-hash"
+            and bool(self.hashed_passwords)
+            and password == self.hashed_passwords[-1]
+        )

@@ -88,8 +88,13 @@ async def test_send_opaque_message_and_reject_invalid_or_non_member_envelopes() 
         assert [event["event_type"] for event in sync.json()["events"]] == [
             "conversation_updated",
             "message_created",
+            "read_receipt",
+            "delivery_receipt",
         ]
-        assert sync.json()["events"][-1]["message_id"] == sent.json()["message_id"]
+        assert sync.json()["events"][-3]["message_id"] == sent.json()["message_id"]
+        assert sync.json()["events"][-1]["actor_user_id"] == str(alice.id)
+        assert sync.json()["events"][-2]["read_sequence"] == 1
+        assert sync.json()["events"][-1]["delivery_sequence"] == 1
 
         page = await alice_client.get(
             f"/api/v1/conversations/{conversation_id}/messages?after_sequence=0&limit=10"
@@ -141,3 +146,76 @@ async def test_message_openapi_response_has_no_content_or_key_fields() -> None:
     assert {"ciphertext", "ciphertext_base64", "plaintext", "text", "message_key"}.isdisjoint(
         response_fields
     )
+
+
+async def test_delete_for_everyone_requires_csrf_and_returns_tombstone() -> None:
+    application, state, _ = build_test_application()
+    bob = User.create(username="bob", display_name="Bob", now=NOW)
+    state.users[bob.id] = bob
+    state.password_hashes[bob.id] = "$argon2id$fake-hash"
+    transport = ASGITransport(app=application)
+    async with (
+        AsyncClient(transport=transport, base_url=ORIGIN) as alice_client,
+        AsyncClient(transport=transport, base_url=ORIGIN) as bob_client,
+    ):
+        await login_as(alice_client, "alice")
+        await login_as(bob_client, "bob")
+        alice_headers = {
+            "Origin": ORIGIN,
+            "X-CSRF-Token": alice_client.cookies["__Host-yv_csrf"],
+        }
+        bob_headers = {
+            "Origin": ORIGIN,
+            "X-CSRF-Token": bob_client.cookies["__Host-yv_csrf"],
+        }
+        direct = await alice_client.post(
+            "/api/v1/conversations/direct",
+            headers=alice_headers,
+            json={"other_user_id": str(bob.id)},
+        )
+        conversation_id = direct.json()["conversation_id"]
+        sent = await alice_client.post(
+            f"/api/v1/conversations/{conversation_id}/messages",
+            headers=alice_headers,
+            json={
+                "protocol_version": 1,
+                "client_message_id": str(uuid4()),
+                "ciphertext_base64": "b3BhcXVl",
+            },
+        )
+        message_id = sent.json()["message_id"]
+
+        missing_csrf = await alice_client.delete(
+            f"/api/v1/conversations/{conversation_id}/messages/{message_id}",
+            headers={"Origin": ORIGIN},
+        )
+        peer_forbidden = await bob_client.delete(
+            f"/api/v1/conversations/{conversation_id}/messages/{message_id}",
+            headers=bob_headers,
+        )
+        deleted = await alice_client.delete(
+            f"/api/v1/conversations/{conversation_id}/messages/{message_id}",
+            headers=alice_headers,
+        )
+        duplicate = await alice_client.delete(
+            f"/api/v1/conversations/{conversation_id}/messages/{message_id}",
+            headers=alice_headers,
+        )
+
+        assert missing_csrf.status_code == 403
+        assert peer_forbidden.status_code == 403
+        assert deleted.status_code == 200
+        assert deleted.json()["advanced"] is True
+        assert deleted.json()["deletion_reason"] == "manual"
+        assert duplicate.status_code == 200
+        assert duplicate.json()["advanced"] is False
+        page = await alice_client.get(
+            f"/api/v1/conversations/{conversation_id}/messages?after_sequence=0&limit=10"
+        )
+        assert page.json()[0]["ciphertext_base64"] is None
+        assert page.json()[0]["deletion_reason"] == "manual"
+        assert page.json()[0]["deleted_at"] is not None
+        assert state.messages[next(iter(state.messages))].ciphertext is None
+
+        sync = await bob_client.get("/api/v1/sync?after=0&limit=20")
+        assert "message_deleted" in {event["event_type"] for event in sync.json()["events"]}

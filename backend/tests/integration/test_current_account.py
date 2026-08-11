@@ -24,8 +24,10 @@ from messenger.infrastructure.persistence.database import create_engine, create_
 from messenger.infrastructure.persistence.identity_uow import SqlAlchemyIdentityUnitOfWork
 from messenger.infrastructure.persistence.models import (
     ActivationTokenModel,
+    ConversationDeliveryStateModel,
     ConversationMemberModel,
     ConversationModel,
+    ConversationReadStateModel,
     DeviceModel,
     MessageModel,
     SecurityEventModel,
@@ -61,6 +63,8 @@ async def reset_tables(session_factory: async_sessionmaker[AsyncSession]) -> Non
         await session.execute(delete(SyncEventModel))
         await session.execute(delete(SyncStreamModel))
         await session.execute(delete(MessageModel))
+        await session.execute(delete(ConversationDeliveryStateModel))
+        await session.execute(delete(ConversationReadStateModel))
         await session.execute(delete(ConversationMemberModel))
         await session.execute(delete(ConversationModel))
         await session.execute(delete(SecurityEventModel))

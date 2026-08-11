@@ -3,11 +3,20 @@
 from messenger.infrastructure.persistence.repositories.activation_tokens import (
     SqlAlchemyActivationTokenRepository,
 )
+from messenger.infrastructure.persistence.repositories.conversation_delivery_states import (
+    SqlAlchemyConversationDeliveryStateRepository,
+)
+from messenger.infrastructure.persistence.repositories.conversation_read_states import (
+    SqlAlchemyConversationReadStateRepository,
+)
 from messenger.infrastructure.persistence.repositories.conversations import (
     SqlAlchemyConversationRepository,
 )
 from messenger.infrastructure.persistence.repositories.devices import SqlAlchemyDeviceRepository
 from messenger.infrastructure.persistence.repositories.messages import SqlAlchemyMessageRepository
+from messenger.infrastructure.persistence.repositories.password_reset_tokens import (
+    SqlAlchemyPasswordResetTokenRepository,
+)
 from messenger.infrastructure.persistence.repositories.security_events import (
     SqlAlchemySecurityEventRepository,
 )
@@ -18,8 +27,11 @@ from messenger.infrastructure.persistence.repositories.users import SqlAlchemyUs
 __all__ = [
     "SqlAlchemyActivationTokenRepository",
     "SqlAlchemyConversationRepository",
+    "SqlAlchemyConversationDeliveryStateRepository",
+    "SqlAlchemyConversationReadStateRepository",
     "SqlAlchemyDeviceRepository",
     "SqlAlchemyMessageRepository",
+    "SqlAlchemyPasswordResetTokenRepository",
     "SqlAlchemySecurityEventRepository",
     "SqlAlchemySessionRepository",
     "SqlAlchemySyncRepository",

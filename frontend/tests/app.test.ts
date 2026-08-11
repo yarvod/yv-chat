@@ -1,9 +1,11 @@
-import { flushPromises, mount } from '@vue/test-utils'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { mount } from '@vue/test-utils'
+import { describe, expect, it, vi } from 'vitest'
 
-import App from '../app/app.vue'
-import { ApiError } from '../app/services/api'
-import { authService } from '../app/services/auth'
+import { Login } from '../app/application/auth/login'
+import type { AuthGateway, LoginCredentials } from '../app/application/ports/auth-gateway'
+import type { DeviceInfoPort } from '../app/application/ports/device-info'
+import type { HapticsPort } from '../app/application/ports/haptics'
+import LoginForm from '../app/components/auth/LoginForm.vue'
 
 const account = {
   userId: '8ec81303-0613-4ed6-bf79-4eecff0ceada',
@@ -14,50 +16,62 @@ const account = {
   updatedAt: '2026-08-11T12:00:00Z',
 }
 
-afterEach(() => vi.restoreAllMocks())
+describe('login application flow', () => {
+  it('uses automatic device metadata instead of accepting a device name from UI', async () => {
+    const received: LoginCredentials[] = []
+    const gateway: AuthGateway = {
+      current: vi.fn(),
+      logout: vi.fn(),
+      login: vi.fn(async credentials => {
+        received.push(credentials)
+        return account
+      }),
+    }
+    const deviceInfo: DeviceInfoPort = {
+      current: () => ({
+        label: 'Safari · iOS · Телефон',
+        browser: 'Safari',
+        operatingSystem: 'iOS',
+        deviceClass: 'mobile',
+      }),
+    }
+    const perform = vi.fn()
+    const haptics: HapticsPort = { isEnabled: () => true, setEnabled: vi.fn(), perform }
 
-describe('auth shell', () => {
-  it('bootstraps signed-out state and authenticates without exposing a credential', async () => {
-    vi.spyOn(authService, 'current').mockRejectedValue(new ApiError(401, 'http', 'unauthorized'))
-    const login = vi.spyOn(authService, 'login').mockResolvedValue(account)
-    const wrapper = mount(App, {
-      global: {
-        stubs: {
-          ChatWorkspace: {
-            props: ['user'],
-            template: '<section>{{ user.displayName }} @{{ user.username }}</section>',
-          },
-        },
-      },
+    await new Login(gateway, deviceInfo, haptics).execute({
+      username: 'alice',
+      password: 'correct horse battery staple',
     })
-    await flushPromises()
 
-    expect(wrapper.get('h1').text()).toBe('yv-chat')
+    expect(received).toEqual([{
+      username: 'alice',
+      password: 'correct horse battery staple',
+      deviceName: 'Safari · iOS · Телефон',
+    }])
+    expect(perform).toHaveBeenCalledWith('success')
+  })
+
+  it('clears the rendered password and never renders a device-name input', async () => {
+    const wrapper = mount(LoginForm, {
+      props: {
+        busy: false,
+        message: null,
+        offline: false,
+        deviceLabel: 'Chrome · macOS · Компьютер',
+      },
+      global: { stubs: { NuxtLink: { template: '<a><slot /></a>' } } },
+    })
     await wrapper.get('input[name="username"]').setValue('alice')
     await wrapper.get('input[name="password"]').setValue('correct horse battery staple')
     await wrapper.get('form').trigger('submit')
-    await flushPromises()
 
-    expect(login).toHaveBeenCalledWith({
+    expect(wrapper.emitted('submit')?.[0]).toEqual([{
       username: 'alice',
       password: 'correct horse battery staple',
-      deviceName: 'Этот браузер',
-    })
-    expect(wrapper.text()).toContain('Alice')
-    expect(wrapper.text()).toContain('@alice')
+    }])
+    expect((wrapper.get('input[name="password"]').element as HTMLInputElement).value).toBe('')
+    expect(wrapper.find('input[name="device-name"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('Chrome · macOS · Компьютер')
     expect(wrapper.html()).not.toContain('correct horse battery staple')
-  })
-
-  it('does not describe an HTTP rejection as a network outage', async () => {
-    vi.spyOn(authService, 'current').mockRejectedValue(new ApiError(403, 'http', 'origin rejected'))
-    const wrapper = mount(App, {
-      global: {
-        stubs: { ChatWorkspace: { template: '<section>workspace</section>' } },
-      },
-    })
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('Не удалось проверить сессию')
-    expect(wrapper.text()).not.toContain('Сервер недоступен')
   })
 })

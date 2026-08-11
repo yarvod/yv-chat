@@ -1,8 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
-import { ApiError } from '../app/services/api'
-import { parseConversation, parseSyncPage } from '../app/services/messaging/parsers'
-import { syntheticMessageCodec } from '../app/services/messaging/syntheticCodec'
+import { ApplicationError } from '../app/application/errors'
+import { syntheticMessageCodec } from '../app/infrastructure/crypto/synthetic-message-codec'
+import {
+  parseConversation,
+  parseOpaqueMessage,
+  parseSyncPage,
+} from '../app/infrastructure/http/messaging-parsers'
+import { parseConversationReadStates } from '../app/infrastructure/http/conversation-read-state-parsers'
+import { parseParticipantDeliveryStates } from '../app/infrastructure/http/conversation-delivery-state-parsers'
 
 const conversation = {
   conversation_id: 'conversation-1',
@@ -25,7 +31,7 @@ describe('messaging boundaries', () => {
   it('parses the explicit conversation shape and rejects an unknown enum', () => {
     expect(parseConversation(conversation).conversationType).toBe('direct')
     expect(() => parseConversation({ ...conversation, conversation_type: 'channel' }))
-      .toThrow(ApiError)
+      .toThrow(ApplicationError)
   })
 
   it('rejects a malformed sync cursor', () => {
@@ -35,12 +41,98 @@ describe('messaging boundaries', () => {
       stream_cursor: 0,
       has_more: false,
       reset_required: false,
-    })).toThrow(ApiError)
+    })).toThrow(ApplicationError)
+    expect(() => parseSyncPage({
+      events: [{
+        event_id: 'event-1',
+        cursor: 1,
+        event_type: 'read_receipt',
+        conversation_id: 'conversation-1',
+        message_id: null,
+        actor_user_id: null,
+        read_sequence: 2,
+        delivery_sequence: null,
+        created_at: '2026-08-11T12:00:00Z',
+      }],
+      next_cursor: 1,
+      stream_cursor: 1,
+      has_more: false,
+      reset_required: false,
+    })).toThrow(ApplicationError)
   })
 
   it('labels the temporary codec as insecure and round-trips unicode', () => {
     const plaintext = 'Привет 👋'
     expect(syntheticMessageCodec.secure).toBe(false)
     expect(syntheticMessageCodec.decode(syntheticMessageCodec.encode(plaintext))).toBe(plaintext)
+  })
+
+  it('parses active envelopes and tombstones as disjoint shapes', () => {
+    const base = {
+      message_id: 'message-1',
+      client_message_id: 'client-1',
+      conversation_id: 'conversation-1',
+      sender_user_id: 'alice-id',
+      sender_device_id: 'device-1',
+      protocol_version: 1,
+      sequence: 1,
+      created_at: '2026-08-11T12:00:00Z',
+      expires_at: '2026-09-10T12:00:00Z',
+    }
+    expect(parseOpaqueMessage({
+      ...base,
+      ciphertext_base64: 'b3BhcXVl',
+      deletion_reason: null,
+      deleted_at: null,
+    }).ciphertextBase64).toBe('b3BhcXVl')
+    expect(parseOpaqueMessage({
+      ...base,
+      ciphertext_base64: null,
+      deletion_reason: 'expired',
+      deleted_at: '2026-09-10T12:00:00Z',
+    }).deletionReason).toBe('expired')
+    expect(() => parseOpaqueMessage({
+      ...base,
+      ciphertext_base64: null,
+      deletion_reason: null,
+      deleted_at: null,
+    })).toThrow(ApplicationError)
+  })
+
+  it('parses bounded read summaries and rejects negative counts', () => {
+    expect(parseConversationReadStates([{
+      conversation_id: 'conversation-1',
+      last_read_sequence: 2,
+      latest_sequence: 4,
+      unread_count: 2,
+    }])).toEqual([{
+      conversationId: 'conversation-1',
+      lastReadSequence: 2,
+      latestSequence: 4,
+      unreadCount: 2,
+    }])
+    expect(() => parseConversationReadStates([{
+      conversation_id: 'conversation-1',
+      last_read_sequence: 0,
+      latest_sequence: 0,
+      unread_count: -1,
+    }])).toThrow(ApplicationError)
+  })
+
+  it('parses positive delivery summaries and rejects zero cursors', () => {
+    expect(parseParticipantDeliveryStates([{
+      conversation_id: 'conversation-1',
+      user_id: 'bob-id',
+      delivered_sequence: 4,
+    }])).toEqual([{
+      conversationId: 'conversation-1',
+      userId: 'bob-id',
+      deliveredSequence: 4,
+    }])
+    expect(() => parseParticipantDeliveryStates([{
+      conversation_id: 'conversation-1',
+      user_id: 'bob-id',
+      delivered_sequence: 0,
+    }])).toThrow(ApplicationError)
   })
 })

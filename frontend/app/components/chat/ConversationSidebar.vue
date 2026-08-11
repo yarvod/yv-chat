@@ -1,8 +1,13 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 
-import type { CurrentAccount } from '../../services/parsers'
-import type { Conversation, DirectoryUser } from '../../services/messaging/types'
+import type { CurrentAccount } from '../../domain/accounts/account'
+import type {
+  Conversation,
+  ConversationReadState,
+  DirectoryUser,
+} from '../../domain/messaging/models'
+import type { PresenceIndicator } from '../../application/messaging/presence-indicator-service'
 import NewConversationForm from './NewConversationForm.vue'
 
 const props = defineProps<{
@@ -10,14 +15,14 @@ const props = defineProps<{
   conversations: readonly Conversation[]
   directory: readonly DirectoryUser[]
   activeConversationId: string | null
+  readStates: readonly ConversationReadState[]
+  presenceIndicators: readonly PresenceIndicator[]
   creating: boolean
 }>()
 const emit = defineEmits<{
   select: [conversationId: string]
   direct: [userId: string]
   group: [title: string, userIds: string[]]
-  manageUsers: []
-  logout: []
 }>()
 const creatingNew = ref(false)
 
@@ -25,6 +30,21 @@ function conversationName(conversation: Conversation): string {
   if (conversation.conversationType === 'group') return conversation.title ?? 'Группа'
   return conversation.members.find(member => member.userId !== props.user.userId)?.displayName
     ?? 'Личный диалог'
+}
+
+function unreadCount(conversationId: string): number {
+  return props.readStates.find(item => item.conversationId === conversationId)?.unreadCount ?? 0
+}
+
+function isConversationOnline(conversation: Conversation): boolean {
+  const peerIds = new Set(
+    conversation.members
+      .filter(member => member.userId !== props.user.userId && member.leftAt === null)
+      .map(member => member.userId),
+  )
+  return props.presenceIndicators.some(item => (
+    item.conversationId === conversation.conversationId && peerIds.has(item.userId)
+  ))
 }
 
 function createDirect(userId: string): void {
@@ -43,7 +63,6 @@ function createGroup(title: string, userIds: string[]): void {
     <div class="brand-row">
       <span class="brand-mark small">Y</span>
       <strong>yv-chat</strong>
-      <button v-if="user.isAdmin" class="admin-button" type="button" aria-label="Управление пользователями" @click="emit('manageUsers')">♙</button>
       <button class="new-chat-button" type="button" aria-label="Новый диалог" @click="creatingNew = true">
         +
       </button>
@@ -68,10 +87,20 @@ function createGroup(title: string, userIds: string[]): void {
         :class="{ active: conversation.conversationId === activeConversationId }"
         @click="emit('select', conversation.conversationId)"
       >
-        <span class="conversation-avatar">{{ conversationName(conversation).slice(0, 1).toUpperCase() }}</span>
-        <span>
+        <span class="conversation-avatar">
+          {{ conversationName(conversation).slice(0, 1).toUpperCase() }}
+          <i v-if="isConversationOnline(conversation)" class="presence-dot" aria-label="В сети" />
+        </span>
+        <span class="conversation-copy">
           <strong>{{ conversationName(conversation) }}</strong>
           <small>{{ conversation.conversationType === 'group' ? `${conversation.members.length} участников` : 'Личный диалог' }}</small>
+        </span>
+        <span
+          v-if="unreadCount(conversation.conversationId) > 0"
+          class="unread-badge"
+          :aria-label="`${unreadCount(conversation.conversationId)} непрочитанных`"
+        >
+          {{ unreadCount(conversation.conversationId) > 99 ? '99+' : unreadCount(conversation.conversationId) }}
         </span>
       </button>
       <div v-if="conversations.length === 0" class="empty-conversations">
@@ -87,7 +116,6 @@ function createGroup(title: string, userIds: string[]): void {
         <strong>{{ user.displayName }}</strong>
         <small>@{{ user.username }}</small>
       </span>
-      <button class="icon-button" type="button" aria-label="Выйти" @click="emit('logout')">↗</button>
     </footer>
   </aside>
 </template>

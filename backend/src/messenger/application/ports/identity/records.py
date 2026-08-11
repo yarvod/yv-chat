@@ -20,6 +20,12 @@ class ManagedUserRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class ManagedUserPageRecord:
+    items: list[ManagedUserRecord]
+    total: int
+
+
+@dataclass(frozen=True, slots=True)
 class SessionCredentialMatch:
     session: Session
     matched_previous: bool

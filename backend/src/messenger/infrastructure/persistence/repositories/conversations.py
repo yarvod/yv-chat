@@ -69,6 +69,7 @@ class SqlAlchemyConversationRepository:
             direct_user_high_id=high_id,
             created_at=conversation.created_at,
             updated_at=conversation.updated_at,
+            last_message_sequence=0,
             members=[
                 ConversationMemberModel(
                     conversation_id=member.conversation_id,
@@ -122,6 +123,19 @@ class SqlAlchemyConversationRepository:
             .options(selectinload(ConversationModel.members))
         )
         return map_conversation(model) if model is not None else None
+
+    async def get_by_ids(self, conversation_ids: set[UUID]) -> list[Conversation]:
+        if not conversation_ids:
+            return []
+        models = (
+            await self._session.scalars(
+                select(ConversationModel)
+                .where(ConversationModel.id.in_(conversation_ids))
+                .options(selectinload(ConversationModel.members))
+                .order_by(ConversationModel.id)
+            )
+        ).all()
+        return [map_conversation(model) for model in models]
 
     async def list_active_for_user(self, user_id: UUID) -> list[Conversation]:
         models = (

@@ -19,9 +19,12 @@ def test_persistence_metadata_contains_expected_tables() -> None:
     assert set(Base.metadata.tables) == {
         "activation_tokens",
         "conversation_members",
+        "conversation_delivery_states",
+        "conversation_read_states",
         "conversations",
         "devices",
         "messages",
+        "password_reset_tokens",
         "security_events",
         "sessions",
         "sync_events",
@@ -78,6 +81,17 @@ def test_activation_schema_stores_digest_without_plaintext_secret() -> None:
     assert activation_tokens.columns["token_hash"].unique is True
 
 
+def test_password_reset_schema_is_purpose_bound_and_stores_only_digest() -> None:
+    reset_tokens = Base.metadata.tables["password_reset_tokens"]
+
+    assert "token_hash" in reset_tokens.columns
+    assert "reset_secret" not in reset_tokens.columns
+    assert "token" not in reset_tokens.columns
+    assert "used_at" in reset_tokens.columns
+    assert "revoked_at" in reset_tokens.columns
+    assert reset_tokens.columns["token_hash"].unique is True
+
+
 def test_session_schema_stores_only_hashes_and_binds_device_owner() -> None:
     sessions = Base.metadata.tables["sessions"]
     foreign_keys = {
@@ -116,6 +130,7 @@ def test_conversation_schema_enforces_direct_pair_and_membership_lifecycle() -> 
 
     assert {
         "ck_conversations_direct_pair_ordered",
+        "ck_conversations_last_message_sequence_non_negative",
         "ck_conversations_shape_matches_type",
         "ck_conversations_title_length",
     }.issubset(conversation_checks)
@@ -141,10 +156,26 @@ def test_message_schema_is_bounded_opaque_ciphertext_only() -> None:
     assert "ciphertext" in messages.columns
     assert {
         "ck_messages_ciphertext_size",
+        "ck_messages_ciphertext_digest_format",
+        "ck_messages_expires_after_created",
         "ck_messages_protocol_version_range",
+        "ck_messages_tombstone_shape",
     }.issubset(check_names)
+    assert messages.columns["ciphertext"].nullable is True
+    assert {
+        "ciphertext_digest",
+        "expires_at",
+        "deletion_reason",
+        "deleted_at",
+        "deleted_by_user_id",
+        "tombstone_expires_at",
+    }.issubset(messages.columns.keys())
     assert {"plaintext", "text", "decrypted_body", "message_key"}.isdisjoint(messages.columns)
-    assert "ix_messages_conversation_created" in {index.name for index in messages.indexes}
+    assert {
+        "ix_messages_conversation_created",
+        "ix_messages_expiry_active",
+        "ix_messages_tombstone_expiry",
+    }.issubset({index.name for index in messages.indexes})
 
 
 def test_sync_schema_has_per_user_cursor_and_opaque_routing_fields_only() -> None:
@@ -153,9 +184,47 @@ def test_sync_schema_has_per_user_cursor_and_opaque_routing_fields_only() -> Non
 
     assert set(streams.columns.keys()) == {"user_id", "last_cursor"}
     assert {column.name for column in events.primary_key} == {"user_id", "cursor"}
-    assert {"event_id", "event_type", "conversation_id", "message_id"}.issubset(
-        events.columns.keys()
-    )
+    assert {
+        "event_id",
+        "event_type",
+        "conversation_id",
+        "message_id",
+        "actor_user_id",
+        "read_sequence",
+        "delivery_sequence",
+    }.issubset(events.columns.keys())
     assert {"ciphertext", "plaintext", "text", "message_key", "payload"}.isdisjoint(
         events.columns.keys()
     )
+
+
+def test_read_state_schema_is_user_scoped_and_monotonic() -> None:
+    read_states = Base.metadata.tables["conversation_read_states"]
+    check_names = {
+        constraint.name
+        for constraint in read_states.constraints
+        if isinstance(constraint, CheckConstraint)
+    }
+
+    assert {column.name for column in read_states.primary_key} == {
+        "user_id",
+        "conversation_id",
+    }
+    assert "ck_conversation_read_states_last_read_sequence_positive" in check_names
+    assert "ix_read_states_conversation" in {index.name for index in read_states.indexes}
+
+
+def test_delivery_state_schema_is_device_scoped_and_monotonic() -> None:
+    delivery_states = Base.metadata.tables["conversation_delivery_states"]
+    check_names = {
+        constraint.name
+        for constraint in delivery_states.constraints
+        if isinstance(constraint, CheckConstraint)
+    }
+
+    assert {column.name for column in delivery_states.primary_key} == {
+        "device_id",
+        "conversation_id",
+    }
+    assert "ck_conversation_delivery_states_last_delivered_sequence_positive" in check_names
+    assert "ix_delivery_states_conversation" in {index.name for index in delivery_states.indexes}

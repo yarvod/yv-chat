@@ -2,12 +2,17 @@
 
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from messenger.application.errors import DuplicateUsernameError
-from messenger.application.ports.identity import ManagedUserRecord, UserAuthenticationRecord
+from messenger.application.ports.identity import (
+    ManagedUserPageRecord,
+    ManagedUserRecord,
+    UserAuthenticationRecord,
+)
 from messenger.domain.entities import User
 from messenger.infrastructure.persistence.models import UserModel
 from messenger.infrastructure.persistence.repositories.mappers import map_user
@@ -27,19 +32,43 @@ class SqlAlchemyUserRepository:
         ).all()
         return [map_user(model) for model in models]
 
-    async def list_managed(self) -> list[ManagedUserRecord]:
+    async def list_managed(
+        self,
+        *,
+        search: str | None,
+        limit: int,
+        offset: int,
+    ) -> ManagedUserPageRecord:
+        filters: list[ColumnElement[bool]] = []
+        if search is not None:
+            filters = [
+                or_(
+                    func.lower(UserModel.username).contains(search.lower(), autoescape=True),
+                    func.lower(UserModel.display_name).contains(search.lower(), autoescape=True),
+                )
+            ]
+        total = int(
+            await self._session.scalar(select(func.count(UserModel.id)).where(*filters)) or 0
+        )
         models = (
             await self._session.scalars(
-                select(UserModel).order_by(UserModel.username, UserModel.id)
+                select(UserModel)
+                .where(*filters)
+                .order_by(UserModel.username, UserModel.id)
+                .limit(limit)
+                .offset(offset)
             )
         ).all()
-        return [
-            ManagedUserRecord(
-                user=map_user(model),
-                password_configured=model.password_hash is not None,
-            )
-            for model in models
-        ]
+        return ManagedUserPageRecord(
+            items=[
+                ManagedUserRecord(
+                    user=map_user(model),
+                    password_configured=model.password_hash is not None,
+                )
+                for model in models
+            ],
+            total=total,
+        )
 
     async def get_managed_by_id(
         self,

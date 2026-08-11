@@ -6,9 +6,16 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from messenger.application.ports.conversations import ConversationRepository
 from messenger.application.ports.identity import DeviceRepository, UserRepository
-from messenger.application.ports.messages import MessageRepository, MessagingUnitOfWork
+from messenger.application.ports.messages import (
+    ConversationDeliveryStateRepository,
+    ConversationReadStateRepository,
+    MessageRepository,
+    MessagingUnitOfWork,
+)
 from messenger.application.ports.sync import SyncRepository
 from messenger.infrastructure.persistence.repositories import (
+    SqlAlchemyConversationDeliveryStateRepository,
+    SqlAlchemyConversationReadStateRepository,
     SqlAlchemyConversationRepository,
     SqlAlchemyDeviceRepository,
     SqlAlchemyMessageRepository,
@@ -22,6 +29,8 @@ class SqlAlchemyMessagingUnitOfWork:
         self._session_factory = session_factory
         self._session: AsyncSession | None = None
         self.messages: MessageRepository
+        self.delivery_states: ConversationDeliveryStateRepository
+        self.read_states: ConversationReadStateRepository
         self.conversations: ConversationRepository
         self.users: UserRepository
         self.devices: DeviceRepository
@@ -30,6 +39,8 @@ class SqlAlchemyMessagingUnitOfWork:
     async def __aenter__(self) -> "SqlAlchemyMessagingUnitOfWork":
         self._session = self._session_factory()
         self.messages = SqlAlchemyMessageRepository(self._session)
+        self.delivery_states = SqlAlchemyConversationDeliveryStateRepository(self._session)
+        self.read_states = SqlAlchemyConversationReadStateRepository(self._session)
         self.conversations = SqlAlchemyConversationRepository(self._session)
         self.users = SqlAlchemyUserRepository(self._session)
         self.devices = SqlAlchemyDeviceRepository(self._session)

@@ -18,10 +18,20 @@ from messenger.application.accounts.invite import (
     CreateUserInvitation,
     CreateUserInvitationCommand,
 )
+from messenger.application.accounts.issue_password_reset import (
+    IssuePasswordReset,
+    IssuePasswordResetCommand,
+)
 from messenger.application.accounts.list_users import ListManagedUsers, ListManagedUsersQuery
+from messenger.application.accounts.password_reset_policy import PasswordResetPolicy
 from messenger.application.accounts.reissue_activation import (
     ReissueActivation,
     ReissueActivationCommand,
+)
+from messenger.application.accounts.reset_password import (
+    ResetPasswordWithToken,
+    ResetPasswordWithTokenCommand,
+    ResetPasswordWithTokenResult,
 )
 from messenger.application.accounts.update_user import (
     UpdateManagedUser,
@@ -31,12 +41,17 @@ from messenger.application.errors import (
     ActivationAlreadyUsedError,
     AuthorizationDeniedError,
     InvalidActivationSecretError,
+    InvalidCredentialsError,
+    InvalidPasswordResetSecretError,
 )
 from messenger.application.ports.identity import IdentityUnitOfWork
 from messenger.application.security_events.policy import SecurityEventPolicy
 from messenger.application.sessions.login import Login, LoginCommand
 from messenger.application.sessions.policy import SessionPolicy
 from messenger.infrastructure.auth.activation_secrets import SecureActivationSecretService
+from messenger.infrastructure.auth.password_reset_secrets import (
+    SecurePasswordResetSecretService,
+)
 from messenger.infrastructure.auth.passwords import Argon2PasswordHasher
 from messenger.infrastructure.auth.session_credentials import SecureSessionCredentialService
 from messenger.infrastructure.persistence.database import create_engine, create_session_factory
@@ -47,6 +62,7 @@ from messenger.infrastructure.persistence.models import (
     ConversationModel,
     DeviceModel,
     MessageModel,
+    PasswordResetTokenModel,
     SecurityEventModel,
     SessionModel,
     SyncEventModel,
@@ -86,6 +102,7 @@ async def reset_identity_tables(
         await session.execute(delete(SecurityEventModel))
         await session.execute(delete(SessionModel))
         await session.execute(delete(DeviceModel))
+        await session.execute(delete(PasswordResetTokenModel))
         await session.execute(delete(ActivationTokenModel))
         await session.execute(delete(UserModel))
 
@@ -96,6 +113,7 @@ async def run_flow(database_url: str) -> None:
     passwords = Argon2PasswordHasher()
     activation_secrets = SecureActivationSecretService()
     session_credentials = SecureSessionCredentialService()
+    password_reset_secrets = SecurePasswordResetSecretService()
 
     def unit_of_work() -> IdentityUnitOfWork:
         return SqlAlchemyIdentityUnitOfWork(session_factory)
@@ -216,10 +234,81 @@ async def run_flow(database_url: str) -> None:
         )
         assert reactivated.is_active is True
 
-        with pytest.raises(AuthorizationDeniedError):
-            await ListManagedUsers(unit_of_work=unit_of_work).execute(
-                ListManagedUsersQuery(actor_user_id=invitation.user_id)
+        recovery_session_one = await login.execute(
+            LoginCommand(username="alice", password=PASSWORD, device_name="Recovery one")
+        )
+        recovery_session_two = await login.execute(
+            LoginCommand(username="alice", password=PASSWORD, device_name="Recovery two")
+        )
+        reset_issued = await IssuePasswordReset(
+            unit_of_work=unit_of_work,
+            clock=FixedClock(NOW + timedelta(minutes=5)),
+            secrets=password_reset_secrets,
+            password_reset_policy=PasswordResetPolicy(ttl=timedelta(hours=1)),
+            event_policy=EVENT_POLICY,
+        ).execute(
+            IssuePasswordResetCommand(
+                actor_user_id=admin.user_id,
+                actor_session_id=admin_session.session_id,
+                target_user_id=invitation.user_id,
             )
+        )
+        assert reset_issued.revoked_sessions == 2
+
+        new_password = "new correct horse battery staple"
+        reset_password = ResetPasswordWithToken(
+            unit_of_work=unit_of_work,
+            clock=FixedClock(NOW + timedelta(minutes=6)),
+            secrets=password_reset_secrets,
+            passwords=passwords,
+            event_policy=EVENT_POLICY,
+        )
+
+        async def reset_once() -> ResetPasswordWithTokenResult | Exception:
+            try:
+                return await reset_password.execute(
+                    ResetPasswordWithTokenCommand(
+                        reset_secret=reset_issued.reset_secret,
+                        new_password=new_password,
+                    )
+                )
+            except Exception as error:
+                return error
+
+        reset_outcomes = await asyncio.gather(reset_once(), reset_once())
+        assert sum(isinstance(item, ResetPasswordWithTokenResult) for item in reset_outcomes) == 1
+        assert (
+            sum(isinstance(item, InvalidPasswordResetSecretError) for item in reset_outcomes) == 1
+        )
+
+        with pytest.raises(InvalidCredentialsError):
+            await login.execute(
+                LoginCommand(username="alice", password=PASSWORD, device_name="Old password")
+            )
+        recovered = await login.execute(
+            LoginCommand(username="alice", password=new_password, device_name="Recovered")
+        )
+        assert recovered.user_id == invitation.user_id
+
+        async with session_factory() as session:
+            first_recovery_model = await session.get(
+                SessionModel,
+                recovery_session_one.session_id,
+            )
+            second_recovery_model = await session.get(
+                SessionModel,
+                recovery_session_two.session_id,
+            )
+            assert first_recovery_model is not None
+            assert first_recovery_model.revoked_at is not None
+            assert second_recovery_model is not None
+            assert second_recovery_model.revoked_at is not None
+
+        with pytest.raises(AuthorizationDeniedError):
+            await ListManagedUsers(
+                unit_of_work=unit_of_work,
+                clock=FixedClock(NOW + timedelta(minutes=7)),
+            ).execute(ListManagedUsersQuery(actor_user_id=invitation.user_id))
     finally:
         await reset_identity_tables(session_factory)
         await engine.dispose()

@@ -10,7 +10,8 @@ Internet
   → 127.0.0.1:18080
   → yv-chat gateway container
       ├→ frontend:3000
-      └→ api:8000 → postgres:5432
+      ├→ api:8000 → postgres:5432
+      └→ cleanup ─→ postgres:5432
 ```
 
 Only `127.0.0.1:18080` is published on the host. Gateway joins a small edge network for the host bind and an internal private network; PostgreSQL, API and frontend live only on the private network. Production Compose uses bounded container memory/PID limits because the VPS has about 1.9 GiB RAM and no swap.
@@ -58,6 +59,28 @@ It uses `openssl rand` and creates, without printing secret values:
 - `.env` — database/runtime configuration, mode `0600`;
 - `.bootstrap-admin.env` — one-time initial administrator credential, mode `0600`.
 
+`PASSWORD_RESET_TOKEN_TTL_SECONDS` задаёт отдельный bounded lifetime reset-link
+(по умолчанию 3600 секунд) и не влияет на invitation TTL. Старый production
+`.env` может не содержать ключ: Compose передаёт безопасный default; при
+следующей контролируемой правке файла значение следует добавить явно.
+
+Message retention управляется следующими non-secret settings:
+
+```text
+SYNC_EVENT_RETENTION_SECONDS=2592000
+MESSAGE_CIPHERTEXT_RETENTION_SECONDS=2592000
+MESSAGE_TOMBSTONE_RETENTION_SECONDS=7776000
+MESSAGE_CLEANUP_BATCH_SIZE=200
+MESSAGE_CLEANUP_INTERVAL_SECONDS=300
+```
+
+Tombstone retention обязана быть строго больше и ciphertext TTL, и sync-event
+retention; backend fail-fast отклоняет неверную конфигурацию. `cleanup` использует
+тот же immutable backend image, private network и PostgreSQL, но отдельный process с
+лимитами `96m/64 pids`. У него нет public port и media volume. Остановка worker не
+останавливает API, но задерживает scrub до восстановления, поэтому production check
+должен считать постоянно restarting/stopped cleanup неисправностью.
+
 The first successful deployment runs the bootstrap command in a one-off backend container and atomically renames the latter file to `.initial-admin-credential`. The deploy script never uses that credential again. Retrieve it over the existing trusted SSH channel, then remove it after the administrator has logged in and changed the password. Do not paste it into an issue, Actions log or chat.
 
 Preflight without exposing values:
@@ -89,7 +112,11 @@ cd /home/devuser/yv-chat
 docker compose -p yv-chat --env-file .env -f compose.prod.yml ps
 curl --fail http://127.0.0.1:18080/healthz
 curl --fail http://127.0.0.1:18080/api/v1/health
+docker compose -p yv-chat --env-file .env -f compose.prod.yml logs --tail 20 cleanup
 ```
+
+Cleanup log содержит только batch counts. В нём не должны появляться ciphertext,
+message/user IDs, token values или connection strings.
 
 The host Nginx transition has two explicit stages:
 
@@ -147,4 +174,25 @@ curl --fail http://127.0.0.1:18080/healthz
 curl --fail http://127.0.0.1:18080/api/v1/health
 ```
 
-Host Nginx/TLS setup and public HTTPS verification are the next workplan. Do not expose port `18080` publicly and do not enable HSTS until the certificate/domain route is verified.
+Host Nginx/TLS setup завершён в `WP-019`. Не публикуйте port `18080` наружу;
+HSTS должен оставаться включённым только при исправном certificate/HTTPS route.
+
+## First rollout record
+
+Первый production rollout завершён 2026-08-11 workflow run `31452613018` для
+commit `dffae45`:
+
+- SSH preflight, repository verify, backend/frontend GHCR builds и deploy успешны;
+- Alembic migrations применены до запуска приложения;
+- `postgres`, `api`, `frontend` и `gateway` проекта `yv-chat` healthy;
+- единственный published bind проекта — `127.0.0.1:18080`;
+- отдельный Nginx vhost прошёл `nginx -t`, HTTP перенаправляет на HTTPS;
+- certificate `chat.yoowee.ru` действует до 2026-11-09 и обновляется Certbot;
+- публичный PWA и `/api/v1/health` доступны по HTTPS;
+- login/`me`/CSRF revoke/logout acceptance выполнен без вывода credential;
+- `.env` и `.initial-admin-credential` имеют owner `devuser` и mode `0600`;
+- восемь pre-existing `infra-*` containers остались `Up`.
+
+Владелец забирает initial admin credential непосредственно через уже доверенный
+SSH-канал. После первого собственного входа и смены пароля файл
+`.initial-admin-credential` необходимо удалить с VPS.

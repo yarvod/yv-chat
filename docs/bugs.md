@@ -4,17 +4,7 @@
 
 ## Active
 
-### BUG-011 — Appleboy SCP transport завершался до remote deploy без диагностируемой причины
-
-- Статус: `fixed`, ожидает production verification.
-- Найдено в: `WP-019`, GitHub Actions run `31451487597` для `a06e056`.
-- Severity: `high`.
-- Условия воспроизведения: verify и оба GHCR build jobs зелёные, затем `appleboy/scp-action@v1` завершается exit code 1 до появления versioned artifacts на VPS.
-- Ожидаемое поведение: SSH readiness проверяется до resource-heavy builds, artifacts копируются через pinned host identity, затем запускается remote deploy.
-- Фактическое поведение: opaque action annotation не показывала публично ничего кроме exit code; remote script не запускался, server stack не менялся.
-- Причина: точный внутренний error action недоступен без authenticated job log; transport boundary не имел отдельного проверяемого SSH preflight и полагался на четыре необязательных/невалидируемых secret inputs.
-- Исправление: non-secret target зафиксирован как `devuser@chat.yoowee.ru:22`, host ED25519 key pinned; отдельный job проверяет `DEPLOY_KEY`/SSH до build, а deploy использует native `ssh/scp` и передаёт GHCR token только через stdin.
-- Проверка: следующий workflow должен пройти `deployment-config`, copy, remote migration и health-checked rollout; до этого дефект не переносится в Resolved.
+Активных воспроизводимых дефектов нет.
 
 ## Формат записи
 
@@ -31,6 +21,173 @@
 - Проверка: тест или команда, подтверждающая fix.
 
 ## Resolved
+
+### BUG-020 — Cleanup process пытался публиковать в изолированный realtime hub
+
+- Статус: `verified`.
+- Найдено в: `WP-028`, composition review отдельного cleanup process.
+- Severity: `medium`.
+- Условия воспроизведения: запустить TTL cleanup отдельным Compose service и создать
+  automatic tombstone.
+- Ожидаемое поведение: deletion гарантирован durable sync; realtime является только
+  best-effort ускорением внутри API process.
+- Фактическое поведение: первоначальный use case принимал process-local notifier и
+  после commit публиковал в hub, в котором нет browser connections.
+- Причина: ручной delete и automatic cleanup ошибочно получили одинаковый
+  post-commit delivery path, хотя работают в разных OS processes без Redis.
+- Исправление: cleanup пишет только atomic recipient sync events; reconnect и
+  30-second HTTP fallback доставляют deletion корректно. Manual HTTP delete сохраняет
+  post-commit realtime publish в API process.
+- Проверка: Dishka composition, application tests и production topology review;
+  frontend durable hint path остаётся cursor-based и идемпотентным.
+
+### BUG-019 — Alembic revision не помещался в `alembic_version.version_num`
+
+- Статус: `verified`.
+- Найдено в: `WP-027`, offline SQL review migration `0013`.
+- Severity: `high`.
+- Условия воспроизведения: применить первоначальный revision ID
+  `0013_conversation_delivery_states` к стандартной Alembic version table с
+  `VARCHAR(32)`.
+- Ожидаемое поведение: migration фиксирует новый head атомарно.
+- Фактическое поведение: 33-символьный ID не помещался бы в version column и
+  откатил production migration.
+- Причина: descriptive revision ID не был проверен против физического ограничения
+  Alembic version table.
+- Исправление: ID сокращён до `0013_delivery_states`; добавлен static graph test на
+  single head, unique IDs и максимум 32 символа.
+- Проверка: pytest migration invariant и Alembic upgrade/downgrade SQL generation.
+
+### BUG-018 — CORS preflight не разрешал существующие PUT endpoints
+
+- Статус: `verified`.
+- Найдено в: `WP-027`, HTTP transport audit при добавлении delivery acknowledgement.
+- Severity: `medium`.
+- Условия воспроизведения: обращаться к read/delivery PUT endpoint из разрешённого
+  dev origin с CSRF header, вызывающим browser preflight.
+- Ожидаемое поведение: explicit CORS policy разрешает тот же method, который
+  зарегистрирован versioned API.
+- Фактическое поведение: `allow_methods` содержал GET/POST/PATCH/DELETE, но не PUT.
+- Причина: read-state route появился после первоначального bootstrap allowlist.
+- Исправление: PUT добавлен в explicit method allowlist; same-origin production
+  policy и CSRF/Origin authorization не ослаблены.
+- Проверка: backend HTTP suite и FastAPI composition/type checks.
+
+### BUG-017 — Reconnect мог оставить peer в ложном offline после race
+
+- Статус: `verified`.
+- Найдено в: `WP-026`, аудит concurrent `last unsubscribe ↔ new subscribe`.
+- Severity: `medium`.
+- Условия воспроизведения: последняя старая session удаляет subscription, новая
+  session успевает создать `0 → 1` и отправить online до завершения offline publish.
+- Ожидаемое поведение: итоговый UI state соответствует наличию новой live session.
+- Фактическое поведение: без reconciliation запоздавший offline мог прийти после
+  нового online и остаться последним transition.
+- Причина: hub transition атомарен, но authorized audience lookup/publish намеренно
+  выполняется вне hub lock и может пересекаться с новым connection lifecycle.
+- Исправление: после offline publish transport повторно проверяет hub; если user уже
+  снова online, публикуется corrective idempotent online transition.
+- Проверка: hub multi-device tests подтверждают first/last semantics, frontend
+  presence store идемпотентен, reconnect snapshot остаётся authoritative reset.
+
+### BUG-016 — Realtime package re-export создавал bootstrap import cycle
+
+- Статус: `verified`.
+- Найдено в: `WP-025`, local production-image smoke.
+- Severity: `high`.
+- Условия воспроизведения: запустить новый backend image после re-export
+  `PublishTyping` из `application.realtime.__init__`.
+- Ожидаемое поведение: FastAPI bootstrap импортирует realtime ports/use cases и
+  запускает healthy process.
+- Фактическое поведение: container перезапускался с `ImportError` о partially
+  initialized module.
+- Причина: `ports.realtime → realtime.events` сначала инициализировал package
+  `__init__`, тот импортировал `realtime.typing`, а typing снова импортировал
+  `ports.realtime.RealtimeNotifier`.
+- Исправление: package `__init__` экспортирует только event primitives без обратной
+  port dependency; provider, transport и tests импортируют typing use case из
+  конкретного cohesive модуля.
+- Проверка: import contracts/unit suite и повторный production-image health smoke.
+
+### BUG-015 — Ephemeral typing hint запускал бы ненужный durable sync
+
+- Статус: `verified`.
+- Найдено в: `WP-025`, расширение frontend realtime closed union.
+- Severity: `medium`.
+- Условия воспроизведения: передать новый `typing` frame в прежний общий callback,
+  который запускал `/sync` для любого события кроме `ping`.
+- Ожидаемое поведение: ephemeral typing обновляет только bounded transient state и
+  не создаёт cursor-sync traffic.
+- Фактическое поведение: исходный lifecycle различал только heartbeat и общий
+  durable wake-up, поэтому новый event автоматически попадал бы в catch-up branch.
+- Причина: до появления первого ephemeral event realtime union не требовал явной
+  классификации delivery semantics.
+- Исправление: parser выдаёт discriminated `TypingRealtimeFrame`, lifecycle
+  направляет его отдельному `TypingIndicatorService`, а durable branch остаётся
+  единственным источником `/sync` wake-up.
+- Проверка: Vitest подтверждает typing callback без увеличения catch-up calls,
+  expiry/stop dedup и socket-disconnect cleanup.
+
+### BUG-014 — Собственные отправленные сообщения учитывались как unread
+
+- Статус: `verified`.
+- Найдено в: `WP-024`, проверка server-derived unread semantics.
+- Severity: `medium`.
+- Условия воспроизведения: отправить сообщение через API и запросить read summary до
+  отдельного foreground mark-read от клиента.
+- Ожидаемое поведение: sender уже видел timeline при отправке, поэтому его новое
+  сообщение не увеличивает собственный unread counter.
+- Фактическое поведение: первоначальный batch count считал все message rows после
+  cursor, а send use case не продвигал cursor отправителя.
+- Причина: send и read-state были реализованы как независимые application operations
+  без server invariant «send implies read through allocated sequence».
+- Исправление: `SendOpaqueMessage` в той же transaction монотонно обновляет shared
+  sender cursor и добавляет durable `read_receipt` каждому active recipient; exact
+  retry остаётся без новых events.
+- Проверка: application и PostgreSQL integration tests подтверждают sender cursor,
+  exact retry, concurrent sequence allocation и recipient event counts.
+
+### BUG-013 — Скрытый haptics checkbox расширял mobile settings viewport
+
+- Статус: `verified`.
+- Найдено в: `WP-022`, in-app browser QA при viewport 390×844.
+- Severity: `medium`.
+- Условия воспроизведения: открыть `/settings` на ширине 390 px и сравнить
+  `documentElement.scrollWidth` с `clientWidth`.
+- Ожидаемое поведение: карточки и скрытые form controls не создают горизонтальный
+  scroll.
+- Фактическое поведение: общий `input { width: 100% }` применялся к абсолютно
+  позиционированному прозрачному checkbox внутри switch и расширял страницу до
+  395 px.
+- Причина: visually hidden native control не имел собственного bounded размера.
+- Исправление: input/textarea получили `min-width: 0`, а switch checkbox — явный
+  доступный 1×1 px box без pointer events.
+- Проверка: повторная production-build QA показала `scrollWidth === clientWidth
+  === 390`, zero overflowing elements и пустой warning log.
+
+### BUG-012 — Invite fragment попадал в Vue Router warning как CSS selector
+
+- Статус: `verified`.
+- Найдено в: `WP-020`, local browser smoke `/activate#token=<secret>`.
+- Severity: `high`.
+- Условия воспроизведения: открыть activation URL с one-time secret в fragment при стандартном Vue Router scroll behavior.
+- Ожидаемое поведение: fragment не отправляется серверу, немедленно очищается из address bar и не появляется в console/logs.
+- Фактическое поведение: до mount activation page router пытался использовать полный `#token=...` как CSS selector и включал его в development warning.
+- Причина: default hash scroll logic не различал navigation anchors и credential-bearing fragments.
+- Исправление: custom Nuxt `router.options.ts` перехватывает `#token=` и возвращает top position без selector lookup; page затем потребляет и очищает fragment.
+- Проверка: новый browser tab очистил URL до `/activate`; его dev logs содержат только Vite/Vue informational entries и не содержат token/warning.
+
+### BUG-011 — Appleboy SCP transport завершался до remote deploy без диагностируемой причины
+
+- Статус: `verified`.
+- Найдено в: `WP-019`, GitHub Actions run `31451487597` для `a06e056`.
+- Severity: `high`.
+- Условия воспроизведения: verify и оба GHCR build jobs зелёные, затем `appleboy/scp-action@v1` завершается exit code 1 до появления versioned artifacts на VPS.
+- Ожидаемое поведение: SSH readiness проверяется до resource-heavy builds, artifacts копируются через pinned host identity, затем запускается remote deploy.
+- Фактическое поведение: opaque action annotation не показывала публично ничего кроме exit code; remote script не запускался, server stack не менялся.
+- Причина: transport boundary не имел отдельного проверяемого SSH preflight и полагался на opaque third-party SCP action; после его замены диагностика также выявила неверный `DEPLOY_KEY` fingerprint.
+- Исправление: non-secret target зафиксирован как `devuser@chat.yoowee.ru:22`, host ED25519 key pinned; отдельный job проверяет `DEPLOY_KEY`/SSH до build, а deploy использует native `ssh/scp` и передаёт GHCR token только через stdin.
+- Проверка: production workflow `31452613018` прошёл `deployment-config`, artifact copy, remote migration и health-checked rollout; четыре `yv-chat-*` containers healthy, public HTTPS API отвечает.
 
 ### BUG-010 — Deploy verify запускал PostgreSQL integration tests без schema
 

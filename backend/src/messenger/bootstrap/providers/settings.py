@@ -4,6 +4,7 @@ from datetime import timedelta
 
 from dishka import Provider, Scope, provide
 
+from messenger.application.accounts.password_reset_policy import PasswordResetPolicy
 from messenger.application.security_events.policy import SecurityEventPolicy
 from messenger.application.sessions.policy import SessionPolicy
 from messenger.bootstrap.settings import AppSettings
@@ -31,3 +32,7 @@ class SettingsProvider(Provider):
     @provide(scope=Scope.APP)
     def activation_ttl(self, settings: AppSettings) -> timedelta:
         return settings.activation_token_ttl
+
+    @provide(scope=Scope.APP)
+    def password_reset_policy(self, settings: AppSettings) -> PasswordResetPolicy:
+        return settings.password_reset_policy

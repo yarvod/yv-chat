@@ -1,80 +1,81 @@
 # Workplan
 
-Этот файл содержит только одну текущую фичу. Перед началом следующей фичи завершённая работа фиксируется коммитом, а новый пункт переносится сюда из `backlog.md`.
+Этот файл содержит только одну текущую фичу. Перед началом следующей фичи
+завершённая работа фиксируется отдельным коммитом, а новый пункт переносится
+сюда из `backlog.md`.
 
-## WP-019 — Первый production rollout, host Nginx и TLS
+## WP-028 — Delete-for-everyone, tombstones и server TTL
 
-Статус: **in progress**
-Backlog item: `BL-029`
-Цель: развернуть проверенный messaging MVP на `chat.yoowee.ru` через изолированный Compose project `yv-chat`, подключить его к существующему host Nginx и подтвердить, что соседние сервисы на `ru1` не изменились.
-
-### Результат
-
-GitHub Actions публикует immutable backend/frontend images и выкатывает их в `/home/devuser/yv-chat`; server-only `.env` создан непосредственно на VPS с mode `0600`. Host Nginx проксирует только `chat.yoowee.ru` в loopback gateway `127.0.0.1:18080`, HTTPS-сертификат валиден, HTTP перенаправляет на HTTPS, а public API/PWA проходят smoke-проверку без изменения чужих containers, ports и virtual hosts.
+Статус: **completed**
+Backlog item: `BL-010`
+Цель: позволить авторизованно удалить ciphertext для всех участников, доставить
+удаление offline devices и ограничить server-side хранение сообщений без повторного
+использования sequence после физической очистки.
 
 ### Invariants
 
-1. До rollout снимается и сохраняется только несекретный baseline существующих Compose projects, container names/status, listeners и Nginx virtual hosts.
-2. Не читаются и не копируются `.env`, credentials или private keys соседних сервисов.
-3. Production secrets генерируются непосредственно на `ru1`; их значения не попадают в terminal output, logs, Git, Actions artifacts или документацию.
-4. `/home/devuser/yv-chat/.env` принадлежит `devuser` и имеет mode `0600`.
-5. Stack использует только explicit Compose project `yv-chat`; запрещены broad `down`, `--remove-orphans`, `system prune` и операции над чужими resources.
-6. Единственный host bind stack — `127.0.0.1:18080`; PostgreSQL/API/frontend не публикуются наружу.
-7. Перед изменением host Nginx новый stack обязан пройти loopback health/API smoke.
-8. Nginx-конфиг добавляется отдельным server block для exact `chat.yoowee.ru`; существующие конфиги не переписываются.
-9. Конфиг проверяется `nginx -t` до reload; reload выполняется только после успешной проверки.
-10. HSTS включается только после подтверждения валидного HTTPS и корректного redirect.
-11. WebSocket upgrade/timeouts, request body limit и trusted proxy boundary согласованы с backend/ingress.
-12. После rollout сравнивается baseline: соседние container names/status/listeners остаются неизменными.
-13. Первая admin credential хранится только как одноразовый server-side файл mode `0600`; после передачи администратору bootstrap env удаляется из `.env`.
-14. Если GitHub Actions/SSH/sudo prerequisite отсутствует, rollout останавливается до privileged mutation; работоспособные соседние сервисы имеют приоритет.
+1. Active message хранит opaque ciphertext только до `expires_at`; plaintext/key
+   material на backend не появляется.
+2. Delete-for-everyone разрешён sender, а для чужого сообщения в group — только
+   active owner/admin. Обычный участник direct/group не может удалить чужое.
+3. Actor, conversation и message проверяются server-side; guessed foreign ID не
+   раскрывает существование сообщения вне доступной conversation.
+4. Первое удаление атомарно scrubs ciphertext, создаёт tombstone и durable
+   recipient-specific `message_deleted`; повтор является idempotent no-op без events.
+5. Tombstone сохраняет immutable routing metadata/sequence, но не ciphertext. UI
+   честно сообщает, что уже просмотренную/скопированную копию уничтожить нельзя.
+6. Automatic TTL использует server time, превращает expired ciphertext в тот же
+   tombstone и отправляет тот же event; cleanup bounded, retry-safe и допускает
+   concurrent workers через row locks.
+7. Tombstone retention длиннее ordinary sync retention. При cursor retention gap
+   полный message resync всё ещё возвращает tombstone в документированном окне.
+8. После tombstone retention row можно физически удалить, но sequence никогда не
+   переиспользуется: conversation хранит отдельный monotonic high-water counter.
+9. Read summary использует high-water sequence, а unread считает только живые
+   ciphertext rows; TTL/deleted gaps не создают ложный unread.
+10. Frontend применяет `message_deleted` идемпотентно, не пытается decode null
+    ciphertext и предоставляет явное подтверждение destructive action.
+11. Cleanup запускается отдельным малоресурсным process из того же backend image;
+    сбой cleanup не делает API недоступным и не затрагивает соседние VPS services.
+12. Backup/restore и документация не обещают хранить TTL-deleted ciphertext вечно.
 
 ### План
 
-- [ ] Проверить local branch/remote, GitHub Actions prerequisites и наличие deployment secret names без чтения значений (local/remote проверены; фактические secrets подтвердит workflow).
-- [x] Снять read-only production baseline: Docker projects/containers, listeners, Nginx config и текущие public endpoints.
-- [x] Добавить отдельный versioned host Nginx template с HTTP challenge/redirect и HTTPS reverse proxy.
-- [x] Добавить безопасный server bootstrap script: создать `.env`/bootstrap credential без вывода secret values и проверить permissions.
-- [x] Дополнить deployment runbook first-run, TLS, rollback и post-deploy comparison.
-- [x] Прогнать repository CI и deploy static checks; окончательный Nginx syntax test выполнить с issued certificate до reload.
-- [ ] Опубликовать feature branch и пропустить изменения через GitHub CI до `main`.
-- [ ] Создать server-only secrets и deploy directory; не изменять host Nginx до loopback smoke.
-- [ ] Выполнить immutable Compose rollout, migration и loopback health/API/PWA smoke.
-- [ ] Установить отдельный Nginx vhost, получить certificate, проверить config и reload.
-- [ ] Проверить public HTTPS/redirect/security headers и основной onboarding/login flow.
-- [ ] Сравнить соседние services с baseline, зафиксировать результат в docs и отдельном commit.
+- [x] Domain tombstone lifecycle и configurable retention/cleanup policies.
+- [x] Persistent conversation sequence high-water и Alembic `0014` с backfill.
+- [x] Message repository: lock/update, expired batch, purge batch и gap-safe summaries.
+- [x] Authorized delete use case + bounded automatic cleanup use case.
+- [x] Dishka, thin DELETE transport, cleanup CLI и isolated Compose worker.
+- [x] Typed frontend tombstone DTO/parser/gateway/use case и idempotent timeline merge.
+- [x] Confirm UX, permission-aware delete control и deleted/expired presentation.
+- [x] Domain/application/HTTP/static migration/Vitest negative, retry и concurrency specs.
+- [x] Architecture/backlog/bugs/deployment/env docs, full non-Docker CI and Compose config.
 
-### Не входит в scope
+### Не входит в этот slice
 
-- real E2EE (`BL-012`–`BL-014`): текущий synthetic envelope остаётся явно non-secure;
-- attachment storage/upload (`BL-016`, `BL-017`);
-- backup/restore (`BL-031`);
-- WebSocket notifications (`BL-011`);
-- изменение или перезапуск существующих unrelated services на `ru1`.
+- remote erasure guarantee для уже просмотренных или экспортированных копий;
+- deletion encrypted local archive старше tombstone retention без local-first storage;
+- attachment blob cleanup до появления encrypted attachments;
+- per-message user-selected timer UI;
+- E2EE protocol-level authenticated deletion command.
 
 ### Проверка готовности
 
-- GitHub verify/build/deploy jobs зелёные для immutable commit tag;
-- `docker compose -p yv-chat ... ps` показывает четыре healthy services;
-- на host опубликован только `127.0.0.1:18080`, порт PostgreSQL отсутствует в public listeners;
-- `curl http://127.0.0.1:18080/healthz` и `/api/v1/health` успешны;
-- `http://chat.yoowee.ru` перенаправляет на валидный `https://chat.yoowee.ru`;
-- PWA/API работают через HTTPS, browser console не содержит runtime errors;
-- Nginx передаёт trusted proxy headers и WebSocket upgrade, security headers присутствуют;
-- baseline diff не показывает stopped/recreated/renamed unrelated containers или потерянные listeners;
-- `.env` и bootstrap credential имеют mode `0600`, secret scan Git/workflow artifacts чистый;
-- полный repository CI проходит, docs обновлены и feature завершена отдельным commit.
+- sender/admin policy и negative authorization доказаны tests;
+- first delete scrubs ciphertext + emits, duplicate delete does neither;
+- automatic expiry и manual deletion дают одинаковый client tombstone contract;
+- offline sync/full resync применяют older-sequence tombstone;
+- purge не позволяет reuse sequence и не увеличивает unread;
+- fresh/upgrade/downgrade migration, cleanup process и production-like Compose healthy;
+- ни API, sync, logs, docs, migration, image не содержат deleted ciphertext/secrets.
 
-### Проверено
+### Verification record
 
-- local branch `codex/bootstrap-and-workflow` линейно опережает `origin/main`; worktree до WP-019 был чистым;
-- root read-only audit: один Compose project `infra`/8 running containers, Docker subnets `172.17.0.0/16` и `172.18.0.0/16`, port `18080` свободен;
-- `nginx -T` успешен с двумя pre-existing duplicate `yoowee.ru` warnings; существующие configs не изменены;
-- Certbot установлен, действующие соседние certificates не читались глубже public metadata;
-- bootstrap-script в isolated temp directory создал только ожидаемые variables и оба файла mode `0600`, secret values не выводились;
-- production `.env` и `.bootstrap-admin.env` созданы непосредственно на `ru1` как `devuser:devuser`, mode `0600`; содержимое не читалось;
-- `make ci` с isolated `UV_CACHE_DIR`: 120 pytest passed, 6 PostgreSQL integration tests skipped без local `TEST_DATABASE_URL`, 11 Vitest; Ruff/format/import contracts/mypy/ESLint/Nuxt typecheck/build/Compose/deploy checks прошли.
-- первый production workflow `31451233832` безопасно остановился на verify до build/deploy; BUG-010 локализован как отсутствующий Alembic upgrade для fresh verification DB и исправлен отдельным migration step.
-- второй workflow `31451487597` прошёл verify и оба GHCR builds, но opaque Appleboy SCP transport остановился до server mutation; BUG-011 заменяет его native pinned SSH/SCP и добавляет pre-build credential/access validation.
-- третий workflow `31451932579` подтвердил, что `DEPLOY_KEY` существует и парсится, но `sshd` закрыл authentication для `devuser`; firewall/ufw/fail2ban не блокируют runner. Safe failure annotation дополнена public SHA256 fingerprint для exact authorized-key repair без чтения private secret.
-- diagnostic fingerprint `SHA256:xVq4eZp0lE0gNxyt++gL+w4XHRrMFGlUrPR5qN6IxPo` не совпал с существующими server/local public keys; поиск exact public key продолжается только по уже публичным/private-safe источникам без публикации secret-derived material.
+- backend Ruff format/check, mypy: passed;
+- backend pytest: `172 passed, 6 skipped` после финальных security tests;
+- frontend ESLint, Nuxt typecheck, Vitest (`34 passed`) и production build: passed;
+- Alembic single-head/static model checks и offline upgrade/downgrade SQL: passed;
+- production Compose config, shell/deploy contract и diff/secret review: passed;
+- real PostgreSQL migration/concurrency tests и container health smoke остаются release
+  gate: локальный Docker daemon недоступен в текущем sandbox; production DB для tests
+  намеренно не использовалась.

@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from dishka import Provider, Scope, make_async_container, provide
 from dishka.integrations.fastapi import FastapiProvider
@@ -13,9 +13,12 @@ from messenger.application.accounts.activate import ActivateAccount
 from messenger.application.accounts.change_password import ChangeCurrentPassword
 from messenger.application.accounts.get_current import GetCurrentAccount
 from messenger.application.accounts.invite import CreateUserInvitation
+from messenger.application.accounts.issue_password_reset import IssuePasswordReset
 from messenger.application.accounts.list_directory import ListUserDirectory
 from messenger.application.accounts.list_users import ListManagedUsers
+from messenger.application.accounts.password_reset_policy import PasswordResetPolicy
 from messenger.application.accounts.reissue_activation import ReissueActivation
+from messenger.application.accounts.reset_password import ResetPasswordWithToken
 from messenger.application.accounts.security_reset import SecurityReset
 from messenger.application.accounts.update_profile import UpdateCurrentProfile
 from messenger.application.accounts.update_user import UpdateManagedUser
@@ -34,27 +37,43 @@ from messenger.application.devices.list_sessions import ListMySessions
 from messenger.application.devices.rename import RenameMyDevice
 from messenger.application.devices.revoke import RevokeMyDevice
 from messenger.application.devices.revoke_others import RevokeOtherSessions
+from messenger.application.messaging.cleanup_messages import CleanupExpiredMessages
+from messenger.application.messaging.delete_message import DeleteMessageForEveryone
+from messenger.application.messaging.list_delivery_states import ListParticipantDeliveryStates
 from messenger.application.messaging.list_messages import ListMessages
+from messenger.application.messaging.list_read_states import ListConversationReadStates
+from messenger.application.messaging.mark_delivered import MarkConversationDelivered
+from messenger.application.messaging.mark_read import MarkConversationRead
 from messenger.application.messaging.policy import MessageEnvelopePolicy
+from messenger.application.messaging.retention import MessageRetentionPolicy
 from messenger.application.messaging.send_message import SendOpaqueMessage
 from messenger.application.ports.activation_secrets import ActivationSecretService
 from messenger.application.ports.clock import Clock
 from messenger.application.ports.conversations import ConversationUnitOfWorkFactory
 from messenger.application.ports.identity import IdentityUnitOfWorkFactory
 from messenger.application.ports.messages import MessagingUnitOfWorkFactory
+from messenger.application.ports.password_reset_secrets import PasswordResetSecretService
 from messenger.application.ports.passwords import PasswordHasher
+from messenger.application.ports.realtime import RealtimeHub, RealtimeNotifier
 from messenger.application.ports.session_credentials import SessionCredentialService
 from messenger.application.ports.sync import SyncUnitOfWorkFactory
+from messenger.application.realtime.presence import ListPresenceSnapshot, PublishPresence
+from messenger.application.realtime.typing import PublishTyping, TypingPolicy
 from messenger.application.security_events.policy import SecurityEventPolicy
 from messenger.application.sessions.authenticate import AuthenticateSession
 from messenger.application.sessions.login import Login
 from messenger.application.sessions.logout import Logout
 from messenger.application.sessions.policy import SessionPolicy
+from messenger.application.sessions.validate_active import ValidateActiveSession
 from messenger.application.sync import SyncPolicy
 from messenger.application.sync.list_events import ListSyncEvents
 from messenger.bootstrap.app import create_app
 from messenger.bootstrap.settings import AppEnvironment, AppSettings
-from messenger.domain.entities import Device, Session, User
+from messenger.domain.entities import Conversation, Device, Message, Session, User
+from messenger.infrastructure.auth.password_reset_secrets import (
+    SecurePasswordResetSecretService,
+)
+from messenger.infrastructure.realtime import InMemoryRealtimeHub
 from tests.application.fakes import (
     FakeConversationUnitOfWorkFactory,
     FakeIdentityUnitOfWorkFactory,
@@ -113,6 +132,7 @@ class HttpTestProvider(Provider):
         self._passwords = passwords
         self._credentials = credentials
         self._activation_secrets = activation_secrets
+        self._realtime_hub = InMemoryRealtimeHub()
 
     @provide(scope=Scope.APP)
     def settings(self) -> AppSettings:
@@ -143,6 +163,10 @@ class HttpTestProvider(Provider):
         return SyncPolicy()
 
     @provide(scope=Scope.APP)
+    def message_retention_policy(self) -> MessageRetentionPolicy:
+        return MessageRetentionPolicy(timedelta(days=30), timedelta(days=90))
+
+    @provide(scope=Scope.APP)
     def clock(self) -> Clock:
         return self._clock
 
@@ -159,6 +183,10 @@ class HttpTestProvider(Provider):
         return self._activation_secrets
 
     @provide(scope=Scope.APP)
+    def password_reset_secrets(self) -> PasswordResetSecretService:
+        return SecurePasswordResetSecretService()
+
+    @provide(scope=Scope.APP)
     def activation_ttl(self) -> timedelta:
         return timedelta(hours=24)
 
@@ -167,11 +195,28 @@ class HttpTestProvider(Provider):
         return POLICY
 
     @provide(scope=Scope.APP)
+    def password_reset_policy(self) -> PasswordResetPolicy:
+        return PasswordResetPolicy(ttl=timedelta(hours=1))
+
+    @provide(scope=Scope.APP)
     def event_policy(self) -> SecurityEventPolicy:
         return EVENT_POLICY
 
+    @provide(scope=Scope.APP)
+    def typing_policy(self) -> TypingPolicy:
+        return TypingPolicy()
+
+    @provide(scope=Scope.APP)
+    def realtime_hub(self) -> RealtimeHub:
+        return self._realtime_hub
+
+    @provide(scope=Scope.APP)
+    def realtime_notifier(self) -> RealtimeNotifier:
+        return self._realtime_hub
+
     login = provide(Login, scope=Scope.REQUEST)
     authenticate_session = provide(AuthenticateSession, scope=Scope.REQUEST)
+    validate_active_session = provide(ValidateActiveSession, scope=Scope.REQUEST)
     logout = provide(Logout, scope=Scope.REQUEST)
     list_my_sessions = provide(ListMySessions, scope=Scope.REQUEST)
     list_security_events = provide(ListSecurityEvents, scope=Scope.REQUEST)
@@ -182,6 +227,8 @@ class HttpTestProvider(Provider):
     create_user_invitation = provide(CreateUserInvitation, scope=Scope.REQUEST)
     list_user_directory = provide(ListUserDirectory, scope=Scope.REQUEST)
     list_managed_users = provide(ListManagedUsers, scope=Scope.REQUEST)
+    issue_password_reset = provide(IssuePasswordReset, scope=Scope.REQUEST)
+    reset_password_with_token = provide(ResetPasswordWithToken, scope=Scope.REQUEST)
     reissue_activation = provide(ReissueActivation, scope=Scope.REQUEST)
     update_managed_user = provide(UpdateManagedUser, scope=Scope.REQUEST)
     get_current_account = provide(GetCurrentAccount, scope=Scope.REQUEST)
@@ -200,8 +247,23 @@ class HttpTestProvider(Provider):
         scope=Scope.REQUEST,
     )
     send_opaque_message = provide(SendOpaqueMessage, scope=Scope.REQUEST)
+    delete_message_for_everyone = provide(DeleteMessageForEveryone, scope=Scope.REQUEST)
+    cleanup_expired_messages = provide(CleanupExpiredMessages, scope=Scope.REQUEST)
     list_messages = provide(ListMessages, scope=Scope.REQUEST)
+    list_conversation_read_states = provide(
+        ListConversationReadStates,
+        scope=Scope.REQUEST,
+    )
+    mark_conversation_read = provide(MarkConversationRead, scope=Scope.REQUEST)
+    list_participant_delivery_states = provide(
+        ListParticipantDeliveryStates,
+        scope=Scope.REQUEST,
+    )
+    mark_conversation_delivered = provide(MarkConversationDelivered, scope=Scope.REQUEST)
     list_sync_events = provide(ListSyncEvents, scope=Scope.REQUEST)
+    publish_typing = provide(PublishTyping, scope=Scope.REQUEST)
+    list_presence_snapshot = provide(ListPresenceSnapshot, scope=Scope.REQUEST)
+    publish_presence = provide(PublishPresence, scope=Scope.REQUEST)
 
 
 def build_test_application(
@@ -449,6 +511,129 @@ async def test_session_does_not_accept_bearer_or_query_credentials() -> None:
     await run_cookie_only_auth()
 
 
+async def test_read_state_transport_requires_csrf_and_returns_actual_unread_count() -> None:
+    application, state, _ = build_test_application()
+    transport = ASGITransport(app=application)
+    async with AsyncClient(transport=transport, base_url="https://test") as client:
+        login_response = await login(client)
+        assert login_response.status_code == 200
+        alice = next(iter(state.users.values()))
+        device_id = UUID(login_response.json()["device_id"])
+        bob = User.create(username="bob", display_name="Bob", now=NOW)
+        conversation = Conversation.create_direct(
+            created_by=alice.id,
+            other_user_id=bob.id,
+            now=NOW,
+        )
+        message = Message.create(
+            conversation_id=conversation.id,
+            client_message_id=uuid4(),
+            sender_user_id=alice.id,
+            sender_device_id=device_id,
+            protocol_version=1,
+            sequence=1,
+            ciphertext=b"opaque",
+            now=NOW,
+            retention=timedelta(days=30),
+        )
+        state.users[bob.id] = bob
+        state.conversations[conversation.id] = conversation
+        state.messages[message.id] = message
+
+        listed = await client.get("/api/v1/conversation-read-states")
+        assert listed.status_code == 200
+        assert listed.json() == [
+            {
+                "conversation_id": str(conversation.id),
+                "last_read_sequence": 0,
+                "latest_sequence": 1,
+                "unread_count": 1,
+            }
+        ]
+        no_csrf = await client.put(
+            f"/api/v1/conversation-read-states/{conversation.id}",
+            headers={"Origin": "https://test"},
+            json={"sequence": 1},
+        )
+        assert no_csrf.status_code == 403
+        marked = await client.put(
+            f"/api/v1/conversation-read-states/{conversation.id}",
+            headers={
+                "Origin": "https://test",
+                "X-CSRF-Token": client.cookies["__Host-yv_csrf"],
+            },
+            json={"sequence": 1},
+        )
+        assert marked.status_code == 200
+        assert marked.json()["last_read_sequence"] == 1
+        assert marked.json()["advanced"] is True
+
+
+async def test_delivery_state_transport_is_device_scoped_and_requires_csrf() -> None:
+    application, state, _ = build_test_application()
+    transport = ASGITransport(app=application)
+    async with AsyncClient(transport=transport, base_url="https://test") as client:
+        login_response = await login(client)
+        assert login_response.status_code == 200
+        alice = next(iter(state.users.values()))
+        device_id = UUID(login_response.json()["device_id"])
+        bob = User.create(username="bob", display_name="Bob", now=NOW)
+        conversation = Conversation.create_direct(
+            created_by=alice.id, other_user_id=bob.id, now=NOW
+        )
+        message = Message.create(
+            conversation_id=conversation.id,
+            client_message_id=uuid4(),
+            sender_user_id=bob.id,
+            sender_device_id=uuid4(),
+            protocol_version=1,
+            sequence=1,
+            ciphertext=b"opaque",
+            now=NOW,
+            retention=timedelta(days=30),
+        )
+        state.users[bob.id] = bob
+        state.conversations[conversation.id] = conversation
+        state.messages[message.id] = message
+
+        preflight = await client.options(
+            f"/api/v1/conversation-delivery-states/{conversation.id}",
+            headers={
+                "Origin": "https://test",
+                "Access-Control-Request-Method": "PUT",
+                "Access-Control-Request-Headers": "X-CSRF-Token, Content-Type",
+            },
+        )
+        assert preflight.status_code == 200
+        assert "PUT" in preflight.headers["access-control-allow-methods"]
+
+        no_csrf = await client.put(
+            f"/api/v1/conversation-delivery-states/{conversation.id}",
+            headers={"Origin": "https://test"},
+            json={"sequence": 1},
+        )
+        assert no_csrf.status_code == 403
+        marked = await client.put(
+            f"/api/v1/conversation-delivery-states/{conversation.id}",
+            headers={
+                "Origin": "https://test",
+                "X-CSRF-Token": client.cookies["__Host-yv_csrf"],
+            },
+            json={"sequence": 1},
+        )
+        assert marked.status_code == 200
+        assert marked.json()["advanced"] is True
+        assert (device_id, conversation.id) in state.delivery_states
+        listed = await client.get("/api/v1/conversation-delivery-states")
+        assert listed.json() == [
+            {
+                "conversation_id": str(conversation.id),
+                "user_id": str(alice.id),
+                "delivered_sequence": 1,
+            }
+        ]
+
+
 async def run_client_ip_flow(trusted: bool) -> str | None:
     cidrs = ["10.0.0.0/8"] if trusted else []
     application, state, _ = build_test_application(trusted_proxy_cidrs=cidrs)
@@ -486,3 +671,17 @@ async def test_production_rejects_insecure_origin() -> None:
         assert "HTTPS" in str(error)
     else:
         raise AssertionError("insecure production origin was accepted")
+
+
+def test_settings_require_tombstones_to_outlive_ciphertext_and_sync_events() -> None:
+    try:
+        AppSettings(
+            database_url=DATABASE_URL,
+            sync_event_retention_seconds=200,
+            message_ciphertext_retention_seconds=100,
+            message_tombstone_retention_seconds=200,
+        )
+    except ValueError as error:
+        assert "tombstone retention" in str(error)
+    else:
+        raise AssertionError("short tombstone retention was accepted")

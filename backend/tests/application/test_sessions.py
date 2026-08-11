@@ -13,6 +13,7 @@ from messenger.application.security_events.policy import SecurityEventPolicy
 from messenger.application.sessions.authenticate import (
     AuthenticateSession,
     AuthenticateSessionCommand,
+    SessionActivity,
 )
 from messenger.application.sessions.login import Login, LoginCommand
 from messenger.application.sessions.logout import Logout, LogoutCommand
@@ -223,6 +224,30 @@ async def test_touch_is_throttled_and_ip_change_does_not_revoke() -> None:
         )
     )
     assert state.commits == commits_after_touch
+
+
+async def test_websocket_handshake_touches_but_never_rotates_cookie_credential() -> None:
+    state, credentials, plaintext = await issue_session()
+    original = next(iter(state.sessions.values()))
+    authenticate = AuthenticateSession(
+        unit_of_work=FakeIdentityUnitOfWorkFactory(state),
+        clock=FixedClock(NOW + timedelta(hours=1)),
+        credentials=credentials,
+        policy=POLICY,
+        event_policy=EVENT_POLICY,
+    )
+    result = await authenticate.execute(
+        AuthenticateSessionCommand(
+            session_credential=plaintext,
+            activity=SessionActivity.WEBSOCKET_HANDSHAKE,
+        )
+    )
+
+    updated = state.sessions[original.id]
+    assert result.rotated_session_credential is None
+    assert updated.current_token_hash == original.current_token_hash
+    assert updated.previous_token_hash is None
+    assert updated.last_seen_at == NOW + timedelta(hours=1)
 
 
 async def test_idle_expiry_and_logout_revoke_session_idempotently() -> None:

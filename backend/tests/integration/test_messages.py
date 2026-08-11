@@ -10,7 +10,29 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from messenger.application.errors import ConversationNotFoundError
+from messenger.application.messaging.cleanup_messages import CleanupExpiredMessages
+from messenger.application.messaging.delete_message import (
+    DeleteMessageForEveryone,
+    DeleteMessageForEveryoneCommand,
+)
+from messenger.application.messaging.list_delivery_states import (
+    ListParticipantDeliveryStates,
+    ListParticipantDeliveryStatesQuery,
+)
+from messenger.application.messaging.list_read_states import (
+    ListConversationReadStates,
+    ListConversationReadStatesQuery,
+)
+from messenger.application.messaging.mark_delivered import (
+    MarkConversationDelivered,
+    MarkConversationDeliveredCommand,
+)
+from messenger.application.messaging.mark_read import (
+    MarkConversationRead,
+    MarkConversationReadCommand,
+)
 from messenger.application.messaging.policy import MessageEnvelopePolicy
+from messenger.application.messaging.retention import MessageRetentionPolicy
 from messenger.application.messaging.send_message import (
     SendOpaqueMessage,
     SendOpaqueMessageCommand,
@@ -31,8 +53,10 @@ from messenger.infrastructure.persistence.identity_uow import SqlAlchemyIdentity
 from messenger.infrastructure.persistence.messaging_uow import SqlAlchemyMessagingUnitOfWorkFactory
 from messenger.infrastructure.persistence.models import (
     ActivationTokenModel,
+    ConversationDeliveryStateModel,
     ConversationMemberModel,
     ConversationModel,
+    ConversationReadStateModel,
     DeviceModel,
     MessageModel,
     SecurityEventModel,
@@ -41,7 +65,7 @@ from messenger.infrastructure.persistence.models import (
     SyncStreamModel,
     UserModel,
 )
-from tests.application.fakes import FixedClock
+from tests.application.fakes import FixedClock, RecordingRealtimeNotifier
 
 NOW = datetime(2026, 8, 11, 12, 0, tzinfo=UTC)
 PASSWORD = "correct horse battery staple"
@@ -67,6 +91,8 @@ async def reset_tables(session_factory: async_sessionmaker[AsyncSession]) -> Non
         await session.execute(delete(SyncEventModel))
         await session.execute(delete(SyncStreamModel))
         await session.execute(delete(MessageModel))
+        await session.execute(delete(ConversationDeliveryStateModel))
+        await session.execute(delete(ConversationReadStateModel))
         await session.execute(delete(ConversationMemberModel))
         await session.execute(delete(ConversationModel))
         await session.execute(delete(SecurityEventModel))
@@ -106,6 +132,12 @@ async def run_flow(database_url: str) -> None:
         alice_session = await login.execute(
             LoginCommand(username="alice", password=PASSWORD, device_name="Alice device")
         )
+        bob_phone = await login.execute(
+            LoginCommand(username="bob", password=PASSWORD, device_name="Bob phone")
+        )
+        bob_laptop = await login.execute(
+            LoginCommand(username="bob", password=PASSWORD, device_name="Bob laptop")
+        )
         charlie_session = await login.execute(
             LoginCommand(username="charlie", password=PASSWORD, device_name="Charlie device")
         )
@@ -124,7 +156,9 @@ async def run_flow(database_url: str) -> None:
             unit_of_work=SqlAlchemyMessagingUnitOfWorkFactory(session_factory),
             clock=FixedClock(NOW + timedelta(seconds=1)),
             message_policy=MessageEnvelopePolicy(),
+            retention_policy=MessageRetentionPolicy(timedelta(days=30), timedelta(days=90)),
             sync_policy=SyncPolicy(),
+            realtime_notifier=RecordingRealtimeNotifier(),
         )
         ciphertext = b"\x00\xffopaque-postgresql-envelope"
         client_message_id = uuid4()
@@ -173,8 +207,138 @@ async def run_flow(database_url: str) -> None:
                 )
             )
 
+        read_state_factory = SqlAlchemyMessagingUnitOfWorkFactory(session_factory)
+        list_read_states = ListConversationReadStates(unit_of_work=read_state_factory)
+        bob_before = await list_read_states.execute(ListConversationReadStatesQuery(bob.id))
+        assert len(bob_before) == 1
+        assert bob_before[0].last_read_sequence == 0
+        assert bob_before[0].latest_sequence == 3
+        assert bob_before[0].unread_count == 3
+
+        mark_read = MarkConversationRead(
+            unit_of_work=read_state_factory,
+            clock=FixedClock(NOW + timedelta(seconds=2)),
+            sync_policy=SyncPolicy(),
+            realtime_notifier=RecordingRealtimeNotifier(),
+        )
+        first_read = await mark_read.execute(
+            MarkConversationReadCommand(bob.id, conversation.id, 2)
+        )
+        duplicate_read = await mark_read.execute(
+            MarkConversationReadCommand(bob.id, conversation.id, 2)
+        )
+        lower_read, highest_read = await asyncio.gather(
+            mark_read.execute(MarkConversationReadCommand(bob.id, conversation.id, 1)),
+            mark_read.execute(MarkConversationReadCommand(bob.id, conversation.id, 3)),
+        )
+        assert first_read.advanced is True
+        assert duplicate_read.advanced is False
+        assert lower_read.advanced is False
+        assert highest_read.advanced is True
+        bob_after = await list_read_states.execute(ListConversationReadStatesQuery(bob.id))
+        assert bob_after[0].last_read_sequence == 3
+        assert bob_after[0].unread_count == 0
+
+        mark_delivered = MarkConversationDelivered(
+            unit_of_work=read_state_factory,
+            clock=FixedClock(NOW + timedelta(seconds=3)),
+            sync_policy=SyncPolicy(),
+            realtime_notifier=RecordingRealtimeNotifier(),
+        )
+        first_delivery = await mark_delivered.execute(
+            MarkConversationDeliveredCommand(bob.id, bob_phone.device_id, conversation.id, 2)
+        )
+        duplicate_delivery = await mark_delivered.execute(
+            MarkConversationDeliveredCommand(bob.id, bob_phone.device_id, conversation.id, 2)
+        )
+        lower_delivery, highest_delivery = await asyncio.gather(
+            mark_delivered.execute(
+                MarkConversationDeliveredCommand(bob.id, bob_phone.device_id, conversation.id, 1)
+            ),
+            mark_delivered.execute(
+                MarkConversationDeliveredCommand(bob.id, bob_laptop.device_id, conversation.id, 3)
+            ),
+        )
+        assert first_delivery.advanced is True
+        assert duplicate_delivery.advanced is False
+        assert lower_delivery.advanced is False
+        assert highest_delivery.advanced is True
+        delivery_summaries = await ListParticipantDeliveryStates(
+            unit_of_work=read_state_factory
+        ).execute(ListParticipantDeliveryStatesQuery(alice.id))
+        bob_delivery = next(item for item in delivery_summaries if item.user_id == bob.id)
+        assert bob_delivery.delivered_sequence == 3
+
+        delete_message = DeleteMessageForEveryone(
+            unit_of_work=read_state_factory,
+            clock=FixedClock(NOW + timedelta(seconds=4)),
+            retention_policy=MessageRetentionPolicy(timedelta(days=30), timedelta(days=90)),
+            sync_policy=SyncPolicy(),
+            realtime_notifier=RecordingRealtimeNotifier(),
+        )
+        deleted = await delete_message.execute(
+            DeleteMessageForEveryoneCommand(alice.id, conversation.id, result.message_id)
+        )
+        duplicate_delete = await delete_message.execute(
+            DeleteMessageForEveryoneCommand(alice.id, conversation.id, result.message_id)
+        )
+        assert deleted.advanced is True
+        assert duplicate_delete.advanced is False
+
+        cleanup = CleanupExpiredMessages(
+            unit_of_work=read_state_factory,
+            clock=FixedClock(NOW + timedelta(days=31)),
+            retention_policy=MessageRetentionPolicy(timedelta(days=30), timedelta(days=90)),
+            sync_policy=SyncPolicy(),
+        )
+        expired = await cleanup.execute()
+        duplicate_cleanup = await cleanup.execute()
+        assert expired.expired_messages == 2
+        assert expired.purged_tombstones == 0
+        assert duplicate_cleanup.expired_messages == 0
+
         async with session_factory() as session:
-            stored = await session.get(MessageModel, result.message_id)
+            tombstones = (
+                await session.scalars(select(MessageModel).order_by(MessageModel.sequence))
+            ).all()
+        assert len(tombstones) == 3
+        assert all(item.ciphertext is None for item in tombstones)
+        assert [item.deletion_reason for item in tombstones] == [
+            "manual",
+            "expired",
+            "expired",
+        ]
+
+        purge = CleanupExpiredMessages(
+            unit_of_work=read_state_factory,
+            clock=FixedClock(NOW + timedelta(days=121)),
+            retention_policy=MessageRetentionPolicy(timedelta(days=30), timedelta(days=90)),
+            sync_policy=SyncPolicy(),
+        )
+        purged = await purge.execute()
+        assert purged.purged_tombstones == 3
+        resumed_send = SendOpaqueMessage(
+            unit_of_work=read_state_factory,
+            clock=FixedClock(NOW + timedelta(days=122)),
+            message_policy=MessageEnvelopePolicy(),
+            retention_policy=MessageRetentionPolicy(timedelta(days=30), timedelta(days=90)),
+            sync_policy=SyncPolicy(),
+            realtime_notifier=RecordingRealtimeNotifier(),
+        )
+        resumed = await resumed_send.execute(
+            SendOpaqueMessageCommand(
+                alice.id,
+                alice_session.device_id,
+                conversation.id,
+                uuid4(),
+                1,
+                b"after-purge",
+            )
+        )
+        assert resumed.sequence == 4
+
+        async with session_factory() as session:
+            stored = await session.get(MessageModel, resumed.message_id)
             count = await session.scalar(select(func.count(MessageModel.id)))
             alice_event_count = await session.scalar(
                 select(func.count(SyncEventModel.event_id)).where(
@@ -189,14 +353,20 @@ async def run_flow(database_url: str) -> None:
                     SyncEventModel.user_id == charlie.id
                 )
             )
+            alice_read_state = await session.get(
+                ConversationReadStateModel,
+                (alice.id, conversation.id),
+            )
         assert stored is not None
-        assert stored.ciphertext == ciphertext
+        assert stored.ciphertext == b"after-purge"
         assert stored.sender_user_id == alice.id
         assert stored.sender_device_id == alice_session.device_id
-        assert count == 3
+        assert count == 1
         assert {item.sequence for item in concurrent} == {2, 3}
-        assert alice_event_count == bob_event_count == 3
+        assert alice_event_count == bob_event_count == 19
         assert charlie_event_count == 0
+        assert alice_read_state is not None
+        assert alice_read_state.last_read_sequence == 4
     finally:
         await reset_tables(session_factory)
         await engine.dispose()

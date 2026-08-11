@@ -3,7 +3,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from messenger.application.ports.identity import DeviceSessionRecord, SessionCredentialMatch
@@ -34,6 +34,10 @@ class SqlAlchemySessionRepository:
             )
         )
         await self._session.flush()
+
+    async def get_by_id(self, session_id: UUID) -> Session | None:
+        model = await self._session.get(SessionModel, session_id)
+        return map_session(model) if model is not None else None
 
     async def get_by_token_hash_for_update(
         self,
@@ -131,3 +135,27 @@ class SqlAlchemySessionRepository:
             DeviceSessionRecord(device=map_device(device), session=map_session(session))
             for session, device in rows
         ]
+
+    async def count_active_for_users(
+        self,
+        user_ids: set[UUID],
+        *,
+        now: datetime,
+    ) -> dict[UUID, int]:
+        if not user_ids:
+            return {}
+        rows = (
+            await self._session.execute(
+                select(SessionModel.user_id, func.count(SessionModel.id))
+                .join(DeviceModel, DeviceModel.id == SessionModel.device_id)
+                .where(
+                    SessionModel.user_id.in_(user_ids),
+                    SessionModel.revoked_at.is_(None),
+                    SessionModel.idle_expires_at > now,
+                    SessionModel.absolute_expires_at > now,
+                    DeviceModel.revoked_at.is_(None),
+                )
+                .group_by(SessionModel.user_id)
+            )
+        ).all()
+        return {user_id: int(count) for user_id, count in rows}

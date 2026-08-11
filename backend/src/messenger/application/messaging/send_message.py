@@ -13,11 +13,16 @@ from messenger.application.errors import (
     MessageIdempotencyConflictError,
 )
 from messenger.application.messaging.policy import MessageEnvelopePolicy
+from messenger.application.messaging.retention import MessageRetentionPolicy
 from messenger.application.ports.clock import Clock
 from messenger.application.ports.messages import MessagingUnitOfWorkFactory
+from messenger.application.ports.realtime import RealtimeNotifier
+from messenger.application.realtime import notifications_from_sync
+from messenger.application.realtime.publish import publish_best_effort
 from messenger.application.sync import SyncEventType, SyncPolicy
 from messenger.application.sync.emission import events_for_users
-from messenger.domain.entities import Message
+from messenger.domain.entities import ConversationDeliveryState, ConversationReadState, Message
+from messenger.domain.entities.message import digest_ciphertext
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +45,7 @@ class SendOpaqueMessageResult:
     protocol_version: int
     sequence: int
     created_at: datetime
+    expires_at: datetime
 
 
 class SendOpaqueMessage:
@@ -49,12 +55,16 @@ class SendOpaqueMessage:
         unit_of_work: MessagingUnitOfWorkFactory,
         clock: Clock,
         message_policy: MessageEnvelopePolicy,
+        retention_policy: MessageRetentionPolicy,
         sync_policy: SyncPolicy,
+        realtime_notifier: RealtimeNotifier,
     ) -> None:
         self._unit_of_work = unit_of_work
         self._clock = clock
         self._policy = message_policy
+        self._retention_policy = retention_policy
         self._sync_policy = sync_policy
+        self._realtime_notifier = realtime_notifier
 
     async def execute(self, command: SendOpaqueMessageCommand) -> SendOpaqueMessageResult:
         self._policy.validate(command.protocol_version, command.ciphertext)
@@ -82,7 +92,7 @@ class SendOpaqueMessage:
                     existing.conversation_id != conversation.id
                     or existing.sender_user_id != command.actor_user_id
                     or existing.protocol_version != command.protocol_version
-                    or existing.ciphertext != command.ciphertext
+                    or existing.ciphertext_digest != digest_ciphertext(command.ciphertext)
                 ):
                     raise MessageIdempotencyConflictError(
                         "client message ID was reused for different envelope"
@@ -98,19 +108,78 @@ class SendOpaqueMessage:
                 sequence=sequence,
                 ciphertext=command.ciphertext,
                 now=self._clock.now(),
+                retention=self._retention_policy.ciphertext_retention,
             )
             await unit_of_work.messages.add(message)
-            await unit_of_work.sync_events.append(
-                events_for_users(
-                    {member.user_id for member in conversation.members if member.is_active},
-                    event_type=SyncEventType.MESSAGE_CREATED,
+            current_read_state = await unit_of_work.read_states.get(
+                user_id=command.actor_user_id,
+                conversation_id=conversation.id,
+            )
+            sender_read_state = (
+                current_read_state.advance(message.sequence, message.created_at)
+                if current_read_state is not None
+                else ConversationReadState.create(
+                    user_id=command.actor_user_id,
                     conversation_id=conversation.id,
-                    message_id=message.id,
+                    sequence=message.sequence,
+                    now=message.created_at,
+                )
+            )
+            await unit_of_work.read_states.upsert(sender_read_state)
+            current_delivery_state = await unit_of_work.delivery_states.get(
+                device_id=command.actor_device_id,
+                conversation_id=conversation.id,
+            )
+            sender_delivery_state = (
+                current_delivery_state.advance(message.sequence, message.created_at)
+                if current_delivery_state is not None
+                else ConversationDeliveryState.create(
+                    device_id=command.actor_device_id,
+                    conversation_id=conversation.id,
+                    sequence=message.sequence,
+                    now=message.created_at,
+                )
+            )
+            await unit_of_work.delivery_states.upsert(sender_delivery_state)
+            recipients = {member.user_id for member in conversation.members if member.is_active}
+            sync_events = events_for_users(
+                recipients,
+                event_type=SyncEventType.MESSAGE_CREATED,
+                conversation_id=conversation.id,
+                message_id=message.id,
+                now=message.created_at,
+                policy=self._sync_policy,
+            )
+            sync_events.extend(
+                events_for_users(
+                    recipients,
+                    event_type=SyncEventType.READ_RECEIPT,
+                    conversation_id=conversation.id,
+                    message_id=None,
+                    actor_user_id=command.actor_user_id,
+                    read_sequence=message.sequence,
                     now=message.created_at,
                     policy=self._sync_policy,
                 )
             )
+            sync_events.extend(
+                events_for_users(
+                    recipients,
+                    event_type=SyncEventType.DELIVERY_RECEIPT,
+                    conversation_id=conversation.id,
+                    message_id=None,
+                    actor_user_id=command.actor_user_id,
+                    delivery_sequence=message.sequence,
+                    now=message.created_at,
+                    policy=self._sync_policy,
+                )
+            )
+            await unit_of_work.sync_events.append(sync_events)
             await unit_of_work.commit()
+        await publish_best_effort(
+            self._realtime_notifier,
+            notifications_from_sync(sync_events),
+        )
         return result_from(message)
 
 
@@ -124,4 +193,5 @@ def result_from(message: Message) -> SendOpaqueMessageResult:
         protocol_version=message.protocol_version,
         sequence=message.sequence,
         created_at=message.created_at,
+        expires_at=message.expires_at,
     )

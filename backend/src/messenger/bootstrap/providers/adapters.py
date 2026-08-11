@@ -4,9 +4,13 @@ from dishka import Provider, Scope, provide
 
 from messenger.application.ports.activation_secrets import ActivationSecretService
 from messenger.application.ports.clock import Clock
+from messenger.application.ports.password_reset_secrets import PasswordResetSecretService
 from messenger.application.ports.passwords import PasswordHasher
 from messenger.application.ports.session_credentials import SessionCredentialService
 from messenger.infrastructure.auth.activation_secrets import SecureActivationSecretService
+from messenger.infrastructure.auth.password_reset_secrets import (
+    SecurePasswordResetSecretService,
+)
 from messenger.infrastructure.auth.passwords import Argon2PasswordHasher
 from messenger.infrastructure.auth.session_credentials import SecureSessionCredentialService
 from messenger.infrastructure.clock import SystemClock
@@ -26,6 +30,10 @@ class SecurityAdapterProvider(Provider):
     @provide(scope=Scope.APP)
     def activation_secrets(self) -> ActivationSecretService:
         return SecureActivationSecretService()
+
+    @provide(scope=Scope.APP)
+    def password_reset_secrets(self) -> PasswordResetSecretService:
+        return SecurePasswordResetSecretService()
 
     @provide(scope=Scope.APP)
     def session_credentials(self) -> SessionCredentialService:

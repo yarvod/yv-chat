@@ -14,6 +14,8 @@ from messenger.domain.entities import Session
 class SessionRepository(Protocol):
     async def add(self, session: Session) -> None: ...
 
+    async def get_by_id(self, session_id: UUID) -> Session | None: ...
+
     async def get_by_token_hash_for_update(
         self,
         token_hash: str,
@@ -36,3 +38,10 @@ class SessionRepository(Protocol):
     ) -> DeviceSessionRecord | None: ...
 
     async def list_for_user_for_update(self, user_id: UUID) -> list[DeviceSessionRecord]: ...
+
+    async def count_active_for_users(
+        self,
+        user_ids: set[UUID],
+        *,
+        now: datetime,
+    ) -> dict[UUID, int]: ...

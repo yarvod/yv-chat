@@ -3,7 +3,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String, Uuid
+from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, Index, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from messenger.infrastructure.persistence.models.base import Base
@@ -37,6 +37,7 @@ class ConversationModel(Base):
             name="title_length",
         ),
         CheckConstraint("updated_at >= created_at", name="updated_after_created"),
+        CheckConstraint("last_message_sequence >= 0", name="last_message_sequence_non_negative"),
         Index(
             "uq_conversations_direct_pair",
             "direct_user_low_id",
@@ -66,6 +67,7 @@ class ConversationModel(Base):
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_message_sequence: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     members: Mapped[list["ConversationMemberModel"]] = relationship(
         back_populates="conversation",
         cascade="all, delete-orphan",

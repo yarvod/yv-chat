@@ -13,15 +13,22 @@ from messenger.application.errors import (
 )
 from messenger.application.messaging.list_messages import ListMessages, ListMessagesQuery
 from messenger.application.messaging.policy import MessageEnvelopePolicy
+from messenger.application.messaging.retention import MessageRetentionPolicy
 from messenger.application.messaging.send_message import (
     SendOpaqueMessage,
     SendOpaqueMessageCommand,
 )
-from messenger.application.sync import SyncPolicy
-from messenger.domain.entities import Conversation, Device, User
-from tests.application.fakes import FakeMessagingUnitOfWorkFactory, FixedClock, IdentityState
+from messenger.application.sync import SyncEventType, SyncPolicy
+from messenger.domain.entities import Conversation, Device, MessageDeletionReason, User
+from tests.application.fakes import (
+    FakeMessagingUnitOfWorkFactory,
+    FixedClock,
+    IdentityState,
+    RecordingRealtimeNotifier,
+)
 
 NOW = datetime(2026, 8, 11, 12, 0, tzinfo=UTC)
+RETENTION = MessageRetentionPolicy(timedelta(days=30), timedelta(days=90))
 
 
 def messaging_state() -> tuple[IdentityState, User, User, User, Device, Conversation]:
@@ -48,7 +55,9 @@ async def test_send_persists_only_opaque_envelope_metadata() -> None:
         unit_of_work=FakeMessagingUnitOfWorkFactory(state),
         clock=FixedClock(NOW + timedelta(seconds=1)),
         message_policy=MessageEnvelopePolicy(),
+        retention_policy=RETENTION,
         sync_policy=SyncPolicy(),
+        realtime_notifier=RecordingRealtimeNotifier(),
     )
     client_message_id = uuid4()
     command = SendOpaqueMessageCommand(
@@ -92,6 +101,22 @@ async def test_send_persists_only_opaque_envelope_metadata() -> None:
     assert stored.created_at == NOW + timedelta(seconds=1)
     assert "ciphertext" not in result.__dataclass_fields__
     assert second.sequence == 2
+    assert state.read_states[(alice.id, conversation.id)].last_read_sequence == 2
+    assert state.delivery_states[(device.id, conversation.id)].last_delivered_sequence == 2
+    assert [event.event_type for event in state.sync_events] == [
+        SyncEventType.MESSAGE_CREATED,
+        SyncEventType.READ_RECEIPT,
+        SyncEventType.DELIVERY_RECEIPT,
+        SyncEventType.MESSAGE_CREATED,
+        SyncEventType.READ_RECEIPT,
+        SyncEventType.DELIVERY_RECEIPT,
+        SyncEventType.MESSAGE_CREATED,
+        SyncEventType.READ_RECEIPT,
+        SyncEventType.DELIVERY_RECEIPT,
+        SyncEventType.MESSAGE_CREATED,
+        SyncEventType.READ_RECEIPT,
+        SyncEventType.DELIVERY_RECEIPT,
+    ]
     page = await ListMessages(unit_of_work=FakeMessagingUnitOfWorkFactory(state)).execute(
         ListMessagesQuery(alice.id, conversation.id, after_sequence=1, limit=10)
     )
@@ -104,7 +129,9 @@ async def test_send_rejects_non_member_and_foreign_or_revoked_device() -> None:
         unit_of_work=FakeMessagingUnitOfWorkFactory(state),
         clock=FixedClock(NOW + timedelta(seconds=1)),
         message_policy=MessageEnvelopePolicy(),
+        retention_policy=RETENTION,
         sync_policy=SyncPolicy(),
+        realtime_notifier=RecordingRealtimeNotifier(),
     )
     charlie_device = Device.create(user_id=charlie.id, name="Charlie device", now=NOW)
     state.devices[charlie_device.id] = charlie_device
@@ -145,13 +172,50 @@ async def test_send_rejects_non_member_and_foreign_or_revoked_device() -> None:
     assert state.messages == {}
 
 
+async def test_send_retry_remains_idempotent_after_ciphertext_is_scrubbed() -> None:
+    state, alice, _, _, device, conversation = messaging_state()
+    use_case = SendOpaqueMessage(
+        unit_of_work=FakeMessagingUnitOfWorkFactory(state),
+        clock=FixedClock(NOW),
+        message_policy=MessageEnvelopePolicy(),
+        retention_policy=RETENTION,
+        sync_policy=SyncPolicy(),
+        realtime_notifier=RecordingRealtimeNotifier(),
+    )
+    command = SendOpaqueMessageCommand(alice.id, device.id, conversation.id, uuid4(), 1, b"opaque")
+    sent = await use_case.execute(command)
+    stored = state.messages[sent.message_id]
+    state.messages[sent.message_id] = stored.to_tombstone(
+        now=NOW + timedelta(minutes=1),
+        tombstone_retention=timedelta(days=90),
+        reason=MessageDeletionReason.MANUAL,
+        deleted_by_user_id=alice.id,
+    )
+
+    assert await use_case.execute(command) == sent
+    with pytest.raises(MessageIdempotencyConflictError):
+        await use_case.execute(
+            SendOpaqueMessageCommand(
+                alice.id,
+                device.id,
+                conversation.id,
+                command.client_message_id,
+                1,
+                b"different",
+            )
+        )
+    assert len(state.messages) == 1
+
+
 async def test_send_rejects_unsupported_empty_and_oversized_envelopes() -> None:
     state, alice, _, _, device, conversation = messaging_state()
     use_case = SendOpaqueMessage(
         unit_of_work=FakeMessagingUnitOfWorkFactory(state),
         clock=FixedClock(NOW),
         message_policy=MessageEnvelopePolicy(max_ciphertext_bytes=8),
+        retention_policy=RETENTION,
         sync_policy=SyncPolicy(),
+        realtime_notifier=RecordingRealtimeNotifier(),
     )
     for version, ciphertext in ((2, b"opaque"), (1, b""), (1, b"x" * 9)):
         with pytest.raises(InvalidMessageEnvelopeError):
@@ -166,3 +230,29 @@ async def test_send_rejects_unsupported_empty_and_oversized_envelopes() -> None:
                 )
             )
     assert state.messages == {}
+
+
+async def test_realtime_failure_does_not_rollback_committed_message() -> None:
+    state, alice, _, _, device, conversation = messaging_state()
+    notifier = RecordingRealtimeNotifier(fail=True)
+    use_case = SendOpaqueMessage(
+        unit_of_work=FakeMessagingUnitOfWorkFactory(state),
+        clock=FixedClock(NOW + timedelta(seconds=1)),
+        message_policy=MessageEnvelopePolicy(),
+        retention_policy=RETENTION,
+        sync_policy=SyncPolicy(),
+        realtime_notifier=notifier,
+    )
+    result = await use_case.execute(
+        SendOpaqueMessageCommand(
+            alice.id,
+            device.id,
+            conversation.id,
+            uuid4(),
+            1,
+            b"opaque",
+        )
+    )
+
+    assert state.messages[result.message_id].ciphertext == b"opaque"
+    assert state.commits == 1

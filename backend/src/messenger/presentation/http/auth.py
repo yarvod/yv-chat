@@ -9,12 +9,17 @@ from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 
 from messenger.application.accounts.activate import ActivateAccount, ActivateAccountCommand
+from messenger.application.accounts.reset_password import (
+    ResetPasswordWithToken,
+    ResetPasswordWithTokenCommand,
+)
 from messenger.application.errors import (
     AccountAlreadyActiveError,
     ActivationAlreadyUsedError,
     ActivationExpiredError,
     InvalidActivationSecretError,
     InvalidCredentialsError,
+    InvalidPasswordResetSecretError,
     SessionNotAuthenticatedError,
     WeakPasswordError,
 )
@@ -50,6 +55,17 @@ class ActivateAccountRequest(BaseModel):
 class ActivateAccountResponse(BaseModel):
     user_id: UUID
     activated_at: datetime
+
+
+class ResetPasswordRequest(BaseModel):
+    reset_secret: str = Field(min_length=32, max_length=512)
+    new_password: str = Field(min_length=12, max_length=128)
+
+
+class ResetPasswordResponse(BaseModel):
+    user_id: UUID
+    reset_at: datetime
+    revoked_sessions: int
 
 
 class SessionResponse(BaseModel):
@@ -125,6 +141,34 @@ async def activate_account(
             detail="activation failed",
         ) from error
     return ActivateAccountResponse.model_validate(result, from_attributes=True)
+
+
+@router.post("/reset-password", response_model=ResetPasswordResponse)
+async def reset_password(
+    request: Request,
+    payload: ResetPasswordRequest,
+    settings: FromDishka[AppSettings],
+    use_case: FromDishka[ResetPasswordWithToken],
+) -> ResetPasswordResponse:
+    require_allowed_origin(request, settings)
+    try:
+        result = await use_case.execute(
+            ResetPasswordWithTokenCommand(
+                reset_secret=payload.reset_secret,
+                new_password=payload.new_password,
+            )
+        )
+    except WeakPasswordError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="password does not meet policy",
+        ) from error
+    except InvalidPasswordResetSecretError as error:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="password reset failed",
+        ) from error
+    return ResetPasswordResponse.model_validate(result, from_attributes=True)
 
 
 async def authenticate_request(
