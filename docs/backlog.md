@@ -111,7 +111,8 @@ Implementation и desktop browser smoke завершены; physical 390px scree
 
 Статус: **in progress** (`WP-030` завершил async fail-closed boundary; `WP-031`
 завершил pinned OpenMLS provider/device-bootstrap proof; `WP-032` — private
-snapshot/restore, `WP-033` — WebCrypto sealing и atomic IndexedDB vault).
+snapshot/restore, `WP-033` — WebCrypto sealing и atomic IndexedDB vault, `WP-034` —
+versioned package и isolated Worker runtime).
 
 Результат: UI работает с intent-level crypto API, private material не выходит из изолированного слоя.
 
@@ -125,10 +126,14 @@ snapshot/restore, `WP-033` — WebCrypto sealing и atomic IndexedDB vault).
   device/revision-bound AAD и без JS export private snapshot (`WP-033`);
 - [x] versioned IndexedDB vault с atomic key+state bootstrap, monotonic optimistic
   update и fail-closed partial/corrupt state (`WP-033`);
-- [ ] подключить vault к repository-owned WASM Worker runtime и lifecycle device
-  identity без передачи `CryptoKey`/sealed internals в application/UI;
-- [ ] проверить seal/restore/tamper в реальных Chromium, Firefox и Safari, включая
-  reload, storage denial и migration/update lifecycle;
+- [x] подключить vault к repository-owned versioned WASM Worker runtime без передачи
+  `CryptoKey`/sealed internals в application/UI (`WP-034`);
+- [x] Chromium physical Worker/WASM/WebCrypto/IndexedDB provision → reload restore →
+  checkpoint smoke (`WP-034`);
+- [ ] проверить seal/restore/tamper в Firefox и Safari, а также storage denial и
+  migration/update lifecycle;
+- [ ] server-side immutable device identity/KeyPackage registry и только после его
+  comparison подключить restore/provision к authenticated lifecycle;
 - [ ] memory/plaintext lifecycle audit и log-redaction gate для полного Worker flow;
 - [ ] known-answer/interop test vectors реального MLS provider;
 - [x] corruption/version-mismatch/no-fallback tests для protocol dispatch;

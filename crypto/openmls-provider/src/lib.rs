@@ -66,9 +66,9 @@ pub enum BootstrapError {
 
 /// Opaque in-memory owner of private signature and KeyPackage state.
 ///
-/// No serialization, private-key getter, `Debug`, `Clone`, or serde implementation
-/// is provided. The persistence slice must replace the memory provider before this
-/// type can be used by production messaging.
+/// No plaintext serialization, private-key getter, `Debug`, `Clone`, or serde
+/// implementation is provided. Browser persistence is available only through the
+/// WebCrypto sealed-state methods compiled for WASM.
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 pub struct DeviceBootstrap {
     _provider: OpenMlsRustCrypto,

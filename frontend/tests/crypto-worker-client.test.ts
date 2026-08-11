@@ -1,0 +1,137 @@
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+import { CryptoWorkerClient } from '../app/infrastructure/crypto/crypto-worker-client'
+import {
+  errorResponse,
+  parseWorkerRequest,
+  parseWorkerResponse,
+  successResponse,
+} from '../app/infrastructure/crypto/worker-protocol'
+
+const userId = '1b0a32e8-144f-4f60-bcb6-112f71bd5316'
+const deviceId = '50d6b08a-84ae-4bd7-829a-f40f38e9a2c1'
+const firstRequestId = '11111111-1111-4111-8111-111111111111'
+const secondRequestId = '22222222-2222-4222-8222-222222222222'
+
+const identity = {
+  userId,
+  deviceId,
+  revision: 1,
+  fingerprint: 'ab'.repeat(32),
+  credentialIdentity: new Uint8Array(33),
+  signaturePublicKey: new Uint8Array(32),
+  keyPackage: new Uint8Array([1, 2, 3]),
+}
+
+class MockWorker extends EventTarget {
+  readonly messages: unknown[] = []
+  readonly terminate = vi.fn()
+
+  postMessage(message: unknown): void {
+    this.messages.push(message)
+  }
+
+  reply(message: unknown): void {
+    this.dispatchEvent(new MessageEvent('message', { data: message }))
+  }
+}
+
+function requestIds(...ids: string[]): () => string {
+  let index = 0
+  return () => ids[index++] ?? firstRequestId
+}
+
+afterEach(() => {
+  vi.useRealTimers()
+})
+
+describe('device crypto Worker protocol', () => {
+  it('accepts only the closed versioned request and bounded public response schema', () => {
+    expect(parseWorkerRequest({
+      version: 1,
+      requestId: firstRequestId,
+      type: 'restore',
+      command: { userId, deviceId },
+    })).toMatchObject({ type: 'restore', command: { userId, deviceId } })
+    expect(parseWorkerRequest({
+      version: 2,
+      requestId: firstRequestId,
+      type: 'checkpoint',
+    })).toBeNull()
+    expect(parseWorkerRequest({
+      version: 1,
+      requestId: firstRequestId,
+      type: 'provision',
+      command: { userId: 'not-a-uuid', deviceId },
+    })).toBeNull()
+
+    expect(parseWorkerResponse(successResponse(firstRequestId, identity)))
+      .toMatchObject({ ok: true, result: { fingerprint: identity.fingerprint } })
+    expect(parseWorkerResponse({
+      version: 1,
+      requestId: firstRequestId,
+      ok: false,
+      error: { code: 'raw exception with private state' },
+    })).toBeNull()
+    expect(parseWorkerResponse(successResponse(firstRequestId, {
+      ...identity,
+      credentialIdentity: new Uint8Array(32),
+    }))).toBeNull()
+    expect(parseWorkerResponse({
+      ...successResponse(firstRequestId, identity),
+      result: { ...identity, ciphertext: new Uint8Array(16) },
+    })).toBeNull()
+  })
+
+  it('correlates responses, maps bounded errors and disposes the Worker', async () => {
+    const worker = new MockWorker()
+    const client = new CryptoWorkerClient(
+      () => worker as unknown as Worker,
+      1_000,
+      requestIds(firstRequestId, secondRequestId),
+    )
+
+    const provisioning = client.provision({ userId, deviceId })
+    const provisionRequest = parseWorkerRequest(worker.messages[0])
+    expect(provisionRequest?.type).toBe('provision')
+    worker.reply(successResponse(firstRequestId, identity))
+    await expect(provisioning).resolves.toEqual(identity)
+
+    const checkpoint = client.checkpoint()
+    worker.reply(errorResponse(secondRequestId, 'rollback'))
+    await expect(checkpoint).rejects.toMatchObject({ code: 'rollback' })
+
+    const disposing = client.dispose()
+    const disposeRequest = parseWorkerRequest(worker.messages[2])
+    expect(disposeRequest?.type).toBe('dispose')
+    if (!disposeRequest) throw new Error('expected dispose request')
+    worker.reply(successResponse(disposeRequest.requestId, { disposed: true }))
+    await disposing
+    expect(worker.terminate).toHaveBeenCalledOnce()
+    await expect(client.restore({ userId, deviceId })).rejects.toMatchObject({
+      code: 'runtime-unavailable',
+    })
+  })
+
+  it('fails all pending calls on malformed messages and timeouts', async () => {
+    vi.useFakeTimers()
+    const worker = new MockWorker()
+    const client = new CryptoWorkerClient(
+      () => worker as unknown as Worker,
+      10,
+      requestIds(firstRequestId, secondRequestId),
+    )
+    const first = client.restore({ userId, deviceId })
+    const second = client.checkpoint()
+    worker.reply({ requestId: firstRequestId, ok: true, result: 'private-state' })
+    await expect(first).rejects.toMatchObject({ code: 'runtime-unavailable' })
+    await expect(second).rejects.toMatchObject({ code: 'runtime-unavailable' })
+
+    const timedOut = client.checkpoint()
+    const timeoutAssertion = expect(timedOut).rejects.toMatchObject({
+      code: 'runtime-unavailable',
+    })
+    await vi.advanceTimersByTimeAsync(11)
+    await timeoutAssertion
+  })
+})

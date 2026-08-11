@@ -1,3 +1,11 @@
+import {
+  CryptoVaultError,
+  type CryptoVault,
+  type CryptoVaultLoadResult,
+  type SealedCryptoStateDraft,
+  type StoredSealedCryptoState,
+} from '../crypto/crypto-vault'
+
 const DATABASE_NAME = 'yv-chat-crypto-v1'
 const DATABASE_VERSION = 1
 const WRAPPING_KEYS_STORE = 'wrapping_keys'
@@ -7,39 +15,6 @@ const IV_LENGTH = 12
 const MAX_CIPHERTEXT_BYTES = 32 * 1024 * 1024 + 16
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const FINGERPRINT_PATTERN = /^[0-9a-f]{64}$/
-
-export type CryptoVaultErrorKind =
-  | 'conflict'
-  | 'corrupt'
-  | 'rollback'
-  | 'storage-unavailable'
-
-export class CryptoVaultError extends Error {
-  constructor(readonly kind: CryptoVaultErrorKind) {
-    super('device crypto vault operation failed')
-    this.name = 'CryptoVaultError'
-  }
-}
-
-export interface SealedCryptoStateDraft {
-  revision: number
-  fingerprint: string
-  iv: Uint8Array
-  ciphertext: Uint8Array
-}
-
-export interface StoredSealedCryptoState extends SealedCryptoStateDraft {
-  userId: string
-  deviceId: string
-}
-
-export type CryptoVaultLoadResult =
-  | { status: 'missing' }
-  | {
-      status: 'ready'
-      wrappingKey: CryptoKey
-      state: StoredSealedCryptoState
-    }
 
 interface WrappingKeyRecord {
   deviceId: string
@@ -121,7 +96,7 @@ function parseState(record: SealedStateRecord): StoredSealedCryptoState {
   return { ...draft, userId: record.userId, deviceId: record.deviceId }
 }
 
-export class IndexedDbCryptoVault {
+export class IndexedDbCryptoVault implements CryptoVault {
   private database: Promise<IDBDatabase> | null = null
 
   constructor(
@@ -292,3 +267,11 @@ export class IndexedDbCryptoVault {
     return this.database
   }
 }
+
+export {
+  CryptoVaultError,
+  type CryptoVaultErrorKind,
+  type CryptoVaultLoadResult,
+  type SealedCryptoStateDraft,
+  type StoredSealedCryptoState,
+} from '../crypto/crypto-vault'

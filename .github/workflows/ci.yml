@@ -105,9 +105,12 @@ jobs:
         run: cargo test --locked
       - name: Install pinned wasm-bindgen CLI
         run: cargo install wasm-bindgen-cli --version 0.2.127 --locked
-      - name: Compile and verify release WASM boundary
+      - name: Compile and package release WASM boundary
         working-directory: .
-        run: make crypto-wasm-bindgen
+        run: make crypto-package
+      - name: Reject generated browser package drift
+        working-directory: .
+        run: git diff --exit-code -- frontend/public/crypto
       - name: Reject sensitive OpenMLS debug features
         run: |
           ! cargo tree --locked -e features -i openmls |

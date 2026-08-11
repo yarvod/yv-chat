@@ -1,0 +1,83 @@
+/* tslint:disable */
+/* eslint-disable */
+
+/**
+ * Opaque in-memory owner of private signature and KeyPackage state.
+ *
+ * No plaintext serialization, private-key getter, `Debug`, `Clone`, or serde
+ * implementation is provided. Browser persistence is available only through the
+ * WebCrypto sealed-state methods compiled for WASM.
+ */
+export class DeviceBootstrap {
+    free(): void;
+    [Symbol.dispose](): void;
+    credentialIdentity(): Uint8Array;
+    fingerprint(): string;
+    keyPackage(): Uint8Array;
+    constructor(user_id: string, device_id: string);
+    static restoreSealedState(key: CryptoKey, expected_user_id: string, expected_device_id: string, expected_fingerprint: string, revision: bigint, iv: Uint8Array, ciphertext: Uint8Array): Promise<DeviceBootstrap>;
+    sealState(key: CryptoKey, revision: bigint): Promise<SealedSnapshot>;
+    signaturePublicKey(): Uint8Array;
+}
+
+export class SealedSnapshot {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    readonly ciphertext: Uint8Array;
+    readonly fingerprint: string;
+    readonly iv: Uint8Array;
+    readonly revision: bigint;
+}
+
+export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
+
+export interface InitOutput {
+    readonly memory: WebAssembly.Memory;
+    readonly __wbg_devicebootstrap_free: (a: number, b: number) => void;
+    readonly __wbg_sealedsnapshot_free: (a: number, b: number) => void;
+    readonly devicebootstrap_credentialIdentity: (a: number) => [number, number];
+    readonly devicebootstrap_fingerprint: (a: number) => [number, number];
+    readonly devicebootstrap_keyPackage: (a: number) => [number, number];
+    readonly devicebootstrap_new: (a: number, b: number, c: number, d: number) => [number, number, number];
+    readonly devicebootstrap_restoreSealedState: (a: any, b: number, c: number, d: number, e: number, f: number, g: number, h: bigint, i: number, j: number, k: number, l: number) => any;
+    readonly devicebootstrap_sealState: (a: number, b: any, c: bigint) => any;
+    readonly devicebootstrap_signaturePublicKey: (a: number) => [number, number];
+    readonly sealedsnapshot_ciphertext: (a: number) => [number, number];
+    readonly sealedsnapshot_fingerprint: (a: number) => [number, number];
+    readonly sealedsnapshot_iv: (a: number) => [number, number];
+    readonly sealedsnapshot_revision: (a: number) => bigint;
+    readonly wasm_bindgen__convert__closures_____invoke__h680993dd3a73db18: (a: number, b: number, c: any) => [number, number];
+    readonly wasm_bindgen__convert__closures_____invoke__h5da54e24da3cad8d: (a: number, b: number, c: any, d: any) => void;
+    readonly __wbindgen_malloc: (a: number, b: number) => number;
+    readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
+    readonly __wbindgen_exn_store: (a: number) => void;
+    readonly __externref_table_alloc: () => number;
+    readonly __wbindgen_externrefs: WebAssembly.Table;
+    readonly __wbindgen_destroy_closure: (a: number, b: number) => void;
+    readonly __wbindgen_free: (a: number, b: number, c: number) => void;
+    readonly __externref_table_dealloc: (a: number) => void;
+    readonly __wbindgen_start: () => void;
+}
+
+export type SyncInitInput = BufferSource | WebAssembly.Module;
+
+/**
+ * Instantiates the given `module`, which can either be bytes or
+ * a precompiled `WebAssembly.Module`.
+ *
+ * @param {{ module: SyncInitInput }} module - Passing `SyncInitInput` directly is deprecated.
+ *
+ * @returns {InitOutput}
+ */
+export function initSync(module: { module: SyncInitInput } | SyncInitInput): InitOutput;
+
+/**
+ * If `module_or_path` is {RequestInfo} or {URL}, makes a request and
+ * for everything else, calls `WebAssembly.instantiate` directly.
+ *
+ * @param {{ module_or_path: InitInput | Promise<InitInput> }} module_or_path - Passing `InitInput` directly is deprecated.
+ *
+ * @returns {Promise<InitOutput>}
+ */
+export default function __wbg_init (module_or_path?: { module_or_path: InitInput | Promise<InitInput> } | InitInput | Promise<InitInput>): Promise<InitOutput>;

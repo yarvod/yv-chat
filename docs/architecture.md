@@ -660,11 +660,37 @@ fingerprint, iv, ciphertext}`. Первичный key+state commit выполн�
 read-write transaction. Updates требуют ровно `current + 1`, неизменный public
 fingerprint и optimistic revision match в transaction; partial key/state, rollback,
 conflict и storage failure различаются typed errors и никогда не вызывают reset.
-Этот adapter является внутренней зависимостью будущего crypto Worker, а не
+Этот adapter является внутренней зависимостью crypto Worker, а не
 application port: намеренно нельзя передавать `CryptoKey`, nonce или ciphertext в
 Vue/application DTO. Fake IndexedDB + Node WebCrypto tests фиксируют transaction и
-metadata semantics; реальное выполнение WebCrypto из generated WASM в поддерживаемых
-браузерах всё ещё release-gated.
+metadata semantics. Physical Chromium подтверждён; Firefox/Safari и storage-denial
+scenarios всё ещё release-gated.
+
+Repository хранит generated package под immutable protocol path `/crypto/v1/`:
+JS glue, TypeScript declaration и WASM производятся exact `Rust 1.91.0` /
+`wasm-bindgen 0.2.127`; CI пересобирает их и отклоняет tracked drift и private
+snapshot exports. Nuxt production build обязан выпустить отдельный module Worker
+chunk, скопировать WASM и включить оба versioned crypto assets и Worker в Workbox
+precache. Версия URL меняется вместе с несовместимой binding/schema revision, чтобы
+active service worker не смешивал новые JS bindings со старым WASM.
+
+`DeviceCryptoRuntime` существует только внутри dedicated Worker. Он различает
+explicit `provision` и `restore`, после конкурентного bootstrap всегда восстанавливает
+именно победивший atomic record и освобождает candidate/replaced WASM objects.
+`checkpoint` допускает только следующий revision. Closed Worker protocol валидирует
+exact поля/UUID/bounds и возвращает main thread только public credential identity,
+signature key, KeyPackage, fingerprint и revision; raw exception, `CryptoKey`, IV,
+ciphertext и vault record в response schema невозможны. Main-thread client добавляет
+request correlation, bounded timeout, sanitized error taxonomy и deterministic
+dispose. Composition root предоставляет lazy `createDeviceCrypto()` factory, поэтому
+Worker не стартует и identity не создаётся автоматически при login.
+
+Node 24 integration tests исполняют настоящий release WASM с WebCrypto и fake
+IndexedDB, включая reload, concurrent provision и tamper. Отдельный physical Chromium
+smoke подтвердил production Worker asset, same-origin module/WASM fetch,
+non-extractable key structured clone, exact restore и revision `1 → 2`. Это не
+разрешает production provisioning: backend immutable identity comparison,
+Firefox/Safari, storage-denial/update tests и MLS KAT/interop всё ещё обязательны.
 
 UI не вызывает concrete crypto adapter: application-facing async operations
 `protectText/unprotectText` получают intent DTO с conversation/client-message

@@ -4,75 +4,76 @@
 завершённая работа фиксируется отдельным коммитом, а новый пункт переносится
 сюда из `backlog.md`.
 
-## WP-033 — WebCrypto sealing и atomic IndexedDB crypto vault
+## WP-034 — Isolated OpenMLS Worker runtime и reproducible browser package
 
 Статус: **completed**
-Backlog item: `BL-013` (encrypted browser persistence slice)
-Цель: разрешить persistent device crypto state только как AES-256-GCM sealed
-ciphertext: private OpenMLS snapshot шифруется/расшифровывается внутри Rust/WASM
-через non-extractable WebCrypto `CryptoKey`, а IndexedDB adapter атомарно хранит key,
-sealed record и monotonic revision без доступа Vue/application к private bytes.
+Backlog item: `BL-013` (browser crypto runtime slice)
+Цель: собрать pinned Rust/WASM provider в проверяемый same-origin browser package и
+дать frontend изолированный Worker runtime, который единолично владеет
+`DeviceBootstrap`, WebCrypto key и IndexedDB vault. Application/UI видят только
+public device anchors и typed intent results; runtime пока не включается автоматически
+до появления server-side immutable device-identity registry.
 
 ### Security invariants
 
-1. Wrapping key создаётся `AES-GCM 256`, `extractable=false`, usages только
-   `encrypt/decrypt`; JWK/raw export отсутствует.
-2. Private snapshot не возвращается из WASM. WebCrypto Promise получает его из WASM
-   memory, после operation buffer очищается best-effort.
-3. Уникальный 96-bit IV генерируется CSPRNG для каждого seal; reuse запрещён.
-4. AAD exact связывает format label, canonical user UUID, device UUID и revision.
-5. Sealed envelope имеет schema/revision/IV/ciphertext limits; modified IV/AAD/tag,
-   wrong device/revision/key fail closed без auto-reset/fallback.
-6. IndexedDB содержит один non-extractable key record и один sealed state record на
-   device. Key+state bootstrap пишутся одной transaction.
-7. Existing identity при missing/corrupt key/state не regenerates silently. Adapter
-   возвращает typed `missing/corrupt/rollback/storage-unavailable` state.
-8. Revision может только увеличиваться; stale/equal overwrite запрещён, restore
-   сравнивает outer record и authenticated inner snapshot revision.
-9. Vue и message application services не получают `CryptoKey`, nonce, ciphertext
-   или vault internals; этот slice ещё не включает production MLS messaging.
-10. Synthetic v1 остаётся outgoing и имеет insecure warning.
+1. Generated JS/WASM строятся только из exact Rust/lockfile/wasm-bindgen versions;
+   CI повторно генерирует package и проверяет отсутствие drift/private exports.
+2. Worker загружает module только из фиксированного same-origin path. URL не приходит
+   из message/input; dynamic remote code отсутствует.
+3. `DeviceBootstrap`, `CryptoKey`, IV/ciphertext и vault records никогда не выходят
+   из Worker. Main thread получает только credential identity, signature public key,
+   KeyPackage, fingerprint и revision.
+4. Worker protocol — closed discriminated union с request ID, strict runtime parsing,
+   bounded public outputs и sanitized error codes без raw exception/private bytes.
+5. Initialize сначала загружает vault. `missing` разрешает candidate bootstrap только
+   как explicit provisioning operation; `corrupt/partial` fail closed без regeneration.
+6. После atomic bootstrap runtime всегда восстанавливает committed record, поэтому
+   concurrent tab winner не может расходиться с in-memory identity.
+7. Checkpoint использует ровно следующий revision; conflict/rollback не retry/reset
+   silently. Runtime освобождает replaced/terminated WASM objects.
+8. Auth lifecycle пока не вызывает provisioning: без backend identity comparison
+   невозможно безопасно отличить первый запуск от потерянного local state.
+9. Synthetic protocol v1 остаётся единственным outgoing path и явно не E2EE.
 
 ### План
 
-- [x] Rust/WASM async seal/restore API на `SubtleCrypto` с bounded errors/AAD.
-- [x] Opaque `SealedSnapshot` WASM result: revision, IV, ciphertext, fingerprint.
-- [x] Native tests для AAD/envelope validation и locked release WASM compile.
-- [x] Typed internal frontend crypto-vault DTO/error taxonomy; это infrastructure
-  dependency будущего Worker, не application port, чтобы не утечь `CryptoKey`.
-- [x] IndexedDB adapter с versioned schema, non-extractable key generation и atomic
-  bootstrap/monotonic update.
-- [x] Vitest fake IndexedDB/WebCrypto tests: non-extractable key, round-trip record,
-  rollback, partial/missing/corrupt state и isolation by device.
-- [x] WASM build/glue packaging contract; private snapshot export static gate.
-- [x] Architecture/backlog/bugs/workplan sync и repository quality gates.
+- [x] Repository-owned reproducible browser package и drift/private-export gates.
+- [x] Typed Worker request/response DTOs, exact validators и bounded error mapping.
+- [x] Device crypto runtime с explicit provision/restore/checkpoint/dispose lifecycle.
+- [x] Dedicated module Worker transport и main-thread client с timeout/disposal.
+- [x] Tests для provisioning, reload restore, concurrent winner, corrupt/rollback,
+  protocol validation, sanitized failures и resource disposal.
+- [x] Frontend/Docker/CI build integration без сборки на production VPS.
+- [x] Architecture/backlog/README sync и physical Chromium acceptance.
+- [x] Repository quality gates; full CI выполняется перед commit.
 
 ### Не входит в этот slice
 
-- backend credential/KeyPackage API;
-- MLS group lifecycle и message v2;
-- service worker migration across a real deployed old schema;
-- Firefox/Safari physical browser acceptance;
-- production E2EE claim.
+- automatic provisioning при login;
+- backend device identity/KeyPackage registry;
+- MLS group lifecycle, message v2 или attachment encryption;
+- production E2EE claim;
+- recovery после утраты всех device-local keys.
 
 ### Definition of Done
 
-- only authenticated ciphertext may leave Rust private-state boundary;
-- browser key is non-extractable and state writes are atomic/monotonic;
-- wrong key/device/revision/corruption fail closed without identity replacement;
-- native/WASM/frontend/full repository checks pass;
-- limitations and remaining release gates are explicit.
+- production frontend image содержит reproducibly generated same-origin WASM package;
+- Worker/vault lifecycle восстанавливает exact identity и fail closed на corruption;
+- main thread не получает private crypto/storage material;
+- tests и generated API/drift gates фиксируют boundary;
+- текущий insecure transport не меняется и ограничения явно документированы.
 
 ### Проверка
 
-- `cargo fmt --check`;
-- native и `wasm32-unknown-unknown` `cargo clippy ... -D warnings`;
-- `cargo test --locked`: 13 passed;
-- release WASM + pinned `wasm-bindgen 0.2.127`, generated `.d.ts` API gate;
-- frontend lint/typecheck и Vitest: 42 passed;
-- полный `make ci` выполняется перед commit.
+- release OpenMLS WASM + WebCrypto + fake IndexedDB: explicit provision, exact reload
+  restore, concurrent writer convergence, wrong AAD и modified ciphertext fail closed;
+- Worker protocol/client: exact schema, bounded public DTO, sanitized error, correlation,
+  timeout и dispose;
+- physical Chromium production smoke: Worker → `/crypto/v1` JS/WASM → IndexedDB,
+  fingerprint сохраняется после Worker restart, revision `1 → 2`;
+- Nuxt build выдаёт hashed Worker chunk, versioned WASM и Workbox precache entries;
+- frontend lint/typecheck/Vitest/build и полный `make ci` перед commit.
 
-Physical browser WASM execution не заявляется проверенным в этом slice: Worker
-integration и Chromium/Firefox/Safari seal/restore/tamper acceptance остаются явным
-следующим release gate. Поэтому текущий message protocol по-прежнему synthetic v1 и
-не E2EE.
+Автоматический auth lifecycle намеренно не вызывает `provision`: следующий backend
+slice должен дать immutable server identity registry, иначе потерю local state нельзя
+безопасно отличить от первого запуска.

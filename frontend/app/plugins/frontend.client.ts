@@ -28,6 +28,7 @@ import { MarkConversationDelivered } from '../application/messaging/mark-convers
 import { MarkConversationRead } from '../application/messaging/mark-conversation-read'
 import { TypingIndicatorService } from '../application/messaging/typing-indicator-service'
 import type { TypingTransport } from '../application/ports/typing-transport'
+import { createDeviceCryptoScope } from '../bootstrap/device-crypto'
 import { LoadCurrentAccount } from '../application/auth/load-current-account'
 import { Login } from '../application/auth/login'
 import { Logout } from '../application/auth/logout'
@@ -117,6 +118,7 @@ export default defineNuxtPlugin(() => {
           new TypingIndicatorService(transport, scheduler, clock)
         ),
         createPresenceIndicators: () => new PresenceIndicatorService(),
+        createDeviceCrypto: createDeviceCryptoScope,
       },
     },
   }

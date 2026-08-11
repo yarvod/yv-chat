@@ -2,7 +2,7 @@
 	backend-typecheck backend-test frontend-install frontend-dev frontend-lint \
 	frontend-typecheck frontend-test frontend-build migrate migration-sql bootstrap-admin \
 	crypto-format crypto-lint crypto-wasm-lint crypto-test crypto-wasm crypto-wasm-bindgen \
-	crypto-feature-check crypto-check \
+	crypto-package crypto-feature-check crypto-check \
 	test ci compose-check deploy-check docs-check
 
 CARGO ?= cargo
@@ -61,6 +61,9 @@ frontend-test:
 
 frontend-build:
 	cd frontend && npm run build
+	test -s frontend/.output/public/crypto/v1/yv_chat_openmls_provider_bg.wasm
+	grep -q 'crypto/v1/yv_chat_openmls_provider_bg.wasm' frontend/.output/public/sw.js
+	find frontend/.output/public/_nuxt -name 'device-crypto.worker-*.js' -type f | grep -q .
 
 crypto-format:
 	cd crypto && $(CARGO) fmt --check
@@ -90,11 +93,22 @@ crypto-wasm-bindgen: crypto-wasm
 	! grep -Eq 'snapshotForSealing|restoreFromUnsealedSnapshot' \
 		crypto/target/wasm-bindgen/yv_chat_openmls_provider.d.ts
 
+crypto-package: crypto-wasm-bindgen
+	install -d frontend/public/crypto/v1
+	install -m 0644 crypto/target/wasm-bindgen/yv_chat_openmls_provider.js \
+		frontend/public/crypto/v1/yv_chat_openmls_provider.js
+	install -m 0644 crypto/target/wasm-bindgen/yv_chat_openmls_provider.d.ts \
+		frontend/public/crypto/v1/yv_chat_openmls_provider.d.ts
+	install -m 0644 crypto/target/wasm-bindgen/yv_chat_openmls_provider_bg.wasm \
+		frontend/public/crypto/v1/yv_chat_openmls_provider_bg.wasm
+	install -m 0644 crypto/target/wasm-bindgen/yv_chat_openmls_provider_bg.wasm.d.ts \
+		frontend/public/crypto/v1/yv_chat_openmls_provider_bg.wasm.d.ts
+
 crypto-feature-check:
 	cd crypto && ! $(CARGO) tree --locked -e features -i openmls | \
 		grep -Eq 'openmls feature "(content-debug|crypto-debug|test-utils)"'
 
-crypto-check: crypto-format crypto-lint crypto-wasm-lint crypto-test crypto-wasm-bindgen crypto-feature-check
+crypto-check: crypto-format crypto-lint crypto-wasm-lint crypto-test crypto-package crypto-feature-check
 
 test: backend-test frontend-test
 
@@ -132,4 +146,4 @@ docs-check:
 	grep -q 'https://www.rfc-editor.org/rfc/rfc9750.html' docs/adr/0001-e2ee-mls.md
 	grep -q 'не шифрует сообщения и не является E2EE' README.md
 
-ci: backend-lint backend-typecheck backend-test frontend-lint frontend-typecheck frontend-test frontend-build crypto-check compose-check deploy-check docs-check
+ci: backend-lint backend-typecheck backend-test crypto-check frontend-lint frontend-typecheck frontend-test frontend-build compose-check deploy-check docs-check

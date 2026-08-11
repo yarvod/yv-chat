@@ -6,7 +6,7 @@
 
 ## Статус
 
-Готовы закрытый invitation/activation/session lifecycle, admin user management и purpose-bound password recovery, authorized direct/group conversations, ordered/idempotent message transport, durable per-user cursor sync и usable PWA для обмена сообщениями. [ADR-0001](docs/adr/0001-e2ee-mls.md) принял MLS 1.0 и threat model; repository уже компилирует pinned OpenMLS provider proof для native/WASM, но persistent state, group lifecycle и остальные implementation release gates ещё не выполнены. Текущий synthetic client codec предназначен только для MVP-проверки транспорта, **не шифрует сообщения и не является E2EE**; интерфейс явно предупреждает об этом.
+Готовы закрытый invitation/activation/session lifecycle, admin user management и purpose-bound password recovery, authorized direct/group conversations, ordered/idempotent message transport, durable per-user cursor sync и usable PWA для обмена сообщениями. [ADR-0001](docs/adr/0001-e2ee-mls.md) принял MLS 1.0 и threat model; repository воспроизводимо собирает pinned OpenMLS WASM, изолирует его в Worker и хранит private state только как WebCrypto-sealed IndexedDB record. Server identity registry, MLS group lifecycle и остальные implementation release gates ещё не выполнены. Текущий synthetic client codec предназначен только для MVP-проверки транспорта, **не шифрует сообщения и не является E2EE**; интерфейс явно предупреждает об этом.
 
 Текущая фича и подробный план находятся в [docs/workplan.md](docs/workplan.md). Полный продуктовый backlog — в [docs/backlog.md](docs/backlog.md), архитектура и правила её развития — в [docs/architecture.md](docs/architecture.md), найденные дефекты — в [docs/bugs.md](docs/bugs.md).
 
@@ -67,7 +67,8 @@ make ci
 ```
 
 Полный `make ci` также требует pinned Rust toolchain/targets из
-`rust-toolchain.toml`. Backend-команды используют только `uv`; Python dependency
+`rust-toolchain.toml` и `wasm-bindgen-cli 0.2.127`; он пересобирает versioned browser
+crypto package перед frontend tests/build. Backend-команды используют только `uv`; Python dependency
 source of truth — `backend/pyproject.toml` и `backend/uv.lock`, Rust —
 `crypto/Cargo.toml` и `crypto/Cargo.lock`.
 

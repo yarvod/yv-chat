@@ -21,6 +21,7 @@ export default defineNuxtConfig({
     },
     workbox: {
       navigateFallback: '/',
+      globPatterns: ['**/*.{css,html,ico,js,png,svg,wasm,webmanifest}'],
     },
   },
 })

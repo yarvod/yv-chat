@@ -22,6 +22,54 @@
 
 ## Resolved
 
+### BUG-023 — PWA update мог разделить версии crypto JS и WASM
+
+- Статус: `verified`.
+- Найдено в: `WP-034`, production PWA build inspection.
+- Severity: `high`.
+- Условия воспроизведения: обновить release, когда fixed-path generated JS уже новый,
+  а service worker/browser cache продолжает отдавать старый WASM или не имеет его
+  offline.
+- Ожидаемое поведение: binding и binary обновляются одной согласованной PWA revision.
+- Фактическое поведение: исходный Workbox glob precache содержал только три entry и
+  исключал `.wasm`; unversioned crypto URL не выражал compatibility boundary.
+- Причина: default PWA asset glob не включал WASM и provider package ещё не был частью
+  production frontend.
+- Исправление: package размещён под `/crypto/v1/`, `.wasm` включён в explicit Workbox
+  glob, build gate проверяет WASM, Worker chunk и precache entry.
+- Проверка: production Nuxt build содержит 40 precache entries, включая versioned JS,
+  WASM и hashed Worker; physical Chromium smoke загрузил их same-origin.
+
+### BUG-022 — Worker response parser сохранял неожиданные поля
+
+- Статус: `verified`.
+- Найдено в: `WP-034`, trust-boundary review.
+- Severity: `high`.
+- Условия воспроизведения: Worker ошибочно возвращает валидные public identity fields
+  вместе с дополнительным `ciphertext`/vault field.
+- Ожидаемое поведение: main thread принимает только exact public DTO schema.
+- Фактическое поведение: первоначальный structural validator проверял обязательные
+  поля, но возвращал исходный object с extras.
+- Причина: validator был type predicate, а не reconstructing decoder.
+- Исправление: request/response/error/result используют exact-key validation, identity
+  decoder строит новый bounded DTO, malformed message закрывает все pending requests.
+- Проверка: Vitest отклоняет response с лишним ciphertext и malformed raw error.
+
+### BUG-021 — `window.crypto` делал sealing несовместимым с Worker
+
+- Статус: `verified`.
+- Найдено в: `WP-033`, generated binding review перед Worker integration.
+- Severity: `high`.
+- Условия воспроизведения: вызвать `sealState` из dedicated Worker, где `window`
+  отсутствует.
+- Ожидаемое поведение: WebCrypto доступен через Worker-safe global scope.
+- Фактическое поведение: первоначальный adapter получал `web_sys::window().crypto()` и
+  завершался `SealingFailed` вне Window context.
+- Причина: browser runtime ошибочно отождествлялся с DOM Window.
+- Исправление: Rust/WASM получает `globalThis.crypto` через `js_sys::global`, сохраняя
+  exact `Crypto`/`CryptoKey` validation.
+- Проверка: wasm clippy/release build, Node 24 real-WASM tests и Chromium Worker smoke.
+
 ### BUG-020 — Cleanup process пытался публиковать в изолированный realtime hub
 
 - Статус: `verified`.
