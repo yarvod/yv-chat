@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 
+import AdminUsersPanel from '../admin/AdminUsersPanel.vue'
 import { useMessenger } from '../../composables/useMessenger'
 import type { CurrentAccount } from '../../services/parsers'
 import ConversationSidebar from './ConversationSidebar.vue'
@@ -10,6 +11,7 @@ const props = defineProps<{ user: CurrentAccount }>()
 const emit = defineEmits<{ logout: [], sessionExpired: [] }>()
 const messenger = useMessenger(props.user.userId, () => emit('sessionExpired'))
 let pollTimer: ReturnType<typeof setInterval> | null = null
+const managingUsers = ref(false)
 
 onMounted(async () => {
   await messenger.load()
@@ -32,6 +34,7 @@ onBeforeUnmount(() => {
       @select="messenger.selectConversation"
       @direct="messenger.createDirect"
       @group="messenger.createGroup"
+      @manage-users="managingUsers = true"
       @logout="emit('logout')"
     />
 
@@ -53,5 +56,6 @@ onBeforeUnmount(() => {
         :send-message="messenger.send"
       />
     </div>
+    <AdminUsersPanel v-if="managingUsers && user.isAdmin" @close="managingUsers = false" />
   </section>
 </template>

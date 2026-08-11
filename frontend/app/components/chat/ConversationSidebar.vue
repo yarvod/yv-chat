@@ -16,6 +16,7 @@ const emit = defineEmits<{
   select: [conversationId: string]
   direct: [userId: string]
   group: [title: string, userIds: string[]]
+  manageUsers: []
   logout: []
 }>()
 const creatingNew = ref(false)
@@ -42,6 +43,7 @@ function createGroup(title: string, userIds: string[]): void {
     <div class="brand-row">
       <span class="brand-mark small">Y</span>
       <strong>yv-chat</strong>
+      <button v-if="user.isAdmin" class="admin-button" type="button" aria-label="Управление пользователями" @click="emit('manageUsers')">♙</button>
       <button class="new-chat-button" type="button" aria-label="Новый диалог" @click="creatingNew = true">
         +
       </button>

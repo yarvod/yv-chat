@@ -6,7 +6,7 @@
 
 ## Статус
 
-Готовы закрытый account/session lifecycle, authorized direct/group conversations, ordered/idempotent message transport, durable per-user cursor sync и usable PWA для входа, создания диалогов и обмена сообщениями. Текущий synthetic client codec предназначен только для MVP-проверки транспорта, **не шифрует сообщения и не является E2EE**; интерфейс явно предупреждает об этом до внедрения утверждённого протокола.
+Готовы закрытый invitation/activation/session lifecycle, admin onboarding UI, authorized direct/group conversations, ordered/idempotent message transport, durable per-user cursor sync и usable PWA для обмена сообщениями. Текущий synthetic client codec предназначен только для MVP-проверки транспорта, **не шифрует сообщения и не является E2EE**; интерфейс явно предупреждает об этом до внедрения утверждённого протокола.
 
 Текущая фича и подробный план находятся в [docs/workplan.md](docs/workplan.md). Полный продуктовый backlog — в [docs/backlog.md](docs/backlog.md), архитектура и правила её развития — в [docs/architecture.md](docs/architecture.md), найденные дефекты — в [docs/bugs.md](docs/bugs.md).
 

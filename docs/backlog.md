@@ -281,6 +281,10 @@
 
 ## Completed
 
+### BL-037 — Admin invitations и activation UI
+
+Logged-out PWA имеет отдельную activation форму для one-time secret и нового password; credentials очищаются до/после network operation и не сохраняются. Admin-only transient panel runtime-validates bounded account list, создаёт invitation и показывает plaintext secret только до явного скрытия/закрытия/reload. Публичная регистрация не появилась, backend role/Origin/CSRF остаются authoritative.
+
 ### BL-021 — Conversations и messaging UI
 
 Authenticated PWA показывает active-user directory, direct/group conversation list, server-sequence timeline и idempotent composer. Runtime parsers отделяют untrusted transport DTO, services инкапсулируют API, `useMessenger` координирует snapshot/cursor polling/reset, а небольшие Vue-компоненты отвечают только за interaction/rendering. Initial sync фиксирует baseline cursor до resource snapshot, исключая lost-event race. Temporary protocol v1 codec изолирован, явно помечен non-E2EE и не сохраняет локальный plaintext; secure milestone остаётся `BL-012`–`BL-014`.

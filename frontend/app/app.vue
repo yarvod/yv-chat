@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 
+import ActivationForm from './components/auth/ActivationForm.vue'
 import ChatWorkspace from './components/chat/ChatWorkspace.vue'
 import { useAuth } from './composables/useAuth'
 
@@ -8,6 +9,8 @@ const auth = useAuth()
 const username = ref('')
 const password = ref('')
 const deviceName = ref('Этот браузер')
+const authMode = ref<'login' | 'activate'>('login')
+const activationComplete = ref(false)
 const busy = computed(() => auth.state.phase === 'submitting')
 
 onMounted(() => auth.bootstrap())
@@ -20,6 +23,11 @@ async function submitLogin(): Promise<void> {
     password: submittedPassword,
     deviceName: deviceName.value.trim(),
   })
+}
+
+function activationCompleted(): void {
+  activationComplete.value = true
+  authMode.value = 'login'
 }
 </script>
 
@@ -47,7 +55,14 @@ async function submitLogin(): Promise<void> {
         </p>
       </div>
 
+      <ActivationForm
+        v-if="authMode === 'activate'"
+        @cancel="authMode = 'login'"
+        @activated="activationCompleted"
+      />
+
       <form
+        v-else
         class="login-card"
         @submit.prevent="submitLogin"
       >
@@ -56,6 +71,10 @@ async function submitLogin(): Promise<void> {
           <h2>С возвращением</h2>
           <p>Аккаунты создаёт администратор пространства.</p>
         </header>
+
+        <p v-if="activationComplete" class="success-message" role="status">
+          Аккаунт активирован. Теперь войдите с новым паролем.
+        </p>
 
         <label>
           <span>Имя пользователя</span>
@@ -112,6 +131,9 @@ async function submitLogin(): Promise<void> {
           :disabled="busy"
         >
           {{ busy ? 'Входим…' : 'Войти' }}
+        </button>
+        <button class="text-button auth-switch" type="button" @click="authMode = 'activate'">
+          У меня есть код приглашения
         </button>
       </form>
     </section>

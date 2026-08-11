@@ -299,6 +299,8 @@ Active-device API выводит только non-revoked/non-expired sessions �
 
 Current-account API получает identity исключительно из authenticated principal. `GET/PATCH /api/v1/me` возвращает/изменяет только bounded profile fields. Password change и explicit security reset используют текущий пароль как step-up factor внутри row-locked identity transaction; IP/GeoIP/User-Agent не участвуют. Password change обновляет Argon2id hash и отзывает все остальные sessions/devices, сохраняя current session. Security reset отзывает все sessions/devices, включая current, после чего transport удаляет auth/CSRF cookies. Обе операции создают typed bounded audit events без password/token payload. E2EE identity/key reset в эту account-операцию не входит и проектируется только после protocol ADR.
 
+PWA замыкает закрытый onboarding без public registration: admin-only panel вызывает существующие `ListManagedUsers`/`CreateUserInvitation`, а logged-out activation form — `ActivateAccount`. Plaintext activation secret существует в frontend state только в момент ввода или одноразового admin response, не попадает в URL, localStorage, IndexedDB или logs и удаляется при success/скрытии/закрытии/reload. Новый password и confirmation очищаются до ожидания response. Видимость admin control в UI — только UX; серверная `require_active_admin` остаётся authorization boundary.
+
 ## 8. Conversation и authorization model
 
 Целевые core entities:
