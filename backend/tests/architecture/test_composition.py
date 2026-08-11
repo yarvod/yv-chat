@@ -10,6 +10,16 @@ from messenger.application.accounts.reissue_activation import ReissueActivation
 from messenger.application.accounts.security_reset import SecurityReset
 from messenger.application.accounts.update_profile import UpdateCurrentProfile
 from messenger.application.accounts.update_user import UpdateManagedUser
+from messenger.application.conversations.add_member import AddConversationMember
+from messenger.application.conversations.change_member_role import (
+    ChangeConversationMemberRole,
+)
+from messenger.application.conversations.create_direct import CreateDirectConversation
+from messenger.application.conversations.create_group import CreateGroupConversation
+from messenger.application.conversations.get_conversation import GetConversation
+from messenger.application.conversations.leave_conversation import LeaveConversation
+from messenger.application.conversations.list_conversations import ListConversations
+from messenger.application.conversations.remove_member import RemoveConversationMember
 from messenger.application.devices.list_security_events import ListSecurityEvents
 from messenger.application.devices.list_sessions import ListMySessions
 from messenger.application.devices.rename import RenameMyDevice
@@ -41,6 +51,14 @@ async def test_production_graph_resolves_every_application_operation() -> None:
         UpdateCurrentProfile,
         ChangeCurrentPassword,
         SecurityReset,
+        CreateDirectConversation,
+        CreateGroupConversation,
+        ListConversations,
+        GetConversation,
+        AddConversationMember,
+        RemoveConversationMember,
+        LeaveConversation,
+        ChangeConversationMemberRole,
         Login,
         AuthenticateSession,
         Logout,

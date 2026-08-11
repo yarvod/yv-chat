@@ -61,6 +61,18 @@ class SqlAlchemyUserRepository:
         )
         return map_user(model) if model is not None else None
 
+    async def get_many_by_ids(self, user_ids: set[UUID]) -> list[User]:
+        if not user_ids:
+            return []
+        models = (
+            await self._session.scalars(
+                select(UserModel)
+                .where(UserModel.id.in_(user_ids))
+                .order_by(UserModel.username, UserModel.id)
+            )
+        ).all()
+        return [map_user(model) for model in models]
+
     async def get_authentication_by_username(
         self,
         username: str,

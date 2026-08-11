@@ -7,8 +7,12 @@ from types import TracebackType
 from typing import Self
 from uuid import UUID
 
-from messenger.application.errors import DuplicateUsernameError
+from messenger.application.errors import DuplicateDirectConversationError, DuplicateUsernameError
 from messenger.application.ports.activation_secrets import GeneratedActivationSecret
+from messenger.application.ports.conversations import (
+    ConversationRepository,
+    ConversationUnitOfWork,
+)
 from messenger.application.ports.identity import (
     ActivationTokenRepository,
     DeviceRepository,
@@ -22,7 +26,14 @@ from messenger.application.ports.identity import (
     UserRepository,
 )
 from messenger.application.ports.session_credentials import GeneratedSessionCredential
-from messenger.domain.entities import ActivationToken, Device, SecurityEvent, Session, User
+from messenger.domain.entities import (
+    ActivationToken,
+    Conversation,
+    Device,
+    SecurityEvent,
+    Session,
+    User,
+)
 
 
 @dataclass(slots=True)
@@ -35,6 +46,7 @@ class IdentityState:
     devices: dict[UUID, Device] = field(default_factory=dict)
     sessions: dict[UUID, Session] = field(default_factory=dict)
     security_events: dict[UUID, SecurityEvent] = field(default_factory=dict)
+    conversations: dict[UUID, Conversation] = field(default_factory=dict)
     commits: int = 0
 
 
@@ -78,6 +90,12 @@ class FakeUserRepository:
         return next(
             (user for user in self._state.users.values() if user.username == normalized),
             None,
+        )
+
+    async def get_many_by_ids(self, user_ids: set[UUID]) -> list[User]:
+        return sorted(
+            (user for user_id, user in self._state.users.items() if user_id in user_ids),
+            key=lambda user: (user.username, user.id),
         )
 
     async def get_authentication_by_username(
@@ -324,6 +342,90 @@ class FakeIdentityUnitOfWorkFactory:
 
     def __call__(self) -> IdentityUnitOfWork:
         return FakeIdentityUnitOfWork(self._state)
+
+
+class FakeConversationRepository:
+    def __init__(self, state: IdentityState) -> None:
+        self._state = state
+
+    async def add(self, conversation: Conversation) -> None:
+        if conversation.conversation_type.value == "direct":
+            pair = {member.user_id for member in conversation.members}
+            if any(
+                item.conversation_type.value == "direct"
+                and {member.user_id for member in item.members} == pair
+                for item in self._state.conversations.values()
+            ):
+                raise DuplicateDirectConversationError("direct conversation already exists")
+        self._state.conversations[conversation.id] = conversation
+
+    async def get_by_id(
+        self,
+        conversation_id: UUID,
+        *,
+        for_update: bool = False,
+    ) -> Conversation | None:
+        del for_update
+        return self._state.conversations.get(conversation_id)
+
+    async def get_direct_by_users(
+        self,
+        first_user_id: UUID,
+        second_user_id: UUID,
+    ) -> Conversation | None:
+        pair = {first_user_id, second_user_id}
+        return next(
+            (
+                conversation
+                for conversation in self._state.conversations.values()
+                if conversation.conversation_type.value == "direct"
+                and {member.user_id for member in conversation.members} == pair
+            ),
+            None,
+        )
+
+    async def list_active_for_user(self, user_id: UUID) -> list[Conversation]:
+        return sorted(
+            (
+                conversation
+                for conversation in self._state.conversations.values()
+                if conversation.active_member(user_id) is not None
+            ),
+            key=lambda conversation: (conversation.updated_at, conversation.id),
+            reverse=True,
+        )
+
+    async def update(self, conversation: Conversation) -> None:
+        self._state.conversations[conversation.id] = conversation
+
+
+class FakeConversationUnitOfWork:
+    def __init__(self, state: IdentityState) -> None:
+        self._state = state
+        self.conversations: ConversationRepository = FakeConversationRepository(state)
+        self.users: UserRepository = FakeUserRepository(state)
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        del exc_type, exc_value, traceback
+
+    async def commit(self) -> None:
+        self._state.commits += 1
+
+
+class FakeConversationUnitOfWorkFactory:
+    def __init__(self, state: IdentityState) -> None:
+        self._state = state
+
+    def __call__(self) -> ConversationUnitOfWork:
+        return FakeConversationUnitOfWork(self._state)
 
 
 @dataclass(frozen=True, slots=True)

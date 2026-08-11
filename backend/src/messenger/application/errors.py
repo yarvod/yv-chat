@@ -75,3 +75,15 @@ class DuplicateDirectConversationError(ApplicationError):
 
 class InvalidStepUpCredentialsError(ApplicationError):
     """Sensitive current-account confirmation failed without extra disclosure."""
+
+
+class ConversationNotFoundError(ApplicationError):
+    """A conversation is absent or inaccessible to the current actor."""
+
+
+class ConversationParticipantNotFoundError(ApplicationError):
+    """A requested active participant account does not exist."""
+
+
+class ConversationMembershipConflictError(ApplicationError):
+    """A requested membership transition conflicts with current state."""

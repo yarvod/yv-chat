@@ -10,16 +10,6 @@
 
 ## Messaging foundation
 
-### BL-005 — Conversation API и authorization
-
-Результат: пользователь создаёт и получает только доступные ему conversations.
-
-- create/list/get direct и group conversation use cases;
-- add/remove/leave member и role-change policy;
-- `/api/v1/conversations` transport DTO;
-- server-side membership check на каждой операции;
-- negative tests: non-member read, privilege escalation, guessed conversation ID, removed member.
-
 ### BL-006 — Versioned opaque message envelope
 
 Результат: backend принимает и сохраняет только versioned ciphertext envelope, не связанный с UI plaintext schema.
@@ -344,6 +334,10 @@
 - решение о native wrapper только при подтверждённой необходимости.
 
 ## Completed
+
+### BL-005 — Conversation API и authorization
+
+Отдельные create/list/get/add/remove/leave/change-role use cases, safe member DTO с bulk user lookup, отдельный Dishka provider и versioned FastAPI router. Active membership скрывает guessed/removed conversations одинаковым 404; owner/admin hierarchy, direct immutability, CSRF и PostgreSQL persistence покрыты pytest.
 
 ### BL-003E — Current account API и security reset
 

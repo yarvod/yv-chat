@@ -8,8 +8,28 @@ import pytest
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from messenger.application.errors import DuplicateDirectConversationError
-from messenger.domain.entities import Conversation, User
+from messenger.application.conversations.add_member import (
+    AddConversationMember,
+    AddConversationMemberCommand,
+)
+from messenger.application.conversations.change_member_role import (
+    ChangeConversationMemberRole,
+    ChangeConversationMemberRoleCommand,
+)
+from messenger.application.conversations.get_conversation import (
+    GetConversation,
+    GetConversationQuery,
+)
+from messenger.application.conversations.leave_conversation import (
+    LeaveConversation,
+    LeaveConversationCommand,
+)
+from messenger.application.errors import (
+    AuthorizationDeniedError,
+    ConversationNotFoundError,
+    DuplicateDirectConversationError,
+)
+from messenger.domain.entities import Conversation, ConversationMemberRole, User
 from messenger.infrastructure.persistence.conversation_uow import (
     SqlAlchemyConversationUnitOfWorkFactory,
 )
@@ -24,6 +44,7 @@ from messenger.infrastructure.persistence.models import (
     SessionModel,
     UserModel,
 )
+from tests.application.fakes import FixedClock
 
 NOW = datetime(2026, 8, 11, 12, 0, tzinfo=UTC)
 
@@ -132,6 +153,42 @@ async def run_flow(database_url: str) -> None:
         assert [item.id for item in bob_conversations] == [direct.id]
         assert loaded_group is not None
         assert loaded_group.member(bob.id).left_at == NOW + timedelta(minutes=3)
+
+        await AddConversationMember(
+            unit_of_work=unit_of_work_factory,
+            clock=FixedClock(NOW + timedelta(minutes=4)),
+        ).execute(AddConversationMemberCommand(alice.id, group.id, charlie.id))
+        await ChangeConversationMemberRole(
+            unit_of_work=unit_of_work_factory,
+            clock=FixedClock(NOW + timedelta(minutes=5)),
+        ).execute(
+            ChangeConversationMemberRoleCommand(
+                alice.id,
+                group.id,
+                charlie.id,
+                ConversationMemberRole.ADMIN,
+            )
+        )
+        with pytest.raises(AuthorizationDeniedError):
+            await ChangeConversationMemberRole(
+                unit_of_work=unit_of_work_factory,
+                clock=FixedClock(NOW + timedelta(minutes=6)),
+            ).execute(
+                ChangeConversationMemberRoleCommand(
+                    charlie.id,
+                    group.id,
+                    alice.id,
+                    ConversationMemberRole.MEMBER,
+                )
+            )
+        await LeaveConversation(
+            unit_of_work=unit_of_work_factory,
+            clock=FixedClock(NOW + timedelta(minutes=7)),
+        ).execute(LeaveConversationCommand(charlie.id, group.id))
+        with pytest.raises(ConversationNotFoundError):
+            await GetConversation(unit_of_work=unit_of_work_factory).execute(
+                GetConversationQuery(charlie.id, group.id)
+            )
     finally:
         await reset_tables(session_factory)
         await engine.dispose()

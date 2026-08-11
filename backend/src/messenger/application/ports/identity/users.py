@@ -21,6 +21,8 @@ class UserRepository(Protocol):
 
     async def get_by_username(self, username: str) -> User | None: ...
 
+    async def get_many_by_ids(self, user_ids: set[UUID]) -> list[User]: ...
+
     async def get_authentication_by_username(
         self,
         username: str,

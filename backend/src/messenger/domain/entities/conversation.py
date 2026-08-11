@@ -185,6 +185,8 @@ class Conversation:
         return replace(self, members=(*self.members, member), updated_at=timestamp)
 
     def remove_member(self, user_id: UUID, now: datetime) -> "Conversation":
+        if self.conversation_type is not ConversationType.GROUP:
+            raise DomainValidationError("members cannot leave direct conversation")
         member = self.member(user_id)
         if member.role is ConversationMemberRole.OWNER:
             raise DomainValidationError("group owner cannot leave without ownership transfer")
@@ -196,6 +198,34 @@ class Conversation:
             ),
             updated_at=timestamp,
         )
+
+    def change_member_role(
+        self,
+        user_id: UUID,
+        role: ConversationMemberRole,
+        now: datetime,
+    ) -> "Conversation":
+        if self.conversation_type is not ConversationType.GROUP:
+            raise DomainValidationError("direct conversation roles cannot be changed")
+        if role is ConversationMemberRole.OWNER:
+            raise DomainValidationError("ownership transfer is not supported")
+        member = self.member(user_id)
+        if member.role is ConversationMemberRole.OWNER:
+            raise DomainValidationError("group owner role cannot be changed")
+        timestamp = require_aware_datetime(now, "now")
+        if timestamp < self.updated_at:
+            raise DomainValidationError("updated_at cannot move backwards")
+        return replace(
+            self,
+            members=tuple(
+                item.change_role(role) if item.user_id == user_id else item for item in self.members
+            ),
+            updated_at=timestamp,
+        )
+
+    def active_member(self, user_id: UUID) -> ConversationMember | None:
+        member = next((item for item in self.members if item.user_id == user_id), None)
+        return member if member is not None and member.is_active else None
 
     def member(self, user_id: UUID) -> ConversationMember:
         member = next((item for item in self.members if item.user_id == user_id), None)

@@ -18,6 +18,16 @@ from messenger.application.accounts.reissue_activation import ReissueActivation
 from messenger.application.accounts.security_reset import SecurityReset
 from messenger.application.accounts.update_profile import UpdateCurrentProfile
 from messenger.application.accounts.update_user import UpdateManagedUser
+from messenger.application.conversations.add_member import AddConversationMember
+from messenger.application.conversations.change_member_role import (
+    ChangeConversationMemberRole,
+)
+from messenger.application.conversations.create_direct import CreateDirectConversation
+from messenger.application.conversations.create_group import CreateGroupConversation
+from messenger.application.conversations.get_conversation import GetConversation
+from messenger.application.conversations.leave_conversation import LeaveConversation
+from messenger.application.conversations.list_conversations import ListConversations
+from messenger.application.conversations.remove_member import RemoveConversationMember
 from messenger.application.devices.list_security_events import ListSecurityEvents
 from messenger.application.devices.list_sessions import ListMySessions
 from messenger.application.devices.rename import RenameMyDevice
@@ -25,6 +35,7 @@ from messenger.application.devices.revoke import RevokeMyDevice
 from messenger.application.devices.revoke_others import RevokeOtherSessions
 from messenger.application.ports.activation_secrets import ActivationSecretService
 from messenger.application.ports.clock import Clock
+from messenger.application.ports.conversations import ConversationUnitOfWorkFactory
 from messenger.application.ports.identity import IdentityUnitOfWorkFactory
 from messenger.application.ports.passwords import PasswordHasher
 from messenger.application.ports.session_credentials import SessionCredentialService
@@ -37,6 +48,7 @@ from messenger.bootstrap.app import create_app
 from messenger.bootstrap.settings import AppEnvironment, AppSettings
 from messenger.domain.entities import Device, Session, User
 from tests.application.fakes import (
+    FakeConversationUnitOfWorkFactory,
     FakeIdentityUnitOfWorkFactory,
     FakePasswordHasher,
     FixedSessionCredentials,
@@ -73,6 +85,7 @@ class HttpTestProvider(Provider):
         *,
         settings: AppSettings,
         unit_of_work: IdentityUnitOfWorkFactory,
+        conversation_unit_of_work: ConversationUnitOfWorkFactory,
         clock: Clock,
         passwords: PasswordHasher,
         credentials: SessionCredentialService,
@@ -81,6 +94,7 @@ class HttpTestProvider(Provider):
         super().__init__()
         self._settings = settings
         self._unit_of_work = unit_of_work
+        self._conversation_unit_of_work = conversation_unit_of_work
         self._clock = clock
         self._passwords = passwords
         self._credentials = credentials
@@ -93,6 +107,10 @@ class HttpTestProvider(Provider):
     @provide(scope=Scope.APP)
     def unit_of_work(self) -> IdentityUnitOfWorkFactory:
         return self._unit_of_work
+
+    @provide(scope=Scope.APP)
+    def conversation_unit_of_work(self) -> ConversationUnitOfWorkFactory:
+        return self._conversation_unit_of_work
 
     @provide(scope=Scope.APP)
     def clock(self) -> Clock:
@@ -139,6 +157,17 @@ class HttpTestProvider(Provider):
     update_current_profile = provide(UpdateCurrentProfile, scope=Scope.REQUEST)
     change_current_password = provide(ChangeCurrentPassword, scope=Scope.REQUEST)
     security_reset = provide(SecurityReset, scope=Scope.REQUEST)
+    create_direct_conversation = provide(CreateDirectConversation, scope=Scope.REQUEST)
+    create_group_conversation = provide(CreateGroupConversation, scope=Scope.REQUEST)
+    list_conversations = provide(ListConversations, scope=Scope.REQUEST)
+    get_conversation = provide(GetConversation, scope=Scope.REQUEST)
+    add_conversation_member = provide(AddConversationMember, scope=Scope.REQUEST)
+    remove_conversation_member = provide(RemoveConversationMember, scope=Scope.REQUEST)
+    leave_conversation = provide(LeaveConversation, scope=Scope.REQUEST)
+    change_conversation_member_role = provide(
+        ChangeConversationMemberRole,
+        scope=Scope.REQUEST,
+    )
 
 
 def build_test_application(
@@ -176,6 +205,7 @@ def build_test_application(
         HttpTestProvider(
             settings=settings,
             unit_of_work=factory,
+            conversation_unit_of_work=FakeConversationUnitOfWorkFactory(state),
             clock=clock,
             passwords=passwords,
             credentials=credentials,

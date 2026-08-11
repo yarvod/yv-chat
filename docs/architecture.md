@@ -292,7 +292,9 @@ Conversation имеет type `direct|group`, creator и membership lifecycle. Р
 
 Persistence хранит unordered direct pair в канонических `direct_user_low_id`/`direct_user_high_id`; unique index `uq_conversations_direct_pair` закрывает race двух одновременных create. `conversation_members` имеет составной primary key `(conversation_id, user_id)`, bounded role и `left_at >= joined_at`. Удаление conversation каскадирует membership, а ссылки на users используют `RESTRICT`. Repository возвращает domain aggregate с явно загруженными members; ORM наружу infrastructure не выходит.
 
-Transport/use cases добавляются отдельным этапом. Все reads/writes обязаны проверять active membership server-side. Client-supplied `user_id`, role, device, conversation или resource ID никогда не считается доказательством доступа.
+Versioned `/api/v1/conversations` transport получает actor только из opaque-session principal. List/get возвращают DTO с безопасными user profile fields и membership metadata; ORM не выходит из infrastructure. Unknown UUID, inactive membership и removed member дают одинаковый not-found outcome. Direct membership immutable. В группе owner управляет member↔admin и любыми non-owner memberships; admin может добавлять и удалять только ordinary members, но не менять роли. Owner не может выйти или быть удалён без отдельного ownership-transfer дизайна. Все writes используют row lock, одну transaction и Origin+CSRF.
+
+List загружает members через SQLAlchemy `selectinload` и все referenced users одним bulk lookup, не выполняя user query на каждую conversation. Client-supplied `user_id`, role, device, conversation или resource ID никогда не считается доказательством доступа.
 
 Database constraints защищают concurrency invariants: normalized unique usernames, idempotency keys, stable sequences, ownership pairs и uniqueness там, где одной application-проверки недостаточно.
 

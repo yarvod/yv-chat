@@ -6,7 +6,7 @@
 
 ## Статус
 
-Готовы закрытый admin-controlled lifecycle пользователей, self-service `/api/v1/me`, step-up password/security reset, device-bound opaque sessions, защищённый FastAPI transport, управление активными устройствами и PostgreSQL-модель direct/group conversations. Следующий этап — versioned conversation API с обязательной membership authorization.
+Готовы закрытый account/session lifecycle, self-service security controls и versioned direct/group conversation API с owner/admin/member authorization. Следующий этап — opaque versioned ciphertext message envelope; текущие conversations ещё не передают пользовательские сообщения.
 
 Текущая фича и подробный план находятся в [docs/workplan.md](docs/workplan.md). Полный продуктовый backlog — в [docs/backlog.md](docs/backlog.md), архитектура и правила её развития — в [docs/architecture.md](docs/architecture.md), найденные дефекты — в [docs/bugs.md](docs/bugs.md).
 

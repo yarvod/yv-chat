@@ -12,6 +12,7 @@ from messenger.bootstrap.container import create_container
 from messenger.bootstrap.settings import AppSettings
 from messenger.presentation.http.admin_users import router as admin_users_router
 from messenger.presentation.http.auth import router as auth_router
+from messenger.presentation.http.conversations import router as conversations_router
 from messenger.presentation.http.devices import router as devices_router
 from messenger.presentation.http.health import router as health_router
 from messenger.presentation.http.me import router as me_router
@@ -56,5 +57,6 @@ def create_app(
     application.include_router(devices_router)
     application.include_router(admin_users_router)
     application.include_router(me_router)
+    application.include_router(conversations_router)
     setup_dishka(container=resolved_container, app=application)
     return application
