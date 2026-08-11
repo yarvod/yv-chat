@@ -6,7 +6,7 @@
 
 ## WP-053 — Branded shell, safe logout и automatic PWA lifecycle
 
-Статус: **implementation complete; production rollout pending**
+Статус: **completed**
 Backlog: `BL-041`, `BL-025`
 
 Цель: убрать дублирующий брендовый и account chrome, использовать канонический
@@ -52,8 +52,13 @@ Backlog: `BL-041`, `BL-025`
   connected/reconnecting/offline visual states и отсутствие console errors.
 - [x] Mobile viewport acceptance: status не перекрывает safe area/header, navigation
   остаётся fixed, update/reload не ломает standalone shell.
-- [ ] Immutable production deploy, health/log check и подтверждение нового frontend
+- [x] Immutable production deploy, health/log check и подтверждение нового frontend
   image без изменений соседних `yoowee.ru`/`s3.yoowee.ru` services.
+
+Production verification: GitHub Actions run `31547393463` успешно развернул
+`sha-12dac1a479277bb1d2bc851370e5b240b0488af4`; API/frontend containers healthy,
+public API/shell отвечают HTTP 200 с валидным TLS, свежие API logs не содержат
+`5xx`/`ERROR`/`Traceback`, соседние host services сохранили ожидаемые ответы.
 
 ### Ограничения
 

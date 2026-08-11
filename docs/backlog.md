@@ -539,6 +539,16 @@ containers сохранили состояние (`WP-038`).
 
 ## Completed
 
+### BL-FIX-054 — Branded shell, safe logout и automatic PWA lifecycle
+
+Канонический фирменный знак заменил текстовую `Y`; desktop shell оставляет один
+logo в navigation rail и не дублирует account footer. Current-device logout перенесён
+в Settings, требует blocking confirm и не маскирует network failure под успешный
+выход. Typed connection monitor показывает checking/connected/reconnecting/offline,
+а PWA проверяет и применяет Service Worker update при старте, foreground и bounded
+периодически. Full CI, desktop/mobile browser acceptance и production rollout
+`12dac1a` подтверждены.
+
 ### BL-FIX-053 — Existing-account second-device MLS enrollment
 
 Новый device без previous READY state создаёт idempotent roster-change announcement
