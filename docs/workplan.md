@@ -2,57 +2,58 @@
 
 Этот файл содержит только одну текущую фичу. Перед началом следующей фичи завершённая работа фиксируется коммитом, а новый пункт переносится сюда из `backlog.md`.
 
-## WP-009 — Conversation domain и persistence
+## WP-010 — Current account API и security reset
 
 Статус: **completed**  
-Backlog item: `BL-004`  
-Цель: создать транзакционно надёжную основу direct/group conversations и membership lifecycle без transport/UI зависимостей.
+Backlog item: `BL-003E`  
+Цель: дать аутентифицированному пользователю безопасный self-service профиль и явные операции смены credentials без ослабления opaque-session policy.
 
 ### Результат
 
-Domain моделирует direct/group conversation и membership roles/invariants. PostgreSQL хранит conversations/members, не допускает duplicate direct pair при concurrency, а application получает узкие repository/UoW ports без ORM leakage.
+`/api/v1/me` возвращает только безопасные account fields, позволяет изменить display name, сменить пароль с step-up проверкой и атомарным отзывом остальных devices/sessions, а security reset отзывает все sessions, включая текущую. Все writes защищены Origin+CSRF и фиксируются bounded typed security events без secret metadata.
 
 ### Invariants
 
-1. Direct conversation содержит ровно двух различных пользователей и не имеет title.
-2. Для unordered пары пользователей существует не более одной direct conversation.
-3. Group имеет bounded title и creator-owner membership.
-4. Membership user уникален внутри conversation; `left_at >= joined_at`.
-5. Direct members не имеют group privilege roles.
-6. Creator/direct pair IDs ссылаются на существующих users; conversation delete каскадно удаляет memberships, user delete не используется как shortcut.
-7. Domain/application не импортируют SQLAlchemy; ORM не выходит repository.
-8. Transaction boundary принадлежит conversation application operation.
-9. List/get queries не возвращают conversations, где membership пользователя завершён.
-10. Schema не содержит plaintext message fields — messaging envelope появится отдельной фичей.
+1. Current account определяется только authenticated session principal, не `user_id` из body/path.
+2. Response не содержит password hash, session credential/hash, activation digest или private metadata.
+3. Смена display name не требует пароля, но требует действующую session, Origin и CSRF.
+4. Смена пароля и security reset требуют повторной проверки текущего пароля.
+5. Password change атомарно обновляет Argon2id hash и отзывает все sessions/devices, кроме текущей.
+6. Security reset атомарно отзывает все sessions/devices, включая текущую, и очищает browser cookies transport-слоем.
+7. Неверный step-up password не раскрывает внутреннее состояние и не создаёт частичных изменений.
+8. Expired/revoked current session не может выполнять операции.
+9. IP/GeoIP/User-Agent не используется как factor для step-up или authorization.
+10. Security events типизированы, имеют retention и не содержат password/token values.
 
 ### План
 
-- [x] Добавить Conversation/ConversationMember entities и enums.
-- [x] Добавить creation/membership invariants и domain tests.
-- [x] Добавить conversation repository/UoW ports.
-- [x] Добавить SQLAlchemy models, constraints и indexes.
-- [x] Добавить Alembic migration `0006`.
-- [x] Реализовать ORM↔domain mapping и repository queries.
-- [x] Добавить ConversationUnitOfWork и Dishka persistence binding.
-- [x] Добавить metadata tests без forbidden plaintext columns.
-- [x] Добавить PostgreSQL concurrent duplicate-direct test.
-- [x] Проверить fresh/roundtrip migration, full CI и Docker head.
-- [x] Обновить docs и сделать отдельный commit.
+- [x] Добавить account/application DTO и use cases get/update/change-password/security-reset.
+- [x] Расширить domain security event types и repository contract для password update.
+- [x] Реализовать атомарный revoke policy внутри identity UoW.
+- [x] Добавить отдельный Dishka account provider binding без монолитного provider.
+- [x] Добавить versioned `/api/v1/me` router и безопасные transport DTO/errors/cookies.
+- [x] Добавить pytest application tests happy/negative/revoked-session cases.
+- [x] Добавить HTTP tests Origin/CSRF/step-up/secret-field absence.
+- [x] Добавить PostgreSQL integration test для password update и session revocation.
+- [x] Обновить OpenAPI/architecture/README/backlog/bugs.
+- [x] Прогнать full CI, integration и Docker smoke.
+- [x] Создать отдельный commit.
 
 ### Не входит в scope
 
-- conversation HTTP API;
-- message rows/ciphertext;
-- sync/WebSocket;
-- E2EE protocol state;
-- frontend conversations UI.
+- публичная регистрация;
+- email/password recovery;
+- MFA/WebAuthn;
+- admin password reset другого пользователя;
+- conversation API/UI;
+- E2EE key reset/recovery (потребует отдельного protocol ADR).
 
 ### Проверка готовности
 
-- domain отклоняет self-direct, invalid member count/roles/title/timestamps;
-- DB сериализует duplicate unordered direct pair;
-- repository возвращает domain aggregate без ORM;
-- active-membership list исключает left conversations;
-- migration base→head и 0005↔0006 roundtrip проходят;
-- CI/integration/Docker smoke зелёные;
+- `/api/v1/me` не принимает client identity и не отдаёт secret fields;
+- wrong current password даёт единый safe error и ничего не отзывает;
+- password change оставляет только текущую session и новый пароль работает;
+- security reset завершает текущую и все другие sessions;
+- negative auth/Origin/CSRF tests зелёные;
+- full CI/integration/Docker smoke зелёные;
 - отдельный commit создан.

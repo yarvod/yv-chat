@@ -92,6 +92,21 @@ class FakeUserRepository:
             password_hash=self._state.password_hashes.get(user.id),
         )
 
+    async def get_authentication_by_id(
+        self,
+        user_id: UUID,
+        *,
+        for_update: bool = False,
+    ) -> UserAuthenticationRecord | None:
+        del for_update
+        user = self._state.users.get(user_id)
+        if user is None:
+            return None
+        return UserAuthenticationRecord(
+            user=user,
+            password_hash=self._state.password_hashes.get(user.id),
+        )
+
     async def lock_initial_bootstrap(self) -> None:
         return None
 
@@ -113,6 +128,10 @@ class FakeUserRepository:
 
     async def update(self, user: User) -> None:
         self._state.users[user.id] = user
+
+    async def update_password(self, user: User, password_hash: str) -> None:
+        self._state.users[user.id] = user
+        self._state.password_hashes[user.id] = password_hash
 
 
 class FakeActivationTokenRepository:

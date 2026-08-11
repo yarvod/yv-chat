@@ -8,18 +8,6 @@
 
 Текущий пункт и его Definition of Done находятся в `docs/workplan.md`.
 
-## Next — identity и account management
-
-### BL-003E — Current account API и security reset
-
-Результат: клиент получает `/api/v1/me`, меняет безопасные account preferences и может выполнить явный security reset.
-
-- current-user DTO без ORM/secret fields;
-- password change с проверкой текущего пароля и отзывом остальных sessions;
-- явный security reset/revoke-all policy;
-- step-up authentication для чувствительных действий без использования IP/GeoIP как фактора;
-- security events и tests для revoked/expired/current session cases.
-
 ## Messaging foundation
 
 ### BL-005 — Conversation API и authorization
@@ -356,6 +344,10 @@
 - решение о native wrapper только при подтверждённой необходимости.
 
 ## Completed
+
+### BL-003E — Current account API и security reset
+
+Safe current-account DTO/profile update, step-up password change с Argon2id update и revoke-others, explicit revoke-all security reset, CSRF/Origin/cookie cleanup, typed bounded audit events, Dishka wiring и unit/HTTP/PostgreSQL tests.
 
 ### BL-004 — Conversation domain и persistence
 

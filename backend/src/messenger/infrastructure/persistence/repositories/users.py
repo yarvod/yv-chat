@@ -74,6 +74,20 @@ class SqlAlchemyUserRepository:
             return None
         return UserAuthenticationRecord(user=map_user(model), password_hash=model.password_hash)
 
+    async def get_authentication_by_id(
+        self,
+        user_id: UUID,
+        *,
+        for_update: bool = False,
+    ) -> UserAuthenticationRecord | None:
+        statement = select(UserModel).where(UserModel.id == user_id)
+        if for_update:
+            statement = statement.with_for_update()
+        model = await self._session.scalar(statement)
+        if model is None:
+            return None
+        return UserAuthenticationRecord(user=map_user(model), password_hash=model.password_hash)
+
     async def lock_initial_bootstrap(self) -> None:
         await self._session.execute(select(func.pg_advisory_xact_lock(9_180_013)))
 
@@ -125,5 +139,13 @@ class SqlAlchemyUserRepository:
             raise RuntimeError("locked user disappeared during update")
         model.display_name = user.display_name
         model.is_active = user.is_active
+        model.updated_at = user.updated_at
+        await self._session.flush()
+
+    async def update_password(self, user: User, password_hash: str) -> None:
+        model = await self._session.get(UserModel, user.id)
+        if model is None:
+            raise RuntimeError("locked user disappeared during password update")
+        model.password_hash = password_hash
         model.updated_at = user.updated_at
         await self._session.flush()

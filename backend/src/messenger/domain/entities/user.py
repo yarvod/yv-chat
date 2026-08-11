@@ -131,3 +131,12 @@ class User:
         if self.is_active:
             return self
         return replace(self, is_active=True, updated_at=timestamp)
+
+    def credentials_changed(self, now: datetime) -> "User":
+        """Record a successful credential change without carrying password material."""
+        timestamp = require_aware_datetime(now, "now")
+        if timestamp < self.updated_at:
+            raise DomainValidationError("updated_at cannot move backwards")
+        if not self.is_active:
+            raise DomainValidationError("inactive user credentials cannot be changed")
+        return replace(self, updated_at=timestamp)

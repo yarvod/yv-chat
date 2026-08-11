@@ -16,7 +16,8 @@ class SecurityEventModel(Base):
     __table_args__ = (
         CheckConstraint(
             "event_type IN ('login', 'logout', 'credential_replay', "
-            "'device_renamed', 'device_revoked', 'other_sessions_revoked')",
+            "'device_renamed', 'device_revoked', 'other_sessions_revoked', "
+            "'password_changed', 'security_reset')",
             name="event_type_allowed",
         ),
         CheckConstraint("expires_at > created_at", name="expires_after_created"),

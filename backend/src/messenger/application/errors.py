@@ -71,3 +71,7 @@ class AccountActivationRequiredError(ApplicationError):
 
 class DuplicateDirectConversationError(ApplicationError):
     """A direct conversation already exists for the unordered user pair."""
+
+
+class InvalidStepUpCredentialsError(ApplicationError):
+    """Sensitive current-account confirmation failed without extra disclosure."""

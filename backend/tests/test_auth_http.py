@@ -10,9 +10,13 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient, Response
 
 from messenger.application.accounts.activate import ActivateAccount
+from messenger.application.accounts.change_password import ChangeCurrentPassword
+from messenger.application.accounts.get_current import GetCurrentAccount
 from messenger.application.accounts.invite import CreateUserInvitation
 from messenger.application.accounts.list_users import ListManagedUsers
 from messenger.application.accounts.reissue_activation import ReissueActivation
+from messenger.application.accounts.security_reset import SecurityReset
+from messenger.application.accounts.update_profile import UpdateCurrentProfile
 from messenger.application.accounts.update_user import UpdateManagedUser
 from messenger.application.devices.list_security_events import ListSecurityEvents
 from messenger.application.devices.list_sessions import ListMySessions
@@ -131,6 +135,10 @@ class HttpTestProvider(Provider):
     list_managed_users = provide(ListManagedUsers, scope=Scope.REQUEST)
     reissue_activation = provide(ReissueActivation, scope=Scope.REQUEST)
     update_managed_user = provide(UpdateManagedUser, scope=Scope.REQUEST)
+    get_current_account = provide(GetCurrentAccount, scope=Scope.REQUEST)
+    update_current_profile = provide(UpdateCurrentProfile, scope=Scope.REQUEST)
+    change_current_password = provide(ChangeCurrentPassword, scope=Scope.REQUEST)
+    security_reset = provide(SecurityReset, scope=Scope.REQUEST)
 
 
 def build_test_application(

@@ -16,6 +16,8 @@ class SecurityEventType(StrEnum):
     DEVICE_RENAMED = "device_renamed"
     DEVICE_REVOKED = "device_revoked"
     OTHER_SESSIONS_REVOKED = "other_sessions_revoked"
+    PASSWORD_CHANGED = "password_changed"
+    SECURITY_RESET = "security_reset"
 
 
 @dataclass(frozen=True, slots=True)

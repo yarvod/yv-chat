@@ -76,6 +76,24 @@ def set_session_cookie(
     )
 
 
+def delete_auth_cookies(response: Response, settings: AppSettings) -> None:
+    """Expire both browser credentials using the same attributes used at creation."""
+    response.delete_cookie(
+        settings.session_cookie_name,
+        path="/",
+        secure=True,
+        httponly=True,
+        samesite="strict",
+    )
+    response.delete_cookie(
+        settings.csrf_cookie_name,
+        path="/",
+        secure=True,
+        httponly=False,
+        samesite="strict",
+    )
+
+
 @router.post("/activate", response_model=ActivateAccountResponse)
 async def activate_account(
     request: Request,
@@ -221,17 +239,4 @@ async def logout(
     credential = request.cookies.get(settings.session_cookie_name)
     if credential is not None:
         await use_case.execute(LogoutCommand(session_credential=credential))
-    response.delete_cookie(
-        settings.session_cookie_name,
-        path="/",
-        secure=True,
-        httponly=True,
-        samesite="strict",
-    )
-    response.delete_cookie(
-        settings.csrf_cookie_name,
-        path="/",
-        secure=True,
-        httponly=False,
-        samesite="strict",
-    )
+    delete_auth_cookies(response, settings)
