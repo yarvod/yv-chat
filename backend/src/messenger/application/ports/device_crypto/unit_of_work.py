@@ -3,6 +3,7 @@
 from types import TracebackType
 from typing import Protocol, Self
 
+from messenger.application.ports.conversations import ConversationRepository
 from messenger.application.ports.device_crypto.repositories import (
     DeviceCryptoIdentityRepository,
     DeviceKeyPackageRepository,
@@ -12,6 +13,7 @@ from messenger.application.ports.identity.devices import DeviceRepository
 
 class DeviceCryptoUnitOfWork(Protocol):
     devices: DeviceRepository
+    conversations: ConversationRepository
     identities: DeviceCryptoIdentityRepository
     key_packages: DeviceKeyPackageRepository
 

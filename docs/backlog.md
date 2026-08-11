@@ -64,14 +64,28 @@ Implementation и desktop browser smoke завершены; physical 390px scree
 ### BL-041 — Visual system, accessibility и PWA polish
 
 Результат: приложение имеет единый визуальный язык, install/update UX и
-доступность, а не набор несвязанных экранов.
+доступность, а messenger shell по плотности и поведению привычен пользователю
+Telegram/WhatsApp без копирования их бренда.
 
 - semantic color/spacing/typography/elevation/motion tokens;
+- stable `100dvh`/visual-viewport shell без page-level скачков при длинном content,
+  mobile browser chrome, safe areas и открытии software keyboard;
+- desktop split view: фиксированная conversation list/sidebar и отдельный timeline;
+- mobile master/detail navigation с естественным back flow и без горизонтального overflow;
+- закреплённые conversation header и composer; скроллится только timeline, новые
+  сообщения не выдёргивают пользователя с прочитанной позиции;
+- компактные chat rows, avatars, timestamps, unread/mute/presence indicators и
+  touch-friendly contextual actions;
+- readable grouped bubbles, day/unread separators, delivery state, typing и
+  scroll-to-latest control;
+- composer с multiline auto-grow в заданных пределах, attachment/emoji-ready slots,
+  Enter/Shift+Enter policy и mobile keyboard-safe positioning;
 - focus-visible, keyboard navigation, ARIA/live regions и contrast checks;
 - skeleton/empty/error/offline states без layout shift;
 - PWA icons/splash/theme colors для light/dark и standalone safe areas;
 - install/update prompts и migration-compatible service worker lifecycle;
-- visual regression screenshots для основных mobile/desktop состояний.
+- visual regression screenshots для short/long timeline, empty/loading/error,
+  mobile keyboard-sized viewport и основных desktop/mobile состояний.
 
 ## Messaging foundation
 
@@ -112,7 +126,7 @@ Implementation и desktop browser smoke завершены; physical 390px scree
 Статус: **in progress** (`WP-030` завершил async fail-closed boundary; `WP-031`
 завершил pinned OpenMLS provider/device-bootstrap proof; `WP-032` — private
 snapshot/restore, `WP-033` — WebCrypto sealing и atomic IndexedDB vault, `WP-034` —
-versioned package и isolated Worker runtime).
+versioned package и isolated Worker runtime; `WP-040` — server one-time delivery).
 
 Результат: UI работает с intent-level crypto API, private material не выходит из изолированного слоя.
 
@@ -134,8 +148,10 @@ versioned package и isolated Worker runtime).
   отдельно сохранённый initial KeyPackage без выдачи bytes (`WP-035`);
 - [ ] проверить seal/restore/tamper в Firefox и Safari, а также storage denial и
   migration/update lifecycle;
-- [ ] atomic one-time KeyPackage claim/replenishment и только после server comparison
-  подключить restore/provision к authenticated lifecycle;
+- [x] atomic one-time KeyPackage inventory/replenishment/authorized claim с exact
+  retry и PostgreSQL concurrency constraints (`WP-040`);
+- [ ] consumer-side OpenMLS validation и только после server comparison подключить
+  restore/provision к authenticated lifecycle;
 - [ ] memory/plaintext lifecycle audit и log-redaction gate для полного Worker flow;
 - [ ] known-answer/interop test vectors реального MLS provider;
 - [x] corruption/version-mismatch/no-fallback tests для protocol dispatch;

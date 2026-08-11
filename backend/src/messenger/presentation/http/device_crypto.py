@@ -1,7 +1,6 @@
 """Authenticated transport for the current device public crypto anchor."""
 
 import base64
-import binascii
 from datetime import datetime
 from uuid import UUID
 
@@ -27,6 +26,7 @@ from messenger.application.sessions.authenticate import AuthenticateSession
 from messenger.bootstrap.settings import AppSettings
 from messenger.domain.exceptions import DomainValidationError
 from messenger.presentation.http.auth import authenticate_request
+from messenger.presentation.http.crypto_encoding import decode_canonical_base64
 from messenger.presentation.http.security import require_csrf
 
 router = APIRouter(
@@ -51,22 +51,6 @@ class DeviceCryptoIdentityResponse(BaseModel):
     fingerprint: str
     initial_key_package_ref: str
     created_at: datetime
-
-
-def decode_canonical_base64(encoded: str) -> bytes:
-    try:
-        decoded = base64.b64decode(encoded, validate=True)
-    except (binascii.Error, ValueError) as error:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="invalid device crypto identity",
-        ) from error
-    if base64.b64encode(decoded).decode("ascii") != encoded:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="invalid device crypto identity",
-        )
-    return decoded
 
 
 def identity_response(result: DeviceCryptoIdentityResult) -> DeviceCryptoIdentityResponse:
@@ -140,9 +124,18 @@ async def register_current_device_crypto_identity(
             RegisterDeviceCryptoIdentityCommand(
                 user_id=principal.user_id,
                 device_id=principal.device_id,
-                credential_identity=decode_canonical_base64(payload.credential_identity_base64),
-                signature_public_key=decode_canonical_base64(payload.signature_public_key_base64),
-                key_package=decode_canonical_base64(payload.key_package_base64),
+                credential_identity=decode_canonical_base64(
+                    payload.credential_identity_base64,
+                    detail="invalid device crypto identity",
+                ),
+                signature_public_key=decode_canonical_base64(
+                    payload.signature_public_key_base64,
+                    detail="invalid device crypto identity",
+                ),
+                key_package=decode_canonical_base64(
+                    payload.key_package_base64,
+                    detail="invalid device crypto identity",
+                ),
             )
         )
     except (

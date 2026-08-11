@@ -1,6 +1,6 @@
 """Immutable public OpenMLS identity registered for one device."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from hashlib import sha256
 from uuid import UUID, uuid4
@@ -13,6 +13,8 @@ CREDENTIAL_SCHEMA_VERSION = 1
 CREDENTIAL_IDENTITY_BYTES = 33
 SIGNATURE_PUBLIC_KEY_BYTES = 32
 MAX_KEY_PACKAGE_BYTES = 1024 * 1024
+MAX_KEY_PACKAGE_BATCH = 16
+MAX_KEY_PACKAGE_BATCH_BYTES = 4 * 1024 * 1024
 DEVICE_FINGERPRINT_LABEL = b"yv-chat-device-fingerprint-v1\0"
 
 
@@ -92,6 +94,11 @@ class DeviceKeyPackage:
     package_ref: str
     key_package: bytes
     created_at: datetime
+    claimed_at: datetime | None = None
+    claimed_by_user_id: UUID | None = None
+    claimed_by_device_id: UUID | None = None
+    claim_conversation_id: UUID | None = None
+    claim_request_id: UUID | None = None
 
     def __post_init__(self) -> None:
         require_aware_datetime(self.created_at, "created_at")
@@ -99,6 +106,23 @@ class DeviceKeyPackage:
             raise DomainValidationError("KeyPackage has invalid length")
         if self.package_ref != sha256(self.key_package).hexdigest():
             raise DomainValidationError("KeyPackage reference is invalid")
+        claim_values = (
+            self.claimed_at,
+            self.claimed_by_user_id,
+            self.claimed_by_device_id,
+            self.claim_conversation_id,
+            self.claim_request_id,
+        )
+        if any(value is not None for value in claim_values) and not all(
+            value is not None for value in claim_values
+        ):
+            raise DomainValidationError("KeyPackage claim metadata must be complete")
+        if self.claimed_at is not None:
+            require_aware_datetime(self.claimed_at, "claimed_at")
+            if self.claimed_at < self.created_at:
+                raise DomainValidationError("claimed_at must not precede created_at")
+            if self.claimed_by_device_id == self.device_id:
+                raise DomainValidationError("a device cannot claim its own KeyPackage")
 
     @classmethod
     def create(
@@ -117,4 +141,28 @@ class DeviceKeyPackage:
             package_ref=sha256(package).hexdigest(),
             key_package=package,
             created_at=require_aware_datetime(now, "now"),
+        )
+
+    @property
+    def is_claimed(self) -> bool:
+        return self.claimed_at is not None
+
+    def claim(
+        self,
+        *,
+        claimed_by_user_id: UUID,
+        claimed_by_device_id: UUID,
+        conversation_id: UUID,
+        request_id: UUID,
+        now: datetime,
+    ) -> "DeviceKeyPackage":
+        if self.is_claimed:
+            raise DomainValidationError("KeyPackage has already been claimed")
+        return replace(
+            self,
+            claimed_at=require_aware_datetime(now, "now"),
+            claimed_by_user_id=claimed_by_user_id,
+            claimed_by_device_id=claimed_by_device_id,
+            claim_conversation_id=conversation_id,
+            claim_request_id=request_id,
         )

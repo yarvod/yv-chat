@@ -72,3 +72,38 @@ def test_key_package_reference_is_server_derived_and_bounded() -> None:
             key_package=b"",
             now=NOW,
         )
+
+
+def test_key_package_claim_metadata_is_complete_one_time_and_cross_device() -> None:
+    package = DeviceKeyPackage.create(
+        user_id=USER_ID,
+        device_id=DEVICE_ID,
+        key_package=b"opaque-public-key-package",
+        now=NOW,
+    )
+    claiming_device_id = UUID("912608ec-8e20-497d-a55b-ec5d260480cc")
+    claimed = package.claim(
+        claimed_by_user_id=UUID(int=2),
+        claimed_by_device_id=claiming_device_id,
+        conversation_id=UUID(int=3),
+        request_id=UUID(int=4),
+        now=NOW,
+    )
+    assert claimed.is_claimed is True
+    assert claimed.claim_request_id == UUID(int=4)
+    with pytest.raises(DomainValidationError):
+        claimed.claim(
+            claimed_by_user_id=UUID(int=2),
+            claimed_by_device_id=claiming_device_id,
+            conversation_id=UUID(int=3),
+            request_id=UUID(int=5),
+            now=NOW,
+        )
+    with pytest.raises(DomainValidationError):
+        package.claim(
+            claimed_by_user_id=USER_ID,
+            claimed_by_device_id=DEVICE_ID,
+            conversation_id=UUID(int=3),
+            request_id=UUID(int=4),
+            now=NOW,
+        )

@@ -707,14 +707,35 @@ Identity immutable: под row lock exact retry идемпотентен, люб
 credential или initial KeyPackage даёт typed conflict. Revoked/cross-owner device
 отклоняется.
 
-PostgreSQL разделяет `device_crypto_identities` и `device_key_packages`. Обе записи
-создаются одной transaction и удаляются cascade только вместе с device. KeyPackage
-reference — server-derived SHA-256, globally unique; bytes bounded до 1 MiB и не
-возвращаются current-device GET/PUT response. Сервер пока не публикует и не claim-ит
-KeyPackage другим devices: OpenMLS consumer validation и atomic one-time claim должны
-появиться отдельным use case, прежде чем registry подключится к automatic Worker
-provisioning или MLS group creation. Private key, wrapping key и sealed state остаются
-исключительно client-side.
+PostgreSQL разделяет `device_crypto_identities` и `device_key_packages`. Первичная
+identity и initial package создаются одной transaction и удаляются cascade только
+вместе с device. KeyPackage reference — server-derived SHA-256, globally unique;
+bytes bounded до 1 MiB. Current device поддерживает inventory через отдельные
+`ListDeviceKeyPackageInventory`/`ReplenishDeviceKeyPackages` use cases: batch имеет
+1–16 элементов и aggregate limit 4 MiB, а duplicate bytes отклоняются по ref.
+
+`ClaimDeviceKeyPackage` выдаёт package только active claiming device для другого
+active target device, если оба пользователя — active members одного conversation.
+Use case сначала блокирует claiming device (сериализуя exact retries одного
+устройства), затем проверяет idempotency key, membership, target identity и выбирает
+один available row через `FOR UPDATE SKIP LOCKED`. Claim metadata атомарно связывает
+package с claimant user/device, conversation, request UUID и server time. Composite
+owner FK, complete-metadata/self-claim checks, unique `(claiming_device,
+claim_request_id)` и partial available index являются database backstop. Exact retry
+с той же binding возвращает тот же public result только после повторной проверки
+актуальных membership/device/identity; изменение target/conversation для того же
+request UUID закрывается conflict. Очередь детерминирована
+`created_at, id`, но FIFO конкретных bytes не является внешним контрактом.
+
+HTTP transport разделён на identity registry и KeyPackage inventory/claim routers.
+Он принимает canonical base64 и возвращает KeyPackage только вместе с immutable
+target identity anchors; session/CSRF/Origin остаются обязательны для mutation.
+Frontend имеет собственный typed port, strict response parser и list/replenish/claim
+use cases. `claim_request_id` создаётся и сохраняется caller/outbox, чтобы retry не
+создавал новую выдачу. Эти операции пока не запускаются автоматически: consumer-side
+OpenMLS validation, Welcome/group lifecycle и authenticated provisioning остаются
+release gates. Private key, wrapping key и sealed state остаются исключительно
+client-side.
 
 UI не вызывает concrete crypto adapter: application-facing async operations
 `protectText/unprotectText` получают intent DTO с conversation/client-message

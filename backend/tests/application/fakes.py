@@ -341,6 +341,59 @@ class FakeDeviceKeyPackageRepository:
     async def add(self, key_package: DeviceKeyPackage) -> None:
         self._state.device_key_packages[key_package.id] = key_package
 
+    async def add_many(self, key_packages: tuple[DeviceKeyPackage, ...]) -> None:
+        for key_package in key_packages:
+            await self.add(key_package)
+
+    async def get_by_refs(self, package_refs: set[str]) -> list[DeviceKeyPackage]:
+        return [
+            package
+            for package in self._state.device_key_packages.values()
+            if package.package_ref in package_refs
+        ]
+
+    async def count_available(self, device_id: UUID) -> int:
+        return sum(
+            package.device_id == device_id and not package.is_claimed
+            for package in self._state.device_key_packages.values()
+        )
+
+    async def get_by_claim_request(
+        self,
+        *,
+        claiming_device_id: UUID,
+        request_id: UUID,
+        for_update: bool = False,
+    ) -> DeviceKeyPackage | None:
+        del for_update
+        return next(
+            (
+                package
+                for package in self._state.device_key_packages.values()
+                if package.claimed_by_device_id == claiming_device_id
+                and package.claim_request_id == request_id
+            ),
+            None,
+        )
+
+    async def get_next_available_for_update(self, device_id: UUID) -> DeviceKeyPackage | None:
+        return next(
+            iter(
+                sorted(
+                    (
+                        package
+                        for package in self._state.device_key_packages.values()
+                        if package.device_id == device_id and not package.is_claimed
+                    ),
+                    key=lambda package: (package.created_at, package.id),
+                )
+            ),
+            None,
+        )
+
+    async def update(self, key_package: DeviceKeyPackage) -> None:
+        self._state.device_key_packages[key_package.id] = key_package
+
 
 @dataclass(slots=True)
 class RecordingRealtimeNotifier:
@@ -517,6 +570,7 @@ class FakeDeviceCryptoUnitOfWork:
     def __init__(self, state: IdentityState) -> None:
         self._state = state
         self.devices: DeviceRepository = FakeDeviceRepository(state)
+        self.conversations: ConversationRepository = FakeConversationRepository(state)
         self.identities: DeviceCryptoIdentityRepository = FakeDeviceCryptoIdentityRepository(state)
         self.key_packages: DeviceKeyPackageRepository = FakeDeviceKeyPackageRepository(state)
 

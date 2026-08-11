@@ -92,6 +92,11 @@ def map_device_key_package(model: DeviceKeyPackageModel) -> DeviceKeyPackage:
         package_ref=model.package_ref,
         key_package=model.key_package,
         created_at=model.created_at,
+        claimed_at=model.claimed_at,
+        claimed_by_user_id=model.claimed_by_user_id,
+        claimed_by_device_id=model.claimed_by_device_id,
+        claim_conversation_id=model.claim_conversation_id,
+        claim_request_id=model.claim_request_id,
     )
 
 

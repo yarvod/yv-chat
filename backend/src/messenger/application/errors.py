@@ -61,6 +61,14 @@ class DeviceCryptoIdentityConflictError(ApplicationError):
     """Registration does not exactly match the immutable device identity."""
 
 
+class DeviceKeyPackageUnavailableError(ApplicationError):
+    """No authorized unclaimed KeyPackage can satisfy the request."""
+
+
+class DeviceKeyPackageConflictError(ApplicationError):
+    """A KeyPackage or claim idempotency key conflicts with durable state."""
+
+
 class CurrentDeviceRevocationError(ApplicationError):
     """The current device must be terminated through logout, not remote revoke."""
 

@@ -5,6 +5,7 @@ import type {
 } from '../../application/ports/device-crypto-registry-gateway'
 import type { DeviceCryptoIdentity } from '../../application/ports/device-crypto-gateway'
 import type { ApiClient } from './api-client'
+import { decodeCanonicalBase64, encodeBase64 } from './public-crypto-codec'
 import {
   integerField,
   record,
@@ -14,28 +15,6 @@ import {
 const PATH = '/api/v1/devices/current/crypto-identity'
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const HEX_256_PATTERN = /^[0-9a-f]{64}$/
-
-function encodeBase64(bytes: Uint8Array): string {
-  let binary = ''
-  const chunkSize = 32_768
-  for (let offset = 0; offset < bytes.byteLength; offset += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize))
-  }
-  return btoa(binary)
-}
-
-function decodeBase64(value: string, expectedBytes: number): Uint8Array {
-  let binary: string
-  try {
-    binary = atob(value)
-  } catch {
-    throw new ApplicationError(null, 'invalid-response', 'invalid server response')
-  }
-  if (binary.length !== expectedBytes || btoa(binary) !== value) {
-    throw new ApplicationError(null, 'invalid-response', 'invalid server response')
-  }
-  return Uint8Array.from(binary, character => character.charCodeAt(0))
-}
 
 function parseRegistration(value: unknown): RegisteredDeviceCryptoIdentity {
   const item = record(value)
@@ -57,11 +36,11 @@ function parseRegistration(value: unknown): RegisteredDeviceCryptoIdentity {
     userId,
     deviceId,
     protocolVersion: 2,
-    credentialIdentity: decodeBase64(
+    credentialIdentity: decodeCanonicalBase64(
       stringField(item, 'credential_identity_base64'),
       33,
     ),
-    signaturePublicKey: decodeBase64(
+    signaturePublicKey: decodeCanonicalBase64(
       stringField(item, 'signature_public_key_base64'),
       32,
     ),

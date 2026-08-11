@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
+    ForeignKey,
     ForeignKeyConstraint,
     Index,
     LargeBinary,
@@ -13,6 +14,7 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
     Uuid,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -63,8 +65,41 @@ class DeviceKeyPackageModel(Base):
             "octet_length(key_package) BETWEEN 1 AND 1048576",
             name="key_package_length",
         ),
+        CheckConstraint(
+            "(claimed_at IS NULL AND claimed_by_user_id IS NULL "
+            "AND claimed_by_device_id IS NULL AND claim_conversation_id IS NULL "
+            "AND claim_request_id IS NULL) OR "
+            "(claimed_at IS NOT NULL AND claimed_by_user_id IS NOT NULL "
+            "AND claimed_by_device_id IS NOT NULL AND claim_conversation_id IS NOT NULL "
+            "AND claim_request_id IS NOT NULL)",
+            name="claim_metadata_complete",
+        ),
+        CheckConstraint(
+            "claimed_by_device_id IS NULL OR claimed_by_device_id <> device_id",
+            name="claiming_device_differs",
+        ),
+        CheckConstraint(
+            "claimed_at IS NULL OR claimed_at >= created_at",
+            name="claimed_after_created",
+        ),
+        ForeignKeyConstraint(
+            ["claimed_by_device_id", "claimed_by_user_id"],
+            ["devices.id", "devices.user_id"],
+            ondelete="RESTRICT",
+        ),
         UniqueConstraint("package_ref", name="uq_device_key_package_ref"),
-        Index("ix_device_key_packages_device_created", "device_id", "created_at"),
+        UniqueConstraint(
+            "claimed_by_device_id",
+            "claim_request_id",
+            name="uq_device_key_package_claim_request",
+        ),
+        Index(
+            "ix_device_key_packages_available",
+            "device_id",
+            "created_at",
+            "id",
+            postgresql_where=text("claimed_at IS NULL"),
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
@@ -73,3 +108,11 @@ class DeviceKeyPackageModel(Base):
     package_ref: Mapped[str] = mapped_column(String(64), nullable=False)
     key_package: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    claimed_by_user_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))
+    claimed_by_device_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))
+    claim_conversation_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("conversations.id", ondelete="RESTRICT"),
+    )
+    claim_request_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))

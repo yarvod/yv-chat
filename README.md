@@ -69,8 +69,10 @@ make ci
 Полный `make ci` также требует pinned Rust toolchain/targets из
 `rust-toolchain.toml` и `wasm-bindgen-cli 0.2.127`; он пересобирает versioned browser
 crypto package перед frontend tests/build. Public device crypto anchor регистрируется
-идемпотентно через `/api/v1/devices/current/crypto-identity`, но automatic provisioning
-остаётся выключен до завершения KeyPackage claim lifecycle. Backend-команды используют
+идемпотентно через `/api/v1/devices/current/crypto-identity`; atomic one-time
+KeyPackage inventory/replenishment/claim lifecycle уже реализован. Automatic
+provisioning остаётся выключен до consumer-side OpenMLS validation и завершения MLS
+group/Welcome lifecycle. Backend-команды используют
 только `uv`; Python dependency
 source of truth — `backend/pyproject.toml` и `backend/uv.lock`, Rust —
 `crypto/Cargo.toml` и `crypto/Cargo.lock`.

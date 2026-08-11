@@ -20,6 +20,9 @@ import { SetManagedUserActive } from '../application/accounts/set-user-active'
 import { UpdateProfile } from '../application/accounts/update-profile'
 import { DeleteMessageForEveryone } from '../application/messaging/delete-message-for-everyone'
 import { GetDeviceCryptoRegistration } from '../application/device-crypto/get-device-crypto-registration'
+import { ClaimDeviceKeyPackage } from '../application/device-crypto/claim-device-key-package'
+import { ListDeviceKeyPackages } from '../application/device-crypto/list-device-key-packages'
+import { ReplenishDeviceKeyPackages } from '../application/device-crypto/replenish-device-key-packages'
 import { RegisterDeviceCrypto } from '../application/device-crypto/register-device-crypto'
 import { ProtocolMessageProtection } from '../application/messaging/message-protection'
 import { PresenceIndicatorService } from '../application/messaging/presence-indicator-service'
@@ -53,6 +56,7 @@ import { HttpMessagingGateway } from '../infrastructure/http/messaging-gateway'
 import { HttpConversationReadStateGateway } from '../infrastructure/http/conversation-read-state-gateway'
 import { HttpConversationDeliveryStateGateway } from '../infrastructure/http/conversation-delivery-state-gateway'
 import { HttpDeviceCryptoRegistryGateway } from '../infrastructure/http/device-crypto-registry-gateway'
+import { HttpDeviceKeyPackageGateway } from '../infrastructure/http/device-key-package-gateway'
 import { BrowserRealtimeGateway } from '../infrastructure/realtime/browser-realtime-gateway'
 
 export default defineNuxtPlugin(() => {
@@ -64,6 +68,7 @@ export default defineNuxtPlugin(() => {
   const readStateGateway = new HttpConversationReadStateGateway(apiClient)
   const deliveryStateGateway = new HttpConversationDeliveryStateGateway(apiClient)
   const deviceCryptoRegistryGateway = new HttpDeviceCryptoRegistryGateway(apiClient)
+  const deviceKeyPackageGateway = new HttpDeviceKeyPackageGateway(apiClient)
   const deviceInfo = new BrowserDeviceInfo()
   const haptics = new BrowserHaptics()
   const realtimeGateway = new BrowserRealtimeGateway()
@@ -125,6 +130,9 @@ export default defineNuxtPlugin(() => {
         createDeviceCrypto: createDeviceCryptoScope,
         getDeviceCryptoRegistration: new GetDeviceCryptoRegistration(deviceCryptoRegistryGateway),
         registerDeviceCrypto: new RegisterDeviceCrypto(deviceCryptoRegistryGateway),
+        listDeviceKeyPackages: new ListDeviceKeyPackages(deviceKeyPackageGateway),
+        replenishDeviceKeyPackages: new ReplenishDeviceKeyPackages(deviceKeyPackageGateway),
+        claimDeviceKeyPackage: new ClaimDeviceKeyPackage(deviceKeyPackageGateway),
       },
     },
   }

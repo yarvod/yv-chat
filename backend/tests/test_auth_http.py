@@ -32,8 +32,15 @@ from messenger.application.conversations.get_conversation import GetConversation
 from messenger.application.conversations.leave_conversation import LeaveConversation
 from messenger.application.conversations.list_conversations import ListConversations
 from messenger.application.conversations.remove_member import RemoveConversationMember
+from messenger.application.device_crypto.claim_key_package import ClaimDeviceKeyPackage
 from messenger.application.device_crypto.get_current import GetCurrentDeviceCryptoIdentity
+from messenger.application.device_crypto.list_key_packages import (
+    ListDeviceKeyPackageInventory,
+)
 from messenger.application.device_crypto.register import RegisterDeviceCryptoIdentity
+from messenger.application.device_crypto.replenish_key_packages import (
+    ReplenishDeviceKeyPackages,
+)
 from messenger.application.devices.list_security_events import ListSecurityEvents
 from messenger.application.devices.list_sessions import ListMySessions
 from messenger.application.devices.rename import RenameMyDevice
@@ -239,6 +246,15 @@ class HttpTestProvider(Provider):
     )
     register_device_crypto_identity = provide(
         RegisterDeviceCryptoIdentity,
+        scope=Scope.REQUEST,
+    )
+    claim_device_key_package = provide(ClaimDeviceKeyPackage, scope=Scope.REQUEST)
+    list_device_key_package_inventory = provide(
+        ListDeviceKeyPackageInventory,
+        scope=Scope.REQUEST,
+    )
+    replenish_device_key_packages = provide(
+        ReplenishDeviceKeyPackages,
         scope=Scope.REQUEST,
     )
     activate_account = provide(ActivateAccount, scope=Scope.REQUEST)

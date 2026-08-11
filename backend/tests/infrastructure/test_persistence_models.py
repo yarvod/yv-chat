@@ -66,8 +66,26 @@ def test_device_crypto_schema_contains_only_public_bounded_material() -> None:
         "ck_device_crypto_identities_protocol_version_supported",
         "ck_device_crypto_identities_signature_public_key_length",
     }.issubset(identity_checks)
-    assert "ck_device_key_packages_key_package_length" in package_checks
-    assert "ix_device_key_packages_device_created" in {index.name for index in key_packages.indexes}
+    assert set(key_packages.columns.keys()) == {
+        "claim_conversation_id",
+        "claim_request_id",
+        "claimed_at",
+        "claimed_by_device_id",
+        "claimed_by_user_id",
+        "created_at",
+        "device_id",
+        "id",
+        "key_package",
+        "package_ref",
+        "user_id",
+    }
+    assert {
+        "ck_device_key_packages_claim_metadata_complete",
+        "ck_device_key_packages_claiming_device_differs",
+        "ck_device_key_packages_claimed_after_created",
+        "ck_device_key_packages_key_package_length",
+    }.issubset(package_checks)
+    assert "ix_device_key_packages_available" in {index.name for index in key_packages.indexes}
     assert {"private_key", "sealed_state", "wrapping_key"}.isdisjoint(
         set(identities.columns.keys()) | set(key_packages.columns.keys())
     )

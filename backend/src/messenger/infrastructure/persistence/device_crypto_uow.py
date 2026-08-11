@@ -4,6 +4,7 @@ from types import TracebackType
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from messenger.application.ports.conversations import ConversationRepository
 from messenger.application.ports.device_crypto import (
     DeviceCryptoIdentityRepository,
     DeviceCryptoUnitOfWork,
@@ -11,6 +12,7 @@ from messenger.application.ports.device_crypto import (
 )
 from messenger.application.ports.identity import DeviceRepository
 from messenger.infrastructure.persistence.repositories import (
+    SqlAlchemyConversationRepository,
     SqlAlchemyDeviceCryptoIdentityRepository,
     SqlAlchemyDeviceKeyPackageRepository,
     SqlAlchemyDeviceRepository,
@@ -22,12 +24,14 @@ class SqlAlchemyDeviceCryptoUnitOfWork:
         self._session_factory = session_factory
         self._session: AsyncSession | None = None
         self.devices: DeviceRepository
+        self.conversations: ConversationRepository
         self.identities: DeviceCryptoIdentityRepository
         self.key_packages: DeviceKeyPackageRepository
 
     async def __aenter__(self) -> "SqlAlchemyDeviceCryptoUnitOfWork":
         self._session = self._session_factory()
         self.devices = SqlAlchemyDeviceRepository(self._session)
+        self.conversations = SqlAlchemyConversationRepository(self._session)
         self.identities = SqlAlchemyDeviceCryptoIdentityRepository(self._session)
         self.key_packages = SqlAlchemyDeviceKeyPackageRepository(self._session)
         return self
