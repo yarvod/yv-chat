@@ -4,30 +4,6 @@
 
 ## Active
 
-### BUG-053 — Второй device существующего участника не мог войти в READY direct MLS
-
-- Статус: `reproduced in production; fix in progress`.
-- Severity: `critical availability`; новый Android device успешно регистрировал
-  crypto identity/KeyPackage, но `POST /crypto/bootstrap` возвращал HTTP 422 и UI
-  оставался в fail-closed состоянии «Личный диалог недоступен».
-- Production reproduction: conversation `d2e0a3c9-3dcc-4737-a7c9-1fbffd28c84e`
-  имел READY generation 19 с двумя старыми leaves; второй device пользователя стал
-  третьим capable active device, но не был добавлен в current roster.
-- Причина: server правильно выбирал coordinator из предыдущего READY roster, однако
-  claim нового KeyPackage ошибочно записывал request device как claiming device.
-  Для нового телефона target и claimant совпадали, поэтому domain invariant
-  «device cannot claim its own KeyPackage» завершал bootstrap как 422.
-- Дополнительный lifecycle gap: регистрация нового crypto identity не создавала
-  durable wake-up для старого coordinator, поэтому pending roster update мог ждать
-  ручного открытия диалога на нужном старом leaf.
-- Browser acceptance дополнительно воспроизвёл PostgreSQL deadlock при одновременном
-  wake-up нескольких старых leaves: каждый transaction сначала lock-ил собственный
-  device, затем conversation, а required-device FK другого transaction требовал
-  обратный device lock. Все MLS roster mutations теперь используют единый порядок
-  `conversation → actor device → generation/packages/required rows`.
-- Data impact: 422 transaction rollback не изменил generation 19, не consumed
-  KeyPackage и не изменил ни одной message row; direct send остаётся fail-closed.
-
 ### BUG-052 — Direct generation could omit a participant with no capable device
 
 - Статус: `fixed and full-CI verified; production rollout pending`.
@@ -292,6 +268,32 @@ Physical Pixel acceptance для `BUG-033`/`BUG-034` ожидает пользо
 - Проверка: тест или команда, подтверждающая fix.
 
 ## Resolved
+
+### BUG-053 — Второй device существующего участника не мог войти в READY direct MLS
+
+- Статус: `fixed, full-CI and production verified in f69a191`.
+- Severity: `critical availability`; новый Android device успешно регистрировал
+  crypto identity/KeyPackage, но `POST /crypto/bootstrap` возвращал HTTP 422 и UI
+  оставался в fail-closed состоянии «Личный диалог недоступен».
+- Production reproduction: conversation `d2e0a3c9-3dcc-4737-a7c9-1fbffd28c84e`
+  имел READY generation 19 с двумя старыми leaves; второй device пользователя стал
+  третьим capable active device, но не был добавлен в current roster.
+- Причина: server правильно выбирал coordinator из предыдущего READY roster, однако
+  claim нового KeyPackage ошибочно записывал request device как claiming device.
+  Для нового телефона target и claimant совпадали, поэтому domain invariant
+  «device cannot claim its own KeyPackage» завершал bootstrap как 422.
+- Дополнительный lifecycle gap: регистрация нового crypto identity не создавала
+  durable wake-up для старого coordinator, поэтому pending roster update мог ждать
+  ручного открытия диалога на нужном старом leaf.
+- Browser acceptance дополнительно воспроизвёл PostgreSQL deadlock при одновременном
+  wake-up нескольких старых leaves; все roster mutations теперь используют единый
+  порядок `conversation → actor device → generation/packages/required rows`.
+- Исправление: новый device публикует idempotent blocked announcement без package
+  claim; любое прежнее leaf становится actual coordinator, durable/realtime events
+  доводят generation до READY, а generation-number gap не путается с MLS epoch gap.
+- Проверка: local two-origin acceptance прочитал новое post-enrollment сообщение на
+  обоих devices; GitHub CI/deploy успешны, production `f69a191` healthy без свежих
+  `422/500`. Исходный 422 rollback не изменил generation 19, packages или messages.
 
 ### BUG-038 — Authenticated PWA не запускала device crypto lifecycle
 

@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 
 import DeviceSessionsCard from '../components/settings/DeviceSessionsCard.vue'
 import PasswordSecurityCard from '../components/settings/PasswordSecurityCard.vue'
 import ProfileCard from '../components/settings/ProfileCard.vue'
 import SecurityEventsCard from '../components/settings/SecurityEventsCard.vue'
+import LogoutDeviceCard from '../components/settings/LogoutDeviceCard.vue'
+import { ApplicationError } from '../application/errors'
 import type { CurrentAccount } from '../domain/accounts/account'
 import type { ThemePreference } from '../domain/preferences/theme'
 import { useAuth } from '../presentation/composables/useAuth'
@@ -16,6 +18,8 @@ const preferences = usePreferences()
 const { $frontend } = useNuxtApp()
 const device = $frontend.deviceInfo.current()
 const account = computed(() => auth.user.value)
+const loggingOut = ref(false)
+const logoutError = ref<string | null>(null)
 const themes: { value: ThemePreference, label: string }[] = [
   { value: 'system', label: 'Системная' },
   { value: 'light', label: 'Светлая' },
@@ -29,6 +33,22 @@ function profileUpdated(updated: CurrentAccount): void {
 async function securityResetCompleted(): Promise<void> {
   auth.securityResetCompleted()
   await navigateTo('/login?security-reset=1')
+}
+
+async function logoutCurrentDevice(): Promise<void> {
+  if (loggingOut.value) return
+  loggingOut.value = true
+  logoutError.value = null
+  try {
+    await auth.logout()
+    await navigateTo('/login?logged-out=1')
+  } catch (error) {
+    logoutError.value = error instanceof ApplicationError && error.kind === 'network'
+      ? 'Нет связи с сервером. Сеанс не завершён — подключитесь к сети и повторите.'
+      : 'Не удалось завершить сеанс. Повторите попытку.'
+  } finally {
+    loggingOut.value = false
+  }
 }
 </script>
 
@@ -58,6 +78,7 @@ async function securityResetCompleted(): Promise<void> {
       <DeviceSessionsCard />
       <PasswordSecurityCard @security-reset="securityResetCompleted" />
       <SecurityEventsCard />
+      <LogoutDeviceCard :busy="loggingOut" :error="logoutError" @confirm="logoutCurrentDevice" />
     </section>
   </div>
 </template>

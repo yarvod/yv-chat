@@ -138,7 +138,7 @@ onBeforeUnmount(() => {
     />
 
     <div v-if="messenger.state.phase === 'loading'" class="conversation-placeholder" aria-live="polite">
-      <span class="brand-mark large">Y</span>
+      <span class="loading-orbit" aria-hidden="true" />
       <p>Загружаем диалоги…</p>
     </div>
     <div v-else class="workspace-main">

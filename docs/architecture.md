@@ -342,7 +342,13 @@ Vue app → useAuth state machine → auth service → same-origin API adapter
 
 API adapter всегда использует относительный `/api/v1/...` URL и `credentials: include`. Для state-changing HTTP вызовов он читает только публичный CSRF cookie `__Host-yv_csrf` и передаёт его в `X-CSRF-Token`; opaque session cookie остаётся недоступной JavaScript. Ошибки HTTP, сети и malformed JSON различаются typed error kind. Runtime parsers допускают в reactive state только явно проверенные account fields. Password очищается из component state до ожидания network response и не попадает в persistent storage или rendered error.
 
-Auth composable моделирует только конечные состояния `booting`, `signed-out`, `submitting`, `authenticated`, `offline`. `401` означает signed-out/revoked credential, network failure даёт retry без ложного logout, а logout очищает client state даже при потере соединения. Следующие conversation/sync services используют тот же transport и собственные typed parsers вместо raw `fetch` в components.
+Auth composable моделирует только конечные состояния `booting`, `signed-out`,
+`submitting`, `authenticated`, `offline`. `401` означает signed-out/revoked
+credential, network failure даёт retry без ложного logout. Явный logout очищает
+authenticated client state только после успешного server response; при потере сети
+UI остаётся authenticated и честно сообщает, что session/device не были отозваны.
+Следующие conversation/sync services используют тот же transport и собственные
+typed parsers вместо raw `fetch` в components.
 
 Foreground realtime также отделён от Vue components. `BrowserRealtimeGateway`
 создаёт только same-origin `/api/v1/realtime` URL без query credential, строго
@@ -454,6 +460,15 @@ components отвечают только за формы и подтвержде
 authoritative list после response. IP показывается только как приблизительный
 контекст. Event UI принимает закрытый набор typed event names и не ожидает
 free-form payload.
+
+Выход с текущего устройства является security operation, а не обычной навигацией:
+он требует отдельного confirm step в Settings и backend атомарно отзывает current
+session вместе с device identity. Device-scoped IndexedDB records физически не
+удаляются скрыто, но новый login создаёт новый backend device ID и не получает старые
+MLS private keys. Поэтому старая E2EE-история, доступная только этому device, может
+стать недоступной после выхода; другие уже подключённые устройства сохраняют свои
+локальные архивы. Возврат истории новому device требует отдельного secure
+device-to-device transfer из `BL-015`.
 
 Current-account API получает identity исключительно из authenticated principal. `GET/PATCH /api/v1/me` возвращает/изменяет только bounded profile fields. Password change и explicit security reset используют текущий пароль как step-up factor внутри row-locked identity transaction; IP/GeoIP/User-Agent не участвуют. Password change обновляет Argon2id hash и отзывает все остальные sessions/devices, сохраняя current session. Security reset отзывает все sessions/devices, включая current, после чего transport удаляет auth/CSRF cookies. Обе операции создают typed bounded audit events без password/token payload. E2EE identity/key reset в эту account-операцию не входит и проектируется только после protocol ADR.
 
@@ -638,6 +653,15 @@ Initial snapshot и последующие transitions применяются и
 Отдельный typed connection lifecycle
 `connecting/connected/reconnecting/stopped` управляет visual connection indicator;
 зелёное состояние устанавливается только фактическим WebSocket `onopen`.
+
+Глобальный application-level `ConnectionMonitor` отдельно отражает достижимость
+same-origin backend на всех authenticated страницах. Browser `online/offline` events
+дают немедленный network signal, но `online` считается только поводом для health
+probe, а не доказательством связи с сервером. Initial/periodic probes coalesce,
+ошибка запускает bounded backoff, teardown удаляет listeners/timers. UI получает
+только typed `checking/connected/updating/reconnecting/offline` state; raw fetch и
+browser APIs остаются в infrastructure adapters. Узкая safe-area-aware status row
+занимает собственную grid-строку и не перекрывает chat header или mobile controls.
 
 Правильность любой realtime-фичи проверяется при отключённом WebSocket. Duplicate WebSocket/Push/sync delivery применяется идемпотентно.
 
@@ -1059,11 +1083,15 @@ Android launcher может удерживать icon уже установле�
 media resource, тогда как app shell, standard icons и crypto WASM остаются в
 согласованном Workbox release.
 
-Ожидающий Service Worker активируется по явному действию пользователя через
-глобальное уведомление об обновлении. Активация не удаляет IndexedDB, device-local
-ключ или локальный архив. Миграции локальной схемы обязаны оставаться совместимыми
-с установленной версией до активации нового app shell; очистка site data не является
-штатным способом обновления, потому что она уничтожит локальные ключи и архив.
+Service Worker использует `autoUpdate`: compatible waiting worker выполняет
+`skipWaiting`/`clientsClaim`, после activation controlled page автоматически
+перезагружается. Application coordinator проверяет registration при старте, при
+возврате visible page в foreground и bounded раз в минуту; concurrent checks
+coalesce, transient failure не ломает работающую версию и не создаёт reload loop.
+Активация не удаляет IndexedDB, device-local ключ или локальный архив. Миграции
+локальной схемы обязаны оставаться совместимыми с установленной версией до
+активации нового app shell; очистка site data не является штатным способом
+обновления, потому что она уничтожит локальные ключи и архив.
 
 Root `html/body` не является scroll container и использует
 `overscroll-behavior: none`: это выключает Chrome pull-to-refresh, но не запрещает

@@ -51,6 +51,7 @@ import { BrowserClientIdGenerator } from '../infrastructure/browser/client-id-ge
 import { BrowserDeviceInfo } from '../infrastructure/browser/device-info'
 import { BrowserHaptics } from '../infrastructure/browser/haptics'
 import { BrowserLocation } from '../infrastructure/browser/browser-location'
+import { BrowserNetworkStatus } from '../infrastructure/browser/browser-network-status'
 import { BrowserPageVisibility } from '../infrastructure/browser/page-visibility'
 import { BrowserScheduler } from '../infrastructure/browser/scheduler'
 import { BrowserThemePreferences } from '../infrastructure/browser/theme-preferences'
@@ -64,6 +65,7 @@ import { HttpAccountSecurityGateway } from '../infrastructure/http/account-secur
 import { ApiClient } from '../infrastructure/http/api-client'
 import { HttpAuthGateway } from '../infrastructure/http/auth-gateway'
 import { HttpMessagingGateway } from '../infrastructure/http/messaging-gateway'
+import { HttpServerHealthGateway } from '../infrastructure/http/http-server-health-gateway'
 import { HttpConversationReadStateGateway } from '../infrastructure/http/conversation-read-state-gateway'
 import { HttpConversationDeliveryStateGateway } from '../infrastructure/http/conversation-delivery-state-gateway'
 import { HttpDeviceCryptoRegistryGateway } from '../infrastructure/http/device-crypto-registry-gateway'
@@ -72,6 +74,7 @@ import { HttpConversationCryptoGateway } from '../infrastructure/http/conversati
 import { BrowserRealtimeGateway } from '../infrastructure/realtime/browser-realtime-gateway'
 import { CryptoWorkerClient } from '../infrastructure/crypto/crypto-worker-client'
 import { IndexedDbConversationCryptoState } from '../infrastructure/storage/indexeddb-conversation-crypto-state'
+import { ConnectionMonitor } from '../application/connectivity/connection-monitor'
 
 export default defineNuxtPlugin(() => {
   const apiClient = new ApiClient()
@@ -93,6 +96,8 @@ export default defineNuxtPlugin(() => {
   const themePreferences = new BrowserThemePreferences()
   const browserLocation = new BrowserLocation()
   const pageVisibility = new BrowserPageVisibility()
+  const networkStatus = new BrowserNetworkStatus()
+  const serverHealthGateway = new HttpServerHealthGateway(apiClient)
   const themePreference = themePreferences.load()
   const messageArchive = new IndexedDbMessageArchive()
   const messengerSnapshotStore = new IndexedDbMessengerSnapshotStore()
@@ -171,6 +176,11 @@ export default defineNuxtPlugin(() => {
           new TypingIndicatorService(transport, scheduler, clock)
         ),
         createPresenceIndicators: () => new PresenceIndicatorService(),
+        createConnectionMonitor: () => new ConnectionMonitor(
+          serverHealthGateway,
+          networkStatus,
+          scheduler,
+        ),
         deviceCryptoSession,
         getDeviceCryptoRegistration: new GetDeviceCryptoRegistration(deviceCryptoRegistryGateway),
         registerDeviceCrypto: new RegisterDeviceCrypto(deviceCryptoRegistryGateway),

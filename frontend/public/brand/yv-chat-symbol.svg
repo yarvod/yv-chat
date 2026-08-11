@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title" data-artwork-bounds="72 142 440 370" data-safe-zone-radius="204.8">
+  <title id="title">yv-chat flowing line mark</title>
+  <defs>
+    <linearGradient id="upper" x1="72" y1="256" x2="440" y2="256" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#45d7ff" />
+      <stop offset="0.48" stop-color="#6675ff" />
+      <stop offset="1" stop-color="#ff78c8" />
+    </linearGradient>
+    <linearGradient id="lower" x1="72" y1="256" x2="440" y2="256" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#48d9ff" />
+      <stop offset="0.52" stop-color="#805cff" />
+      <stop offset="1" stop-color="#ff78b7" />
+    </linearGradient>
+    <filter id="glow" x="-25%" y="-45%" width="150%" height="190%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="7" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)">
+    <path d="M72 256 C145 256 171 142 256 142 C341 142 367 256 440 256" stroke="url(#upper)" stroke-width="25" />
+    <path d="M72 256 C146 256 171 370 239 326 C287 295 310 221 440 256" stroke="url(#lower)" stroke-width="22" />
+    <path d="M72 256 C164 256 198 219 256 286 C312 350 354 256 440 256" stroke="url(#upper)" stroke-width="18" opacity="0.92" />
+  </g>
+</svg>

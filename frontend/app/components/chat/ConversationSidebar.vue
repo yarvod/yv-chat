@@ -88,9 +88,7 @@ function createGroup(title: string, userIds: string[]): void {
 
 <template>
   <aside class="sidebar">
-    <div class="brand-row">
-      <span class="brand-mark small">Y</span>
-      <strong>yv-chat</strong>
+    <div class="sidebar-actions">
       <button class="new-chat-button" type="button" aria-label="Новый диалог" @click="creatingNew = true">
         <AppIcon name="add" />
       </button>
@@ -160,13 +158,5 @@ function createGroup(title: string, userIds: string[]): void {
         </div>
       </nav>
     </template>
-
-    <footer class="account-row">
-      <span class="avatar">{{ user.displayName.slice(0, 1).toUpperCase() }}</span>
-      <span>
-        <strong>{{ user.displayName }}</strong>
-        <small>@{{ user.username }}</small>
-      </span>
-    </footer>
   </aside>
 </template>

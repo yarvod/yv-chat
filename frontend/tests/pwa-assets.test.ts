@@ -60,12 +60,15 @@ describe('PWA install assets', () => {
     expect(config).toContain("'crypto/v3/**/*'")
   })
 
-  it('offers activation of a waiting service worker without erasing local state', () => {
-    const app = readFileSync(resolve(process.cwd(), 'app/app.vue'), 'utf8')
-    expect(app).toContain('$pwa?.needRefresh')
-    expect(app).toContain('$pwa.updateServiceWorker(true)')
-    expect(app).toContain('Локальные чаты и ключи сохранятся')
-    expect(app).not.toContain('indexedDB.deleteDatabase')
+  it('automatically activates updates and checks for them periodically', () => {
+    const config = readFileSync(resolve(process.cwd(), 'nuxt.config.ts'), 'utf8')
+    const lifecycle = readFileSync(
+      resolve(process.cwd(), 'app/plugins/pwa-lifecycle.client.ts'),
+      'utf8',
+    )
+    expect(config).toContain("registerType: 'autoUpdate'")
+    expect(lifecycle).toContain('PwaUpdateCoordinator')
+    expect(lifecycle).not.toContain('indexedDB.deleteDatabase')
   })
 
   it('keeps standard artwork transparent and the maskable canvas fully opaque', async () => {
@@ -103,5 +106,9 @@ describe('PWA install assets', () => {
     expect(source).toContain('data-safe-zone-radius="204.8"')
     expect(source).not.toContain('<rect')
     expect(source.match(/<path /g)).toHaveLength(3)
+    expect(readFileSync(
+      resolve(process.cwd(), 'public/brand/yv-chat-symbol.svg'),
+      'utf8',
+    )).toBe(source)
   })
 })

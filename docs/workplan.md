@@ -4,51 +4,69 @@
 завершённая работа фиксируется отдельным коммитом, а новый пункт переносится
 сюда из `backlog.md`.
 
-## WP-052 — Existing-account second-device MLS enrollment hotfix
+## WP-053 — Branded shell, safe logout и automatic PWA lifecycle
 
-Статус: **in progress**
-Bug: `BUG-053`
+Статус: **implementation complete; production rollout pending**
+Backlog: `BL-041`, `BL-025`
 
-Цель: восстановить fail-closed добавление второго устройства в уже существующий
-direct MLS conversation без потери истории, повторного использования KeyPackage
-или необходимости пересоздавать диалог.
+Цель: убрать дублирующий брендовый и account chrome, использовать канонический
+фирменный знак во всех app surfaces, сделать выход с устройства осознанным и
+показывать понятное состояние server connection/update без ручного обновления PWA.
 
-### Scope и security contract
+### Scope и UX/security contract
 
-- [ ] `BeginConversationCrypto` claim-ит KeyPackage нового leaf от имени реально
-  выбранного старого coordinator, а не от имени request device.
-- [ ] Новый device никогда не claim-ит собственный KeyPackage и не получает право
-  создавать update Commit без состояния предыдущей READY generation.
-- [ ] Новый device без previous-generation state создаёт fail-closed roster-change
-  wake-up без claim; первое доступное старое leaf любого участника становится
-  coordinator следующей pending generation.
-- [ ] Создание pending generation публикует durable recipient-specific
-  `conversation_updated`, чтобы coordinator увидел roster drift и завершил Commit.
-- [ ] READY generation остаётся единственной разрешённой для direct send; pending,
-  blocked и unavailable состояния не получают synthetic/plaintext fallback.
-- [ ] Существующие v1/v2 message rows и локальные MLS states не мигрируются и не
-  перезаписываются этим hotfix.
-- [ ] UI отличает ожидающее добавление устройства от terminal local crypto failure и
-  не создаёт ложного впечатления, что сообщение можно безопасно отправить.
+- [x] Канонический `design/brand/yv-chat-symbol.svg` используется через один
+  presentation-компонент вместо текстовой `Y`; launcher/maskable assets и manifest
+  остаются воспроизводимыми из того же brand source.
+- [x] Desktop оставляет логотип только сверху navigation rail; chat sidebar не
+  дублирует logo/`yv-chat`, но сохраняет доступную кнопку создания диалога.
+- [x] Нижние desktop account/avatar/username surfaces удалены из rail и sidebar;
+  conversation list занимает освободившуюся высоту без layout shift.
+- [x] «Выйти с этого устройства» находится только в Settings и всегда требует
+  отдельного confirm step с cancel, busy/error состояниями и честным объяснением
+  последствий для device-bound MLS keys и локальной истории.
+- [x] Confirmed logout вызывает существующий application use case ровно один раз,
+  отзывает server session/device, очищает только reactive authenticated state и не
+  притворяется переносом старых device keys в следующий login.
+- [x] Глобальный top connection indicator различает initial check, connected,
+  reconnect/update и offline; browser offline event отражается сразу, восстановление
+  сети подтверждается same-origin health probe.
+- [x] Browser APIs и raw fetch не попадают в Vue-компоненты: connection monitor
+  разделён на typed application service/port и browser/http adapter.
+- [x] PWA проверяет Service Worker update при старте, при возврате приложения в
+  foreground и bounded периодически; найденная совместимая версия активируется и
+  перезагружает controlled page автоматически.
+- [x] Automatic update не удаляет IndexedDB crypto/archive/outbox data; registration
+  failure отображается как non-blocking status и не вызывает reload loop.
 
 ### Tests и acceptance
 
-- [ ] Backend regression: новый device участника при существующем READY roster не
-  даёт 422, его package claim привязан к старому coordinator и generation pending.
-- [ ] Coordinator election regression покрывает offline designated-device case:
-  package остаётся unclaimed до запроса любого старого leaf.
-- [ ] Durable sync/realtime notification будит coordinator и не содержит crypto bytes.
-- [ ] Frontend regression сохраняет fail-closed composer/send и корректный pending label.
-- [ ] Полный `make ci`, diff/secret review и production deploy зелёные.
-- [ ] Реальный flow: второй телефон регистрирует identity, старый leaf завершает
-  generation, телефон применяет Welcome и читает новое сообщение после enrollment.
-- [ ] Старые pre-enrollment MLS v2 сообщения остаются честно недоступны новому device;
-  старые v1 rows продолжают читаться exact-version decoder.
+- [x] Unit tests: connection state machine, offline/online recovery, bounded retries,
+  cleanup listeners/tasks и отсутствие parallel probes.
+- [x] Component tests: один desktop brand mark, нет sidebar/account footer, logout
+  нельзя выполнить без подтверждения, cancel безопасен, double-submit закрыт.
+- [x] PWA config/build tests фиксируют `autoUpdate`, periodic update check и canonical
+  manifest/icon contract.
+- [x] Frontend lint, typecheck, Vitest, production build и полный `make ci` зелёные.
+- [x] Desktop browser acceptance: brand placement, sidebar height, settings confirm,
+  connected/reconnecting/offline visual states и отсутствие console errors.
+- [x] Mobile viewport acceptance: status не перекрывает safe area/header, navigation
+  остаётся fixed, update/reload не ломает standalone shell.
+- [ ] Immutable production deploy, health/log check и подтверждение нового frontend
+  image без изменений соседних `yoowee.ru`/`s3.yoowee.ru` services.
+
+### Ограничения
+
+- logout не является secure device-to-device history transfer и не обещает
+  восстановление pre-enrollment E2EE history после повторного входа;
+- автоматическое обновление не выполняется во время незавершённого page navigation,
+  если browser сам откладывает Service Worker activation;
+- этот slice не меняет backend session/device revocation semantics и MLS protocol.
 
 ### Definition of Done
 
-- второй device того же аккаунта входит в существующий direct chat без HTTP 422;
-- после участия хотя бы одного старого leaf новый device получает READY и может
-  безопасно отправлять/читать будущие v2 сообщения;
-- сервер не раскрывает plaintext/private keys и не ослабляет MLS/send policy;
-- исправление задеплоено и проверено на production metadata/logs и реальном device.
+- интерфейс использует фирменный знак без дублирующего `yv-chat`/account chrome;
+- пользователь не может случайно отозвать текущий device без ясного подтверждения;
+- состояние сети/сервера видно глобально и корректно восстанавливается;
+- новая PWA-версия обнаруживается и применяется автоматически без ручной кнопки;
+- проверки, browser acceptance, документация, commit и production rollout завершены.

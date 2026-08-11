@@ -68,14 +68,9 @@ export function useAuth() {
   }
 
   async function logout(): Promise<void> {
-    try {
-      await $frontend.logout.execute()
-    } catch (error) {
-      if (!(error instanceof ApplicationError && error.kind === 'network')) throw error
-    } finally {
-      state.value = { phase: 'signed-out', user: null, message: null }
-      initialized.value = true
-    }
+    await $frontend.logout.execute()
+    state.value = { phase: 'signed-out', user: null, message: null }
+    initialized.value = true
   }
 
   function sessionExpired(): void {

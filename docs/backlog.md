@@ -65,7 +65,8 @@ Implementation и desktop browser smoke завершены; physical 390px scree
 
 Статус: **in progress** (`WP-041` завершил core messenger viewport/interaction и
 первую install surface; `WP-043` добавил Pixel edge-to-edge/pull-to-refresh contract
-и maskable v2 assets; update UX и полный accessibility/visual-regression gate остаются).
+и maskable v2 assets; `WP-053` добавил branded shell, connection status и automatic
+update lifecycle; полный accessibility/visual-regression gate остаётся).
 
 Результат: приложение имеет единый визуальный язык, install/update UX и
 доступность, а messenger shell по плотности и поведению привычен пользователю
@@ -93,7 +94,8 @@ Telegram/WhatsApp без копирования их бренда.
   независимого scrolling timeline/list;
 - [x] отдельная прозрачная `any` icon и full-bleed opaque `maskable` icon без baked
   square/squircle, с versioned manifest URLs и воспроизводимым SVG→PNG pipeline;
-- [ ] install/update prompts и migration-compatible service worker lifecycle;
+- [x] automatic foreground/periodic update detection, activation и reload;
+- [ ] migration-compatible service worker lifecycle и user-facing install education;
 - [ ] repository-owned visual regression screenshots для short/long timeline, empty/loading/error,
   mobile keyboard-sized viewport и основных desktop/mobile состояний.
 
@@ -255,7 +257,7 @@ foundation; текущая product policy использует его тольк
 
 ### BL-016 — MediaStorage port и LocalMediaStorage
 
-Статус: **in progress** (`WP-051`).
+Статус: **queued** (`WP-051` WIP сохранён и продолжится после срочных `WP-052`/`WP-053`).
 
 Результат: backend потоково хранит opaque encrypted bytes в `/data/media` за application port.
 
@@ -267,7 +269,7 @@ foundation; текущая product policy использует его тольк
 
 ### BL-017 — Encrypted attachment upload/download
 
-Статус: **in progress** (`WP-051`).
+Статус: **queued** (`WP-051` WIP сохранён и продолжится после срочных `WP-052`/`WP-053`).
 
 Результат: клиент шифрует file до upload и расшифровывает только локально.
 
@@ -279,7 +281,7 @@ foundation; текущая product policy использует его тольк
 
 ### BL-043 — Telegram-like photo/file experience поверх encrypted attachments
 
-Статус: **in progress** (`WP-051`; объединяет product UX с `BL-016`/`BL-017`).
+Статус: **queued** (`WP-051` WIP сохранён; объединяет product UX с `BL-016`/`BL-017`).
 
 Результат: пользователь удобно отправляет изображения и произвольные файлы, но
 backend видит только opaque encrypted bytes и bounded routing metadata.
@@ -415,7 +417,7 @@ upgrade migration gate и offline outbox остаются).
 - [x] manifest, versioned transparent `any`/opaque `maskable` icons и Apple touch assets;
 - [x] Android edge-to-edge gesture surface и root pull-to-refresh suppression;
 - service-worker offline shell и background-safe reconnect;
-- update notification/activation flow;
+- [x] automatic foreground/periodic update check и auto-activation/reload (`WP-053`);
 - compatibility gate с IndexedDB schema;
 - tests обновления старой установленной версии.
 
@@ -536,6 +538,16 @@ containers сохранили состояние (`WP-038`).
 - решение о native wrapper только при подтверждённой необходимости.
 
 ## Completed
+
+### BL-FIX-053 — Existing-account second-device MLS enrollment
+
+Новый device без previous READY state создаёт idempotent roster-change announcement
+без self-claim KeyPackage; первое доступное прежнее leaf становится фактическим
+coordinator, durable/realtime events будят участников, а READY finalize доставляет
+Welcome новому device без требования одновременного online. Единый lock order
+`conversation → device → generation/packages/required` устраняет воспроизведённый
+PostgreSQL deadlock. Full CI и production rollout `f69a191` подтверждены; API/frontend
+healthy, свежие production-логи без `422/500`.
 
 ### BL-FIX-039 — Mobile shell and multi-client realtime correctness
 
