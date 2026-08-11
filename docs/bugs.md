@@ -24,6 +24,18 @@
 
 ## Resolved
 
+### BUG-010 — Deploy verify запускал PostgreSQL integration tests без schema
+
+- Статус: `verified`.
+- Найдено в: `WP-019`, GitHub Actions run `31451233832` для `c12d94d`.
+- Severity: `high`.
+- Условия воспроизведения: push в `main` поднимает свежий PostgreSQL service, задаёт `TEST_DATABASE_URL` и запускает `make ci` без предварительного Alembic upgrade.
+- Ожидаемое поведение: deploy verify повторяет backend CI и выполняет все PostgreSQL integration tests против актуальной schema.
+- Фактическое поведение: обычные backend/frontend/compose CI jobs были зелёными, а deploy `verify` падал на шаге `make ci`; build/deploy корректно оставались skipped.
+- Причина: отдельный backend CI применял `uv run alembic upgrade head`, а агрегированный deploy verify пропустил этот шаг для своей независимой fresh database.
+- Исправление: deploy workflow явно применяет Alembic migrations после frozen dependency install и до `make ci`.
+- Проверка: local workflow/YAML checks и повторный production workflow должны показать зелёные verify/integration tests перед build/deploy.
+
 ### BUG-009 — Gateway loopback port не активировался на internal-only network
 
 - Статус: `verified`.

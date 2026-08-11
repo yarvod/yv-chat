@@ -74,3 +74,4 @@ GitHub Actions публикует immutable backend/frontend images и выка�
 - bootstrap-script в isolated temp directory создал только ожидаемые variables и оба файла mode `0600`, secret values не выводились;
 - production `.env` и `.bootstrap-admin.env` созданы непосредственно на `ru1` как `devuser:devuser`, mode `0600`; содержимое не читалось;
 - `make ci` с isolated `UV_CACHE_DIR`: 120 pytest passed, 6 PostgreSQL integration tests skipped без local `TEST_DATABASE_URL`, 11 Vitest; Ruff/format/import contracts/mypy/ESLint/Nuxt typecheck/build/Compose/deploy checks прошли.
+- первый production workflow `31451233832` безопасно остановился на verify до build/deploy; BUG-010 локализован как отсутствующий Alembic upgrade для fresh verification DB и исправлен отдельным migration step.

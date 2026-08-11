@@ -51,6 +51,9 @@ jobs:
           uv sync --frozen
           cd ../frontend
           npm ci
+      - name: Apply migrations to the fresh verification database
+        working-directory: backend
+        run: uv run alembic upgrade head
       - name: Verify repository
         run: make ci
       - name: Audit frontend production dependencies
