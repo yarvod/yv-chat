@@ -3,6 +3,8 @@
 from messenger.domain.entities import (
     ActivationToken,
     Device,
+    DeviceCryptoIdentity,
+    DeviceKeyPackage,
     PasswordResetToken,
     SecurityEvent,
     SecurityEventType,
@@ -11,6 +13,8 @@ from messenger.domain.entities import (
 )
 from messenger.infrastructure.persistence.models import (
     ActivationTokenModel,
+    DeviceCryptoIdentityModel,
+    DeviceKeyPackageModel,
     DeviceModel,
     PasswordResetTokenModel,
     SecurityEventModel,
@@ -65,6 +69,29 @@ def map_device(model: DeviceModel) -> Device:
         revoked_at=model.revoked_at,
         login_ip=model.login_ip,
         last_ip=model.last_ip,
+    )
+
+
+def map_device_crypto_identity(model: DeviceCryptoIdentityModel) -> DeviceCryptoIdentity:
+    return DeviceCryptoIdentity(
+        device_id=model.device_id,
+        user_id=model.user_id,
+        protocol_version=model.protocol_version,
+        credential_identity=model.credential_identity,
+        signature_public_key=model.signature_public_key,
+        fingerprint=model.fingerprint,
+        created_at=model.created_at,
+    )
+
+
+def map_device_key_package(model: DeviceKeyPackageModel) -> DeviceKeyPackage:
+    return DeviceKeyPackage(
+        id=model.id,
+        device_id=model.device_id,
+        user_id=model.user_id,
+        package_ref=model.package_ref,
+        key_package=model.key_package,
+        created_at=model.created_at,
     )
 
 

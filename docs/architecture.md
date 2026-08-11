@@ -692,6 +692,24 @@ non-extractable key structured clone, exact restore и revision `1 → 2`. Эт�
 разрешает production provisioning: backend immutable identity comparison,
 Firefox/Safari, storage-denial/update tests и MLS KAT/interop всё ещё обязательны.
 
+Backend registry хранит только public device anchors. `PUT/GET
+/api/v1/devices/current/crypto-identity` получает owner исключительно из validated
+opaque-session principal. Credential bytes обязаны иметь exact layout
+`1 || user UUID || device UUID`; fingerprint сервер пересчитывает как SHA-256 от
+protocol label, credential и Ed25519 public key. Client fingerprint не принимается.
+Identity immutable: под row lock exact retry идемпотентен, любое изменение public key,
+credential или initial KeyPackage даёт typed conflict. Revoked/cross-owner device
+отклоняется.
+
+PostgreSQL разделяет `device_crypto_identities` и `device_key_packages`. Обе записи
+создаются одной transaction и удаляются cascade только вместе с device. KeyPackage
+reference — server-derived SHA-256, globally unique; bytes bounded до 1 MiB и не
+возвращаются current-device GET/PUT response. Сервер пока не публикует и не claim-ит
+KeyPackage другим devices: OpenMLS consumer validation и atomic one-time claim должны
+появиться отдельным use case, прежде чем registry подключится к automatic Worker
+provisioning или MLS group creation. Private key, wrapping key и sealed state остаются
+исключительно client-side.
+
 UI не вызывает concrete crypto adapter: application-facing async operations
 `protectText/unprotectText` получают intent DTO с conversation/client-message
 binding и возвращают versioned result. Exact-version router fail closed; tombstone

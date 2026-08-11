@@ -19,6 +19,8 @@ import { SecurityReset } from '../application/accounts/security-reset'
 import { SetManagedUserActive } from '../application/accounts/set-user-active'
 import { UpdateProfile } from '../application/accounts/update-profile'
 import { DeleteMessageForEveryone } from '../application/messaging/delete-message-for-everyone'
+import { GetDeviceCryptoRegistration } from '../application/device-crypto/get-device-crypto-registration'
+import { RegisterDeviceCrypto } from '../application/device-crypto/register-device-crypto'
 import { ProtocolMessageProtection } from '../application/messaging/message-protection'
 import { PresenceIndicatorService } from '../application/messaging/presence-indicator-service'
 import { RealtimeSyncService } from '../application/messaging/realtime-sync-service'
@@ -50,6 +52,7 @@ import { HttpAuthGateway } from '../infrastructure/http/auth-gateway'
 import { HttpMessagingGateway } from '../infrastructure/http/messaging-gateway'
 import { HttpConversationReadStateGateway } from '../infrastructure/http/conversation-read-state-gateway'
 import { HttpConversationDeliveryStateGateway } from '../infrastructure/http/conversation-delivery-state-gateway'
+import { HttpDeviceCryptoRegistryGateway } from '../infrastructure/http/device-crypto-registry-gateway'
 import { BrowserRealtimeGateway } from '../infrastructure/realtime/browser-realtime-gateway'
 
 export default defineNuxtPlugin(() => {
@@ -60,6 +63,7 @@ export default defineNuxtPlugin(() => {
   const messagingGateway = new HttpMessagingGateway(apiClient)
   const readStateGateway = new HttpConversationReadStateGateway(apiClient)
   const deliveryStateGateway = new HttpConversationDeliveryStateGateway(apiClient)
+  const deviceCryptoRegistryGateway = new HttpDeviceCryptoRegistryGateway(apiClient)
   const deviceInfo = new BrowserDeviceInfo()
   const haptics = new BrowserHaptics()
   const realtimeGateway = new BrowserRealtimeGateway()
@@ -119,6 +123,8 @@ export default defineNuxtPlugin(() => {
         ),
         createPresenceIndicators: () => new PresenceIndicatorService(),
         createDeviceCrypto: createDeviceCryptoScope,
+        getDeviceCryptoRegistration: new GetDeviceCryptoRegistration(deviceCryptoRegistryGateway),
+        registerDeviceCrypto: new RegisterDeviceCrypto(deviceCryptoRegistryGateway),
       },
     },
   }

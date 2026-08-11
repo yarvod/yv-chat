@@ -10,6 +10,10 @@ from messenger.domain.entities.conversation import (
 from messenger.domain.entities.conversation_delivery_state import ConversationDeliveryState
 from messenger.domain.entities.conversation_read_state import ConversationReadState
 from messenger.domain.entities.device import Device
+from messenger.domain.entities.device_crypto_identity import (
+    DeviceCryptoIdentity,
+    DeviceKeyPackage,
+)
 from messenger.domain.entities.message import Message, MessageDeletionReason
 from messenger.domain.entities.password_reset_token import PasswordResetToken
 from messenger.domain.entities.security_event import SecurityEvent, SecurityEventType
@@ -28,6 +32,8 @@ __all__ = [
     "MessageDeletionReason",
     "PasswordResetToken",
     "Device",
+    "DeviceCryptoIdentity",
+    "DeviceKeyPackage",
     "SecurityEvent",
     "SecurityEventType",
     "Session",

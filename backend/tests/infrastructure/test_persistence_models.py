@@ -10,8 +10,10 @@ FORBIDDEN_COLUMNS = {
     "password",
     "plaintext",
     "private_key",
+    "sealed_state",
     "session_token",
     "text",
+    "wrapping_key",
 }
 
 
@@ -23,6 +25,8 @@ def test_persistence_metadata_contains_expected_tables() -> None:
         "conversation_read_states",
         "conversations",
         "devices",
+        "device_crypto_identities",
+        "device_key_packages",
         "messages",
         "password_reset_tokens",
         "security_events",
@@ -31,6 +35,42 @@ def test_persistence_metadata_contains_expected_tables() -> None:
         "sync_streams",
         "users",
     }
+
+
+def test_device_crypto_schema_contains_only_public_bounded_material() -> None:
+    identities = Base.metadata.tables["device_crypto_identities"]
+    key_packages = Base.metadata.tables["device_key_packages"]
+    identity_checks = {
+        constraint.name
+        for constraint in identities.constraints
+        if isinstance(constraint, CheckConstraint)
+    }
+    package_checks = {
+        constraint.name
+        for constraint in key_packages.constraints
+        if isinstance(constraint, CheckConstraint)
+    }
+
+    assert set(identities.columns.keys()) == {
+        "created_at",
+        "credential_identity",
+        "device_id",
+        "fingerprint",
+        "protocol_version",
+        "signature_public_key",
+        "user_id",
+    }
+    assert {
+        "ck_device_crypto_identities_credential_identity_length",
+        "ck_device_crypto_identities_fingerprint_format",
+        "ck_device_crypto_identities_protocol_version_supported",
+        "ck_device_crypto_identities_signature_public_key_length",
+    }.issubset(identity_checks)
+    assert "ck_device_key_packages_key_package_length" in package_checks
+    assert "ix_device_key_packages_device_created" in {index.name for index in key_packages.indexes}
+    assert {"private_key", "sealed_state", "wrapping_key"}.isdisjoint(
+        set(identities.columns.keys()) | set(key_packages.columns.keys())
+    )
 
 
 def test_user_schema_enforces_normalized_unique_username() -> None:

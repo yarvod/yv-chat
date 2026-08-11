@@ -4,76 +4,71 @@
 завершённая работа фиксируется отдельным коммитом, а новый пункт переносится
 сюда из `backlog.md`.
 
-## WP-034 — Isolated OpenMLS Worker runtime и reproducible browser package
+## WP-035 — Immutable device crypto identity registry
 
 Статус: **completed**
-Backlog item: `BL-013` (browser crypto runtime slice)
-Цель: собрать pinned Rust/WASM provider в проверяемый same-origin browser package и
-дать frontend изолированный Worker runtime, который единолично владеет
-`DeviceBootstrap`, WebCrypto key и IndexedDB vault. Application/UI видят только
-public device anchors и typed intent results; runtime пока не включается автоматически
-до появления server-side immutable device-identity registry.
+Backlog item: `BL-013` (server identity consistency gate)
+Цель: дать каждому active authenticated device серверный immutable public anchor для
+его OpenMLS identity и initial one-time KeyPackage. Registration допускается ровно
+один раз и exact-idempotent retry; mismatch означает visible conflict, а не замену.
+Это prerequisite для безопасного Worker provisioning/restore lifecycle.
 
 ### Security invariants
 
-1. Generated JS/WASM строятся только из exact Rust/lockfile/wasm-bindgen versions;
-   CI повторно генерирует package и проверяет отсутствие drift/private exports.
-2. Worker загружает module только из фиксированного same-origin path. URL не приходит
-   из message/input; dynamic remote code отсутствует.
-3. `DeviceBootstrap`, `CryptoKey`, IV/ciphertext и vault records никогда не выходят
-   из Worker. Main thread получает только credential identity, signature public key,
-   KeyPackage, fingerprint и revision.
-4. Worker protocol — closed discriminated union с request ID, strict runtime parsing,
-   bounded public outputs и sanitized error codes без raw exception/private bytes.
-5. Initialize сначала загружает vault. `missing` разрешает candidate bootstrap только
-   как explicit provisioning operation; `corrupt/partial` fail closed без regeneration.
-6. После atomic bootstrap runtime всегда восстанавливает committed record, поэтому
-   concurrent tab winner не может расходиться с in-memory identity.
-7. Checkpoint использует ровно следующий revision; conflict/rollback не retry/reset
-   silently. Runtime освобождает replaced/terminated WASM objects.
-8. Auth lifecycle пока не вызывает provisioning: без backend identity comparison
-   невозможно безопасно отличить первый запуск от потерянного local state.
-9. Synthetic protocol v1 остаётся единственным outgoing path и явно не E2EE.
+1. Endpoint всегда использует user/device из opaque session principal; client не
+   выбирает владельца registration.
+2. Credential identity имеет exact layout `v1 || user UUID || device UUID`; backend
+   проверяет его против principal и не доверяет client fingerprint.
+3. Fingerprint пересчитывается backend как SHA-256 exact protocol label + credential
+   identity + Ed25519 public key.
+4. Public key и KeyPackage строго bounded; base64 canonical/validated до application.
+   Private keys, sealed state, message keys и plaintext никогда не принимаются.
+5. Identity immutable: exact retry возвращает существующую запись, любое отличие —
+   typed conflict. Revoked/wrong device не может register/read current anchor.
+6. Initial KeyPackage хранится отдельно с server-derived SHA-256 reference и пока не
+   выдаётся другим users; atomic claim lifecycle будет следующим slice.
+7. Device row lock сериализует concurrent first registration без check-then-insert
+   race; identity и KeyPackage commit одной transaction.
+8. ORM не выходит из infrastructure, routes thin, dependencies через отдельный Dishka
+   provider/UoW, schema change только новой Alembic migration.
+9. Response/logs не содержат KeyPackage bytes, request payload или raw crypto errors.
+10. Наличие registry не делает synthetic v1 E2EE и не включает auto-provision.
 
 ### План
 
-- [x] Repository-owned reproducible browser package и drift/private-export gates.
-- [x] Typed Worker request/response DTOs, exact validators и bounded error mapping.
-- [x] Device crypto runtime с explicit provision/restore/checkpoint/dispose lifecycle.
-- [x] Dedicated module Worker transport и main-thread client с timeout/disposal.
-- [x] Tests для provisioning, reload restore, concurrent winner, corrupt/rollback,
-  protocol validation, sanitized failures и resource disposal.
-- [x] Frontend/Docker/CI build integration без сборки на production VPS.
-- [x] Architecture/backlog/README sync и physical Chromium acceptance.
-- [x] Repository quality gates; full CI выполняется перед commit.
+- [x] Domain public identity/KeyPackage entities и exact protocol validation.
+- [x] Focused repository/UoW ports и register/get-current use cases.
+- [x] SQLAlchemy models/repositories/UoW и Alembic `0015` constraints/indexes.
+- [x] Отдельный Dishka provider и composition wiring.
+- [x] Thin `/api/v1/devices/current/crypto-identity` GET/PUT DTO mapping.
+- [x] Domain/application/HTTP/PostgreSQL/migration/metadata security tests.
+- [x] Frontend typed gateway/use cases для inspect/register, без auth auto-hook.
+- [x] Architecture/backlog/bugs/workplan sync; full CI выполняется перед commit.
 
 ### Не входит в этот slice
 
-- automatic provisioning при login;
-- backend device identity/KeyPackage registry;
-- MLS group lifecycle, message v2 или attachment encryption;
-- production E2EE claim;
-- recovery после утраты всех device-local keys.
+- выдача/claim KeyPackage другим devices;
+- replacement/reset identity;
+- automatic Worker provision/restore при login;
+- MLS conversation/group/message lifecycle;
+- production E2EE claim.
 
 ### Definition of Done
 
-- production frontend image содержит reproducibly generated same-origin WASM package;
-- Worker/vault lifecycle восстанавливает exact identity и fail closed на corruption;
-- main thread не получает private crypto/storage material;
-- tests и generated API/drift gates фиксируют boundary;
-- текущий insecure transport не меняется и ограничения явно документированы.
+- active current device может создать только свой immutable validated anchor;
+- exact retry идемпотентен, mismatch/revoked/cross-device fail closed;
+- database гарантирует one identity per device и unique package reference;
+- frontend имеет typed API boundary, но не генерирует identity без server decision;
+- migration, tests, types, lint и repository checks зелёные.
 
 ### Проверка
 
-- release OpenMLS WASM + WebCrypto + fake IndexedDB: explicit provision, exact reload
-  restore, concurrent writer convergence, wrong AAD и modified ciphertext fail closed;
-- Worker protocol/client: exact schema, bounded public DTO, sanitized error, correlation,
-  timeout и dispose;
-- physical Chromium production smoke: Worker → `/crypto/v1` JS/WASM → IndexedDB,
-  fingerprint сохраняется после Worker restart, revision `1 → 2`;
-- Nuxt build выдаёт hashed Worker chunk, versioned WASM и Workbox precache entries;
-- frontend lint/typecheck/Vitest/build и полный `make ci` перед commit.
-
-Автоматический auth lifecycle намеренно не вызывает `provision`: следующий backend
-slice должен дать immutable server identity registry, иначе потерю local state нельзя
-безопасно отличить от первого запуска.
+- backend domain/application/HTTP/metadata/migration tests: owner binding, exact retry,
+  replacement conflict, CSRF/auth, response allowlist и no-private-column contracts;
+- PostgreSQL integration test сериализует два concurrent exact registrations row lock и
+  требует ровно одну identity + один KeyPackage (локально skip без test database,
+  обязательно выполняется GitHub CI);
+- `alembic upgrade head --sql` формирует fresh schema до `0015`;
+- frontend gateway tests проверяют missing state, public-only PUT body, CSRF и strict
+  base64/response parsing;
+- backend/frontend/full repository checks выполняются перед commit.

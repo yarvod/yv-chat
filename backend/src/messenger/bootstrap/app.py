@@ -14,6 +14,7 @@ from messenger.presentation.http.admin_users import router as admin_users_router
 from messenger.presentation.http.auth import router as auth_router
 from messenger.presentation.http.conversations import router as conversations_router
 from messenger.presentation.http.delivery_states import router as delivery_states_router
+from messenger.presentation.http.device_crypto import router as device_crypto_router
 from messenger.presentation.http.devices import router as devices_router
 from messenger.presentation.http.health import router as health_router
 from messenger.presentation.http.me import router as me_router
@@ -61,6 +62,7 @@ def create_app(
     application.include_router(health_router)
     application.include_router(auth_router)
     application.include_router(devices_router)
+    application.include_router(device_crypto_router)
     application.include_router(admin_users_router)
     application.include_router(me_router)
     application.include_router(users_router)

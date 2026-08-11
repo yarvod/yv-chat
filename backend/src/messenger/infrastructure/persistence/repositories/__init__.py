@@ -12,6 +12,10 @@ from messenger.infrastructure.persistence.repositories.conversation_read_states 
 from messenger.infrastructure.persistence.repositories.conversations import (
     SqlAlchemyConversationRepository,
 )
+from messenger.infrastructure.persistence.repositories.device_crypto import (
+    SqlAlchemyDeviceCryptoIdentityRepository,
+    SqlAlchemyDeviceKeyPackageRepository,
+)
 from messenger.infrastructure.persistence.repositories.devices import SqlAlchemyDeviceRepository
 from messenger.infrastructure.persistence.repositories.messages import SqlAlchemyMessageRepository
 from messenger.infrastructure.persistence.repositories.password_reset_tokens import (
@@ -29,6 +33,8 @@ __all__ = [
     "SqlAlchemyConversationRepository",
     "SqlAlchemyConversationDeliveryStateRepository",
     "SqlAlchemyConversationReadStateRepository",
+    "SqlAlchemyDeviceCryptoIdentityRepository",
+    "SqlAlchemyDeviceKeyPackageRepository",
     "SqlAlchemyDeviceRepository",
     "SqlAlchemyMessageRepository",
     "SqlAlchemyPasswordResetTokenRepository",

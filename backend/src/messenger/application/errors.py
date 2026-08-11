@@ -53,6 +53,14 @@ class OwnedDeviceNotFoundError(ApplicationError):
     """The requested device is absent or owned by another user."""
 
 
+class DeviceCryptoIdentityNotFoundError(ApplicationError):
+    """The current device has no registered public cryptographic identity."""
+
+
+class DeviceCryptoIdentityConflictError(ApplicationError):
+    """Registration does not exactly match the immutable device identity."""
+
+
 class CurrentDeviceRevocationError(ApplicationError):
     """The current device must be terminated through logout, not remote revoke."""
 

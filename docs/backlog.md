@@ -130,10 +130,12 @@ versioned package и isolated Worker runtime).
   `CryptoKey`/sealed internals в application/UI (`WP-034`);
 - [x] Chromium physical Worker/WASM/WebCrypto/IndexedDB provision → reload restore →
   checkpoint smoke (`WP-034`);
+- [x] immutable current-device public identity registry, server-derived fingerprint и
+  отдельно сохранённый initial KeyPackage без выдачи bytes (`WP-035`);
 - [ ] проверить seal/restore/tamper в Firefox и Safari, а также storage denial и
   migration/update lifecycle;
-- [ ] server-side immutable device identity/KeyPackage registry и только после его
-  comparison подключить restore/provision к authenticated lifecycle;
+- [ ] atomic one-time KeyPackage claim/replenishment и только после server comparison
+  подключить restore/provision к authenticated lifecycle;
 - [ ] memory/plaintext lifecycle audit и log-redaction gate для полного Worker flow;
 - [ ] known-answer/interop test vectors реального MLS provider;
 - [x] corruption/version-mismatch/no-fallback tests для protocol dispatch;

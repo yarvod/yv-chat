@@ -13,6 +13,11 @@ from messenger.application.ports.conversations import (
     ConversationRepository,
     ConversationUnitOfWork,
 )
+from messenger.application.ports.device_crypto import (
+    DeviceCryptoIdentityRepository,
+    DeviceCryptoUnitOfWork,
+    DeviceKeyPackageRepository,
+)
 from messenger.application.ports.identity import (
     ActivationTokenRepository,
     DeviceRepository,
@@ -47,6 +52,8 @@ from messenger.domain.entities import (
     ConversationDeliveryState,
     ConversationReadState,
     Device,
+    DeviceCryptoIdentity,
+    DeviceKeyPackage,
     Message,
     PasswordResetToken,
     SecurityEvent,
@@ -64,6 +71,8 @@ class IdentityState:
     password_reset_tokens: dict[UUID, PasswordResetToken] = field(default_factory=dict)
     password_hashes: dict[UUID, str] = field(default_factory=dict)
     devices: dict[UUID, Device] = field(default_factory=dict)
+    device_crypto_identities: dict[UUID, DeviceCryptoIdentity] = field(default_factory=dict)
+    device_key_packages: dict[UUID, DeviceKeyPackage] = field(default_factory=dict)
     sessions: dict[UUID, Session] = field(default_factory=dict)
     security_events: dict[UUID, SecurityEvent] = field(default_factory=dict)
     conversations: dict[UUID, Conversation] = field(default_factory=dict)
@@ -294,6 +303,45 @@ class FakeDeviceRepository:
         self._state.devices[device.id] = device
 
 
+class FakeDeviceCryptoIdentityRepository:
+    def __init__(self, state: IdentityState) -> None:
+        self._state = state
+
+    async def get_by_device_id(
+        self,
+        device_id: UUID,
+        *,
+        for_update: bool = False,
+    ) -> DeviceCryptoIdentity | None:
+        del for_update
+        return self._state.device_crypto_identities.get(device_id)
+
+    async def add(self, identity: DeviceCryptoIdentity) -> None:
+        self._state.device_crypto_identities[identity.device_id] = identity
+
+
+class FakeDeviceKeyPackageRepository:
+    def __init__(self, state: IdentityState) -> None:
+        self._state = state
+
+    async def get_initial_by_device_id(
+        self,
+        device_id: UUID,
+    ) -> DeviceKeyPackage | None:
+        packages = sorted(
+            (
+                package
+                for package in self._state.device_key_packages.values()
+                if package.device_id == device_id
+            ),
+            key=lambda package: (package.created_at, package.id),
+        )
+        return packages[0] if packages else None
+
+    async def add(self, key_package: DeviceKeyPackage) -> None:
+        self._state.device_key_packages[key_package.id] = key_package
+
+
 @dataclass(slots=True)
 class RecordingRealtimeNotifier:
     notifications: list[RealtimeNotification] = field(default_factory=list)
@@ -463,6 +511,36 @@ class FakeIdentityUnitOfWorkFactory:
 
     def __call__(self) -> IdentityUnitOfWork:
         return FakeIdentityUnitOfWork(self._state)
+
+
+class FakeDeviceCryptoUnitOfWork:
+    def __init__(self, state: IdentityState) -> None:
+        self._state = state
+        self.devices: DeviceRepository = FakeDeviceRepository(state)
+        self.identities: DeviceCryptoIdentityRepository = FakeDeviceCryptoIdentityRepository(state)
+        self.key_packages: DeviceKeyPackageRepository = FakeDeviceKeyPackageRepository(state)
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        del exc_type, exc_value, traceback
+
+    async def commit(self) -> None:
+        self._state.commits += 1
+
+
+class FakeDeviceCryptoUnitOfWorkFactory:
+    def __init__(self, state: IdentityState) -> None:
+        self._state = state
+
+    def __call__(self) -> DeviceCryptoUnitOfWork:
+        return FakeDeviceCryptoUnitOfWork(self._state)
 
 
 class FakeConversationRepository:

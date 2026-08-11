@@ -32,6 +32,8 @@ from messenger.application.conversations.get_conversation import GetConversation
 from messenger.application.conversations.leave_conversation import LeaveConversation
 from messenger.application.conversations.list_conversations import ListConversations
 from messenger.application.conversations.remove_member import RemoveConversationMember
+from messenger.application.device_crypto.get_current import GetCurrentDeviceCryptoIdentity
+from messenger.application.device_crypto.register import RegisterDeviceCryptoIdentity
 from messenger.application.devices.list_security_events import ListSecurityEvents
 from messenger.application.devices.list_sessions import ListMySessions
 from messenger.application.devices.rename import RenameMyDevice
@@ -50,6 +52,7 @@ from messenger.application.messaging.send_message import SendOpaqueMessage
 from messenger.application.ports.activation_secrets import ActivationSecretService
 from messenger.application.ports.clock import Clock
 from messenger.application.ports.conversations import ConversationUnitOfWorkFactory
+from messenger.application.ports.device_crypto import DeviceCryptoUnitOfWorkFactory
 from messenger.application.ports.identity import IdentityUnitOfWorkFactory
 from messenger.application.ports.messages import MessagingUnitOfWorkFactory
 from messenger.application.ports.password_reset_secrets import PasswordResetSecretService
@@ -76,6 +79,7 @@ from messenger.infrastructure.auth.password_reset_secrets import (
 from messenger.infrastructure.realtime import InMemoryRealtimeHub
 from tests.application.fakes import (
     FakeConversationUnitOfWorkFactory,
+    FakeDeviceCryptoUnitOfWorkFactory,
     FakeIdentityUnitOfWorkFactory,
     FakeMessagingUnitOfWorkFactory,
     FakePasswordHasher,
@@ -115,6 +119,7 @@ class HttpTestProvider(Provider):
         settings: AppSettings,
         unit_of_work: IdentityUnitOfWorkFactory,
         conversation_unit_of_work: ConversationUnitOfWorkFactory,
+        device_crypto_unit_of_work: DeviceCryptoUnitOfWorkFactory,
         messaging_unit_of_work: MessagingUnitOfWorkFactory,
         sync_unit_of_work: SyncUnitOfWorkFactory,
         clock: Clock,
@@ -126,6 +131,7 @@ class HttpTestProvider(Provider):
         self._settings = settings
         self._unit_of_work = unit_of_work
         self._conversation_unit_of_work = conversation_unit_of_work
+        self._device_crypto_unit_of_work = device_crypto_unit_of_work
         self._messaging_unit_of_work = messaging_unit_of_work
         self._sync_unit_of_work = sync_unit_of_work
         self._clock = clock
@@ -145,6 +151,10 @@ class HttpTestProvider(Provider):
     @provide(scope=Scope.APP)
     def conversation_unit_of_work(self) -> ConversationUnitOfWorkFactory:
         return self._conversation_unit_of_work
+
+    @provide(scope=Scope.APP)
+    def device_crypto_unit_of_work(self) -> DeviceCryptoUnitOfWorkFactory:
+        return self._device_crypto_unit_of_work
 
     @provide(scope=Scope.APP)
     def messaging_unit_of_work(self) -> MessagingUnitOfWorkFactory:
@@ -223,6 +233,14 @@ class HttpTestProvider(Provider):
     rename_my_device = provide(RenameMyDevice, scope=Scope.REQUEST)
     revoke_my_device = provide(RevokeMyDevice, scope=Scope.REQUEST)
     revoke_other_sessions = provide(RevokeOtherSessions, scope=Scope.REQUEST)
+    get_current_device_crypto_identity = provide(
+        GetCurrentDeviceCryptoIdentity,
+        scope=Scope.REQUEST,
+    )
+    register_device_crypto_identity = provide(
+        RegisterDeviceCryptoIdentity,
+        scope=Scope.REQUEST,
+    )
     activate_account = provide(ActivateAccount, scope=Scope.REQUEST)
     create_user_invitation = provide(CreateUserInvitation, scope=Scope.REQUEST)
     list_user_directory = provide(ListUserDirectory, scope=Scope.REQUEST)
@@ -302,6 +320,7 @@ def build_test_application(
             settings=settings,
             unit_of_work=factory,
             conversation_unit_of_work=FakeConversationUnitOfWorkFactory(state),
+            device_crypto_unit_of_work=FakeDeviceCryptoUnitOfWorkFactory(state),
             messaging_unit_of_work=FakeMessagingUnitOfWorkFactory(state),
             sync_unit_of_work=FakeSyncUnitOfWorkFactory(state),
             clock=clock,
