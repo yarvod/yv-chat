@@ -156,7 +156,7 @@ deploy-check:
 
 docs-check:
 	test "$$(grep -c '^## WP-' docs/workplan.md)" -eq 1
-	grep -q 'Статус: \*\*accepted for protocol; implementation release-gated\*\*' docs/adr/0001-e2ee-mls.md
+	grep -q 'Статус: \*\*accepted target protocol; current group deployment temporarily disabled\*\*' docs/adr/0001-e2ee-mls.md
 	grep -q 'https://www.rfc-editor.org/rfc/rfc9420.html' docs/adr/0001-e2ee-mls.md
 	grep -q 'https://www.rfc-editor.org/rfc/rfc9750.html' docs/adr/0001-e2ee-mls.md
 	grep -q 'не шифрует сообщения и не является E2EE' README.md

@@ -110,6 +110,10 @@ class SendOpaqueMessage:
                         "client message ID was reused for different envelope"
                     )
                 return result_from(existing)
+            self._policy.validate_new_message_protocol(
+                conversation.conversation_type,
+                command.protocol_version,
+            )
             if command.protocol_version == 2:
                 generation = await unit_of_work.crypto_generations.get_current(
                     conversation.id,

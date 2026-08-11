@@ -12,7 +12,7 @@ import type { QueueOutgoingMessage } from '../../application/messaging/queue-out
 import type { RetryOutboxMessage } from '../../application/messaging/retry-outbox-message'
 import type { HapticsPort } from '../../application/ports/haptics'
 import { MessageOutboxError } from '../../application/ports/message-outbox'
-import type { SendMessageReceipt } from '../../domain/messaging/models'
+import type { ConversationType, SendMessageReceipt } from '../../domain/messaging/models'
 import type { OutboxMessage } from '../../domain/messaging/outbox'
 
 export interface MessageOutboxDependencies {
@@ -91,7 +91,11 @@ export function useMessageOutbox(
     }
   }
 
-  async function enqueue(conversationId: string, plaintext: string): Promise<boolean> {
+  async function enqueue(
+    conversationId: string,
+    conversationType: ConversationType,
+    plaintext: string,
+  ): Promise<boolean> {
     state.sending = true
     state.notice = null
     try {
@@ -99,6 +103,7 @@ export function useMessageOutbox(
         ownerUserId,
         senderDeviceId,
         conversationId,
+        conversationType,
         plaintext,
       })
       await replaceView(message)

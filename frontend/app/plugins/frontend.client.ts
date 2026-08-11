@@ -108,7 +108,6 @@ export default defineNuxtPlugin(() => {
   )
   const messageProtection = new ProtocolMessageProtection(
     [new SyntheticMessageProtocol(), new MlsMessageProtocol(deviceCryptoSession)],
-    2,
   )
   themePreferences.apply(themePreference)
 

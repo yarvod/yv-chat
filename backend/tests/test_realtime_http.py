@@ -114,11 +114,11 @@ def test_committed_message_emits_only_an_opaque_wakeup_hint() -> None:
     application, state, clock = build_test_application()
     alice = next(iter(state.users.values()))
     bob = User.create(username="bob", display_name="Bob", now=clock.instant)
-    conversation = Conversation.create_direct(
+    conversation = Conversation.create_group(
         created_by=alice.id,
-        other_user_id=bob.id,
+        title="Realtime group",
         now=clock.instant,
-    )
+    ).add_member(bob.id, clock.instant)
     state.users[bob.id] = bob
     state.conversations[conversation.id] = conversation
 

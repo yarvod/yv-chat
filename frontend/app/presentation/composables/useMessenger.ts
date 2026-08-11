@@ -16,6 +16,11 @@ import type { ListParticipantDeliveryStates } from '../../application/messaging/
 import type { MarkConversationDelivered } from '../../application/messaging/mark-conversation-delivered'
 import type { MarkConversationRead } from '../../application/messaging/mark-conversation-read'
 import type { ProtocolMessageProtection } from '../../application/messaging/message-protection'
+import {
+  conversationProtectionLabel as protectionLabelForConversation,
+  conversationUsesEndToEndEncryption,
+  outgoingProtocolVersion,
+} from '../../application/messaging/conversation-message-policy'
 import type { TimelineMessage } from '../../application/messaging/timeline-message'
 import type { MessageArchive } from '../../application/ports/message-archive'
 import type {
@@ -188,26 +193,39 @@ export function useMessenger(
     message.conversationId === state.activeConversationId
   )))
   const conversationProtectionSecure = computed(() => (
-    messageProtection.secure && state.conversationCryptoPhase === 'ready'
+    activeConversation.value !== null
+    && conversationUsesEndToEndEncryption(activeConversation.value.conversationType)
+    && messageProtection.isSecure(outgoingProtocolVersion(activeConversation.value.conversationType))
+    && state.conversationCryptoPhase === 'ready'
   ))
   const conversationProtectionLabel = computed(() => {
-    if (!messageProtection.secure) return messageProtection.label
+    const conversation = activeConversation.value
+    if (!conversation) return 'Выберите диалог'
+    if (!conversationUsesEndToEndEncryption(conversation.conversationType)) {
+      return protectionLabelForConversation(conversation.conversationType)
+    }
     if (state.conversationCryptoPhase === 'ready') return 'MLS E2EE готово'
-    if (state.conversationCryptoPhase === 'pending') return 'Защищённая группа обновляется'
+    if (state.conversationCryptoPhase === 'pending') return 'Шифрование личного чата обновляется'
     if (state.conversationCryptoPhase === 'blocked') {
       return state.conversationCryptoBlockReason === 'missing_key_package'
         ? 'Не хватает одноразового ключа одного из устройств'
         : state.conversationCryptoBlockReason === 'missing_identity'
           ? 'Одно из устройств ещё не подготовило криптомодуль'
-          : 'Защищённая группа требует восстановления'
+          : 'Шифрование личного чата требует восстановления'
     }
-    if (state.conversationCryptoPhase === 'checking') return 'Проверяем защищённую группу'
-    return 'Защищённая группа недоступна на этом устройстве'
+    if (state.conversationCryptoPhase === 'checking') return 'Проверяем E2EE личного чата'
+    return 'E2EE личного чата недоступно на этом устройстве'
   })
 
   async function refreshConversationCrypto(conversationId: string): Promise<void> {
+    const conversation = state.conversations.find(item => item.conversationId === conversationId)
+    if (!conversation || !conversationUsesEndToEndEncryption(conversation.conversationType)) {
+      state.conversationCryptoPhase = 'unavailable'
+      state.conversationCryptoBlockReason = null
+      return
+    }
     const reconcile = dependencies.reconcileConversationCrypto
-    if (!messageProtection.secure || !reconcile) {
+    if (!messageProtection.isSecure(outgoingProtocolVersion(conversation.conversationType)) || !reconcile) {
       state.conversationCryptoPhase = 'unavailable'
       state.conversationCryptoBlockReason = null
       return
@@ -496,7 +514,12 @@ export function useMessenger(
     state.phase = 'loading'
     state.message = null
     try {
-      await dependencies.initializeDeviceCrypto?.()
+      try {
+        await dependencies.initializeDeviceCrypto?.()
+      } catch {
+        // Group v1 does not depend on OpenMLS. Direct conversations remain
+        // fail-closed because their reconciliation/send paths still require v2.
+      }
       await outbox.load()
       if (await hydrateSnapshot()) {
         await poll()
@@ -598,7 +621,6 @@ export function useMessenger(
     state.message = null
     try {
       const conversation = await operation()
-      dependencies.invalidateConversationCrypto?.(conversation.conversationId)
       state.conversations = state.conversations.map(item => (
         item.conversationId === conversation.conversationId ? conversation : item
       ))
@@ -641,7 +663,6 @@ export function useMessenger(
     state.message = null
     try {
       await leaveGroup.execute(conversationId)
-      dependencies.invalidateConversationCrypto?.(conversationId)
       await reloadConversations()
       await persistSnapshot()
       state.phase = 'ready'
@@ -656,11 +677,21 @@ export function useMessenger(
 
   async function send(plaintext: string): Promise<boolean> {
     const conversationId = state.activeConversationId
+    const conversation = activeConversation.value
     const normalized = plaintext.trim()
-    if (!conversationId || normalized.length === 0 || normalized.length > 4000) return false
+    if (!conversationId || !conversation || normalized.length === 0 || normalized.length > 4000) {
+      return false
+    }
+    if (
+      conversationUsesEndToEndEncryption(conversation.conversationType)
+      && state.conversationCryptoPhase !== 'ready'
+    ) {
+      state.message = 'Личный диалог недоступен до восстановления MLS E2EE.'
+      return false
+    }
     state.message = null
     try {
-      return await outbox.enqueue(conversationId, normalized)
+      return await outbox.enqueue(conversationId, conversation.conversationType, normalized)
     } catch (error) {
       fail(error)
       return false
@@ -789,6 +820,7 @@ export function useMessenger(
         if (!state.historyHasNewer) {
           await loadForwardMessages(state.activeConversationId)
         }
+        await refreshConversationCrypto(state.activeConversationId)
       }
       if (readStatesChanged) await reloadReadStates()
       if (deliveryStatesChanged) await reloadDeliveryStates()

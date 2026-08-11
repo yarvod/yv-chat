@@ -147,6 +147,22 @@ responsive group-info UI, а backend остаётся единственной �
 
 ## E2EE и multi-device history
 
+### BL-050 — Conversation-scoped direct/group protocol policy
+
+Статус: **in progress** (`WP-050`).
+
+Результат: direct conversations остаются fail-closed OpenMLS v2 E2EE, а group
+conversations временно используют synthetic v1 без E2EE с постоянной честной
+маркировкой. Выбор протокола является server-enforced policy по conversation type,
+а не client fallback. История остаётся immutable и читается по версии каждой записи.
+
+- direct: только v2 + exact generation/epoch/roster binding;
+- group: только v1, без MLS bootstrap/Commit/Welcome;
+- historical v1/v2 rows не переписываются и не меняют security label;
+- exact historical retry идемпотентен, но не открывает создание нового direct v1;
+- реальные multi-account/device/reload/revoke browser scenarios;
+- отдельный backlog item возвращает group MLS после стабилизации multi-device flow.
+
 ### BL-013 — Frontend crypto adapter и device identity
 
 Статус: **in progress** (`WP-030` завершил async fail-closed boundary; `WP-031`
@@ -190,9 +206,11 @@ versioned package и isolated Worker runtime; `WP-040` — server one-time deliv
 
 ### BL-014 — E2EE conversations, membership changes и rotation
 
-Статус: **completed** (`WP-047`, commits `91a6765`–`881f648`, production accepted).
+Статус: **completed crypto foundation** (`WP-047`, commits `91a6765`–`881f648`);
+group outgoing MLS временно отключается type-level policy `WP-050`.
 
-Результат: direct/group сообщения шифруются выбранным протоколом на каждом авторизованном устройстве.
+Результат: OpenMLS lifecycle реализован для direct/group и остаётся production
+foundation; текущая product policy использует его только для direct conversations.
 
 - [x] create/join group crypto state и sealed crash-safe checkpoint;
 - [x] initial multi-device fan-out и add/remove membership Commit в native/WASM;
@@ -208,6 +226,20 @@ versioned package и isolated Worker runtime; `WP-040` — server one-time deliv
   помеченной исторической записи; downgrade v2→v1 отсутствует;
 - [x] production-like two-origin/device exchange + reload decrypt, PostgreSQL
   migrations/integration suite, полный CI и immutable production rollout.
+
+### BL-051 — Возврат group MLS после multi-device stabilization
+
+Статус: **planned after protocol/media stabilization**.
+
+Результат: groups снова переходят с явно non-E2EE v1 на OpenMLS v2 только после
+устранения generation divergence и прохождения реальной browser/device matrix.
+
+- новая cutover sequence без переписывания historical v1 rows;
+- add/remove/re-add, revoke/relogin и несколько devices на каждого участника;
+- offline generation catch-up и exhausted KeyPackage recovery;
+- Chrome/Firefox/Safari + Android installed-PWA acceptance;
+- отсутствие silent fallback: blocked MLS означает blocked send;
+- отдельный security review и production rollout gate.
 
 ### BL-015 — Secure device-to-device history transfer
 
@@ -243,7 +275,7 @@ versioned package и isolated Worker runtime; `WP-040` — server one-time deliv
 
 ### BL-043 — Telegram-like photo/file experience поверх encrypted attachments
 
-Статус: **planned** (`WP-048` после MLS v2 `WP-047`; объединяет product UX с
+Статус: **next after `WP-050`** (новый workplan; объединяет product UX с
 `BL-016`/`BL-017`).
 
 Результат: пользователь удобно отправляет изображения и произвольные файлы, но

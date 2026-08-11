@@ -145,11 +145,11 @@ async def run_flow(database_url: str) -> None:
         charlie_session = await login.execute(
             LoginCommand(username="charlie", password=PASSWORD, device_name="Charlie device")
         )
-        conversation = Conversation.create_direct(
+        conversation = Conversation.create_group(
             created_by=alice.id,
-            other_user_id=bob.id,
+            title="PostgreSQL group",
             now=NOW,
-        )
+        ).add_member(bob.id, NOW)
         async with SqlAlchemyConversationUnitOfWorkFactory(
             session_factory
         )() as conversation_transaction:

@@ -3,11 +3,14 @@ import type { ClientIdGenerator } from '../ports/client-id-generator'
 import type { MessageOutbox } from '../ports/message-outbox'
 import type { OutboxMessage } from '../../domain/messaging/outbox'
 import type { ProtocolMessageProtection } from './message-protection'
+import type { ConversationType } from '../../domain/messaging/models'
+import { outgoingProtocolVersion } from './conversation-message-policy'
 
 export interface QueueOutgoingMessageCommand {
   ownerUserId: string
   senderDeviceId: string
   conversationId: string
+  conversationType: ConversationType
   plaintext: string
 }
 
@@ -31,11 +34,14 @@ export class QueueOutgoingMessage {
       throw new TypeError('invalid outgoing message')
     }
     const clientMessageId = this.clientIds.create()
-    const protectedMessage = await this.protection.protectText({
+    const protectedMessage = await this.protection.protectText(
+      outgoingProtocolVersion(command.conversationType),
+      {
       conversationId: command.conversationId,
       clientMessageId,
       plaintext,
-    })
+      },
+    )
     const now = new Date(this.clock.nowMilliseconds()).toISOString()
     const message: OutboxMessage = {
       ownerUserId: command.ownerUserId,

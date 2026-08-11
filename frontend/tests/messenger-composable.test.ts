@@ -36,12 +36,15 @@ import { useMessenger } from '../app/presentation/composables/useMessenger'
 
 const conversation = {
   conversationId: 'conversation-1',
-  conversationType: 'direct' as const,
-  title: null,
+  conversationType: 'group' as const,
+  title: 'Test group',
   createdBy: 'alice-id',
   createdAt: '2026-08-11T12:00:00Z',
   updatedAt: '2026-08-11T12:00:00Z',
-  members: [],
+  members: [{
+    userId: 'alice-id', username: 'alice', displayName: 'Alice',
+    role: 'owner' as const, joinedAt: '2026-08-11T12:00:00Z', leftAt: null,
+  }],
 }
 
 const message = {
@@ -79,7 +82,6 @@ let deliveryStateGateway: ConversationDeliveryStateGateway
 function createMessageProtection(): ProtocolMessageProtection {
   return new ProtocolMessageProtection(
     [new SyntheticMessageProtocol(), new UnavailableMlsMessageProtocol()],
-    1,
   )
 }
 
@@ -234,6 +236,91 @@ beforeEach(() => {
 })
 
 describe('messenger orchestration', () => {
+  it('keeps groups usable without invoking MLS reconciliation and labels the downgrade', async () => {
+    const reconcileConversationCrypto = vi.fn()
+    const messenger = useMessenger('alice-id', 'device-alice', vi.fn(), {
+      ...messengerDependencies(),
+      reconcileConversationCrypto,
+    })
+
+    await messenger.load()
+
+    expect(reconcileConversationCrypto).not.toHaveBeenCalled()
+    expect(messenger.protection.secure.value).toBe(false)
+    expect(messenger.protection.label.value).toContain('без E2EE')
+    expect(messenger.protection.label.value).toContain('доступны серверу')
+  })
+
+  it('loads and sends in a group when the local OpenMLS module is unavailable', async () => {
+    const messenger = useMessenger('alice-id', 'device-alice', vi.fn(), {
+      ...messengerDependencies(),
+      initializeDeviceCrypto: vi.fn().mockRejectedValue(new Error('worker unavailable')),
+      reconcileConversationCrypto: vi.fn(),
+    })
+
+    await messenger.load()
+
+    expect(messenger.state.phase).toBe('ready')
+    expect(await messenger.send('group stays available')).toBe(true)
+    await vi.waitFor(() => expect(gateway.sendMessage).toHaveBeenCalledWith(
+      'conversation-1', 'client-generated-id', 1, 'Z3JvdXAgc3RheXMgYXZhaWxhYmxl',
+      null, null,
+    ))
+  })
+
+  it('keeps direct send fail-closed while MLS reconciliation is pending', async () => {
+    const direct = { ...conversation, conversationType: 'direct' as const, title: null }
+    vi.mocked(gateway.listConversations).mockResolvedValue([direct])
+    const reconcileConversationCrypto = vi.fn().mockResolvedValue({
+      status: 'pending' as const,
+      generation: null,
+      blockReason: null,
+    })
+    const messenger = useMessenger('alice-id', 'device-alice', vi.fn(), {
+      ...messengerDependencies(),
+      reconcileConversationCrypto,
+    })
+
+    await messenger.load()
+
+    expect(reconcileConversationCrypto).toHaveBeenCalledWith('conversation-1')
+    expect(await messenger.send('must not downgrade')).toBe(false)
+    expect(gateway.sendMessage).not.toHaveBeenCalled()
+    expect(messenger.state.message).toContain('MLS E2EE')
+  })
+
+  it('refreshes a direct security badge after message catch-up completes enrollment', async () => {
+    const direct = { ...conversation, conversationType: 'direct' as const, title: null }
+    vi.mocked(gateway.listConversations).mockResolvedValue([direct])
+    const reconcileConversationCrypto = vi.fn()
+      .mockResolvedValueOnce({
+        status: 'pending' as const,
+        generationId: 'generation-1',
+        generationNumber: 1,
+        blockReason: null,
+        epoch: null,
+      })
+      .mockResolvedValueOnce({
+        status: 'ready' as const,
+        generationId: 'generation-1',
+        generationNumber: 1,
+        blockReason: null,
+        epoch: 1,
+      })
+    const messenger = useMessenger('alice-id', 'device-alice', vi.fn(), {
+      ...messengerDependencies(),
+      reconcileConversationCrypto,
+    })
+
+    await messenger.load()
+    expect(messenger.protection.secure.value).toBe(false)
+    await messenger.poll()
+
+    expect(reconcileConversationCrypto).toHaveBeenCalledTimes(2)
+    expect(messenger.protection.secure.value).toBe(true)
+    expect(messenger.protection.label.value).toBe('MLS E2EE готово')
+  })
+
   it('applies a group mutation immediately and persists the encrypted snapshot', async () => {
     const group = {
       ...conversation,

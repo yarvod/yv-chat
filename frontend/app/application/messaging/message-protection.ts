@@ -30,9 +30,8 @@ export interface UnprotectedText {
 
 export class ProtocolMessageProtection {
   private readonly adapters = new Map<number, MessageProtocolAdapter>()
-  private readonly outgoingAdapter: MessageProtocolAdapter
 
-  constructor(adapters: readonly MessageProtocolAdapter[], outgoingProtocolVersion: number) {
+  constructor(adapters: readonly MessageProtocolAdapter[]) {
     for (const adapter of adapters) {
       if (!Number.isInteger(adapter.protocolVersion) || adapter.protocolVersion <= 0) {
         throw new TypeError('message protocol version must be a positive integer')
@@ -42,23 +41,24 @@ export class ProtocolMessageProtection {
       }
       this.adapters.set(adapter.protocolVersion, adapter)
     }
-    const outgoingAdapter = this.adapters.get(outgoingProtocolVersion)
-    if (!outgoingAdapter) throw new TypeError('outgoing message protocol adapter is required')
-    this.outgoingAdapter = outgoingAdapter
   }
 
-  get secure(): boolean {
-    return this.outgoingAdapter.secure
+  isSecure(protocolVersion: number): boolean {
+    return this.requireAdapter(protocolVersion).secure
   }
 
-  get label(): string {
-    return this.outgoingAdapter.label
+  labelFor(protocolVersion: number): string {
+    return this.requireAdapter(protocolVersion).label
   }
 
-  async protectText(input: ProtectTextInput): Promise<ProtectedText> {
-    const protectedText = await this.outgoingAdapter.protectText(input)
+  async protectText(
+    protocolVersion: number,
+    input: ProtectTextInput,
+  ): Promise<ProtectedText> {
+    const adapter = this.requireAdapter(protocolVersion)
+    const protectedText = await adapter.protectText(input)
     return {
-      protocolVersion: this.outgoingAdapter.protocolVersion,
+      protocolVersion: adapter.protocolVersion,
       ...protectedText,
     }
   }
@@ -67,11 +67,16 @@ export class ProtocolMessageProtection {
     protocolVersion: number,
     input: UnprotectTextInput,
   ): Promise<UnprotectedText> {
-    const adapter = this.adapters.get(protocolVersion)
-    if (!adapter) throw new MessageProtectionError('unsupported-protocol')
+    const adapter = this.requireAdapter(protocolVersion)
     return {
       plaintext: await adapter.unprotectText(input),
       secure: adapter.secure,
     }
+  }
+
+  private requireAdapter(protocolVersion: number): MessageProtocolAdapter {
+    const adapter = this.adapters.get(protocolVersion)
+    if (!adapter) throw new MessageProtectionError('unsupported-protocol')
+    return adapter
   }
 }

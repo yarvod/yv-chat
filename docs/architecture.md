@@ -371,22 +371,24 @@ capture stream cursor baseline
 Событие, появившееся до baseline, уже покрывается последующим snapshot; событие после baseline будет применено poll. `reset_required` аналогично фиксирует server cursor до full resource reload. Timeline объединяет messages по stable ID и сортирует только по authoritative server `sequence`.
 
 Frontend message protection boundary асинхронный, чтобы Rust/WASM adapter не менял
-application/UI contract. `ProtocolMessageProtection` выбирает adapter только по
-точному `protocol_version`: unknown versions запрещены, duplicate registrations
-ошибочны, а reserved MLS v2 до подключения проверенного provider завершается
-`provider-unavailable`. Silent fallback v2/unknown/corrupt envelope в v1 отсутствует.
-Transport получает outgoing version из protection result и не содержит скрытую
-константу версии.
+application/UI contract. Application policy выбирает outgoing version только по
+authoritative conversation type: `direct → 2`, `group → 1`.
+`ProtocolMessageProtection` затем выбирает adapter только по точному
+`protocol_version`: unknown versions запрещены, duplicate registrations ошибочны,
+а недоступный MLS v2 завершается `provider-unavailable`. Silent fallback
+v2/unknown/corrupt envelope в v1 отсутствует. Outbox сохраняет уже выбранную version
+и exact crypto binding; retry не может сменить protocol.
 
-Текущий development/MVP synthetic protocol v1 кодирует UTF-8 в canonical base64
-для совместимости с opaque transport, но это **не шифрование и не E2EE**. UI
-показывает постоянное предупреждение. Adapter возвращает typed corruption error при
+Текущий временный group protocol v1 кодирует UTF-8 в canonical base64
+для совместимости с transport, но это **не шифрование и не E2EE**: backend может
+прочитать содержимое group message. Group UI показывает постоянное предупреждение.
+Adapter возвращает typed corruption error при
 malformed base64/UTF-8. Application готовит отдельный `TimelineMessage`: Vue видит
 только `available/deleted/unavailable`, bounded display text и protection metadata,
 не импортирует crypto adapter и не декодирует ciphertext. Decrypted content живёт
 только в reactive in-memory timeline; transport/domain DTO и persistence остаются
-opaque. Synthetic adapter удаляется при `BL-013`–`BL-014`; secure production
-milestone нельзя объявить, пока outgoing protocol равен v1.
+opaque DTO shape. Synthetic adapter остаётся только для groups и historical rows до
+`BL-051`; E2EE claim относится исключительно к direct v2 conversations.
 
 ## 7. Identity, devices и sessions
 
@@ -641,13 +643,17 @@ Initial snapshot и последующие transitions применяются и
 
 ## 10. E2EE trust boundary
 
-Обязательный invariant:
+Обязательный invariant для direct conversations:
 
 ```text
 plaintext exists only on authorized client devices
 ```
 
-Backend хранит ciphertext, public protocol data, IDs/timestamps/membership и минимальную metadata. Он не хранит plaintext, decrypted attachments, message keys или device private identity keys и не имеет `decrypt_message()` для пользовательского content.
+Backend хранит direct ciphertext, public protocol data, IDs/timestamps/membership и
+минимальную metadata. Он не хранит direct plaintext, decrypted attachments, message
+keys или device private identity keys и не имеет `decrypt_message()` для E2EE
+content. Временные group v1 bytes являются осознанным исключением: это server-readable
+content, хотя transport DTO/DB column по-прежнему называется `ciphertext`.
 
 Protocol decision принят в [ADR-0001](adr/0001-e2ee-mls.md): MLS 1.0 по RFC
 9420, один independent MLS client на device и один MLS group на conversation,
@@ -657,12 +663,12 @@ ratchets и key schedule не реализуются project code. ADR фикс�
 model, metadata leakage, KeyPackage/Welcome lifecycle, v2 framing, multi-device,
 recovery и provider release gates.
 
-Protocol accepted не означает, что текущий transport стал E2EE. OpenMLS core +
-minimal Rust/WASM adapter является implementation path только после KAT/interop,
-browser persistence/corruption, license/dependency, CSP/supply-chain и independent
-binding review. Upstream experimental WASM binding не выдаётся за production-ready.
-До выполнения `BL-013/014` synthetic protocol v1 остаётся явно insecure и не имеет
-silent downgrade/fallback права.
+OpenMLS core + minimal Rust/WASM adapter развёрнут для direct v2 после browser
+persistence/corruption, CSP/build и production-like acceptance. KAT/interop,
+Safari/storage-denial и independent binding review остаются hardening gates. Group
+MLS lifecycle реализован, но operational policy `WP-050` временно не использует его
+для новых group messages до `BL-051`. Synthetic v1 явно insecure и не имеет права
+становиться fallback для direct.
 
 Первый provider proof находится в `crypto/openmls-provider`. Это отдельный pinned
 Rust workspace: Rust `1.91.0`, OpenMLS `0.8.1`, `openmls_rust_crypto 0.5.1` и exact
@@ -673,11 +679,11 @@ signature key и one-time KeyPackage только для принятого AES-
 signature key, KeyPackage и SHA-256 public fingerprint. Provider/signature/init
 private state удерживается opaque object без serialization/getter/debug API.
 
-Provider пока не подключён к `ProtocolMessageProtection`, не меняет outgoing v1 и
-не получает E2EE badge. Release WASM и generated TypeScript glue собираются из
-exact lockfile; CI отдельно проверяет, что public binding содержит только sealed
-state API и не экспортирует private snapshot entrypoints. Browser Worker runtime и
-физические Chromium/Firefox/Safari acceptance tests остаются следующим gate.
+Provider подключён к `ProtocolMessageProtection` как exact adapter v2 и получает
+E2EE badge только для ready direct conversation. Release WASM и generated TypeScript
+glue собираются из exact lockfile; CI отдельно проверяет, что public binding содержит
+только sealed state API и не экспортирует private snapshot entrypoints. Physical
+Safari и storage-denial/update acceptance остаются отдельными gates.
 
 Внутри Rust crate существует private unsealed snapshot prerequisite. Формат имеет
 fixed magic, format/provider versions, monotonic non-zero revision, canonical
@@ -778,8 +784,8 @@ Firefox smoke под production CSP отдельно подтвердил import
 OpenMLS bootstrap. Production-like browser acceptance дополнительно подтвердил два
 чистых origin/device, initial `GET 404 → PUT 200 → GET 200`, KeyPackage pool,
 двусторонний MLS v2 exchange и decrypt из encrypted cache после reload обоих
-devices. Текущая ветка переключает новые sends на v2 без fallback, но production
-rollout остаётся отдельным gate. Safari,
+devices. Production rollout v2 завершён для direct; `WP-050` отключает outgoing MLS
+для groups без изменения сохранённых v2 rows. Safari,
 storage-denial/update tests и MLS KAT/interop всё ещё обязательны.
 
 Backend registry хранит только public device anchors. `PUT/GET
@@ -927,12 +933,37 @@ per-message placeholder без raw bytes/error. По мере реализаци
 на `encryptAttachment/decryptAttachment` и MLS membership operations, сохраняя то же
 направление зависимостей.
 
-Plaintext существует в RAM только пока нужен. Persistent local archive дополнительно
+Для direct plaintext существует в RAM только пока нужен. Group v1 content является
+server-readable исключением до `BL-051`. Persistent local archive дополнительно
 шифруется device-local storage key. MLS/WebCrypto/IndexedDB находятся за dedicated
 adapter/worker boundary; worker и non-extractable wrapping key уменьшают accidental
 exposure, но не защищают от arbitrary same-origin XSS. Потеря всех device states не
 восстанавливается password reset: это visible identity reset и потеря недоступной
 server history.
+
+### 10.1 Current conversation protocol policy
+
+Backend применяет policy после authorization и exact historical idempotency lookup,
+но до создания нового message:
+
+```text
+new direct message  → protocol_version=2 + current READY generation/epoch/roster
+new group message   → protocol_version=1 + no crypto generation/epoch
+historical retry    → exact stored envelope may be returned idempotently
+history/sync read   → dispatch by protocol_version stored on each row
+```
+
+Такой порядок сохраняет безопасный retry старого direct v1 сообщения, но не позволяет
+создать новое direct v1. Group v2 отклоняется, а клиент вообще не вызывает для group
+bootstrap/Welcome/Commit reconciliation. Уже сохранённые rows никогда не
+decrypt/re-encrypt массово: v1 остаётся помеченным non-E2EE, v2 требует локального
+MLS state. Потеря локального state не включает fallback.
+
+Direct multi-device topology остаётся MLS group из независимых leaves всех active
+devices обоих пользователей. Новое device получает Welcome и читает future epochs;
+история до enrollment доступна только через будущий explicit device-to-device
+transfer `BL-015`, а не через выдачу keys сервером. Revoked device исключается
+следующим Commit и не получает future messages.
 
 ## 11. Attachments и media storage
 

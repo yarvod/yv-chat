@@ -13,6 +13,7 @@ import type { OutboxMessage } from '../app/domain/messaging/outbox'
 import { ProtocolMessageProtection } from '../app/application/messaging/message-protection'
 import { SyntheticMessageProtocol } from '../app/infrastructure/crypto/synthetic-message-protocol'
 import { useMessageOutbox } from '../app/presentation/composables/useMessageOutbox'
+import type { MessageProtocolAdapter } from '../app/application/ports/message-protocol-adapter'
 
 function createMemoryOutbox() {
   const entries = new Map<string, OutboxMessage>()
@@ -68,10 +69,64 @@ const receipt = {
 }
 
 describe('message outbox use cases', () => {
+  it('queues direct as MLS v2 and group as non-E2EE v1 without fallback', async () => {
+    const { outbox } = createMemoryOutbox()
+    const mls: MessageProtocolAdapter = {
+      protocolVersion: 2,
+      secure: true,
+      label: 'MLS E2EE',
+      protectText: vi.fn(async () => ({
+        ciphertextBase64: 'bWxz',
+        cryptoGenerationId: 'generation-1',
+        cryptoEpoch: 4,
+      })),
+      unprotectText: vi.fn(),
+    }
+    const protection = new ProtocolMessageProtection([
+      new SyntheticMessageProtocol(),
+      mls,
+    ])
+    let sequence = 0
+    const queue = new QueueOutgoingMessage(
+      outbox,
+      protection,
+      { create: () => `client-${++sequence}` },
+      { nowMilliseconds: () => Date.parse('2026-08-11T12:00:00Z') },
+    )
+
+    const direct = await queue.execute({
+      ownerUserId: 'user-1',
+      senderDeviceId: 'device-1',
+      conversationId: 'direct-1',
+      conversationType: 'direct',
+      plaintext: 'direct body',
+    })
+    const group = await queue.execute({
+      ownerUserId: 'user-1',
+      senderDeviceId: 'device-1',
+      conversationId: 'group-1',
+      conversationType: 'group',
+      plaintext: 'group body',
+    })
+
+    expect(direct).toMatchObject({
+      protocolVersion: 2,
+      cryptoGenerationId: 'generation-1',
+      cryptoEpoch: 4,
+    })
+    expect(group).toMatchObject({
+      protocolVersion: 1,
+      ciphertextBase64: 'Z3JvdXAgYm9keQ==',
+      cryptoGenerationId: null,
+      cryptoEpoch: null,
+    })
+    expect(mls.protectText).toHaveBeenCalledOnce()
+  })
+
   it('preserves per-conversation order while allowing another conversation to flush', async () => {
     const { entries, outbox } = createMemoryOutbox()
     const clock: Clock = { nowMilliseconds: () => Date.parse('2026-08-11T12:00:01Z') }
-    const protection = new ProtocolMessageProtection([new SyntheticMessageProtocol()], 1)
+    const protection = new ProtocolMessageProtection([new SyntheticMessageProtocol()])
     const messages: OutboxMessage[] = [{
       ownerUserId: 'user-1',
       senderDeviceId: 'device-1',
@@ -167,7 +222,7 @@ describe('message outbox use cases', () => {
     const { entries, outbox } = createMemoryOutbox()
     let now = Date.parse('2026-08-11T12:00:00Z')
     const clock: Clock = { nowMilliseconds: () => now }
-    const protection = new ProtocolMessageProtection([new SyntheticMessageProtocol()], 1)
+    const protection = new ProtocolMessageProtection([new SyntheticMessageProtocol()])
     const queued = await new QueueOutgoingMessage(
       outbox,
       protection,
@@ -177,6 +232,7 @@ describe('message outbox use cases', () => {
       ownerUserId: 'user-1',
       senderDeviceId: 'device-1',
       conversationId: 'conversation-1',
+      conversationType: 'group',
       plaintext: '  private draft  ',
     })
     expect(entries.get('user-1:device-1:client-fixed')).toEqual(queued)

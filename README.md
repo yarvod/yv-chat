@@ -2,7 +2,10 @@
 
 Небольшой закрытый self-hosted мессенджер для 10–15 доверенных пользователей.
 
-Проект строится как Nuxt PWA + FastAPI + PostgreSQL и ориентирован на безопасный messaging core: закрытая регистрация, несколько устройств на пользователя, надёжная offline-синхронизация и E2EE без доступа сервера к plaintext сообщений и вложений.
+Проект строится как Nuxt PWA + FastAPI + PostgreSQL и ориентирован на закрытую
+регистрацию, несколько устройств на пользователя, надёжную offline-синхронизацию
+и E2EE личных диалогов. Группы временно работают без E2EE и явно предупреждают об
+этом до повторного включения стабилизированного MLS group lifecycle.
 
 ## Статус
 
@@ -11,12 +14,12 @@ purpose-bound password recovery, authorized direct/group conversations,
 ordered/idempotent transport, cursor sync и usable local-first PWA. История,
 conversation index и offline outbox хранятся в bounded AES-GCM encrypted IndexedDB.
 [ADR-0001](docs/adr/0001-e2ee-mls.md) принял MLS 1.0; `WP-047` внедрил и развернул
-server generation/Welcome coordination, Rust/OpenMLS group lifecycle и v2
-protect/unprotect через isolated browser Worker. Новые сообщения не имеют downgrade
-на synthetic v1; server хранит opaque MLS records, а private state остаётся в
-sealed device-local vault. Исторический synthetic v1 codec сохраняется только для
-чтения старых записей: он **не шифрует сообщения и не является E2EE**. Вложения пока
-не поддерживаются и являются текущим следующим vertical slice.
+server generation/Welcome coordination, Rust/OpenMLS lifecycle и v2 protect/unprotect
+через isolated browser Worker. Текущая server-enforced policy: direct — только MLS
+v2 без fallback, group — только synthetic v1. Synthetic v1 — UTF-8/base64 transport,
+он **не шифрует сообщения и не является E2EE**, поэтому содержимое групп доступно
+серверу. Исторические v1/v2 записи не переписываются и читаются своей exact version.
+Вложения пока не поддерживаются и являются следующим vertical slice.
 
 Install assets адаптированы для Android circle/squircle и Apple Dock. После смены
 launcher icon уже установленную Android PWA может потребоваться удалить и установить
@@ -34,7 +37,8 @@ launcher icon уже установленную Android PWA может потр�
 
 ## Ключевые ограничения
 
-- Сервер не хранит plaintext сообщений, вложений или message keys.
+- Сервер не получает plaintext личных E2EE-сообщений, вложений или message keys;
+  временные group v1 сообщения являются явно документированным исключением без E2EE.
 - Публичной регистрации нет: пользователей создаёт администратор.
 - Browser auth строится на revocable opaque sessions в `HttpOnly` cookie, а не на токенах в `localStorage`.
 - PostgreSQL — источник истины для server sync window; WebSocket служит уведомительным каналом.

@@ -3,12 +3,13 @@
 from dataclasses import dataclass, field
 
 from messenger.application.errors import InvalidMessageEnvelopeError
+from messenger.domain.entities import ConversationType
 
 
 @dataclass(frozen=True, slots=True)
 class MessageEnvelopePolicy:
     max_ciphertext_bytes: int = 65_536
-    supported_protocol_versions: frozenset[int] = field(default_factory=lambda: frozenset({1}))
+    supported_protocol_versions: frozenset[int] = field(default_factory=lambda: frozenset({1, 2}))
 
     def __post_init__(self) -> None:
         if self.max_ciphertext_bytes <= 0 or self.max_ciphertext_bytes > 1_048_576:
@@ -23,3 +24,15 @@ class MessageEnvelopePolicy:
             raise InvalidMessageEnvelopeError("unsupported protocol version")
         if not ciphertext or len(ciphertext) > self.max_ciphertext_bytes:
             raise InvalidMessageEnvelopeError("ciphertext size is invalid")
+
+    def validate_new_message_protocol(
+        self,
+        conversation_type: ConversationType,
+        protocol_version: int,
+    ) -> None:
+        expected_version = 2 if conversation_type is ConversationType.DIRECT else 1
+        if protocol_version != expected_version:
+            raise InvalidMessageEnvelopeError(
+                f"{conversation_type.value} conversation requires protocol version "
+                f"{expected_version}"
+            )

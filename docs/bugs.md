@@ -4,6 +4,21 @@
 
 ## Active
 
+### BUG-050 — Direct recipient badge оставался stale после Welcome catch-up
+
+- Статус: `fixed and browser-verified in WP-050`.
+- Severity: `high`; второй device успешно применял Welcome и расшифровывал новое
+  direct v2 сообщение, но UI продолжал показывать «E2EE недоступно» из состояния,
+  полученного до завершения sender bootstrap.
+- Причина: incoming `message_created` запускал exact-version history decrypt, который
+  reconciliation-ил MLS state внутри adapter, но presentation crypto phase повторно
+  обновлялась только для `conversation_updated`.
+- Исправление: после active message catch-up `useMessenger` повторно запрашивает
+  authoritative conversation crypto state. Group path остаётся no-op и не вызывает
+  MLS endpoint. Regression моделирует `pending → message_created → ready`.
+- Проверка: production-like recipient применил Welcome, расшифровал direct v2, после
+  rebuild/reload warning отсутствует; browser console и backend 5xx logs пусты.
+
 ### BUG-049 — Revoke/relogin оставлял устройства на разных MLS generations
 
 - Статус: `fixed`, production `WP-049`, verified 2026-08-12.

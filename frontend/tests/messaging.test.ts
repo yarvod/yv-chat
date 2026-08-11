@@ -6,6 +6,10 @@ import {
   ProtocolMessageProtection,
 } from '../app/application/messaging/message-protection'
 import { prepareTimelineMessage } from '../app/application/messaging/timeline-message'
+import {
+  conversationUsesEndToEndEncryption,
+  outgoingProtocolVersion,
+} from '../app/application/messaging/conversation-message-policy'
 import { SyntheticMessageProtocol } from '../app/infrastructure/crypto/synthetic-message-protocol'
 import { UnavailableMlsMessageProtocol } from '../app/infrastructure/crypto/unavailable-mls-message-protocol'
 import {
@@ -35,6 +39,13 @@ const conversation = {
 }
 
 describe('messaging boundaries', () => {
+  it('selects outgoing protocol exclusively from the conversation type', () => {
+    expect(outgoingProtocolVersion('direct')).toBe(2)
+    expect(outgoingProtocolVersion('group')).toBe(1)
+    expect(conversationUsesEndToEndEncryption('direct')).toBe(true)
+    expect(conversationUsesEndToEndEncryption('group')).toBe(false)
+  })
+
   it('parses the explicit conversation shape and rejects an unknown enum', () => {
     expect(parseConversation(conversation).conversationType).toBe('direct')
     expect(() => parseConversation({ ...conversation, conversation_type: 'channel' }))
@@ -72,14 +83,13 @@ describe('messaging boundaries', () => {
     const plaintext = 'Привет 👋'
     const protection = new ProtocolMessageProtection(
       [new SyntheticMessageProtocol(), new UnavailableMlsMessageProtocol()],
-      1,
     )
-    const encrypted = await protection.protectText({
+    const encrypted = await protection.protectText(1, {
       conversationId: 'conversation-1',
       clientMessageId: 'client-1',
       plaintext,
     })
-    expect(protection.secure).toBe(false)
+    expect(protection.isSecure(1)).toBe(false)
     expect(encrypted.protocolVersion).toBe(1)
     await expect(protection.unprotectText(1, {
       conversationId: 'conversation-1',
@@ -93,7 +103,6 @@ describe('messaging boundaries', () => {
     const decode = vi.spyOn(synthetic, 'unprotectText')
     const protection = new ProtocolMessageProtection(
       [synthetic, new UnavailableMlsMessageProtocol()],
-      1,
     )
     const input = {
       conversationId: 'conversation-1',
@@ -122,12 +131,11 @@ describe('messaging boundaries', () => {
   it('rejects ambiguous adapter registration and never decrypts tombstones', async () => {
     expect(() => new ProtocolMessageProtection(
       [new SyntheticMessageProtocol(), new SyntheticMessageProtocol()],
-      1,
     )).toThrow('duplicate message protocol adapter')
 
     const synthetic = new SyntheticMessageProtocol()
     const decode = vi.spyOn(synthetic, 'unprotectText')
-    const protection = new ProtocolMessageProtection([synthetic], 1)
+    const protection = new ProtocolMessageProtection([synthetic])
     const timeline = await prepareTimelineMessage({
       messageId: 'message-deleted',
       clientMessageId: 'client-deleted',

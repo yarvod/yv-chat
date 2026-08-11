@@ -45,12 +45,12 @@ async def test_send_opaque_message_and_reject_invalid_or_non_member_envelopes() 
             "Origin": ORIGIN,
             "X-CSRF-Token": charlie_client.cookies["__Host-yv_csrf"],
         }
-        direct = await alice_client.post(
-            "/api/v1/conversations/direct",
+        group = await alice_client.post(
+            "/api/v1/conversations/group",
             headers=alice_headers,
-            json={"other_user_id": str(bob.id)},
+            json={"title": "Messages", "member_user_ids": [str(bob.id)]},
         )
-        conversation_id = direct.json()["conversation_id"]
+        conversation_id = group.json()["conversation_id"]
         ciphertext = b"\x00\xffsynthetic-opaque-envelope"
         client_message_id = uuid4()
 
@@ -170,6 +170,23 @@ async def test_send_opaque_message_and_reject_invalid_or_non_member_envelopes() 
         assert non_member.status_code == 404
         assert len(state.messages) == 1
 
+        direct = await alice_client.post(
+            "/api/v1/conversations/direct",
+            headers=alice_headers,
+            json={"other_user_id": str(bob.id)},
+        )
+        direct_v1 = await alice_client.post(
+            f"/api/v1/conversations/{direct.json()['conversation_id']}/messages",
+            headers=alice_headers,
+            json={
+                "client_message_id": str(uuid4()),
+                "protocol_version": 1,
+                "ciphertext_base64": "bm90LWUyZWU=",
+            },
+        )
+        assert direct_v1.status_code == 422
+        assert len(state.messages) == 1
+
 
 async def test_message_openapi_response_has_no_content_or_key_fields() -> None:
     application, _, _ = build_test_application()
@@ -262,12 +279,12 @@ async def test_delete_for_everyone_requires_csrf_and_returns_tombstone() -> None
             "Origin": ORIGIN,
             "X-CSRF-Token": bob_client.cookies["__Host-yv_csrf"],
         }
-        direct = await alice_client.post(
-            "/api/v1/conversations/direct",
+        group = await alice_client.post(
+            "/api/v1/conversations/group",
             headers=alice_headers,
-            json={"other_user_id": str(bob.id)},
+            json={"title": "Delete tests", "member_user_ids": [str(bob.id)]},
         )
-        conversation_id = direct.json()["conversation_id"]
+        conversation_id = group.json()["conversation_id"]
         sent = await alice_client.post(
             f"/api/v1/conversations/{conversation_id}/messages",
             headers=alice_headers,

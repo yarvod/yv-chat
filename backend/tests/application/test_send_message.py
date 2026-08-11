@@ -52,11 +52,11 @@ def messaging_state() -> tuple[IdentityState, User, User, User, Device, Conversa
     bob = User.create(username="bob", display_name="Bob", now=NOW)
     charlie = User.create(username="charlie", display_name="Charlie", now=NOW)
     device = Device.create(user_id=alice.id, name="Alice device", now=NOW)
-    conversation = Conversation.create_direct(
+    conversation = Conversation.create_group(
         created_by=alice.id,
-        other_user_id=bob.id,
+        title="Test group",
         now=NOW,
-    )
+    ).add_member(bob.id, NOW)
     state = IdentityState(
         users={user.id: user for user in (alice, bob, charlie)},
         devices={device.id: device},
@@ -156,6 +156,74 @@ async def test_send_persists_only_opaque_envelope_metadata() -> None:
         )
     with pytest.raises(ConversationNotFoundError):
         await get_message.execute(GetMessageQuery(charlie.id, conversation.id, result.message_id))
+
+
+async def test_conversation_type_enforces_new_protocol_but_preserves_historical_retry() -> None:
+    state, alice, bob, _, device, group = messaging_state()
+    direct = Conversation.create_direct(
+        created_by=alice.id,
+        other_user_id=bob.id,
+        now=NOW,
+    )
+    state.conversations[direct.id] = direct
+    use_case = SendOpaqueMessage(
+        unit_of_work=FakeMessagingUnitOfWorkFactory(state),
+        clock=FixedClock(NOW + timedelta(seconds=1)),
+        message_policy=MessageEnvelopePolicy(),
+        retention_policy=RETENTION,
+        sync_policy=SyncPolicy(),
+        realtime_notifier=RecordingRealtimeNotifier(),
+    )
+
+    with pytest.raises(InvalidMessageEnvelopeError, match="direct conversation requires"):
+        await use_case.execute(
+            SendOpaqueMessageCommand(
+                alice.id,
+                device.id,
+                direct.id,
+                uuid4(),
+                1,
+                b"new-direct-v1-is-forbidden",
+            )
+        )
+    with pytest.raises(InvalidMessageEnvelopeError, match="group conversation requires"):
+        await use_case.execute(
+            SendOpaqueMessageCommand(
+                alice.id,
+                device.id,
+                group.id,
+                uuid4(),
+                2,
+                b"group-v2-is-disabled",
+            )
+        )
+
+    historical_id = uuid4()
+    historical = Message.create(
+        conversation_id=direct.id,
+        client_message_id=historical_id,
+        sender_user_id=alice.id,
+        sender_device_id=device.id,
+        protocol_version=1,
+        sequence=1,
+        ciphertext=b"historical-direct-v1",
+        now=NOW,
+        retention=RETENTION.ciphertext_retention,
+    )
+    state.messages[historical.id] = historical
+    retried = await use_case.execute(
+        SendOpaqueMessageCommand(
+            alice.id,
+            device.id,
+            direct.id,
+            historical_id,
+            1,
+            b"historical-direct-v1",
+        )
+    )
+
+    assert retried.message_id == historical.id
+    assert len(state.messages) == 1
 
 
 async def test_history_pages_latest_and_before_without_gaps_or_duplicates() -> None:
@@ -385,7 +453,13 @@ async def test_realtime_failure_does_not_rollback_committed_message() -> None:
 
 
 async def test_v2_send_requires_ready_generation_and_sender_leaf() -> None:
-    state, alice, _, _, device, conversation = messaging_state()
+    state, alice, bob, _, device, _ = messaging_state()
+    conversation = Conversation.create_direct(
+        created_by=alice.id,
+        other_user_id=bob.id,
+        now=NOW,
+    )
+    state.conversations[conversation.id] = conversation
     use_case = SendOpaqueMessage(
         unit_of_work=FakeMessagingUnitOfWorkFactory(state),
         clock=FixedClock(NOW + timedelta(seconds=2)),

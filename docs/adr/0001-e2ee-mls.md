@@ -1,6 +1,6 @@
 # ADR-0001: MLS 1.0 для end-to-end encryption
 
-- Статус: **accepted for protocol; implementation release-gated**
+- Статус: **accepted target protocol; current group deployment temporarily disabled**
 - Дата решения: 2026-08-11
 - Последняя проверка upstream state: 2026-08-11
 - Связанные задачи: `BL-012`, `WP-029`; реализация — `BL-013`, `BL-014`,
@@ -12,6 +12,13 @@
 E2EE group key agreement/message protection protocol и применяет его одинаково к
 direct conversations и groups. Direct conversation не получает отдельный
 самодельный ratchet.
+
+Operational amendment `WP-050` (2026-08-12): protocol decision не отменён, но
+production profile временно применяет MLS v2 только к direct conversations. Groups
+отправляют synthetic v1 без E2EE до `BL-051`; backend может читать их содержимое,
+UI обязан постоянно это показывать. Это type-level server policy, а не fallback:
+ошибка direct MLS блокирует send и никогда не переключает его на v1. Historical
+v1/v2 rows остаются неизменными и читаются exact-version adapter.
 
 Базовый набор:
 
@@ -139,13 +146,14 @@ crypto identity. Legacy device, которое ни разу не запуска
 KeyPackage; такой required device оставляет generation blocked до replenishment либо
 явного revoke.
 
-При миграции existing synthetic conversation server фиксирует одну cutover sequence
-и crypto generation под row lock. После accepted MLS bootstrap records с
-`protocol_version=1` остаются только historical insecure rows с явной маркировкой;
-они никогда не decrypt/re-encrypt задним числом и не получают E2EE badge. New sends
-разрешены только v2. Два concurrent initiator не создают две silently competing MLS
-groups: server выбирает одну generation/operation, а clients reject mismatched group
-ID/generation.
+При миграции direct synthetic conversation server фиксирует одну cutover sequence и
+crypto generation под row lock. После accepted MLS bootstrap records с
+`protocol_version=1` остаются historical insecure rows с явной маркировкой; они
+никогда не decrypt/re-encrypt задним числом и не получают E2EE badge. Новые direct
+sends разрешены только v2. До `BL-051` новые group sends, наоборот, разрешены только
+v1 и group MLS reconciliation не запускается. Два concurrent direct initiator не
+создают две silently competing MLS groups: server выбирает одну
+generation/operation, а clients reject mismatched group ID/generation.
 
 Incoming Commit сначала staged. Client сопоставляет resulting leaf credential set с
 authoritative synchronized user/device membership и expected pending operation.
