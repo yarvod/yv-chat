@@ -17,6 +17,9 @@
 - Исправление: exact retry немедленно materialize-ит существующую generation любого
   статуса; request, уже связанный с другой conversation, по-прежнему даёт typed
   conflict. Regression повторяет blocked request и требует одну generation/commit.
+  После terminal blocked frontend заранее сохраняет новый operation ID: следующий
+  reconciliation может продолжить bootstrap, если недостающий device уже прошёл
+  provisioning, вместо бесконечного повтора исторического blocked результата.
 - Отдельное ожидаемое состояние: `missing_identity` не является миграционной
   потерей ключей. Оно означает, что хотя бы одно active device участника ещё не
   зарегистрировало собственную MLS identity после обновления PWA.

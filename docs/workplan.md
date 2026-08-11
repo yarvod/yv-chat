@@ -17,7 +17,9 @@ Bug: `BUG-048`
 - [x] Найти нарушенный idempotency path и сохранить cross-conversation conflict.
 - [x] Вернуть exact existing generation для retry независимо от её статуса.
 - [x] Добавить regression для repeated blocked bootstrap: одна generation, один commit.
-- [ ] Прогнать backend/full CI, PostgreSQL integration и diff/security review.
+- [x] После terminal blocked сохранить новый durable request ID, чтобы следующая
+  reconciliation могла проверить уже появившиеся identity/KeyPackages.
+- [x] Прогнать backend/full CI, PostgreSQL integration и diff/security review.
 - [ ] Commit/push, production deploy и проверить отсутствие новых 500.
 - [ ] Вернуть `WP-048` encrypted attachments в active workplan после hotfix commit.
 
@@ -26,5 +28,7 @@ Bug: `BUG-048`
 - same request получает одинаковый blocked/pending/ready result и не пишет вторую row;
 - request ID другой conversation остаётся conflict, а не утечкой чужого state;
 - production перестаёт логировать unique violation и UI получает bounded block reason;
+- после устранения block reason клиент создаёт новую операцию и автоматически
+  продолжает bootstrap, не нарушая идемпотентность старой попытки;
 - `missing_identity` объяснён как состояние непрошедшего provisioning другого active
   device, а не как повреждение миграцией.

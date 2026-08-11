@@ -50,7 +50,12 @@ export class ReconcileConversationCrypto {
     const generation = await this.server.begin(command.conversationId, bootstrapRequestId)
     this.assertGenerationBinding(generation, command.conversationId)
     local = await this.resumeAppliedCheckpoint(command, local)
-    if (generation.status === 'blocked') return result(generation)
+    if (generation.status === 'blocked') {
+      if (local.phase === 'bootstrap-requested') {
+        await this.state.save(bootstrapState(command, this.ids.create()))
+      }
+      return result(generation)
+    }
     local = await this.catchUpReadyGenerations(command, local, generation.generationNumber)
     if (generation.coordinatorDeviceId === command.deviceId) {
       return await this.reconcileCoordinator(command, generation, local, bootstrapRequestId)

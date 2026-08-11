@@ -40,6 +40,7 @@ const coordinatorUserId = '318887ee-2517-45fc-9635-07cf915b31b4'
 const memberDeviceId = 'f34b0d48-6dc9-4ed1-9c5b-eb76544ead0a'
 const memberUserId = 'd8f16ee6-7063-494e-a71b-558392476527'
 const requestId = 'b24a030d-a3f0-4eed-a463-a1722920615c'
+const retryRequestId = '6ae637c7-b4bc-4979-b032-00b8b9cbe155'
 const secondGenerationId = 'e109d71c-8e4f-43fa-aafd-7ef7d16b2475'
 const newDeviceId = '3ce72df7-3921-4c03-8ba8-4f1c0370bca9'
 const fourthGenerationId = 'd7e13aed-0bf8-47cf-bcf4-4ff25b96d7e8'
@@ -271,6 +272,44 @@ describe('conversation crypto reconciliation', () => {
       phase: 'bootstrap-requested',
       generationId: null,
     })
+  })
+
+  it('uses a fresh operation after a terminal blocked bootstrap can be retried', async () => {
+    const state = new MemoryState()
+    const blocked: ConversationCryptoGeneration = {
+      ...generation('pending', coordinatorDeviceId),
+      status: 'blocked',
+      blockReason: 'missing_identity',
+    }
+    const begin = vi.fn()
+      .mockResolvedValueOnce(blocked)
+      .mockResolvedValueOnce(generation('pending', coordinatorDeviceId))
+    const server: ConversationCryptoGateway = {
+      getCurrent: vi.fn(async () => null),
+      listReadyAfter: vi.fn(async () => []),
+      begin,
+      finalize: vi.fn(async () => generation('ready', coordinatorDeviceId)),
+      acknowledgeWelcome: vi.fn(async () => undefined),
+    }
+    const useCase = new ReconcileConversationCrypto(
+      server,
+      state,
+      new FakeDeviceCrypto(),
+      new FakeMls(),
+      new FixedIds([requestId, retryRequestId]),
+    )
+
+    await expect(useCase.execute({ conversationId, deviceId: coordinatorDeviceId }))
+      .resolves.toMatchObject({ status: 'blocked', blockReason: 'missing_identity' })
+    expect(state.value).toMatchObject({
+      phase: 'bootstrap-requested',
+      bootstrapRequestId: retryRequestId,
+    })
+
+    await expect(useCase.execute({ conversationId, deviceId: coordinatorDeviceId }))
+      .resolves.toMatchObject({ status: 'ready' })
+    expect(begin).toHaveBeenNthCalledWith(1, conversationId, requestId)
+    expect(begin).toHaveBeenNthCalledWith(2, conversationId, retryRequestId)
   })
 
   it('creates one incremental Commit and routes Welcome only to a new device', async () => {
