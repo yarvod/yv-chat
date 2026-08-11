@@ -13,6 +13,8 @@ const userId = '1b0a32e8-144f-4f60-bcb6-112f71bd5316'
 const deviceId = '50d6b08a-84ae-4bd7-829a-f40f38e9a2c1'
 const fingerprint = 'ab'.repeat(32)
 const databaseName = 'yv-chat-crypto-v1'
+const conversationId = 'f6a5941b-c417-4e50-a69c-9a30bd7ed28c'
+const clientMessageId = '538998bb-1943-4cf3-beb1-8b87cadf0fc1'
 
 function requestResult<T>(request: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -102,6 +104,37 @@ describe('IndexedDB crypto vault', () => {
     expect(unchanged.status === 'ready' && unchanged.state.revision).toBe(2)
   })
 
+  it('atomically checkpoints MLS state with encrypted local message content', async () => {
+    await vault.bootstrap(userId, deviceId, async () => draft(1))
+    const plaintext = new TextEncoder().encode('only encrypted at rest')
+    const updated = await vault.updateWithMessageContent(
+      userId,
+      deviceId,
+      conversationId,
+      clientMessageId,
+      plaintext,
+      async (_key, revision) => draft(revision),
+    )
+    expect(updated.revision).toBe(2)
+    await expect(vault.loadMessageContent(
+      userId,
+      deviceId,
+      conversationId,
+      clientMessageId,
+    )).resolves.toEqual(plaintext)
+
+    vault.close()
+    const database = await requestResult(indexedDb.open(databaseName, 2))
+    const transaction = database.transaction('message_content', 'readonly')
+    const completed = transactionDone(transaction)
+    const encrypted = await requestResult(transaction.objectStore('message_content').get(
+      `${deviceId}:${conversationId}:${clientMessageId}`,
+    )) as { ciphertext: ArrayBuffer }
+    await completed
+    database.close()
+    expect(new TextDecoder().decode(encrypted.ciphertext)).not.toContain('only encrypted at rest')
+  })
+
   it('does not write a partial bootstrap when sealing fails', async () => {
     await expect(vault.bootstrap(userId, deviceId, async () => {
       throw new Error('synthetic failure')
@@ -127,7 +160,7 @@ describe('IndexedDB crypto vault', () => {
       false,
       ['encrypt', 'decrypt'],
     )
-    const database = await requestResult(indexedDb.open(databaseName, 1))
+    const database = await requestResult(indexedDb.open(databaseName, 2))
     const transaction = database.transaction('wrapping_keys', 'readwrite')
     const completed = transactionDone(transaction)
     transaction.objectStore('wrapping_keys').add({

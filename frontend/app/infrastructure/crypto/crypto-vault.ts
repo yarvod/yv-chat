@@ -46,5 +46,22 @@ export interface CryptoVault {
       nextRevision: number,
     ) => Promise<SealedCryptoStateDraft>,
   ): Promise<StoredSealedCryptoState>
+  loadMessageContent(
+    userId: string,
+    deviceId: string,
+    conversationId: string,
+    clientMessageId: string,
+  ): Promise<Uint8Array | null>
+  updateWithMessageContent(
+    userId: string,
+    deviceId: string,
+    conversationId: string,
+    clientMessageId: string,
+    plaintext: Uint8Array,
+    seal: (
+      wrappingKey: CryptoKey,
+      nextRevision: number,
+    ) => Promise<SealedCryptoStateDraft>,
+  ): Promise<StoredSealedCryptoState>
   close(): void
 }

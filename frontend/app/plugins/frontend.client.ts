@@ -41,7 +41,7 @@ import { MarkConversationDelivered } from '../application/messaging/mark-convers
 import { MarkConversationRead } from '../application/messaging/mark-conversation-read'
 import { TypingIndicatorService } from '../application/messaging/typing-indicator-service'
 import type { TypingTransport } from '../application/ports/typing-transport'
-import { createDeviceCryptoScope } from '../bootstrap/device-crypto'
+import { DeviceCryptoSession } from '../bootstrap/device-crypto-session'
 import { LoadCurrentAccount } from '../application/auth/load-current-account'
 import { Login } from '../application/auth/login'
 import { Logout } from '../application/auth/logout'
@@ -58,7 +58,7 @@ import { IndexedDbMessageArchive } from '../infrastructure/storage/indexeddb-mes
 import { IndexedDbMessengerSnapshotStore } from '../infrastructure/storage/indexeddb-messenger-snapshot-store'
 import { IndexedDbMessageOutbox } from '../infrastructure/storage/indexeddb-message-outbox'
 import { SyntheticMessageProtocol } from '../infrastructure/crypto/synthetic-message-protocol'
-import { UnavailableMlsMessageProtocol } from '../infrastructure/crypto/unavailable-mls-message-protocol'
+import { MlsMessageProtocol } from '../infrastructure/crypto/mls-message-protocol'
 import { HttpAdminAccountsGateway } from '../infrastructure/http/admin-accounts-gateway'
 import { HttpAccountSecurityGateway } from '../infrastructure/http/account-security-gateway'
 import { ApiClient } from '../infrastructure/http/api-client'
@@ -68,7 +68,10 @@ import { HttpConversationReadStateGateway } from '../infrastructure/http/convers
 import { HttpConversationDeliveryStateGateway } from '../infrastructure/http/conversation-delivery-state-gateway'
 import { HttpDeviceCryptoRegistryGateway } from '../infrastructure/http/device-crypto-registry-gateway'
 import { HttpDeviceKeyPackageGateway } from '../infrastructure/http/device-key-package-gateway'
+import { HttpConversationCryptoGateway } from '../infrastructure/http/conversation-crypto-gateway'
 import { BrowserRealtimeGateway } from '../infrastructure/realtime/browser-realtime-gateway'
+import { CryptoWorkerClient } from '../infrastructure/crypto/crypto-worker-client'
+import { IndexedDbConversationCryptoState } from '../infrastructure/storage/indexeddb-conversation-crypto-state'
 
 export default defineNuxtPlugin(() => {
   const apiClient = new ApiClient()
@@ -80,6 +83,7 @@ export default defineNuxtPlugin(() => {
   const deliveryStateGateway = new HttpConversationDeliveryStateGateway(apiClient)
   const deviceCryptoRegistryGateway = new HttpDeviceCryptoRegistryGateway(apiClient)
   const deviceKeyPackageGateway = new HttpDeviceKeyPackageGateway(apiClient)
+  const conversationCryptoGateway = new HttpConversationCryptoGateway(apiClient)
   const deviceInfo = new BrowserDeviceInfo()
   const haptics = new BrowserHaptics()
   const realtimeGateway = new BrowserRealtimeGateway()
@@ -90,13 +94,21 @@ export default defineNuxtPlugin(() => {
   const browserLocation = new BrowserLocation()
   const pageVisibility = new BrowserPageVisibility()
   const themePreference = themePreferences.load()
-  const messageProtection = new ProtocolMessageProtection(
-    [new SyntheticMessageProtocol(), new UnavailableMlsMessageProtocol()],
-    1,
-  )
   const messageArchive = new IndexedDbMessageArchive()
   const messengerSnapshotStore = new IndexedDbMessengerSnapshotStore()
   const messageOutbox = new IndexedDbMessageOutbox()
+  const conversationCryptoState = new IndexedDbConversationCryptoState()
+  const deviceCryptoSession = new DeviceCryptoSession(
+    deviceCryptoRegistryGateway,
+    conversationCryptoGateway,
+    conversationCryptoState,
+    clientIdGenerator,
+    () => new CryptoWorkerClient(),
+  )
+  const messageProtection = new ProtocolMessageProtection(
+    [new SyntheticMessageProtocol(), new MlsMessageProtocol(deviceCryptoSession)],
+    2,
+  )
   themePreferences.apply(themePreference)
 
   return {
@@ -159,10 +171,7 @@ export default defineNuxtPlugin(() => {
           new TypingIndicatorService(transport, scheduler, clock)
         ),
         createPresenceIndicators: () => new PresenceIndicatorService(),
-        createDeviceCrypto: () => createDeviceCryptoScope(
-          deviceCryptoRegistryGateway,
-          deviceKeyPackageGateway,
-        ),
+        deviceCryptoSession,
         getDeviceCryptoRegistration: new GetDeviceCryptoRegistration(deviceCryptoRegistryGateway),
         registerDeviceCrypto: new RegisterDeviceCrypto(deviceCryptoRegistryGateway),
         listDeviceKeyPackages: new ListDeviceKeyPackages(deviceKeyPackageGateway),

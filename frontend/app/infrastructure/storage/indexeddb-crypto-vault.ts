@@ -8,14 +8,16 @@ import {
 import { requestResult, transactionDone } from './indexeddb-operations'
 
 const DATABASE_NAME = 'yv-chat-crypto-v1'
-const DATABASE_VERSION = 1
+const DATABASE_VERSION = 2
 const WRAPPING_KEYS_STORE = 'wrapping_keys'
 const SEALED_STATES_STORE = 'sealed_states'
+const MESSAGE_CONTENT_STORE = 'message_content'
 const STATE_SCHEMA_VERSION = 1
 const IV_LENGTH = 12
 const MAX_CIPHERTEXT_BYTES = 32 * 1024 * 1024 + 16
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const FINGERPRINT_PATTERN = /^[0-9a-f]{64}$/
+const MAX_MESSAGE_CONTENT_BYTES = 256 * 1024
 
 interface WrappingKeyRecord {
   deviceId: string
@@ -29,6 +31,18 @@ interface SealedStateRecord {
   schemaVersion: number
   revision: number
   fingerprint: string
+  iv: ArrayBuffer
+  ciphertext: ArrayBuffer
+  updatedAt: number
+}
+
+interface EncryptedMessageContentRecord {
+  storageKey: string
+  deviceId: string
+  userId: string
+  conversationId: string
+  clientMessageId: string
+  schemaVersion: number
   iv: ArrayBuffer
   ciphertext: ArrayBuffer
   updatedAt: number
@@ -88,6 +102,8 @@ export class IndexedDbCryptoVault implements CryptoVault {
   constructor(
     private readonly indexedDb: IDBFactory = indexedDB,
     private readonly subtle: SubtleCrypto = crypto.subtle,
+    private readonly randomValues: (array: Uint8Array<ArrayBuffer>) => Uint8Array<ArrayBuffer>
+      = array => crypto.getRandomValues(array),
   ) {}
 
   async load(userId: string, deviceId: string): Promise<CryptoVaultLoadResult> {
@@ -210,6 +226,104 @@ export class IndexedDbCryptoVault implements CryptoVault {
     }
   }
 
+  async loadMessageContent(
+    userId: string,
+    deviceId: string,
+    conversationId: string,
+    clientMessageId: string,
+  ): Promise<Uint8Array | null> {
+    if (
+      !validIdentity(userId, deviceId)
+      || !UUID_PATTERN.test(conversationId)
+      || !UUID_PATTERN.test(clientMessageId)
+    ) throw new CryptoVaultError('corrupt')
+    try {
+      const loaded = await this.load(userId, deviceId)
+      if (loaded.status === 'missing') throw new CryptoVaultError('corrupt')
+      const database = await this.open()
+      const transaction = database.transaction(MESSAGE_CONTENT_STORE, 'readonly')
+      const completed = transactionDone(transaction)
+      const record = await requestResult(
+        transaction.objectStore(MESSAGE_CONTENT_STORE).get(
+          this.messageStorageKey(deviceId, conversationId, clientMessageId),
+        ),
+      ) as EncryptedMessageContentRecord | undefined
+      await completed
+      if (!record) return null
+      this.validateMessageRecord(record, userId, deviceId, conversationId, clientMessageId)
+      return new Uint8Array(await this.subtle.decrypt(
+        {
+          name: 'AES-GCM',
+          iv: record.iv,
+          additionalData: this.messageAad(userId, deviceId, conversationId, clientMessageId),
+        },
+        loaded.wrappingKey,
+        record.ciphertext,
+      ))
+    } catch (error) {
+      if (error instanceof CryptoVaultError) throw error
+      throw new CryptoVaultError('storage-unavailable')
+    }
+  }
+
+  async updateWithMessageContent(
+    userId: string,
+    deviceId: string,
+    conversationId: string,
+    clientMessageId: string,
+    plaintext: Uint8Array,
+    seal: (wrappingKey: CryptoKey, nextRevision: number) => Promise<SealedCryptoStateDraft>,
+  ): Promise<StoredSealedCryptoState> {
+    if (
+      !validIdentity(userId, deviceId)
+      || !UUID_PATTERN.test(conversationId)
+      || !UUID_PATTERN.test(clientMessageId)
+      || plaintext.byteLength === 0
+      || plaintext.byteLength > MAX_MESSAGE_CONTENT_BYTES
+    ) throw new CryptoVaultError('corrupt')
+    const loaded = await this.load(userId, deviceId)
+    if (loaded.status === 'missing') throw new CryptoVaultError('corrupt')
+    const nextRevision = loaded.state.revision + 1
+    if (!Number.isSafeInteger(nextRevision)) throw new CryptoVaultError('rollback')
+    const [draft, content] = await Promise.all([
+      seal(loaded.wrappingKey, nextRevision),
+      this.encryptMessageContent(
+        loaded.wrappingKey,
+        userId,
+        deviceId,
+        conversationId,
+        clientMessageId,
+        plaintext,
+      ),
+    ])
+    if (!validDraft(draft)) throw new CryptoVaultError('corrupt')
+    if (draft.revision !== nextRevision || draft.fingerprint !== loaded.state.fingerprint) {
+      throw new CryptoVaultError('rollback')
+    }
+    try {
+      const database = await this.open()
+      const transaction = database.transaction(
+        [SEALED_STATES_STORE, MESSAGE_CONTENT_STORE],
+        'readwrite',
+      )
+      const completed = transactionDone(transaction)
+      const stateStore = transaction.objectStore(SEALED_STATES_STORE)
+      const current = await requestResult(stateStore.get(deviceId)) as SealedStateRecord | undefined
+      if (!current || current.revision !== loaded.state.revision || current.userId !== userId) {
+        transaction.abort()
+        await completed.catch(() => undefined)
+        throw new CryptoVaultError('conflict')
+      }
+      stateStore.put(this.toRecord(userId, deviceId, draft))
+      transaction.objectStore(MESSAGE_CONTENT_STORE).put(content)
+      await completed
+      return { ...draft, userId, deviceId }
+    } catch (error) {
+      if (error instanceof CryptoVaultError) throw error
+      throw new CryptoVaultError('storage-unavailable')
+    }
+  }
+
   close(): void {
     if (!this.database) return
     void this.database.then(database => database.close())
@@ -233,6 +347,76 @@ export class IndexedDbCryptoVault implements CryptoVault {
     }
   }
 
+  private async encryptMessageContent(
+    key: CryptoKey,
+    userId: string,
+    deviceId: string,
+    conversationId: string,
+    clientMessageId: string,
+    plaintext: Uint8Array,
+  ): Promise<EncryptedMessageContentRecord> {
+    const iv = this.randomValues(new Uint8Array(IV_LENGTH))
+    const ciphertext = await this.subtle.encrypt(
+      {
+        name: 'AES-GCM',
+        iv,
+        additionalData: this.messageAad(userId, deviceId, conversationId, clientMessageId),
+      },
+      key,
+      copyBuffer(plaintext),
+    )
+    return {
+      storageKey: this.messageStorageKey(deviceId, conversationId, clientMessageId),
+      deviceId,
+      userId,
+      conversationId,
+      clientMessageId,
+      schemaVersion: STATE_SCHEMA_VERSION,
+      iv: copyBuffer(iv),
+      ciphertext,
+      updatedAt: Date.now(),
+    }
+  }
+
+  private validateMessageRecord(
+    record: EncryptedMessageContentRecord,
+    userId: string,
+    deviceId: string,
+    conversationId: string,
+    clientMessageId: string,
+  ): void {
+    if (
+      record.storageKey !== this.messageStorageKey(deviceId, conversationId, clientMessageId)
+      || record.deviceId !== deviceId
+      || record.userId !== userId
+      || record.conversationId !== conversationId
+      || record.clientMessageId !== clientMessageId
+      || record.schemaVersion !== STATE_SCHEMA_VERSION
+      || record.iv.byteLength !== IV_LENGTH
+      || record.ciphertext.byteLength < 17
+      || record.ciphertext.byteLength > MAX_MESSAGE_CONTENT_BYTES + 16
+    ) throw new CryptoVaultError('corrupt')
+  }
+
+  private messageStorageKey(
+    deviceId: string,
+    conversationId: string,
+    clientMessageId: string,
+  ): string {
+    return `${deviceId}:${conversationId}:${clientMessageId}`
+  }
+
+  private messageAad(
+    userId: string,
+    deviceId: string,
+    conversationId: string,
+    clientMessageId: string,
+  ): ArrayBuffer {
+    return new TextEncoder().encode(
+      `yv-chat-mls-content|${STATE_SCHEMA_VERSION}|${userId}|${deviceId}|${conversationId}|${clientMessageId}`,
+    ).buffer
+  }
+
   private open(): Promise<IDBDatabase> {
     if (this.database) return this.database
     this.database = new Promise((resolve, reject) => {
@@ -244,6 +428,9 @@ export class IndexedDbCryptoVault implements CryptoVault {
         }
         if (!database.objectStoreNames.contains(SEALED_STATES_STORE)) {
           database.createObjectStore(SEALED_STATES_STORE, { keyPath: 'deviceId' })
+        }
+        if (!database.objectStoreNames.contains(MESSAGE_CONTENT_STORE)) {
+          database.createObjectStore(MESSAGE_CONTENT_STORE, { keyPath: 'storageKey' })
         }
       }, { once: true })
       request.addEventListener('success', () => resolve(request.result), { once: true })

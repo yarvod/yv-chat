@@ -1058,6 +1058,15 @@ IndexedDB и MLS protocol-state transaction. Параллельные вклад
 лишний exact retry, но server duplicate не создаётся; cross-tab lease остаётся
 hardening item.
 
+MLS v2 application content имеет отдельный replay-safe local read path. OpenMLS
+receive replay protection не ослабляется ради повторного UI render. При первом
+protect/unprotect Worker шифрует bounded plaintext тем же non-extractable device
+wrapping key и одной IndexedDB transaction записывает одновременно новый sealed
+provider revision и keyed `device + conversation + client_message` content record.
+Повторный render/reload читает этот encrypted record и не передаёт старый
+PrivateMessage в OpenMLS второй раз. Transaction failure откатывает обе записи и
+runtime уничтожает потенциально продвинутый in-memory state.
+
 Это ещё не полный local-first: protocol state, attachment metadata, IndexedDB
 cross-version upgrade compatibility, Background Sync и secure device-to-device
 history transfer остаются в `BL-022`–`BL-025`. Workbox по-прежнему кэширует только

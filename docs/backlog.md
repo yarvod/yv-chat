@@ -243,7 +243,11 @@ message. Synthetic v1 не может быть временным key envelope, 
 получит ключ расшифрования и требование E2EE будет нарушено.
 
 - attachment button, picker и drag/drop/paste там, где это поддерживает platform;
-- image preview генерируется локально до encryption, файл показывает имя/type/size;
+- одно сообщение содержит caption и bounded ordered набор файлов; несколько фото
+  отображаются адаптивной gallery, открываются в полноэкранном viewer и листаются
+  swipe/keyboard без отдельных искусственных сообщений;
+- image preview/thumbnail генерируется локально до encryption, файл показывает
+  локально расшифрованные имя/type/size и отдельное понятное действие download;
 - upload progress, cancel/retry и offline-safe draft/outbox lifecycle;
 - bubble/gallery UX с tap-to-view/download и понятным unavailable/expired state;
 - client-side authenticated encryption metadata интегрирована с выбранным MLS
@@ -272,6 +276,8 @@ policy остаются).
 
 - per-file/per-user/global quotas;
 - media usage, PostgreSQL size и free-disk metrics/alerts;
+- admin-only storage dashboard: media/DB usage, filesystem capacity/free/reserved,
+  configured quotas и low-disk admission state без раскрытия чужих filename/content;
 - запрет новых больших uploads при low disk вместо удаления unexpired data;
 - bounded cleanup batches и resource-budget tests;
 - документированный ориентир диска/резерва.
@@ -338,6 +344,22 @@ upgrade migration gate и offline outbox остаются).
 - local text retention: forever/1 year/90 days;
 - missing-original UX после server/local eviction;
 - запрос persistent storage и отображение quota pressure без обещания backup.
+- user-facing device storage screen через `navigator.storage.estimate()`: usage/quota,
+  разбиение app cache/archive/media где adapter может посчитать его безопасно,
+  clear-evictable-cache без удаления identity/protocol keys по умолчанию.
+
+### BL-044 — Per-conversation viewport restoration
+
+Результат: каждый чат открывается на последней осмысленной позиции этого device,
+а не всегда внизу и не на случайном DOM offset.
+
+- encrypted local anchor хранит conversation ID, nearest server sequence/message ID
+  и относительное смещение, а не хрупкий абсолютный `scrollTop`;
+- anchor обновляется throttled, восстанавливается после cache/network pagination и
+  корректно переживает prepend старой истории, font/image layout и viewport resize;
+- unread/new-message policy не перетирает сохранённую позицию; явная кнопка «вниз»
+  возвращает к latest и обновляет anchor;
+- bounded cleanup для удалённых/покинутых conversations и mobile/desktop tests.
 
 ### BL-025 — PWA lifecycle и update safety
 
@@ -379,6 +401,8 @@ upgrade migration gate и offline outbox остаются).
 - foreground active conversation: без system notification;
 - background: service worker generic notification и click/focus/navigation/sync;
 - global enabled, conversation mute, privacy mode;
+- настройки являются per-device и включают system notification permission/status,
+  звук/vibration где platform это реально поддерживает, mute до времени и app badge;
 - stable event/message ID dedup WebSocket + Push + sync;
 - multi-device read state, app badge и invalid-subscription tests.
 

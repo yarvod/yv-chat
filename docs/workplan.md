@@ -40,7 +40,8 @@ synthetic v1 payload виден серверу; положить туда file k
 7. Application message AAD exact: label + conversation UUID + client message UUID.
    После decrypt AAD сравнивается с outer server routing; mismatch fail closed.
 8. MLS plaintext — closed bounded DTO (`text` сначала, attachment variant в WP-048),
-   существует только в Worker/application memory и никогда не логируется/архивируется.
+   существует только в Worker/application memory либо в AES-GCM encrypted
+   device-local content cache и никогда не логируется/хранится сервером открыто.
 9. Group/provider state checkpoint атомарно sealed тем же non-extractable WebCrypto
    key. Crash/reload не откатывает epoch/ratchet и не повторяет использованный state.
 10. Multi-device/reconnect correctness идёт через PostgreSQL sequence/cursor sync;
@@ -61,10 +62,16 @@ synthetic v1 payload виден серверу; положить туда file k
 - [ ] Добавить обработку Commit существующими members и remove/re-add leaf.
 - [x] Расширить closed Worker protocol; все state-changing crypto operations должны
   checkpoint-ить sealed provider state до success наружу.
-- [ ] Добавить frontend bootstrap/reconcile coordinator и typed server gateways;
-  UI показывает pending/ready/blocked generation state.
-- [ ] Перевести outgoing/incoming protocol v2 на MLS с exact outer AAD и удалить
-  synthetic v1 для новых sends после explicit conversation cutover.
+- [x] Добавить frontend bootstrap/reconcile coordinator, typed server gateway и
+  encrypted crash-safe local checkpoint для finalize/Welcome ack.
+- [ ] Показать в UI pending/ready/blocked generation state и безопасное действие
+  для missing identity/KeyPackage.
+- [x] Перевести outgoing/incoming protocol v2 на MLS с exact outer AAD без silent
+  fallback; synthetic v1 оставлен только read-only для исторических сообщений.
+- [x] Сохранить replay protection: plaintext content cache и sealed receive/sender
+  ratchet обновляются одной IndexedDB transaction под non-extractable device key.
+- [ ] Добавить bounded KeyPackage generation/replenishment до production cutover;
+  одного initial package недостаточно для нескольких conversations.
 - [ ] Согласовать group rename/member add/remove и device revoke с MLS Commit;
   negative mismatch/unauthorized leaf/fork tests обязательны.
 - [ ] Покрыть two-user/two-device, offline Welcome, reconnect, duplicate delivery,
@@ -85,3 +92,9 @@ synthetic v1 payload виден серверу; положить туда file k
 - UI показывает E2EE только для реально ready v2 conversation и отдельно маркирует
   исторические v1 сообщения как незащищённые;
 - полный CI и production smoke проходят до начала `WP-048` attachments.
+
+Следующий `WP-048` обязан включать: multi-file message DTO, несколько фотографий в
+одной gallery с viewer/swipe, caption, download, picker/paste/desktop drag-and-drop,
+encrypted offline draft/outbox, server/local storage usage UI, per-device cache
+controls и сохранение per-conversation scroll anchor. `Web Push`/notification
+preferences остаются отдельным следующим vertical slice и не передают plaintext.

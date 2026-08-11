@@ -73,21 +73,17 @@ function issueFrom(error: unknown): DeviceCryptoLifecycleIssue {
 export function useDeviceCryptoLifecycle(user: ComputedRef<CurrentAccount | null>) {
   const { $frontend } = useNuxtApp()
   const state = reactive<DeviceCryptoLifecycleState>({ status: 'idle', issue: null })
-  let scope: ReturnType<typeof $frontend.createDeviceCrypto> | null = null
   let generation = 0
   let stopWatching: (() => void) | null = null
 
   async function initialize(): Promise<void> {
     const current = user.value
     const operation = ++generation
-    if (scope) {
-      try {
-        await scope.dispose()
-      } catch {
-        // A failed Worker is replaced below; no private state leaves its boundary.
-      }
+    try {
+      await $frontend.deviceCryptoSession.dispose()
+    } catch {
+      // A failed Worker is replaced below; no private state leaves its boundary.
     }
-    scope = null
     if (!current) {
       state.status = 'idle'
       state.issue = null
@@ -96,9 +92,7 @@ export function useDeviceCryptoLifecycle(user: ComputedRef<CurrentAccount | null
     state.status = 'initializing'
     state.issue = null
     try {
-      const next = $frontend.createDeviceCrypto()
-      scope = next
-      await next.initialize.execute({
+      await $frontend.deviceCryptoSession.initialize({
         userId: current.userId,
         deviceId: current.deviceId,
       })
@@ -125,8 +119,7 @@ export function useDeviceCryptoLifecycle(user: ComputedRef<CurrentAccount | null
   onBeforeUnmount(() => {
     generation += 1
     stopWatching?.()
-    if (scope) void scope.dispose()
-    scope = null
+    void $frontend.deviceCryptoSession.dispose()
   })
 
   return { state: readonly(state), retry: initialize }

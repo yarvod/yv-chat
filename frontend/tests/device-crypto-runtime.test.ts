@@ -157,6 +157,11 @@ describe('device crypto runtime with the release OpenMLS WASM', () => {
     expect(protectedMessage.epoch).toBe(1)
     expect(protectedMessage.revision).toBe(3)
     expect(protectedMessage.ciphertext).not.toEqual(plaintext)
+    await expect(restoredAlice.unprotectMessage({
+      conversationId,
+      clientMessageId: messageId,
+      ciphertext: protectedMessage.ciphertext,
+    })).resolves.toMatchObject({ plaintext, revision: 3 })
 
     await expect(restoredBob.unprotectMessage({
       conversationId,
@@ -177,8 +182,22 @@ describe('device crypto runtime with the release OpenMLS WASM', () => {
     })
     expect(unprotected.plaintext).toEqual(plaintext)
     expect(unprotected.revision).toBe(3)
+    await expect(restoredBob.unprotectMessage({
+      conversationId,
+      clientMessageId: messageId,
+      ciphertext: protectedMessage.ciphertext,
+    })).resolves.toMatchObject({ plaintext, revision: 3 })
     restoredAlice.dispose()
     restoredBob.dispose()
+
+    const reloadedBob = new DeviceCryptoRuntime(openMlsModule, vault(bobDb))
+    await reloadedBob.restore({ userId: otherUserId, deviceId: otherDeviceId })
+    await expect(reloadedBob.unprotectMessage({
+      conversationId,
+      clientMessageId: messageId,
+      ciphertext: protectedMessage.ciphertext,
+    })).resolves.toMatchObject({ plaintext, revision: 3 })
+    reloadedBob.dispose()
   })
 
   it('fails closed for wrong AAD and modified ciphertext without replacing identity', async () => {

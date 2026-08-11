@@ -222,7 +222,7 @@ export class DeviceCryptoRuntime {
       || command.plaintext.byteLength === 0
       || command.plaintext.byteLength > MAX_MLS_APPLICATION_BYTES
     ) throw new DeviceCryptoError('invalid-request')
-    return await this.mutateAndCheckpoint(active => {
+    return await this.mutateAndCheckpointWithMessageContent(command, active => {
       const output = active.protectApplicationMessage(
         command.conversationId,
         command.clientMessageId,
@@ -246,7 +246,20 @@ export class DeviceCryptoRuntime {
       !validMessageRouting(command.conversationId, command.clientMessageId)
       || !validWireBytes(command.ciphertext)
     ) throw new DeviceCryptoError('invalid-request')
-    return await this.mutateAndCheckpoint(active => ({
+    const active = this.active
+    if (!active) throw new DeviceCryptoError('not-provisioned')
+    try {
+      const cached = await this.vault.loadMessageContent(
+        active.userId,
+        active.deviceId,
+        command.conversationId,
+        command.clientMessageId,
+      )
+      if (cached !== null) return { plaintext: cached, revision: active.revision }
+    } catch (error) {
+      throw translateError(error)
+    }
+    return await this.mutateAndCheckpointWithMessageContent(command, active => ({
       plaintext: active.unprotectApplicationMessage(
         command.conversationId,
         command.clientMessageId,
@@ -357,6 +370,39 @@ export class DeviceCryptoRuntime {
     } catch (error) {
       // A failed mutation/checkpoint must never keep a potentially advanced
       // sender/receiver ratchet alive against the previous durable snapshot.
+      active.value.free()
+      this.active = null
+      throw translateError(error)
+    }
+  }
+
+  private async mutateAndCheckpointWithMessageContent<
+    T extends { plaintext: Uint8Array } | { ciphertext: Uint8Array },
+  >(
+    routing: {
+      conversationId: string
+      clientMessageId: string
+      plaintext?: Uint8Array
+    },
+    operation: (active: OpenMlsDeviceBootstrap) => T,
+  ): Promise<T & { revision: number }> {
+    const active = this.active
+    if (!active) throw new DeviceCryptoError('not-provisioned')
+    try {
+      const result = operation(active.value)
+      const plaintext = 'plaintext' in result ? result.plaintext : routing.plaintext
+      if (!plaintext) throw new DeviceCryptoError('operation-failed')
+      const stored = await this.vault.updateWithMessageContent(
+        active.userId,
+        active.deviceId,
+        routing.conversationId,
+        routing.clientMessageId,
+        plaintext,
+        (key, revision) => this.seal(active.value, key, revision),
+      )
+      active.revision = stored.revision
+      return { ...result, revision: active.revision }
+    } catch (error) {
       active.value.free()
       this.active = null
       throw translateError(error)

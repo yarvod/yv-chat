@@ -4,6 +4,23 @@
 
 ## Active
 
+### BUG-041 — Повторное открытие MLS сообщения выглядело бы как повреждение
+
+- Статус: `fixed`, ожидает production E2E retest.
+- Найдено в: `WP-047`, аудит v2 cutover.
+- Severity: `critical`; после первого decrypt история на этом device могла стать
+  недоступной при повторном render/reload.
+- Условия воспроизведения: обработать MLS PrivateMessage, checkpoint-нуть receive
+  ratchet, затем повторно подготовить тот же transport envelope из local archive.
+- Причина: OpenMLS намеренно отвергает повтор как replay, а UI до v2 хранил только
+  ciphertext и вызывал decrypt при каждом render.
+- Исправление: Worker сначала читает encrypted device-local content cache; первый
+  decrypt/protect атомарно записывает content cache вместе с новым sealed MLS state
+  одной IndexedDB transaction. Replay protection не отключалась.
+- Проверка: release WASM test повторно читает собственное/полученное сообщение до и
+  после runtime reload без второго ratchet advance; vault test проверяет отсутствие
+  plaintext в raw IndexedDB ciphertext.
+
 ### BUG-040 — OpenMLS runtime не доходил до регистрации устройства
 
 - Статус: `fixed`, ожидает retest affected device.
@@ -24,10 +41,12 @@
   отдельно прошёл в чистом Firefox весь `Worker → WASM → DeviceBootstrap →
   non-extractable WebCrypto key → IndexedDB sealed state` path. Значит второй сбой
   локален для активного PWA/Workbox cache или профиля, а не требует Rust container.
-- Второе исправление: новый Worker использует immutable `/crypto/v2/`, исключая
+- Второе исправление: новый Worker использует immutable `/crypto/v3/`, исключая
   mixed cached JS/WASM; `/crypto/v1/` сохранён на rolling window. Import, invalid
   binding, WASM init, Worker crash/protocol/timeout теперь показываются раздельно,
   не раскрывая raw exception или private state.
+- Backend/WASM production smoke после deploy подтвердил `crypto-identity 200`, JS
+  и WASM v3 `200 application/wasm`; остаётся retest именно affected browser profile.
 - Приёмка: после применения vhost и полного перезапуска PWA один первоначальный
   `GET 404` должен сопровождаться успешным `PUT 200`; следующие запуски получают
   `GET 200`, а криптомодуль переходит в `ready`.

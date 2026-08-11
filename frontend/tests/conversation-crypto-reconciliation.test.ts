@@ -1,0 +1,288 @@
+import { describe, expect, it, vi } from 'vitest'
+
+import { ReconcileConversationCrypto } from '../app/application/conversation-crypto/reconcile-conversation-crypto'
+import type { ClientIdGenerator } from '../app/application/ports/client-id-generator'
+import type {
+  ConversationCryptoGateway,
+  ConversationCryptoGeneration,
+  FinalizeConversationCryptoCommand,
+} from '../app/application/ports/conversation-crypto-gateway'
+import type {
+  ConversationCryptoLocalState,
+  ConversationCryptoStateRepository,
+} from '../app/application/ports/conversation-crypto-state-repository'
+import type {
+  DeviceCryptoGateway,
+  DeviceCryptoIdentity,
+  DeviceCryptoIdentityCommand,
+  PublicKeyPackageValidationCommand,
+  PublicKeyPackageValidationResult,
+} from '../app/application/ports/device-crypto-gateway'
+import type {
+  BootstrapMlsConversationCommand,
+  BootstrapMlsConversationResult,
+  JoinMlsConversationCommand,
+  MlsConversationGateway,
+  MlsConversationStateResult,
+  ProtectMlsMessageCommand,
+  ProtectMlsMessageResult,
+  UnprotectMlsMessageCommand,
+  UnprotectMlsMessageResult,
+} from '../app/application/ports/mls-conversation-gateway'
+
+const conversationId = '1b0a32e8-144f-4f60-bcb6-112f71bd5316'
+const generationId = '50d6b08a-84ae-4bd7-829a-f40f38e9a2c1'
+const coordinatorDeviceId = 'dd7c15b7-f8d2-402d-9abc-07ba98b79bfd'
+const coordinatorUserId = '318887ee-2517-45fc-9635-07cf915b31b4'
+const memberDeviceId = 'f34b0d48-6dc9-4ed1-9c5b-eb76544ead0a'
+const memberUserId = 'd8f16ee6-7063-494e-a71b-558392476527'
+const requestId = 'b24a030d-a3f0-4eed-a463-a1722920615c'
+
+class MemoryState implements ConversationCryptoStateRepository {
+  value: ConversationCryptoLocalState | null = null
+  readonly saveCalls: ConversationCryptoLocalState[] = []
+
+  async load(): Promise<ConversationCryptoLocalState | null> {
+    return this.value
+  }
+
+  async save(state: ConversationCryptoLocalState): Promise<void> {
+    this.value = state
+    this.saveCalls.push(state)
+  }
+
+  close(): void {}
+}
+
+class FixedIds implements ClientIdGenerator {
+  constructor(private readonly values: string[]) {}
+
+  create(): string {
+    const value = this.values.shift()
+    if (!value) throw new Error('unexpected id request')
+    return value
+  }
+}
+
+class FakeDeviceCrypto implements DeviceCryptoGateway {
+  readonly validateKeyPackage = vi.fn(async (
+    _command: PublicKeyPackageValidationCommand,
+  ): Promise<PublicKeyPackageValidationResult> => ({ validated: true }))
+
+  provision(_command: DeviceCryptoIdentityCommand): Promise<DeviceCryptoIdentity> {
+    throw new Error('not used')
+  }
+
+  restore(_command: DeviceCryptoIdentityCommand): Promise<DeviceCryptoIdentity> {
+    throw new Error('not used')
+  }
+
+  checkpoint(): Promise<DeviceCryptoIdentity> {
+    throw new Error('not used')
+  }
+
+  dispose(): Promise<void> {
+    return Promise.resolve()
+  }
+}
+
+class FakeMls implements MlsConversationGateway {
+  readonly bootstrapConversation = vi.fn(async (
+    _command: BootstrapMlsConversationCommand,
+  ): Promise<BootstrapMlsConversationResult> => ({
+    commit: new Uint8Array([1]),
+    welcome: new Uint8Array([2]),
+    ratchetTree: new Uint8Array([3]),
+    epoch: 2,
+    revision: 2,
+  }))
+
+  readonly joinConversation = vi.fn(async (
+    _command: JoinMlsConversationCommand,
+  ): Promise<MlsConversationStateResult> => ({ epoch: 2, revision: 2 }))
+
+  protectMessage(_command: ProtectMlsMessageCommand): Promise<ProtectMlsMessageResult> {
+    throw new Error('not used')
+  }
+
+  unprotectMessage(_command: UnprotectMlsMessageCommand): Promise<UnprotectMlsMessageResult> {
+    throw new Error('not used')
+  }
+}
+
+class CoordinatorServer implements ConversationCryptoGateway {
+  finalizeAttempts = 0
+  failFirstFinalize = true
+
+  async getCurrent(): Promise<ConversationCryptoGeneration> {
+    return generation('pending', coordinatorDeviceId)
+  }
+
+  begin(): Promise<ConversationCryptoGeneration> {
+    throw new Error('not used')
+  }
+
+  async finalize(_command: FinalizeConversationCryptoCommand): Promise<ConversationCryptoGeneration> {
+    this.finalizeAttempts += 1
+    if (this.failFirstFinalize && this.finalizeAttempts === 1) throw new Error('network lost')
+    return generation('ready', coordinatorDeviceId)
+  }
+
+  acknowledgeWelcome(): Promise<void> {
+    throw new Error('not used')
+  }
+}
+
+class MemberServer implements ConversationCryptoGateway {
+  acknowledgeAttempts = 0
+  failFirstAcknowledge = true
+
+  async getCurrent(): Promise<ConversationCryptoGeneration> {
+    return generation('ready', coordinatorDeviceId, memberDeviceId)
+  }
+
+  begin(): Promise<ConversationCryptoGeneration> {
+    throw new Error('not used')
+  }
+
+  finalize(): Promise<ConversationCryptoGeneration> {
+    throw new Error('not used')
+  }
+
+  async acknowledgeWelcome(): Promise<void> {
+    this.acknowledgeAttempts += 1
+    if (this.failFirstAcknowledge && this.acknowledgeAttempts === 1) {
+      throw new Error('network lost')
+    }
+  }
+}
+
+describe('conversation crypto reconciliation', () => {
+  it('retries server finalization from the durable checkpoint without mutating MLS twice', async () => {
+    const server = new CoordinatorServer()
+    const state = new MemoryState()
+    const deviceCrypto = new FakeDeviceCrypto()
+    const mls = new FakeMls()
+    const useCase = new ReconcileConversationCrypto(
+      server,
+      state,
+      deviceCrypto,
+      mls,
+      new FixedIds([requestId]),
+    )
+
+    await expect(useCase.execute({ conversationId, deviceId: coordinatorDeviceId }))
+      .rejects.toThrow('network lost')
+    expect(state.value?.phase).toBe('coordinator-checkpointed')
+    expect(mls.bootstrapConversation).toHaveBeenCalledTimes(1)
+    expect(deviceCrypto.validateKeyPackage).toHaveBeenCalledTimes(1)
+
+    await expect(useCase.execute({ conversationId, deviceId: coordinatorDeviceId }))
+      .resolves.toMatchObject({ status: 'ready', epoch: 2 })
+    expect(mls.bootstrapConversation).toHaveBeenCalledTimes(1)
+    expect(server.finalizeAttempts).toBe(2)
+    expect(state.value?.phase).toBe('ready')
+  })
+
+  it('checkpoints a joined member before acknowledgement and never joins twice', async () => {
+    const server = new MemberServer()
+    const state = new MemoryState()
+    const mls = new FakeMls()
+    const useCase = new ReconcileConversationCrypto(
+      server,
+      state,
+      new FakeDeviceCrypto(),
+      mls,
+      new FixedIds([requestId]),
+    )
+
+    await expect(useCase.execute({ conversationId, deviceId: memberDeviceId }))
+      .rejects.toThrow('network lost')
+    expect(state.value?.phase).toBe('joined')
+    expect(mls.joinConversation).toHaveBeenCalledTimes(1)
+
+    await expect(useCase.execute({ conversationId, deviceId: memberDeviceId }))
+      .resolves.toMatchObject({ status: 'ready', epoch: 2 })
+    expect(mls.joinConversation).toHaveBeenCalledTimes(1)
+    expect(server.acknowledgeAttempts).toBe(2)
+    expect(state.value?.phase).toBe('ready')
+  })
+
+  it('persists one bootstrap request id before asking the server', async () => {
+    const state = new MemoryState()
+    const pending = generation('pending', coordinatorDeviceId)
+    const server: ConversationCryptoGateway = {
+      getCurrent: vi.fn(async () => null),
+      begin: vi.fn(async () => pending),
+      finalize: vi.fn(async () => generation('ready', coordinatorDeviceId)),
+      acknowledgeWelcome: vi.fn(async () => undefined),
+    }
+    const useCase = new ReconcileConversationCrypto(
+      server,
+      state,
+      new FakeDeviceCrypto(),
+      new FakeMls(),
+      new FixedIds([requestId]),
+    )
+
+    await expect(useCase.execute({ conversationId, deviceId: coordinatorDeviceId }))
+      .resolves.toMatchObject({ status: 'ready' })
+    expect(server.begin).toHaveBeenCalledWith(conversationId, requestId)
+    expect(state.saveCalls[0]).toMatchObject({
+      bootstrapRequestId: requestId,
+      phase: 'bootstrap-requested',
+      generationId: null,
+    })
+  })
+})
+
+function generation(
+  status: 'pending' | 'ready',
+  coordinator: string,
+  welcomeFor: string | null = null,
+): ConversationCryptoGeneration {
+  return {
+    generationId,
+    conversationId,
+    generationNumber: 1,
+    protocolVersion: 2,
+    status,
+    blockReason: null,
+    coordinatorDeviceId: coordinator,
+    epoch: status === 'ready' ? 2 : null,
+    commit: status === 'ready' ? new Uint8Array([1]) : null,
+    ratchetTree: status === 'ready' ? new Uint8Array([3]) : null,
+    createdAt: '2026-08-11T12:00:00Z',
+    updatedAt: '2026-08-11T12:01:00Z',
+    readyAt: status === 'ready' ? '2026-08-11T12:01:00Z' : null,
+    requiredDevices: [
+      {
+        userId: coordinatorUserId,
+        deviceId: coordinatorDeviceId,
+        isCoordinator: true,
+        fingerprint: 'ab'.repeat(32),
+        credentialIdentity: new Uint8Array(33),
+        signaturePublicKey: new Uint8Array(32),
+        keyPackageRef: null,
+        keyPackage: null,
+      },
+      {
+        userId: memberUserId,
+        deviceId: memberDeviceId,
+        isCoordinator: false,
+        fingerprint: 'cd'.repeat(32),
+        credentialIdentity: new Uint8Array(33),
+        signaturePublicKey: new Uint8Array(32),
+        keyPackageRef: 'ef'.repeat(32),
+        keyPackage: new Uint8Array([7, 8]),
+      },
+    ],
+    welcome: welcomeFor === null ? null : {
+      targetDeviceId: welcomeFor,
+      welcome: new Uint8Array([2]),
+      createdAt: '2026-08-11T12:01:00Z',
+      expiresAt: '2026-08-12T12:01:00Z',
+      acknowledgedAt: null,
+    },
+  }
+}

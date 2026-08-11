@@ -75,6 +75,7 @@ export interface MessengerDependencies extends MessageOutboxDependencies {
   renameGroup: RenameGroup
   leaveGroup: LeaveGroup
   pageVisibility: PageVisibility
+  initializeDeviceCrypto?: () => Promise<unknown>
 }
 
 export function useMessenger(
@@ -107,6 +108,10 @@ export function useMessenger(
       renameGroup: $frontend.renameGroup,
       leaveGroup: $frontend.leaveGroup,
       pageVisibility: $frontend.pageVisibility,
+      initializeDeviceCrypto: () => $frontend.deviceCryptoSession.initialize({
+        userId: actorUserId,
+        deviceId: actorDeviceId,
+      }),
     }
   })()
   const {
@@ -437,6 +442,7 @@ export function useMessenger(
     state.phase = 'loading'
     state.message = null
     try {
+      await dependencies.initializeDeviceCrypto?.()
       await outbox.load()
       if (await hydrateSnapshot()) {
         await poll()
