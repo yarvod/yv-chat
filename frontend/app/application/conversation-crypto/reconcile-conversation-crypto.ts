@@ -103,8 +103,12 @@ export class ReconcileConversationCrypto {
           || generation.epoch === null
           || generation.generationNumber <= cursor
           || generation.generationNumber > observedGenerationNumber
-          || !generation.requiredDevices.some(device => device.deviceId === command.deviceId)
         ) throw new DeviceCryptoError('conflict')
+        if (!generation.requiredDevices.some(device => device.deviceId === command.deviceId)) {
+          cursor = generation.generationNumber
+          advanced = true
+          continue
+        }
         local = await this.applyReadyGeneration(command, local, generation)
         cursor = generation.generationNumber
         advanced = true

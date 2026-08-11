@@ -21,6 +21,8 @@ Bug: `BUG-048`
   reconciliation могла проверить уже появившиеся identity/KeyPackages.
 - [x] Не считать legacy device без зарегистрированной MLS identity обязательным leaf;
   добавлять его следующим roster Commit после provisioning.
+- [x] Исправить revoke/relogin catch-up: skip pre-enrollment generations, historical
+  Welcome ack и обязательная server reconciliation перед message crypto operation.
 - [x] Прогнать backend/full CI, PostgreSQL integration и diff/security review.
 - [ ] Commit/push, production deploy и проверить отсутствие новых 500.
 - [ ] Вернуть `WP-048` encrypted attachments в active workplan после hotfix commit.

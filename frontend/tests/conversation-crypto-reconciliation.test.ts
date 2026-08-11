@@ -413,6 +413,42 @@ describe('conversation crypto reconciliation', () => {
     expect(server.acknowledgeWelcome).toHaveBeenCalledWith(conversationId, fourthGenerationId)
     expect(state.value).toMatchObject({ phase: 'ready', generationNumber: 4, epoch: 5 })
   })
+
+  it('skips generations before this device enrollment and joins its first Welcome', async () => {
+    const state = new MemoryState()
+    const initial = generation('ready', coordinatorDeviceId)
+    const beforeEnrollment: ConversationCryptoGeneration = {
+      ...initial,
+      requiredDevices: [initial.requiredDevices[0]!],
+    }
+    const enrolled = readdedGeneration()
+    const server: ConversationCryptoGateway = {
+      getCurrent: vi.fn(async () => enrolled),
+      begin: vi.fn(async () => enrolled),
+      listReadyAfter: vi.fn(async () => [beforeEnrollment, enrolled]),
+      finalize: vi.fn(),
+      acknowledgeWelcome: vi.fn(async () => undefined),
+    }
+    const mls = new FakeMls()
+    mls.joinConversation.mockResolvedValue({ epoch: 5, revision: 5 })
+    const useCase = new ReconcileConversationCrypto(
+      server,
+      state,
+      new FakeDeviceCrypto(),
+      mls,
+      new FixedIds([requestId]),
+    )
+
+    await expect(useCase.execute({ conversationId, deviceId: memberDeviceId }))
+      .resolves.toMatchObject({ status: 'ready', generationNumber: 4, epoch: 5 })
+    expect(mls.applyCommit).not.toHaveBeenCalled()
+    expect(mls.joinConversation).toHaveBeenCalledWith({
+      conversationId,
+      welcome: new Uint8Array([42]),
+      ratchetTree: new Uint8Array([43]),
+    })
+    expect(server.acknowledgeWelcome).toHaveBeenCalledWith(conversationId, fourthGenerationId)
+  })
 })
 
 function readyLocalState(ownerDeviceId: string): ConversationCryptoLocalState {

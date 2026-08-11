@@ -37,12 +37,8 @@ class AcknowledgeConversationCryptoWelcome:
             if conversation is None or conversation.active_member(command.user_id) is None:
                 raise ConversationNotFoundError("conversation not found")
             generation = await uow.generations.get_by_id(command.generation_id)
-            if (
-                generation is None
-                or generation.conversation_id != command.conversation_id
-                or not generation.is_current
-            ):
-                raise ConversationCryptoNotFoundError("current crypto generation not found")
+            if generation is None or generation.conversation_id != command.conversation_id:
+                raise ConversationCryptoNotFoundError("crypto generation not found")
             welcome = await uow.welcomes.get_for_device(
                 generation_id=generation.id,
                 device_id=command.device_id,

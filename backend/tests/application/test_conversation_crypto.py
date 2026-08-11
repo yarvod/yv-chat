@@ -254,6 +254,11 @@ async def test_finalize_routes_exact_welcomes_and_device_ack_is_idempotent() -> 
             )
         )
 
+    state.conversation_crypto_generations[generation.id] = ready.generation.supersede(
+        NOW + timedelta(minutes=3)
+    )
+    await ack.execute(ack_command)
+
 
 async def test_ready_roster_drift_creates_incremental_generation_and_only_claims_new_leaf() -> None:
     state = bootstrap_state()

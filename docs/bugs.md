@@ -4,6 +4,22 @@
 
 ## Active
 
+### BUG-049 — Revoke/relogin оставлял устройства на разных MLS generations
+
+- Статус: `fix in progress`, production `WP-049`.
+- Severity: `critical`; после завершения всех sessions один новый device не мог
+  дочитать roster history, а другой шифровал новым client message со старой
+  generation binding и получал HTTP 409 (`Конфликт идентификатора`).
+- Причины: ready generation кэшировалась без обязательной сверки перед crypto
+  operation; catch-up считал generation до enrollment конфликтом вместо skip;
+  Welcome acknowledgement ошибочно разрешался только пока generation остаётся
+  current, хотя новый device обязан последовательно догнать несколько generations.
+- Исправление: encrypt/decrypt сначала invalidates cached generation и single-flight
+  reconcile-ит server state; pre-enrollment generations пропускаются; Welcome exact
+  device можно идемпотентно подтвердить для historical generation.
+- Security: server по-прежнему отклоняет новый ciphertext со старой generation/epoch;
+  revoked leaf не получает возможность продолжать future messaging.
+
 ### BUG-048 — Retry blocked crypto bootstrap падал на unique constraint
 
 - Статус: `fix in progress`, production `WP-049`.
