@@ -79,6 +79,8 @@ deploy-check:
 	grep -q 'server_name chat.yoowee.ru' deploy/nginx/host-chat.http.conf
 	grep -q 'Strict-Transport-Security' deploy/nginx/host-chat.conf
 	grep -q 'proxy_pass http://127.0.0.1:18080' deploy/nginx/host-chat.conf
+	ssh-keygen -l -f deploy/ssh_known_hosts >/dev/null
+	! grep -q 'StrictHostKeyChecking=no' .github/workflows/deploy.yml
 	! grep -Eq 'docker system prune|docker compose down|--remove-orphans' deploy/remote-deploy.sh deploy/bootstrap-server.sh
 
 ci: backend-lint backend-typecheck backend-test frontend-lint frontend-typecheck frontend-test frontend-build compose-check deploy-check

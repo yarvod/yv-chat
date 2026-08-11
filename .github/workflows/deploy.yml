@@ -13,6 +13,12 @@ concurrency:
   group: yv-chat-production
   cancel-in-progress: false
 
+env:
+  DEPLOY_HOST: chat.yoowee.ru
+  DEPLOY_USER: devuser
+  DEPLOY_PORT: "22"
+  DEPLOY_ROOT: /home/devuser/yv-chat
+
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -73,8 +79,40 @@ jobs:
           echo "image_prefix=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
           echo "image_tag=sha-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
 
+  deployment-config:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Validate pinned SSH access
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$DEPLOY_KEY" ]; then
+            echo "::error title=Missing deployment secret::DEPLOY_KEY is not configured in the production environment or repository"
+            exit 1
+          fi
+          key_file="$RUNNER_TEMP/yv-chat-deploy-key"
+          trap 'rm -f "$key_file"' EXIT
+          umask 077
+          printf '%s\n' "$DEPLOY_KEY" > "$key_file"
+          if ! ssh-keygen -y -f "$key_file" >/dev/null; then
+            echo "::error title=Invalid deployment secret::DEPLOY_KEY is not a readable SSH private key"
+            exit 1
+          fi
+          ssh \
+            -i "$key_file" \
+            -o IdentitiesOnly=yes \
+            -o BatchMode=yes \
+            -o ConnectTimeout=10 \
+            -o UserKnownHostsFile="$GITHUB_WORKSPACE/deploy/ssh_known_hosts" \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            'test "$(id -un)" = devuser && test -d /home/devuser/yv-chat'
+
   build:
-    needs: [verify, prepare]
+    needs: [verify, prepare, deployment-config]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -106,37 +144,68 @@ jobs:
           sbom: true
 
   deploy:
-    needs: [prepare, build]
+    needs: [prepare, deployment-config, build]
     runs-on: ubuntu-latest
     environment: production
     env:
-      DEPLOY_ROOT: /home/${{ secrets.DEPLOY_USER }}/yv-chat
       BACKEND_IMAGE: ${{ needs.prepare.outputs.image_prefix }}-backend
       FRONTEND_IMAGE: ${{ needs.prepare.outputs.image_prefix }}-frontend
       IMAGE_TAG: ${{ needs.prepare.outputs.image_tag }}
       GHCR_USER: ${{ github.actor }}
       GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
     steps:
       - uses: actions/checkout@v7
+      - name: Prepare pinned SSH identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          key_file="$RUNNER_TEMP/yv-chat-deploy-key"
+          umask 077
+          printf '%s\n' "$DEPLOY_KEY" > "$key_file"
+          ssh-keygen -y -f "$key_file" >/dev/null
       - name: Copy versioned deployment artifacts
-        uses: appleboy/scp-action@v1
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_KEY }}
-          port: ${{ secrets.DEPLOY_PORT || '22' }}
-          source: compose.prod.yml,deploy/nginx/gateway.conf,deploy/nginx/host-chat.http.conf,deploy/nginx/host-chat.conf,deploy/bootstrap-server.sh,deploy/remote-deploy.sh
-          target: ${{ env.DEPLOY_ROOT }}
-          overwrite: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh_options=(
+            -i "$RUNNER_TEMP/yv-chat-deploy-key"
+            -o IdentitiesOnly=yes
+            -o BatchMode=yes
+            -o ConnectTimeout=10
+            -o UserKnownHostsFile="$GITHUB_WORKSPACE/deploy/ssh_known_hosts"
+          )
+          ssh "${ssh_options[@]}" -p "$DEPLOY_PORT" \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            "mkdir -p '$DEPLOY_ROOT/deploy/nginx'"
+          scp "${ssh_options[@]}" -P "$DEPLOY_PORT" \
+            compose.prod.yml \
+            "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_ROOT/compose.prod.yml"
+          scp "${ssh_options[@]}" -P "$DEPLOY_PORT" \
+            deploy/bootstrap-server.sh deploy/remote-deploy.sh \
+            "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_ROOT/deploy/"
+          scp "${ssh_options[@]}" -P "$DEPLOY_PORT" \
+            deploy/nginx/gateway.conf \
+            deploy/nginx/host-chat.http.conf \
+            deploy/nginx/host-chat.conf \
+            "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_ROOT/deploy/nginx/"
       - name: Migrate and roll out isolated stack
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_KEY }}
-          port: ${{ secrets.DEPLOY_PORT || '22' }}
-          envs: DEPLOY_ROOT,BACKEND_IMAGE,FRONTEND_IMAGE,IMAGE_TAG,GHCR_USER,GHCR_TOKEN
-          script_stop: true
-          script: |
-            chmod 700 "$DEPLOY_ROOT/deploy/remote-deploy.sh"
-            "$DEPLOY_ROOT/deploy/remote-deploy.sh"
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh_options=(
+            -i "$RUNNER_TEMP/yv-chat-deploy-key"
+            -o IdentitiesOnly=yes
+            -o BatchMode=yes
+            -o ConnectTimeout=10
+            -o UserKnownHostsFile="$GITHUB_WORKSPACE/deploy/ssh_known_hosts"
+          )
+          ssh "${ssh_options[@]}" -p "$DEPLOY_PORT" \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            "chmod 700 '$DEPLOY_ROOT/deploy/remote-deploy.sh'"
+          printf '%s' "$GHCR_TOKEN" | ssh "${ssh_options[@]}" -p "$DEPLOY_PORT" \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            "DEPLOY_ROOT='$DEPLOY_ROOT' BACKEND_IMAGE='$BACKEND_IMAGE' FRONTEND_IMAGE='$FRONTEND_IMAGE' IMAGE_TAG='$IMAGE_TAG' GHCR_USER='$GHCR_USER' '$DEPLOY_ROOT/deploy/remote-deploy.sh'"
+      - name: Remove ephemeral SSH identity
+        if: always()
+        run: rm -f "$RUNNER_TEMP/yv-chat-deploy-key"

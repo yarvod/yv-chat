@@ -6,7 +6,11 @@ set -eu
 : "${FRONTEND_IMAGE:?FRONTEND_IMAGE is required}"
 : "${IMAGE_TAG:?IMAGE_TAG is required}"
 : "${GHCR_USER:?GHCR_USER is required}"
-: "${GHCR_TOKEN:?GHCR_TOKEN is required}"
+
+if test -z "${GHCR_TOKEN:-}"; then
+    GHCR_TOKEN=$(cat)
+fi
+: "${GHCR_TOKEN:?GHCR_TOKEN is required through the environment or stdin}"
 
 cd "$DEPLOY_ROOT"
 test -f .env

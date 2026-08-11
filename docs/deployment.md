@@ -19,15 +19,14 @@ The private network uses the project-owned `172.30.242.0/24` subnet and assigns 
 
 ## GitHub configuration
 
-Repository Actions require:
+Repository Actions require one secret in the protected `production` environment or repository:
 
-- `DEPLOY_HOST` — server hostname/address;
-- `DEPLOY_USER` — `devuser`;
 - `DEPLOY_KEY` — private SSH deployment key;
-- optional `DEPLOY_PORT`, default `22`;
 - protected GitHub environment `production` (recommended: required reviewer and deployment branch `main`).
 
-`GITHUB_TOKEN` publishes and pulls repository-scoped GHCR packages. It is passed to the remote step as a masked value and used through an isolated temporary Docker config, which is removed on exit; the server user's persistent Docker credentials are not overwritten.
+The non-secret target is versioned explicitly as `devuser@chat.yoowee.ru:22`. The server ED25519 host key is pinned in `deploy/ssh_known_hosts`, obtained through the already trusted `ru1` connection. A separate `deployment-config` job validates that `DEPLOY_KEY` exists, parses as a private key and logs in as the expected unprivileged user before image builds begin. Rotate the pinned public host key intentionally if the VPS SSH host identity changes; never replace pinning with `StrictHostKeyChecking=no`.
+
+`GITHUB_TOKEN` publishes and pulls repository-scoped GHCR packages. The deploy job streams it over the authenticated SSH stdin and the remote script uses it through an isolated temporary Docker config, which is removed on exit; it is not placed in an SSH command argument and the server user's persistent Docker credentials are not overwritten.
 
 On push to `main` (or manual dispatch), `.github/workflows/deploy.yml`:
 
