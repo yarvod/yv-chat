@@ -42,6 +42,7 @@ export class DeviceCryptoSession implements MlsConversationGateway {
     Promise<ReconcileConversationCryptoResult>
   >()
   private readonly readyConversations = new Map<string, ReconcileConversationCryptoResult>()
+  private poolRefresh: Promise<void> | null = null
 
   constructor(
     private readonly registry: DeviceCryptoRegistryGateway,
@@ -72,10 +73,7 @@ export class DeviceCryptoSession implements MlsConversationGateway {
     const pending = this.reconciliation.get(conversationId)
     if (pending) return pending
     const active = this.requireActive()
-    const operation = active.reconcile.execute({
-      conversationId,
-      deviceId: active.initialized.identity.deviceId,
-    })
+    const operation = this.reconcileAfterPoolRefresh(active, conversationId)
     this.reconciliation.set(conversationId, operation)
     void operation.then((result) => {
       if (result.status === 'ready') this.readyConversations.set(conversationId, result)
@@ -154,6 +152,7 @@ export class DeviceCryptoSession implements MlsConversationGateway {
   private async disposeActive(): Promise<void> {
     this.reconciliation.clear()
     this.readyConversations.clear()
+    this.poolRefresh = null
     const current = this.active
     this.active = null
     if (current) await current.gateway.dispose()
@@ -162,5 +161,28 @@ export class DeviceCryptoSession implements MlsConversationGateway {
   private requireActive(): ActiveDeviceCryptoScope {
     if (!this.active) throw new DeviceCryptoError('not-provisioned')
     return this.active
+  }
+
+  private async reconcileAfterPoolRefresh(
+    active: ActiveDeviceCryptoScope,
+    conversationId: string,
+  ): Promise<ReconcileConversationCryptoResult> {
+    await this.ensurePool(active)
+    return await active.reconcile.execute({
+      conversationId,
+      deviceId: active.initialized.identity.deviceId,
+    })
+  }
+
+  private ensurePool(active: ActiveDeviceCryptoScope): Promise<void> {
+    if (this.poolRefresh) return this.poolRefresh
+    const operation = new EnsureDeviceKeyPackagePool(this.packages, active.gateway)
+      .execute(active.initialized.identity.deviceId)
+      .then(() => undefined)
+    this.poolRefresh = operation
+    void operation.then(() => undefined, () => undefined).finally(() => {
+      if (this.poolRefresh === operation) this.poolRefresh = null
+    })
+    return operation
   }
 }

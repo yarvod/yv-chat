@@ -820,6 +820,9 @@ OpenMLS validation внутри isolated Worker: exact TLS bytes должны и
 signature, MLS 1.0, выбранный ciphersuite и leaf binding с canonical
 user/device credential, Ed25519 public key, fingerprint и SHA-256 package ref.
 TypeScript не разбирает MLS wire format и получает только bounded success/error.
+Pool refresh также single-flight выполняется перед reconciliation новой conversation:
+это восполняет packages, которые другие online coordinators израсходовали после
+первичного login, не требуя перезапуска PWA.
 
 Conversation MLS coordination использует отдельный Unit of Work и три server-side
 типа opaque records: current generation, immutable required-device snapshot и

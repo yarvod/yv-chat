@@ -71,7 +71,8 @@ synthetic v1 payload виден серверу; положить туда file k
 - [x] Сохранить replay protection: plaintext content cache и sealed receive/sender
   ratchet обновляются одной IndexedDB transaction под non-extractable device key.
 - [x] Добавить bounded KeyPackage generation/replenishment до production cutover;
-  foreground target — восемь уникальных one-time packages из sealed provider.
+  foreground target — восемь уникальных one-time packages из sealed provider,
+  refresh выполняется при initialization и перед новой conversation reconciliation.
 - [ ] Согласовать group rename/member add/remove и device revoke с MLS Commit;
   negative mismatch/unauthorized leaf/fork tests обязательны.
 - [ ] Покрыть two-user/two-device, offline Welcome, reconnect, duplicate delivery,
