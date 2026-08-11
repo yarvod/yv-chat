@@ -628,12 +628,11 @@ signature key и one-time KeyPackage только для принятого AES-
 signature key, KeyPackage и SHA-256 public fingerprint. Provider/signature/init
 private state удерживается opaque object без serialization/getter/debug API.
 
-Этот proof намеренно memory-only: его native tests и release WASM compilation
-доказывают provider/toolchain compatibility, но не crash-safe persistence и не
-browser runtime readiness. Он не подключён к `ProtocolMessageProtection`, не меняет
-outgoing v1 и не получает E2EE badge. Следующий slice должен дать repository-owned
-WASM glue/Worker и encrypted versioned IndexedDB storage; терять memory provider при
-reload и молча генерировать новую identity под тем же device ID запрещено.
+Provider пока не подключён к `ProtocolMessageProtection`, не меняет outgoing v1 и
+не получает E2EE badge. Release WASM и generated TypeScript glue собираются из
+exact lockfile; CI отдельно проверяет, что public binding содержит только sealed
+state API и не экспортирует private snapshot entrypoints. Browser Worker runtime и
+физические Chromium/Firefox/Safari acceptance tests остаются следующим gate.
 
 Внутри Rust crate существует private unsealed snapshot prerequisite. Формат имеет
 fixed magic, format/provider versions, monotonic non-zero revision, canonical
@@ -645,10 +644,27 @@ inconsistent state переводится в typed fail-closed error.
 
 Unsealed snapshot содержит private MLS material. Он не является public API, не имеет
 `wasm_bindgen` export и не может записываться в IndexedDB/файл или логироваться.
-Structural validation не является authentication: только следующий WebCrypto
-AES-GCM sealing slice с device-bound AAD, non-extractable wrapping key и atomic
-revision ledger разрешит persistent use. До этого reload остаётся явным unsupported
-state, а не поводом silently заменить identity.
+WASM `sealState` передаёт snapshot прямо WebCrypto `SubtleCrypto.encrypt`, затем
+best-effort очищает временный byte buffer; `restoreSealedState` расшифровывает и
+валидирует snapshot внутри Rust/WASM boundary. AES-256-GCM использует новый CSPRNG
+96-bit IV и exact AAD
+`format-label || canonical-user-UUID || canonical-device-UUID || revision`.
+Outer revision обязан совпасть с authenticated inner revision. Wrong key, changed
+identity/revision/IV/tag и malformed/bounded envelope дают typed fail-closed error;
+fallback или silent identity regeneration отсутствуют.
+
+Browser infrastructure adapter `IndexedDbCryptoVault` владеет versioned базой
+`yv-chat-crypto-v1`. Для каждого device она хранит только structured-clone
+non-extractable AES-GCM `CryptoKey` и sealed `{schema, user, device, revision,
+fingerprint, iv, ciphertext}`. Первичный key+state commit выполняется одной
+read-write transaction. Updates требуют ровно `current + 1`, неизменный public
+fingerprint и optimistic revision match в transaction; partial key/state, rollback,
+conflict и storage failure различаются typed errors и никогда не вызывают reset.
+Этот adapter является внутренней зависимостью будущего crypto Worker, а не
+application port: намеренно нельзя передавать `CryptoKey`, nonce или ciphertext в
+Vue/application DTO. Fake IndexedDB + Node WebCrypto tests фиксируют transaction и
+metadata semantics; реальное выполнение WebCrypto из generated WASM в поддерживаемых
+браузерах всё ещё release-gated.
 
 UI не вызывает concrete crypto adapter: application-facing async operations
 `protectText/unprotectText` получают intent DTO с conversation/client-message

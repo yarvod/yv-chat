@@ -99,10 +99,15 @@ jobs:
         run: cargo fmt --check
       - name: Lint native targets
         run: cargo clippy --all-targets --locked -- -D warnings
+      - name: Lint WASM target
+        run: cargo clippy --target wasm32-unknown-unknown --locked -- -D warnings
       - name: Test native provider
         run: cargo test --locked
-      - name: Compile release WASM
-        run: cargo build --target wasm32-unknown-unknown --release --locked
+      - name: Install pinned wasm-bindgen CLI
+        run: cargo install wasm-bindgen-cli --version 0.2.127 --locked
+      - name: Compile and verify release WASM boundary
+        working-directory: .
+        run: make crypto-wasm-bindgen
       - name: Reject sensitive OpenMLS debug features
         run: |
           ! cargo tree --locked -e features -i openmls |

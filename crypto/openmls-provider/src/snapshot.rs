@@ -24,7 +24,7 @@ use super::{
 const MAGIC: &[u8; 8] = b"YVMLSST\0";
 const FORMAT_VERSION: u16 = 1;
 const PROVIDER_STORAGE_VERSION: u16 = 1;
-const MAX_SNAPSHOT_BYTES: usize = 32 * 1024 * 1024;
+pub(super) const MAX_SNAPSHOT_BYTES: usize = 32 * 1024 * 1024;
 const MAX_KEY_PACKAGE_BYTES: usize = 1024 * 1024;
 const MAX_STORAGE_ENTRIES: usize = 4096;
 const MAX_STORAGE_KEY_BYTES: usize = 64 * 1024;

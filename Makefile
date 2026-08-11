@@ -1,10 +1,12 @@
 .PHONY: dev down logs backend-install backend-dev backend-lint backend-format \
 	backend-typecheck backend-test frontend-install frontend-dev frontend-lint \
 	frontend-typecheck frontend-test frontend-build migrate migration-sql bootstrap-admin \
-	crypto-format crypto-lint crypto-test crypto-wasm crypto-feature-check crypto-check \
+	crypto-format crypto-lint crypto-wasm-lint crypto-test crypto-wasm crypto-wasm-bindgen \
+	crypto-feature-check crypto-check \
 	test ci compose-check deploy-check docs-check
 
 CARGO ?= cargo
+WASM_BINDGEN ?= wasm-bindgen
 
 dev:
 	@echo "Run 'make backend-dev' and 'make frontend-dev' in separate terminals."
@@ -66,17 +68,33 @@ crypto-format:
 crypto-lint:
 	cd crypto && $(CARGO) clippy --all-targets --locked -- -D warnings
 
+crypto-wasm-lint:
+	cd crypto && $(CARGO) clippy --target wasm32-unknown-unknown --locked -- -D warnings
+
 crypto-test:
 	cd crypto && $(CARGO) test --locked
 
 crypto-wasm:
 	cd crypto && $(CARGO) build --target wasm32-unknown-unknown --release --locked
 
+crypto-wasm-bindgen: crypto-wasm
+	cd crypto && $(WASM_BINDGEN) \
+		target/wasm32-unknown-unknown/release/yv_chat_openmls_provider.wasm \
+		--target web \
+		--out-dir target/wasm-bindgen \
+		--typescript
+	grep -q 'sealState(key: CryptoKey' crypto/target/wasm-bindgen/yv_chat_openmls_provider.d.ts
+	grep -q 'restoreSealedState(key: CryptoKey' crypto/target/wasm-bindgen/yv_chat_openmls_provider.d.ts
+	grep -q 'expected_fingerprint: string' crypto/target/wasm-bindgen/yv_chat_openmls_provider.d.ts
+	grep -q 'export class SealedSnapshot' crypto/target/wasm-bindgen/yv_chat_openmls_provider.d.ts
+	! grep -Eq 'snapshotForSealing|restoreFromUnsealedSnapshot' \
+		crypto/target/wasm-bindgen/yv_chat_openmls_provider.d.ts
+
 crypto-feature-check:
 	cd crypto && ! $(CARGO) tree --locked -e features -i openmls | \
 		grep -Eq 'openmls feature "(content-debug|crypto-debug|test-utils)"'
 
-crypto-check: crypto-format crypto-lint crypto-test crypto-wasm crypto-feature-check
+crypto-check: crypto-format crypto-lint crypto-wasm-lint crypto-test crypto-wasm-bindgen crypto-feature-check
 
 test: backend-test frontend-test
 

@@ -1720,6 +1720,7 @@ version = "0.1.0"
 dependencies = [
  "getrandom 0.2.15",
  "hex",
+ "js-sys",
  "openmls",
  "openmls_basic_credential",
  "openmls_rust_crypto",
@@ -1728,6 +1729,8 @@ dependencies = [
  "tls_codec",
  "uuid",
  "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
 ]
 
 [[package]]

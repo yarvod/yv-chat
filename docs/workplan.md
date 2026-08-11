@@ -4,86 +4,75 @@
 завершённая работа фиксируется отдельным коммитом, а новый пункт переносится
 сюда из `backlog.md`.
 
-## WP-032 — Versioned restorable OpenMLS state snapshot core
+## WP-033 — WebCrypto sealing и atomic IndexedDB crypto vault
 
 Статус: **completed**
-Backlog item: `BL-013` (encrypted-persistence prerequisite)
-Цель: сделать private OpenMLS provider state воспроизводимо snapshot/restore внутри
-Rust crate, с version/bounds/identity consistency/fail-closed parsing, не экспортируя
-plaintext snapshot через WASM/TypeScript API. Следующий slice будет sealing через
-non-extractable WebCrypto key и atomic IndexedDB.
+Backlog item: `BL-013` (encrypted browser persistence slice)
+Цель: разрешить persistent device crypto state только как AES-256-GCM sealed
+ciphertext: private OpenMLS snapshot шифруется/расшифровывается внутри Rust/WASM
+через non-extractable WebCrypto `CryptoKey`, а IndexedDB adapter атомарно хранит key,
+sealed record и monotonic revision без доступа Vue/application к private bytes.
 
 ### Security invariants
 
-1. Snapshot содержит private MLS material и поэтому не является public DTO/API.
-   Ни один `wasm_bindgen` getter не возвращает snapshot bytes.
-2. Формат имеет magic, schema/provider revision, exact lengths/counts и общий size
-   limit; trailing/truncated/oversized/duplicate records отвергаются.
-3. Map сериализуется deterministic sorted order; HashMap iteration не влияет на
-   bytes/test fixtures.
-4. Restore создаёт новый provider, затем находит signer только в restored OpenMLS
-   storage по expected public key; отсутствие/подмена private signer fail closed.
-5. Public identity/signature/KeyPackage/fingerprint после restore должны exact
-   совпасть и KeyPackage повторно проходит OpenMLS validation.
-6. Snapshot revision монотонный и включён в envelope для будущей rollback policy;
-   revision `0` и unsupported schema/provider version запрещены.
-7. Plain snapshot не пишется на disk/IndexedDB, не логируется и не попадает в test
-   output. В этом slice он существует только как short-lived Rust memory buffer.
-8. Corruption checks этого формата не заменяют AEAD authenticity. Production
-   persistence запрещён до следующего encrypted sealing/atomic storage slice.
-9. Synthetic message protocol/outgoing/deployment не меняются.
+1. Wrapping key создаётся `AES-GCM 256`, `extractable=false`, usages только
+   `encrypt/decrypt`; JWK/raw export отсутствует.
+2. Private snapshot не возвращается из WASM. WebCrypto Promise получает его из WASM
+   memory, после operation buffer очищается best-effort.
+3. Уникальный 96-bit IV генерируется CSPRNG для каждого seal; reuse запрещён.
+4. AAD exact связывает format label, canonical user UUID, device UUID и revision.
+5. Sealed envelope имеет schema/revision/IV/ciphertext limits; modified IV/AAD/tag,
+   wrong device/revision/key fail closed без auto-reset/fallback.
+6. IndexedDB содержит один non-extractable key record и один sealed state record на
+   device. Key+state bootstrap пишутся одной transaction.
+7. Existing identity при missing/corrupt key/state не regenerates silently. Adapter
+   возвращает typed `missing/corrupt/rollback/storage-unavailable` state.
+8. Revision может только увеличиваться; stale/equal overwrite запрещён, restore
+   сравнивает outer record и authenticated inner snapshot revision.
+9. Vue и message application services не получают `CryptoKey`, nonce, ciphertext
+   или vault internals; этот slice ещё не включает production MLS messaging.
+10. Synthetic v1 остаётся outgoing и имеет insecure warning.
 
 ### План
 
-- [x] Добавить cohesive internal snapshot module и bounded typed errors.
-- [x] Deterministic encode provider storage + public restore anchors.
-- [x] Strict parser с overflow/duplicate/trailing/unsupported-version checks.
-- [x] Restore provider/signer/credential и повторная KeyPackage validation.
-- [x] Tests: exact round-trip, stable re-encode, truncation/trailing/corruption,
-  wrong identity/public key, missing signer и bounds.
-- [x] Подтвердить отсутствие snapshot export в WASM surface.
-- [x] Native Clippy/tests + locked release WASM compilation + full repository CI.
-- [x] Architecture/backlog/bugs/workplan sync.
+- [x] Rust/WASM async seal/restore API на `SubtleCrypto` с bounded errors/AAD.
+- [x] Opaque `SealedSnapshot` WASM result: revision, IV, ciphertext, fingerprint.
+- [x] Native tests для AAD/envelope validation и locked release WASM compile.
+- [x] Typed internal frontend crypto-vault DTO/error taxonomy; это infrastructure
+  dependency будущего Worker, не application port, чтобы не утечь `CryptoKey`.
+- [x] IndexedDB adapter с versioned schema, non-extractable key generation и atomic
+  bootstrap/monotonic update.
+- [x] Vitest fake IndexedDB/WebCrypto tests: non-extractable key, round-trip record,
+  rollback, partial/missing/corrupt state и isolation by device.
+- [x] WASM build/glue packaging contract; private snapshot export static gate.
+- [x] Architecture/backlog/bugs/workplan sync и repository quality gates.
 
 ### Не входит в этот slice
 
-- AES-GCM/WebCrypto wrapping key;
-- IndexedDB schema/transactions/rollback ledger;
-- Worker/glue/browser runtime и service-worker migration;
-- backend credential/KeyPackage endpoints;
-- MLS groups/messages или E2EE claim.
+- backend credential/KeyPackage API;
+- MLS group lifecycle и message v2;
+- service worker migration across a real deployed old schema;
+- Firefox/Safari physical browser acceptance;
+- production E2EE claim.
 
 ### Definition of Done
 
-- bootstrap → snapshot → restore сохраняет public identity и usable private signer;
-- format deterministic/bounded/versioned и fail closed на negative corpus;
-- private snapshot не пересекает JS binding;
-- native/WASM/full repository gates зелёные;
-- docs явно говорят, что unsealed snapshot ещё нельзя сохранять production client.
+- only authenticated ciphertext may leave Rust private-state boundary;
+- browser key is non-extractable and state writes are atomic/monotonic;
+- wrong key/device/revision/corruption fail closed without identity replacement;
+- native/WASM/frontend/full repository checks pass;
+- limitations and remaining release gates are explicit.
 
-### Реализовано
+### Проверка
 
-- Cohesive private `snapshot` module кодирует provider storage в deterministic
-  sorted binary envelope с format/provider version, non-zero revision и строгими
-  per-field/entry/total limits.
-- Restore exact-сверяет expected user/device credential, public signature key и
-  TLS KeyPackage, восстанавливает memory provider, извлекает signer и private
-  KeyPackage bundle из его storage и повторно запускает OpenMLS validation.
-- Snapshot methods имеют только crate visibility, не помечены `wasm_bindgen` и не
-  доступны TypeScript/application UI. Документация запрещает persisting unsealed
-  bytes до authenticated WebCrypto sealing.
-- 6 новых tests (11 Rust total) покрывают deterministic round-trip и подпись после
-  restore, wrong identity/public key, zero/unsupported revision, missing signer,
-  truncation/trailing, duplicate records и oversized field.
+- `cargo fmt --check`;
+- native и `wasm32-unknown-unknown` `cargo clippy ... -D warnings`;
+- `cargo test --locked`: 13 passed;
+- release WASM + pinned `wasm-bindgen 0.2.127`, generated `.d.ts` API gate;
+- frontend lint/typecheck и Vitest: 42 passed;
+- полный `make ci` выполняется перед commit.
 
-### Проверено
-
-- Rust `cargo fmt`, Clippy `--all-targets --locked -- -D warnings`, `11 passed`.
-- Locked `wasm32-unknown-unknown --release` compilation passed; production feature
-  graph по-прежнему содержит только OpenMLS `js`, без `crypto-debug`,
-  `content-debug` или `test-utils`.
-- Полный `make ci`: backend Ruff/format/import-linter/mypy, `172 passed, 6 skipped`;
-  frontend ESLint/Nuxt typecheck, `37 passed`, production PWA build; Rust 11 tests,
-  Clippy/format/release WASM/feature graph; Compose/deploy/docs contracts — passed.
-  PostgreSQL-only skips остаются отдельным GitHub release gate и этим Rust-only
-  slice не изменяются.
+Physical browser WASM execution не заявляется проверенным в этом slice: Worker
+integration и Chromium/Firefox/Safari seal/restore/tamper acceptance остаются явным
+следующим release gate. Поэтому текущий message protocol по-прежнему synthetic v1 и
+не E2EE.

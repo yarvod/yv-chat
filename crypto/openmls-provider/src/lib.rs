@@ -22,6 +22,9 @@ use wasm_bindgen::prelude::*;
 
 mod snapshot;
 
+#[cfg(any(test, target_arch = "wasm32"))]
+mod sealing;
+
 pub const CREDENTIAL_SCHEMA_VERSION: u8 = 1;
 pub const CREDENTIAL_IDENTITY_LENGTH: usize = 33;
 pub const DEVICE_FINGERPRINT_LABEL: &[u8] = b"yv-chat-device-fingerprint-v1\0";
@@ -51,6 +54,14 @@ pub enum BootstrapError {
     SnapshotVersionUnsupported,
     #[error("private state snapshot identity does not match this device")]
     SnapshotIdentityMismatch,
+    #[error("crypto wrapping key is invalid")]
+    InvalidWrappingKey,
+    #[error("private state sealing failed")]
+    SealingFailed,
+    #[error("sealed private state is invalid")]
+    SealedStateInvalid,
+    #[error("private state revision rolled back")]
+    SnapshotRollback,
 }
 
 /// Opaque in-memory owner of private signature and KeyPackage state.

@@ -110,8 +110,8 @@ Implementation и desktop browser smoke завершены; physical 390px scree
 ### BL-013 — Frontend crypto adapter и device identity
 
 Статус: **in progress** (`WP-030` завершил async fail-closed boundary; `WP-031`
-завершил pinned OpenMLS provider/device-bootstrap proof; encrypted persistent
-storage следует отдельным slice).
+завершил pinned OpenMLS provider/device-bootstrap proof; `WP-032` — private
+snapshot/restore, `WP-033` — WebCrypto sealing и atomic IndexedDB vault).
 
 Результат: UI работает с intent-level crypto API, private material не выходит из изолированного слоя.
 
@@ -121,8 +121,15 @@ storage следует отдельным slice).
   KeyPackage proof (`WP-031`);
 - [x] deterministic versioned/bounded private provider snapshot+restore core без JS
   export (`WP-032`);
-- [ ] encrypted persistent device identity и protocol state;
-- [ ] safe IndexedDB persistence, memory/plaintext lifecycle и log redaction;
+- [x] AES-256-GCM sealed persistent state с non-extractable WebCrypto key,
+  device/revision-bound AAD и без JS export private snapshot (`WP-033`);
+- [x] versioned IndexedDB vault с atomic key+state bootstrap, monotonic optimistic
+  update и fail-closed partial/corrupt state (`WP-033`);
+- [ ] подключить vault к repository-owned WASM Worker runtime и lifecycle device
+  identity без передачи `CryptoKey`/sealed internals в application/UI;
+- [ ] проверить seal/restore/tamper в реальных Chromium, Firefox и Safari, включая
+  reload, storage denial и migration/update lifecycle;
+- [ ] memory/plaintext lifecycle audit и log-redaction gate для полного Worker flow;
 - [ ] known-answer/interop test vectors реального MLS provider;
 - [x] corruption/version-mismatch/no-fallback tests для protocol dispatch;
 - [x] отсутствие crypto primitives и ciphertext decoding в Vue components.
