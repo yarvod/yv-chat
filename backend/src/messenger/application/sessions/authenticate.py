@@ -11,8 +11,8 @@ from messenger.application.errors import (
 from messenger.application.ports.clock import Clock
 from messenger.application.ports.identity import IdentityUnitOfWorkFactory
 from messenger.application.ports.session_credentials import SessionCredentialService
-from messenger.application.security_event_policy import SecurityEventPolicy
-from messenger.application.session_policy import SessionPolicy
+from messenger.application.security_events.policy import SecurityEventPolicy
+from messenger.application.sessions.policy import SessionPolicy
 from messenger.domain.entities import SecurityEvent, SecurityEventType
 
 

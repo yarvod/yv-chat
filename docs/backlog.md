@@ -6,7 +6,7 @@
 
 ## In progress
 
-Активная фича отсутствует: `BL-003C` завершена, следующей будет выбрана `BL-003D`.
+Активная фича отсутствует: архитектурный prerequisite `BL-ARCH-001` завершён, следующей снова будет выбрана `BL-003D`.
 
 ## Next — identity и account management
 
@@ -377,6 +377,10 @@
 - решение о native wrapper только при подтверждённой необходимости.
 
 ## Completed
+
+### BL-ARCH-001 — Clean Architecture modularization
+
+Application разложен по account/session/device capabilities, identity ports и SQLAlchemy adapters разделены по aggregate responsibility, Dishka composition root состоит из шести небольших providers и используется HTTP/CLI, import-linter фиксирует dependency rule, production graph проверяется тестом, async suite переведён на pytest-asyncio без ручного `asyncio.run()`.
 
 ### BL-003C — Active device/session management
 

@@ -12,7 +12,7 @@ from messenger.application.ports.identity import (
     SessionRepository,
     UserRepository,
 )
-from messenger.infrastructure.persistence.identity_repositories import (
+from messenger.infrastructure.persistence.repositories import (
     SqlAlchemyActivationTokenRepository,
     SqlAlchemyDeviceRepository,
     SqlAlchemySecurityEventRepository,

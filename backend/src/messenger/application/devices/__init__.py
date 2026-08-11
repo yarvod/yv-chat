@@ -1,0 +1,1 @@
+"""Active-device application operations."""

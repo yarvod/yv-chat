@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from messenger.application.ports.clock import Clock
 from messenger.application.ports.identity import IdentityUnitOfWorkFactory
 from messenger.application.ports.session_credentials import SessionCredentialService
-from messenger.application.security_event_policy import SecurityEventPolicy
+from messenger.application.security_events.policy import SecurityEventPolicy
 from messenger.domain.entities import SecurityEvent, SecurityEventType
 
 

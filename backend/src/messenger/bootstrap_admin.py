@@ -2,31 +2,17 @@
 
 import asyncio
 
+from messenger.application.accounts.bootstrap_admin import BootstrapAdmin, BootstrapAdminCommand
 from messenger.application.errors import BootstrapAlreadyCompletedError
-from messenger.application.ports.identity import IdentityUnitOfWork
-from messenger.application.use_cases.bootstrap_admin import BootstrapAdmin, BootstrapAdminCommand
+from messenger.bootstrap.container import create_container
 from messenger.bootstrap.settings import AdminBootstrapSettings, AppSettings
-from messenger.infrastructure.auth.passwords import Argon2PasswordHasher
-from messenger.infrastructure.clock import SystemClock
-from messenger.infrastructure.persistence.database import create_engine, create_session_factory
-from messenger.infrastructure.persistence.identity_uow import SqlAlchemyIdentityUnitOfWork
 
 
 async def bootstrap() -> None:
     """Create the initial administrator without printing credentials."""
     app_settings = AppSettings()
     admin_settings = AdminBootstrapSettings()
-    engine = create_engine(app_settings.database_url)
-    session_factory = create_session_factory(engine)
-
-    def unit_of_work() -> IdentityUnitOfWork:
-        return SqlAlchemyIdentityUnitOfWork(session_factory)
-
-    use_case = BootstrapAdmin(
-        unit_of_work=unit_of_work,
-        clock=SystemClock(),
-        passwords=Argon2PasswordHasher(),
-    )
+    container = create_container(app_settings)
     command = BootstrapAdminCommand(
         username=admin_settings.admin_username,
         display_name=admin_settings.admin_display_name,
@@ -34,11 +20,13 @@ async def bootstrap() -> None:
     )
 
     try:
-        result = await use_case.execute(command)
+        async with container() as request_container:
+            use_case = await request_container.get(BootstrapAdmin)
+            result = await use_case.execute(command)
     except BootstrapAlreadyCompletedError as error:
         raise SystemExit(str(error)) from error
     finally:
-        await engine.dispose()
+        await container.close()
 
     print(f"Initial administrator created: {result.username} ({result.user_id})")
 

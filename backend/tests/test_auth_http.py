@@ -1,6 +1,5 @@
 """Browser authentication transport security tests."""
 
-import asyncio
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
@@ -10,20 +9,20 @@ from dishka.integrations.fastapi import FastapiProvider
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient, Response
 
+from messenger.application.devices.list_security_events import ListSecurityEvents
+from messenger.application.devices.list_sessions import ListMySessions
+from messenger.application.devices.rename import RenameMyDevice
+from messenger.application.devices.revoke import RevokeMyDevice
+from messenger.application.devices.revoke_others import RevokeOtherSessions
 from messenger.application.ports.clock import Clock
 from messenger.application.ports.identity import IdentityUnitOfWorkFactory
 from messenger.application.ports.passwords import PasswordHasher
 from messenger.application.ports.session_credentials import SessionCredentialService
-from messenger.application.security_event_policy import SecurityEventPolicy
-from messenger.application.session_policy import SessionPolicy
-from messenger.application.use_cases.authenticate_session import AuthenticateSession
-from messenger.application.use_cases.list_my_sessions import ListMySessions
-from messenger.application.use_cases.list_security_events import ListSecurityEvents
-from messenger.application.use_cases.login import Login
-from messenger.application.use_cases.logout import Logout
-from messenger.application.use_cases.rename_my_device import RenameMyDevice
-from messenger.application.use_cases.revoke_my_device import RevokeMyDevice
-from messenger.application.use_cases.revoke_other_sessions import RevokeOtherSessions
+from messenger.application.security_events.policy import SecurityEventPolicy
+from messenger.application.sessions.authenticate import AuthenticateSession
+from messenger.application.sessions.login import Login
+from messenger.application.sessions.logout import Logout
+from messenger.application.sessions.policy import SessionPolicy
 from messenger.bootstrap.app import create_app
 from messenger.bootstrap.settings import AppEnvironment, AppSettings
 from messenger.domain.entities import Device, Session, User
@@ -301,8 +300,8 @@ async def run_cookie_flow() -> None:
         assert state.devices[current_device_id].revoked_at == clock.instant
 
 
-def test_login_session_rotation_and_csrf_logout_cookie_flow() -> None:
-    asyncio.run(run_cookie_flow())
+async def test_login_session_rotation_and_csrf_logout_cookie_flow() -> None:
+    await run_cookie_flow()
 
 
 async def run_cookie_only_auth() -> None:
@@ -343,8 +342,8 @@ async def run_cookie_only_auth() -> None:
         assert "password" not in response_properties
 
 
-def test_session_does_not_accept_bearer_or_query_credentials() -> None:
-    asyncio.run(run_cookie_only_auth())
+async def test_session_does_not_accept_bearer_or_query_credentials() -> None:
+    await run_cookie_only_auth()
 
 
 async def run_client_ip_flow(trusted: bool) -> str | None:
@@ -368,12 +367,12 @@ async def run_client_ip_flow(trusted: bool) -> str | None:
     return next(iter(state.devices.values())).login_ip
 
 
-def test_forwarded_ip_is_ignored_unless_socket_peer_is_trusted() -> None:
-    assert asyncio.run(run_client_ip_flow(trusted=False)) == "10.0.0.5"
-    assert asyncio.run(run_client_ip_flow(trusted=True)) == "198.51.100.9"
+async def test_forwarded_ip_is_ignored_unless_socket_peer_is_trusted() -> None:
+    assert await run_client_ip_flow(trusted=False) == "10.0.0.5"
+    assert await run_client_ip_flow(trusted=True) == "198.51.100.9"
 
 
-def test_production_rejects_insecure_origin() -> None:
+async def test_production_rejects_insecure_origin() -> None:
     try:
         AppSettings(
             app_env=AppEnvironment.PRODUCTION,

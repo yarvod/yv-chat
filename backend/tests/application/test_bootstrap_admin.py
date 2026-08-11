@@ -1,12 +1,11 @@
 """Initial administrator bootstrap specifications."""
 
-import asyncio
 from datetime import UTC, datetime
 
 import pytest
 
+from messenger.application.accounts.bootstrap_admin import BootstrapAdmin, BootstrapAdminCommand
 from messenger.application.errors import BootstrapAlreadyCompletedError, WeakPasswordError
-from messenger.application.use_cases.bootstrap_admin import BootstrapAdmin, BootstrapAdminCommand
 from tests.application.fakes import (
     FakeIdentityUnitOfWorkFactory,
     FakePasswordHasher,
@@ -25,7 +24,7 @@ def build_use_case(state: IdentityState, passwords: FakePasswordHasher) -> Boots
     )
 
 
-def test_empty_database_accepts_exactly_one_explicit_admin() -> None:
+async def test_empty_database_accepts_exactly_one_explicit_admin() -> None:
     state = IdentityState()
     passwords = FakePasswordHasher()
     command = BootstrapAdminCommand(
@@ -34,7 +33,7 @@ def test_empty_database_accepts_exactly_one_explicit_admin() -> None:
         password="correct horse battery staple",
     )
 
-    result = asyncio.run(build_use_case(state, passwords).execute(command))
+    result = await build_use_case(state, passwords).execute(command)
 
     admin = state.users[result.user_id]
     assert admin.is_admin is True
@@ -43,23 +42,21 @@ def test_empty_database_accepts_exactly_one_explicit_admin() -> None:
     assert state.commits == 1
 
     with pytest.raises(BootstrapAlreadyCompletedError):
-        asyncio.run(build_use_case(state, passwords).execute(command))
+        await build_use_case(state, passwords).execute(command)
 
     assert state.commits == 1
 
 
-def test_weak_bootstrap_password_is_rejected_before_hashing() -> None:
+async def test_weak_bootstrap_password_is_rejected_before_hashing() -> None:
     state = IdentityState()
     passwords = FakePasswordHasher()
 
     with pytest.raises(WeakPasswordError):
-        asyncio.run(
-            build_use_case(state, passwords).execute(
-                BootstrapAdminCommand(
-                    username="admin",
-                    display_name="Administrator",
-                    password="short",
-                )
+        await build_use_case(state, passwords).execute(
+            BootstrapAdminCommand(
+                username="admin",
+                display_name="Administrator",
+                password="short",
             )
         )
 

@@ -2,64 +2,58 @@
 
 Этот файл содержит только одну текущую фичу. Перед началом следующей фичи завершённая работа фиксируется коммитом, а новый пункт переносится сюда из `backlog.md`.
 
-## WP-006 — Active device/session management
+## WP-007 — Clean Architecture modularization
 
 Статус: **completed**  
-Backlog item: `BL-003C`  
-Цель: дать пользователю безопасное управление собственными устройствами и сессиями, не раскрывая credentials и не используя browser metadata как фактор авторизации.
+Backlog item: `BL-ARCH-001`  
+Цель: привести backend к прозрачной Clean Architecture: feature-oriented application modules, узкие ports, отдельные infrastructure adapters, модульный Dishka composition root и idiomatic async pytest tests.
 
-### Пользовательский результат
+### Архитектурный результат
 
-Пользователь видит текущую и остальные активные сессии с понятным device name и bounded metadata, может переименовать своё устройство, отозвать одну сессию или все остальные. Security events показывают важные действия и replay-сигналы с ограниченным retention.
+Dependency rule остаётся `presentation → application → domain`, infrastructure реализует application ports, а bootstrap — единственное место, которое знает все concrete types. Каталоги отражают account/session/device capabilities. Крупные файлы-комбайны исчезают; каждый provider/repository/use case имеет одну очевидную ответственность.
 
-### Security invariants
+### Правила рефакторинга
 
-1. Все операции используют `user_id` из аутентифицированной сессии; client-supplied owner ID отсутствует.
-2. Угадывание чужого `session_id`/`device_id` не позволяет читать или изменять чужие записи.
-3. API никогда не возвращает current/previous token hash, credential, password hash или private metadata вне явного DTO.
-4. Current session/device определяется серверным `session_id`, а не флагом клиента.
-5. Rename меняет только display name и не влияет на authentication validity.
-6. Revoke одной device-bound session атомарно отзывает session и device.
-7. Revoke-all-others сохраняет текущую сессию даже при конкурентном запросе.
-8. IP, User-Agent и device model остаются информационными metadata, не authorization factors.
-9. State-changing endpoints проходят существующие exact Origin + CSRF checks.
-10. Security events не содержат credentials, plaintext messages или полные чувствительные заголовки.
+1. Domain/application не импортируют FastAPI, Dishka, SQLAlchemy или concrete adapters.
+2. Dishka используется только в composition root и presentation injection boundary.
+3. Providers группируются по settings, adapters, persistence и application capability; единого god-provider нет.
+4. APP scope содержит process resources/stateless adapters/policies, REQUEST scope — use cases; UoW создаётся на одну application operation.
+5. Repository port и adapter разбиты по aggregate responsibility; generic CRUD не появляется.
+6. Use cases разложены по `accounts`, `sessions`, `devices`, а не в плоский junk drawer.
+7. Transport DTO и handlers разделяются по capability; HTTP не получает агрегат всех services.
+8. Tests используют pytest async support/fixtures; ручной `asyncio.run()` в test functions запрещён.
+9. Test doubles остаются typed implementations узких ports и разбиваются по ответственности.
+10. Рефакторинг не меняет versioned HTTP behavior, schema, security/session semantics.
 
 ### План реализации
 
-- [x] Добавить typed list/rename/revoke/revoke-all commands, results и ownership errors.
-- [x] Расширить repository ports узкими user-scoped session/device queries.
-- [x] Реализовать list-my-sessions с current marker и стабильной сортировкой.
-- [x] Реализовать rename-my-device с bounded domain validation.
-- [x] Реализовать atomic revoke-one и revoke-all-others.
-- [x] Добавить bounded `security_events` model/migration для login, logout, replay и revoke actions.
-- [x] Связать существующие login/logout/replay transitions с event repository без secret payload.
-- [x] Добавить `/api/v1/devices` list/rename/revoke/revoke-others endpoints.
-- [x] Добавить response DTO, исключающие credential/hash fields.
-- [x] Добавить unit tests всех use cases и negative ownership cases.
-- [x] Добавить PostgreSQL tests для concurrent revoke-all/current preservation.
-- [x] Добавить HTTP Origin/CSRF и response-schema tests.
-- [x] Проверить migration fresh/roundtrip, `make ci` и Docker smoke test.
-- [x] Обновить README/docs и зафиксировать фичу отдельным коммитом.
+- [x] Инвентаризировать зависимости и крупные модули.
+- [x] Разбить identity persistence ports на user/token/device/session/event/UoW modules.
+- [x] Разбить SQLAlchemy repositories и pure mappers на отдельные adapters.
+- [x] Разложить use cases по account/session/device feature packages.
+- [x] Разбить Dishka root на settings/persistence/security/account/session/device providers.
+- [x] Перевести bootstrap admin CLI на общий Dishka composition root.
+- [x] Проверить, что HTTP handlers уже разделены по auth/device capability; дальнейшее дробление DTO не создаёт полезной границы на текущем размере.
+- [x] Добавить pytest-asyncio и удалить ручной `asyncio.run()` из tests.
+- [x] Добавить architecture/import-boundary tests и Dishka graph test.
+- [x] Обновить architecture/README/backlog/bugs.
+- [x] Прогнать full CI, PostgreSQL integration и Docker/OpenAPI smoke.
+- [x] Зафиксировать refactor отдельным commit без feature behavior changes.
 
 ### Не входит в scope
 
-- GeoIP database/provider;
-- automatic revoke только из-за смены IP/браузера;
-- password reset/security reset;
-- admin management чужих сессий;
-- WebSocket presence;
-- frontend devices UI.
+- новые admin/messaging endpoints;
+- изменение database schema;
+- смена auth/session policy;
+- новая framework abstraction поверх Dishka;
+- объединение разных UoW операций в одну request transaction.
 
 ### Проверка готовности
 
-- list показывает только сессии текущего пользователя;
-- response отмечает current session и не содержит hashes/credentials;
-- пользователь не может rename/revoke чужой device по guessed UUID;
-- revoke-one блокирует последующую auth этой сессией;
-- revoke-all-others не отзывает current session при concurrency;
-- rename/IP metadata change не влияет на auth;
-- security events bounded и не содержат secret values;
-- все write endpoints требуют Origin + CSRF;
-- PostgreSQL integration, migration roundtrip и `make ci` проходят;
-- изменения зафиксированы отдельным коммитом.
+- production Dishka graph строится и закрывается;
+- ни один application/domain module не импортирует outer frameworks;
+- нет god-provider/god-repository и плоской директории всех use cases;
+- HTTP behavior и OpenAPI paths не изменились;
+- tests не содержат `asyncio.run()`;
+- Ruff, format, mypy, pytest, PostgreSQL integration, frontend/Compose CI и Docker smoke проходят;
+- отдельный focused commit создан до возврата к `BL-003D`.

@@ -102,6 +102,33 @@ infrastructure ──────────┘
 bootstrap/composition root wires all layers
 ```
 
+Backend package layout следует capabilities и dependency rule:
+
+```text
+application/
+├── accounts/          # bootstrap, invitation, activation operations
+├── sessions/          # login/authenticate/logout + session policy
+├── devices/           # list/rename/revoke/event queries
+├── security_events/   # cross-capability retention policy
+└── ports/identity/    # user/token/device/session/event/UoW protocols
+
+infrastructure/persistence/
+├── models/            # one ORM model per module
+├── repositories/      # one adapter per aggregate + pure mappers
+├── identity_uow.py    # transaction assembly only
+└── database.py        # engine/session factory
+
+bootstrap/providers/
+├── settings.py
+├── persistence.py
+├── adapters.py
+├── accounts.py
+├── sessions.py
+└── devices.py
+```
+
+`import-linter` исполняет dependency rule в CI: domain не знает другие слои, application не знает infrastructure/presentation/bootstrap, infrastructure не знает delivery/composition.
+
 ### Domain
 
 Содержит entities, value objects, invariants и domain errors.
@@ -155,7 +182,7 @@ application operation
 └── fresh UnitOfWork created by the use case
 ```
 
-FastAPI handlers получают только нужные им зависимости через `FromDishka`; агрегат «все сервисы приложения» не передаётся. Dishka остаётся bootstrap/presentation detail: domain и application не импортируют DI framework. Request scope не заменяет transaction boundary — каждый use case сам открывает отдельный UoW, поэтому authentication и последующая command в одном HTTP request не делят скрытую транзакцию.
+FastAPI handlers получают только нужные им зависимости через `FromDishka`; агрегат «все сервисы приложения» не передаётся. Dishka остаётся bootstrap/presentation detail: domain и application не импортируют DI framework. Request scope не заменяет transaction boundary — каждый use case сам открывает отдельный UoW, поэтому authentication и последующая command в одном HTTP request не делят скрытую транзакцию. HTTP app и bootstrap-admin CLI используют один production graph; отдельной ручной CLI-сборки adapters нет.
 
 ## 5. Code design contract
 
@@ -381,6 +408,8 @@ backend: Ruff check/format, mypy, pytest, PostgreSQL migrations/integration
 frontend: ESLint, TypeScript/Nuxt typecheck, Vitest, production build
 repository: Docker Compose config
 ```
+
+Async tests выполняются pytest + pytest-asyncio (`asyncio_mode=auto`) и используют обычные `async def`/`await`; test functions не создают event loop через `asyncio.run()`. Production Dishka graph имеет отдельную executable specification, которая резолвит все зарегистрированные application operations в REQUEST scope.
 
 Operational signals: HTTP 5xx, failed logins, active WebSockets, push failures, cleanup counts, DB/media size и free disk. Тяжёлый observability stack не добавляется без необходимости.
 

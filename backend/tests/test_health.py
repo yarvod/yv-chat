@@ -1,7 +1,5 @@
 """Health endpoint tests."""
 
-import asyncio
-
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient, Response
 
@@ -18,15 +16,15 @@ async def get(application: FastAPI, path: str) -> Response:
         return await client.get(path)
 
 
-def test_health_endpoint_reports_ok() -> None:
+async def test_health_endpoint_reports_ok() -> None:
     settings = AppSettings(database_url=TEST_DATABASE_URL)
-    response = asyncio.run(get(create_app(settings), "/api/v1/health"))
+    response = await get(create_app(settings), "/api/v1/health")
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
 
 
-def test_production_does_not_expose_openapi() -> None:
+async def test_production_does_not_expose_openapi() -> None:
     settings = AppSettings(
         app_env=AppEnvironment.PRODUCTION,
         database_url=TEST_DATABASE_URL,
@@ -34,5 +32,5 @@ def test_production_does_not_expose_openapi() -> None:
     )
     application = create_app(settings)
 
-    assert asyncio.run(get(application, "/docs")).status_code == 404
-    assert asyncio.run(get(application, "/openapi.json")).status_code == 404
+    assert (await get(application, "/docs")).status_code == 404
+    assert (await get(application, "/openapi.json")).status_code == 404

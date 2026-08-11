@@ -1,33 +1,32 @@
 """User-scoped active-device and security-event use-case specifications."""
 
-import asyncio
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import pytest
 
+from messenger.application.devices.list_security_events import (
+    ListSecurityEvents,
+    ListSecurityEventsQuery,
+)
+from messenger.application.devices.list_sessions import ListMySessions, ListMySessionsQuery
+from messenger.application.devices.rename import (
+    RenameMyDevice,
+    RenameMyDeviceCommand,
+)
+from messenger.application.devices.revoke import (
+    RevokeMyDevice,
+    RevokeMyDeviceCommand,
+)
+from messenger.application.devices.revoke_others import (
+    RevokeOtherSessions,
+    RevokeOtherSessionsCommand,
+)
 from messenger.application.errors import (
     CurrentDeviceRevocationError,
     OwnedDeviceNotFoundError,
 )
-from messenger.application.security_event_policy import SecurityEventPolicy
-from messenger.application.use_cases.list_my_sessions import ListMySessions, ListMySessionsQuery
-from messenger.application.use_cases.list_security_events import (
-    ListSecurityEvents,
-    ListSecurityEventsQuery,
-)
-from messenger.application.use_cases.rename_my_device import (
-    RenameMyDevice,
-    RenameMyDeviceCommand,
-)
-from messenger.application.use_cases.revoke_my_device import (
-    RevokeMyDevice,
-    RevokeMyDeviceCommand,
-)
-from messenger.application.use_cases.revoke_other_sessions import (
-    RevokeOtherSessions,
-    RevokeOtherSessionsCommand,
-)
+from messenger.application.security_events.policy import SecurityEventPolicy
 from messenger.domain.entities import Device, SecurityEvent, SecurityEventType, Session, User
 from tests.application.fakes import FakeIdentityUnitOfWorkFactory, FixedClock, IdentityState
 
@@ -62,7 +61,7 @@ def identity_with_two_users() -> tuple[IdentityState, User, User]:
     return IdentityState(users={alice.id: alice, bob.id: bob}), alice, bob
 
 
-def test_list_returns_only_active_owned_sessions_and_marks_current() -> None:
+async def test_list_returns_only_active_owned_sessions_and_marks_current() -> None:
     state, alice, bob = identity_with_two_users()
     older = add_active_session(state, user_id=alice.id, name="Laptop")
     current = add_active_session(
@@ -79,15 +78,13 @@ def test_list_returns_only_active_owned_sessions_and_marks_current() -> None:
         now=NOW - timedelta(days=91),
     )
 
-    items = asyncio.run(
-        ListMySessions(
-            unit_of_work=FakeIdentityUnitOfWorkFactory(state),
-            clock=FixedClock(NOW + timedelta(minutes=2)),
-        ).execute(
-            ListMySessionsQuery(
-                user_id=alice.id,
-                current_session_id=current.id,
-            )
+    items = await ListMySessions(
+        unit_of_work=FakeIdentityUnitOfWorkFactory(state),
+        clock=FixedClock(NOW + timedelta(minutes=2)),
+    ).execute(
+        ListMySessionsQuery(
+            user_id=alice.id,
+            current_session_id=current.id,
         )
     )
 
@@ -98,7 +95,7 @@ def test_list_returns_only_active_owned_sessions_and_marks_current() -> None:
     assert all("hash" not in field for field in items[0].__dataclass_fields__)
 
 
-def test_rename_is_owner_scoped_and_does_not_change_session_validity() -> None:
+async def test_rename_is_owner_scoped_and_does_not_change_session_validity() -> None:
     state, alice, bob = identity_with_two_users()
     current = add_active_session(state, user_id=alice.id, name="Laptop")
     foreign = add_active_session(state, user_id=bob.id, name="Bob phone")
@@ -108,14 +105,12 @@ def test_rename_is_owner_scoped_and_does_not_change_session_validity() -> None:
         event_policy=EVENT_POLICY,
     )
 
-    result = asyncio.run(
-        use_case.execute(
-            RenameMyDeviceCommand(
-                user_id=alice.id,
-                current_session_id=current.id,
-                device_id=current.device_id,
-                name="  Personal laptop  ",
-            )
+    result = await use_case.execute(
+        RenameMyDeviceCommand(
+            user_id=alice.id,
+            current_session_id=current.id,
+            device_id=current.device_id,
+            name="  Personal laptop  ",
         )
     )
 
@@ -126,20 +121,18 @@ def test_rename_is_owner_scoped_and_does_not_change_session_validity() -> None:
     assert event.expires_at == NOW + timedelta(days=90, minutes=1)
 
     with pytest.raises(OwnedDeviceNotFoundError):
-        asyncio.run(
-            use_case.execute(
-                RenameMyDeviceCommand(
-                    user_id=alice.id,
-                    current_session_id=current.id,
-                    device_id=foreign.device_id,
-                    name="Stolen",
-                )
+        await use_case.execute(
+            RenameMyDeviceCommand(
+                user_id=alice.id,
+                current_session_id=current.id,
+                device_id=foreign.device_id,
+                name="Stolen",
             )
         )
     assert state.devices[foreign.device_id].name == "Bob phone"
 
 
-def test_revoke_one_blocks_current_and_foreign_device_ids() -> None:
+async def test_revoke_one_blocks_current_and_foreign_device_ids() -> None:
     state, alice, bob = identity_with_two_users()
     current = add_active_session(state, user_id=alice.id, name="Current")
     other = add_active_session(state, user_id=alice.id, name="Other")
@@ -151,15 +144,11 @@ def test_revoke_one_blocks_current_and_foreign_device_ids() -> None:
     )
 
     with pytest.raises(CurrentDeviceRevocationError):
-        asyncio.run(
-            use_case.execute(RevokeMyDeviceCommand(alice.id, current.id, current.device_id))
-        )
+        await use_case.execute(RevokeMyDeviceCommand(alice.id, current.id, current.device_id))
     with pytest.raises(OwnedDeviceNotFoundError):
-        asyncio.run(
-            use_case.execute(RevokeMyDeviceCommand(alice.id, current.id, foreign.device_id))
-        )
+        await use_case.execute(RevokeMyDeviceCommand(alice.id, current.id, foreign.device_id))
 
-    asyncio.run(use_case.execute(RevokeMyDeviceCommand(alice.id, current.id, other.device_id)))
+    await use_case.execute(RevokeMyDeviceCommand(alice.id, current.id, other.device_id))
     assert state.sessions[current.id].revoked_at is None
     assert state.devices[current.device_id].revoked_at is None
     assert state.sessions[other.id].revoked_at == NOW + timedelta(minutes=1)
@@ -167,7 +156,7 @@ def test_revoke_one_blocks_current_and_foreign_device_ids() -> None:
     assert state.sessions[foreign.id].revoked_at is None
 
 
-def test_revoke_others_preserves_current_and_is_idempotent() -> None:
+async def test_revoke_others_preserves_current_and_is_idempotent() -> None:
     state, alice, bob = identity_with_two_users()
     current = add_active_session(state, user_id=alice.id, name="Current")
     first_other = add_active_session(state, user_id=alice.id, name="Laptop")
@@ -180,8 +169,8 @@ def test_revoke_others_preserves_current_and_is_idempotent() -> None:
     )
     command = RevokeOtherSessionsCommand(alice.id, current.id)
 
-    first = asyncio.run(use_case.execute(command))
-    second = asyncio.run(use_case.execute(command))
+    first = await use_case.execute(command)
+    second = await use_case.execute(command)
 
     assert first.revoked_count == 2
     assert second.revoked_count == 0
@@ -192,7 +181,7 @@ def test_revoke_others_preserves_current_and_is_idempotent() -> None:
     assert state.sessions[foreign.id].revoked_at is None
 
 
-def test_security_event_list_filters_owner_expiry_and_limit() -> None:
+async def test_security_event_list_filters_owner_expiry_and_limit() -> None:
     state, alice, bob = identity_with_two_users()
     current = add_active_session(state, user_id=alice.id, name="Current")
     events = [
@@ -219,12 +208,10 @@ def test_security_event_list_filters_owner_expiry_and_limit() -> None:
     )
     state.security_events = {event.id: event for event in [*events, expired, foreign]}
 
-    items = asyncio.run(
-        ListSecurityEvents(
-            unit_of_work=FakeIdentityUnitOfWorkFactory(state),
-            clock=FixedClock(NOW),
-        ).execute(ListSecurityEventsQuery(user_id=alice.id, limit=2))
-    )
+    items = await ListSecurityEvents(
+        unit_of_work=FakeIdentityUnitOfWorkFactory(state),
+        clock=FixedClock(NOW),
+    ).execute(ListSecurityEventsQuery(user_id=alice.id, limit=2))
 
     assert [item.id for item in items] == [events[0].id, events[1].id]
     assert all(item.id not in {expired.id, foreign.id} for item in items)

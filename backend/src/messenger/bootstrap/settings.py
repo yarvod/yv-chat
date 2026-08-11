@@ -8,8 +8,8 @@ from urllib.parse import urlsplit
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from messenger.application.security_event_policy import SecurityEventPolicy
-from messenger.application.session_policy import SessionPolicy
+from messenger.application.security_events.policy import SecurityEventPolicy
+from messenger.application.sessions.policy import SessionPolicy
 
 
 def missing_database_url() -> str:

@@ -9,13 +9,13 @@ from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 
 from messenger.application.errors import InvalidCredentialsError, SessionNotAuthenticatedError
-from messenger.application.use_cases.authenticate_session import (
+from messenger.application.sessions.authenticate import (
     AuthenticateSession,
     AuthenticateSessionCommand,
     AuthenticateSessionResult,
 )
-from messenger.application.use_cases.login import Login, LoginCommand
-from messenger.application.use_cases.logout import Logout, LogoutCommand
+from messenger.application.sessions.login import Login, LoginCommand
+from messenger.application.sessions.logout import Logout, LogoutCommand
 from messenger.bootstrap.settings import AppSettings
 from messenger.domain.exceptions import DomainValidationError
 from messenger.presentation.http.security import client_ip, require_allowed_origin, require_csrf

@@ -1,6 +1,5 @@
 """Password login and opaque-session application specifications."""
 
-import asyncio
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -10,14 +9,14 @@ from messenger.application.errors import (
     SessionCredentialReplayError,
     SessionNotAuthenticatedError,
 )
-from messenger.application.security_event_policy import SecurityEventPolicy
-from messenger.application.session_policy import SessionPolicy
-from messenger.application.use_cases.authenticate_session import (
+from messenger.application.security_events.policy import SecurityEventPolicy
+from messenger.application.sessions.authenticate import (
     AuthenticateSession,
     AuthenticateSessionCommand,
 )
-from messenger.application.use_cases.login import Login, LoginCommand
-from messenger.application.use_cases.logout import Logout, LogoutCommand
+from messenger.application.sessions.login import Login, LoginCommand
+from messenger.application.sessions.logout import Logout, LogoutCommand
+from messenger.application.sessions.policy import SessionPolicy
 from messenger.domain.entities import SecurityEventType, User
 from tests.application.fakes import (
     FakeIdentityUnitOfWorkFactory,
@@ -69,24 +68,22 @@ def login_use_case(
     )
 
 
-def issue_session() -> tuple[IdentityState, FixedSessionCredentials, str]:
+async def issue_session() -> tuple[IdentityState, FixedSessionCredentials, str]:
     state, passwords = active_identity()
     credentials = FixedSessionCredentials()
-    result = asyncio.run(
-        login_use_case(state, passwords, credentials).execute(
-            LoginCommand(
-                username="Alice",
-                password=PASSWORD,
-                device_name="Personal laptop",
-                client_ip="2001:0db8::1",
-            )
+    result = await login_use_case(state, passwords, credentials).execute(
+        LoginCommand(
+            username="Alice",
+            password=PASSWORD,
+            device_name="Personal laptop",
+            client_ip="2001:0db8::1",
         )
     )
     return state, credentials, result.session_credential
 
 
-def test_login_enrolls_device_and_persists_only_credential_digest() -> None:
-    state, credentials, plaintext = issue_session()
+async def test_login_enrolls_device_and_persists_only_credential_digest() -> None:
+    state, credentials, plaintext = await issue_session()
 
     session = next(iter(state.sessions.values()))
     device = state.devices[session.device_id]
@@ -106,7 +103,7 @@ def test_login_enrolls_device_and_persists_only_credential_digest() -> None:
 
 
 @pytest.mark.parametrize("case", ["unknown", "inactive", "wrong-password"])
-def test_login_uses_one_generic_error_and_creates_no_device(case: str) -> None:
+async def test_login_uses_one_generic_error_and_creates_no_device(case: str) -> None:
     state, passwords = active_identity()
     if case == "unknown":
         username = "nobody"
@@ -124,13 +121,11 @@ def test_login_uses_one_generic_error_and_creates_no_device(case: str) -> None:
             passwords.hashed_passwords.clear()
 
     with pytest.raises(InvalidCredentialsError, match="invalid username or password"):
-        asyncio.run(
-            login_use_case(state, passwords, FixedSessionCredentials()).execute(
-                LoginCommand(
-                    username=username,
-                    password=PASSWORD,
-                    device_name="Laptop",
-                )
+        await login_use_case(state, passwords, FixedSessionCredentials()).execute(
+            LoginCommand(
+                username=username,
+                password=PASSWORD,
+                device_name="Laptop",
             )
         )
 
@@ -139,8 +134,8 @@ def test_login_uses_one_generic_error_and_creates_no_device(case: str) -> None:
     assert state.commits == 0
 
 
-def test_rotation_allows_concurrent_previous_credential_then_revokes_replay() -> None:
-    state, credentials, original = issue_session()
+async def test_rotation_allows_concurrent_previous_credential_then_revokes_replay() -> None:
+    state, credentials, original = await issue_session()
     factory = FakeIdentityUnitOfWorkFactory(state)
 
     rotate = AuthenticateSession(
@@ -150,7 +145,7 @@ def test_rotation_allows_concurrent_previous_credential_then_revokes_replay() ->
         policy=POLICY,
         event_policy=EVENT_POLICY,
     )
-    rotated = asyncio.run(rotate.execute(AuthenticateSessionCommand(session_credential=original)))
+    rotated = await rotate.execute(AuthenticateSessionCommand(session_credential=original))
     replacement = rotated.rotated_session_credential
 
     assert replacement == "opaque-session-2"
@@ -161,9 +156,7 @@ def test_rotation_allows_concurrent_previous_credential_then_revokes_replay() ->
         policy=POLICY,
         event_policy=EVENT_POLICY,
     )
-    concurrent = asyncio.run(
-        within_grace.execute(AuthenticateSessionCommand(session_credential=original))
-    )
+    concurrent = await within_grace.execute(AuthenticateSessionCommand(session_credential=original))
     assert concurrent.rotated_session_credential is None
 
     replay = AuthenticateSession(
@@ -174,7 +167,7 @@ def test_rotation_allows_concurrent_previous_credential_then_revokes_replay() ->
         event_policy=EVENT_POLICY,
     )
     with pytest.raises(SessionCredentialReplayError):
-        asyncio.run(replay.execute(AuthenticateSessionCommand(session_credential=original)))
+        await replay.execute(AuthenticateSessionCommand(session_credential=original))
 
     session = next(iter(state.sessions.values()))
     assert session.revoked_at == NOW + timedelta(hours=1, seconds=60)
@@ -183,13 +176,13 @@ def test_rotation_allows_concurrent_previous_credential_then_revokes_replay() ->
         for event in state.security_events.values()
     )
     with pytest.raises(SessionNotAuthenticatedError):
-        asyncio.run(
-            replay.execute(AuthenticateSessionCommand(session_credential=replacement or "missing"))
+        await replay.execute(
+            AuthenticateSessionCommand(session_credential=replacement or "missing")
         )
 
 
-def test_touch_is_throttled_and_ip_change_does_not_revoke() -> None:
-    state, credentials, plaintext = issue_session()
+async def test_touch_is_throttled_and_ip_change_does_not_revoke() -> None:
+    state, credentials, plaintext = await issue_session()
     factory = FakeIdentityUnitOfWorkFactory(state)
     original_absolute_expiry = next(iter(state.sessions.values())).absolute_expires_at
 
@@ -200,12 +193,10 @@ def test_touch_is_throttled_and_ip_change_does_not_revoke() -> None:
         policy=POLICY,
         event_policy=EVENT_POLICY,
     )
-    asyncio.run(
-        touch.execute(
-            AuthenticateSessionCommand(
-                session_credential=plaintext,
-                client_ip="203.0.113.8",
-            )
+    await touch.execute(
+        AuthenticateSessionCommand(
+            session_credential=plaintext,
+            client_ip="203.0.113.8",
         )
     )
     touched = next(iter(state.sessions.values()))
@@ -225,19 +216,17 @@ def test_touch_is_throttled_and_ip_change_does_not_revoke() -> None:
         policy=POLICY,
         event_policy=EVENT_POLICY,
     )
-    asyncio.run(
-        no_touch.execute(
-            AuthenticateSessionCommand(
-                session_credential=plaintext,
-                client_ip="203.0.113.8",
-            )
+    await no_touch.execute(
+        AuthenticateSessionCommand(
+            session_credential=plaintext,
+            client_ip="203.0.113.8",
         )
     )
     assert state.commits == commits_after_touch
 
 
-def test_idle_expiry_and_logout_revoke_session_idempotently() -> None:
-    state, credentials, plaintext = issue_session()
+async def test_idle_expiry_and_logout_revoke_session_idempotently() -> None:
+    state, credentials, plaintext = await issue_session()
     factory = FakeIdentityUnitOfWorkFactory(state)
     expired = AuthenticateSession(
         unit_of_work=factory,
@@ -248,7 +237,7 @@ def test_idle_expiry_and_logout_revoke_session_idempotently() -> None:
     )
 
     with pytest.raises(SessionNotAuthenticatedError):
-        asyncio.run(expired.execute(AuthenticateSessionCommand(session_credential=plaintext)))
+        await expired.execute(AuthenticateSessionCommand(session_credential=plaintext))
     assert next(iter(state.sessions.values())).revoked_at == NOW + timedelta(hours=2)
 
     logout = Logout(
@@ -257,6 +246,6 @@ def test_idle_expiry_and_logout_revoke_session_idempotently() -> None:
         credentials=credentials,
         event_policy=EVENT_POLICY,
     )
-    asyncio.run(logout.execute(LogoutCommand(session_credential=plaintext)))
-    asyncio.run(logout.execute(LogoutCommand(session_credential="unknown")))
+    await logout.execute(LogoutCommand(session_credential=plaintext))
+    await logout.execute(LogoutCommand(session_credential="unknown"))
     assert next(iter(state.sessions.values())).revoked_at == NOW + timedelta(hours=2)

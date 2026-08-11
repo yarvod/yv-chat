@@ -7,23 +7,23 @@ from dishka.integrations.fastapi import DishkaRoute, FromDishka
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
 
+from messenger.application.devices.list_security_events import (
+    ListSecurityEvents,
+    ListSecurityEventsQuery,
+)
+from messenger.application.devices.list_sessions import ListMySessions, ListMySessionsQuery
+from messenger.application.devices.rename import RenameMyDevice, RenameMyDeviceCommand
+from messenger.application.devices.revoke import RevokeMyDevice, RevokeMyDeviceCommand
+from messenger.application.devices.revoke_others import (
+    RevokeOtherSessions,
+    RevokeOtherSessionsCommand,
+)
 from messenger.application.errors import (
     CurrentDeviceRevocationError,
     OwnedDeviceNotFoundError,
     SessionNotAuthenticatedError,
 )
-from messenger.application.use_cases.authenticate_session import AuthenticateSession
-from messenger.application.use_cases.list_my_sessions import ListMySessions, ListMySessionsQuery
-from messenger.application.use_cases.list_security_events import (
-    ListSecurityEvents,
-    ListSecurityEventsQuery,
-)
-from messenger.application.use_cases.rename_my_device import RenameMyDevice, RenameMyDeviceCommand
-from messenger.application.use_cases.revoke_my_device import RevokeMyDevice, RevokeMyDeviceCommand
-from messenger.application.use_cases.revoke_other_sessions import (
-    RevokeOtherSessions,
-    RevokeOtherSessionsCommand,
-)
+from messenger.application.sessions.authenticate import AuthenticateSession
 from messenger.bootstrap.settings import AppSettings
 from messenger.domain.entities import SecurityEventType
 from messenger.domain.exceptions import DomainValidationError

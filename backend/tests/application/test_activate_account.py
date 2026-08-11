@@ -1,11 +1,11 @@
 """One-time account activation specifications."""
 
-import asyncio
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import pytest
 
+from messenger.application.accounts.activate import ActivateAccount, ActivateAccountCommand
 from messenger.application.errors import (
     AccountAlreadyActiveError,
     ActivationAlreadyUsedError,
@@ -13,7 +13,6 @@ from messenger.application.errors import (
     InvalidActivationSecretError,
     WeakPasswordError,
 )
-from messenger.application.use_cases.activate_account import ActivateAccount, ActivateAccountCommand
 from messenger.domain.entities import ActivationToken, User
 from tests.application.fakes import (
     FakeIdentityUnitOfWorkFactory,
@@ -62,17 +61,15 @@ def build_use_case(
     )
 
 
-def test_valid_secret_activates_once_and_stores_only_password_hash() -> None:
+async def test_valid_secret_activates_once_and_stores_only_password_hash() -> None:
     token = activation_token(expires_at=NOW + timedelta(hours=1))
     state = IdentityState(users={USER_ID: invited_user()}, tokens={TOKEN_ID: token})
     passwords = FakePasswordHasher()
 
-    result = asyncio.run(
-        build_use_case(state, passwords).execute(
-            ActivateAccountCommand(
-                activation_secret="one-time-secret",
-                password=PASSWORD,
-            )
+    result = await build_use_case(state, passwords).execute(
+        ActivateAccountCommand(
+            activation_secret="one-time-secret",
+            password=PASSWORD,
         )
     )
 
@@ -95,7 +92,7 @@ def test_valid_secret_activates_once_and_stores_only_password_hash() -> None:
         ),
     ],
 )
-def test_invalid_token_states_never_hash_password(
+async def test_invalid_token_states_never_hash_password(
     token: ActivationToken | None,
     expected_error: type[Exception],
 ) -> None:
@@ -105,12 +102,10 @@ def test_invalid_token_states_never_hash_password(
     passwords = FakePasswordHasher()
 
     with pytest.raises(expected_error):
-        asyncio.run(
-            build_use_case(state, passwords).execute(
-                ActivateAccountCommand(
-                    activation_secret="one-time-secret",
-                    password=PASSWORD,
-                )
+        await build_use_case(state, passwords).execute(
+            ActivateAccountCommand(
+                activation_secret="one-time-secret",
+                password=PASSWORD,
             )
         )
 
@@ -118,7 +113,7 @@ def test_invalid_token_states_never_hash_password(
     assert state.commits == 0
 
 
-def test_active_account_cannot_be_activated_again() -> None:
+async def test_active_account_cannot_be_activated_again() -> None:
     token = activation_token(expires_at=NOW + timedelta(hours=1))
     state = IdentityState(
         users={
@@ -133,26 +128,22 @@ def test_active_account_cannot_be_activated_again() -> None:
     )
 
     with pytest.raises(AccountAlreadyActiveError):
-        asyncio.run(
-            build_use_case(state, FakePasswordHasher()).execute(
-                ActivateAccountCommand(
-                    activation_secret="one-time-secret",
-                    password=PASSWORD,
-                )
+        await build_use_case(state, FakePasswordHasher()).execute(
+            ActivateAccountCommand(
+                activation_secret="one-time-secret",
+                password=PASSWORD,
             )
         )
 
 
 @pytest.mark.parametrize("password", ["short", "x" * 129])
-def test_password_length_is_bounded_before_token_lookup(password: str) -> None:
+async def test_password_length_is_bounded_before_token_lookup(password: str) -> None:
     state = IdentityState()
 
     with pytest.raises(WeakPasswordError):
-        asyncio.run(
-            build_use_case(state, FakePasswordHasher()).execute(
-                ActivateAccountCommand(
-                    activation_secret="one-time-secret",
-                    password=password,
-                )
+        await build_use_case(state, FakePasswordHasher()).execute(
+            ActivateAccountCommand(
+                activation_secret="one-time-secret",
+                password=password,
             )
         )

@@ -1,16 +1,15 @@
 """Admin-controlled invitation specifications."""
 
-import asyncio
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import pytest
 
-from messenger.application.errors import AuthorizationDeniedError, DuplicateUsernameError
-from messenger.application.use_cases.create_user_invitation import (
+from messenger.application.accounts.invite import (
     CreateUserInvitation,
     CreateUserInvitationCommand,
 )
+from messenger.application.errors import AuthorizationDeniedError, DuplicateUsernameError
 from messenger.domain.entities import User
 from tests.application.fakes import (
     FakeIdentityUnitOfWorkFactory,
@@ -43,17 +42,15 @@ def active_user(*, user_id: UUID, is_admin: bool) -> User:
     )
 
 
-def test_active_admin_creates_inactive_user_and_one_time_secret() -> None:
+async def test_active_admin_creates_inactive_user_and_one_time_secret() -> None:
     state = IdentityState(users={ADMIN_ID: active_user(user_id=ADMIN_ID, is_admin=True)})
     use_case = build_use_case(state)
 
-    result = asyncio.run(
-        use_case.execute(
-            CreateUserInvitationCommand(
-                actor_user_id=ADMIN_ID,
-                username=" Alice ",
-                display_name="Alice",
-            )
+    result = await use_case.execute(
+        CreateUserInvitationCommand(
+            actor_user_id=ADMIN_ID,
+            username=" Alice ",
+            display_name="Alice",
         )
     )
 
@@ -69,7 +66,7 @@ def test_active_admin_creates_inactive_user_and_one_time_secret() -> None:
 
 
 @pytest.mark.parametrize("actor_state", ["missing", "non_admin", "inactive_admin"])
-def test_non_active_admin_cannot_create_invitation(actor_state: str) -> None:
+async def test_non_active_admin_cannot_create_invitation(actor_state: str) -> None:
     state = IdentityState()
     if actor_state == "non_admin":
         state.users[ADMIN_ID] = active_user(user_id=ADMIN_ID, is_admin=False)
@@ -82,13 +79,11 @@ def test_non_active_admin_cannot_create_invitation(actor_state: str) -> None:
         )
 
     with pytest.raises(AuthorizationDeniedError):
-        asyncio.run(
-            build_use_case(state).execute(
-                CreateUserInvitationCommand(
-                    actor_user_id=ADMIN_ID,
-                    username="alice",
-                    display_name="Alice",
-                )
+        await build_use_case(state).execute(
+            CreateUserInvitationCommand(
+                actor_user_id=ADMIN_ID,
+                username="alice",
+                display_name="Alice",
             )
         )
 
@@ -96,7 +91,7 @@ def test_non_active_admin_cannot_create_invitation(actor_state: str) -> None:
     assert not state.tokens
 
 
-def test_duplicate_username_is_case_insensitive() -> None:
+async def test_duplicate_username_is_case_insensitive() -> None:
     existing_id = UUID("13e2cd2e-97e7-48f0-a06b-dd4c6baec7d4")
     state = IdentityState(
         users={
@@ -111,13 +106,11 @@ def test_duplicate_username_is_case_insensitive() -> None:
     )
 
     with pytest.raises(DuplicateUsernameError):
-        asyncio.run(
-            build_use_case(state).execute(
-                CreateUserInvitationCommand(
-                    actor_user_id=ADMIN_ID,
-                    username="ALICE",
-                    display_name="Other Alice",
-                )
+        await build_use_case(state).execute(
+            CreateUserInvitationCommand(
+                actor_user_id=ADMIN_ID,
+                username="ALICE",
+                display_name="Other Alice",
             )
         )
 

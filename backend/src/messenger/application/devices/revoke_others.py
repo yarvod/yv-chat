@@ -6,7 +6,7 @@ from uuid import UUID
 from messenger.application.errors import SessionNotAuthenticatedError
 from messenger.application.ports.clock import Clock
 from messenger.application.ports.identity import IdentityUnitOfWorkFactory
-from messenger.application.security_event_policy import SecurityEventPolicy
+from messenger.application.security_events.policy import SecurityEventPolicy
 from messenger.domain.entities import SecurityEvent, SecurityEventType
 
 

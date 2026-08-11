@@ -17,8 +17,10 @@ dependencies = [
 [dependency-groups]
 dev = [
     "httpx>=0.28.0,<1.0.0",
+    "import-linter>=2.0.0,<3.0.0",
     "mypy>=1.17.0,<2.0.0",
     "pytest>=8.4.0,<9.0.0",
+    "pytest-asyncio>=1.0.0,<2.0.0",
     "ruff>=0.12.0,<1.0.0",
 ]
 
@@ -31,6 +33,7 @@ packages = ["src/messenger"]
 
 [tool.pytest.ini_options]
 addopts = "-q"
+asyncio_mode = "auto"
 testpaths = ["tests"]
 markers = ["integration: requires a PostgreSQL test database"]
 
@@ -46,3 +49,33 @@ src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.importlinter]
+root_packages = ["messenger"]
+
+[[tool.importlinter.contracts]]
+name = "Domain has no inward dependencies"
+type = "forbidden"
+source_modules = ["messenger.domain"]
+forbidden_modules = [
+    "messenger.application",
+    "messenger.bootstrap",
+    "messenger.infrastructure",
+    "messenger.presentation",
+]
+
+[[tool.importlinter.contracts]]
+name = "Application does not know outer layers"
+type = "forbidden"
+source_modules = ["messenger.application"]
+forbidden_modules = [
+    "messenger.bootstrap",
+    "messenger.infrastructure",
+    "messenger.presentation",
+]
+
+[[tool.importlinter.contracts]]
+name = "Infrastructure does not know delivery or composition"
+type = "forbidden"
+source_modules = ["messenger.infrastructure"]
+forbidden_modules = ["messenger.bootstrap", "messenger.presentation"]

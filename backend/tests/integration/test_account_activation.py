@@ -8,26 +8,26 @@ import pytest
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from messenger.application.accounts.activate import (
+    ActivateAccount,
+    ActivateAccountCommand,
+    ActivateAccountResult,
+)
+from messenger.application.accounts.bootstrap_admin import (
+    BootstrapAdmin,
+    BootstrapAdminCommand,
+    BootstrapAdminResult,
+)
+from messenger.application.accounts.invite import (
+    CreateUserInvitation,
+    CreateUserInvitationCommand,
+)
 from messenger.application.errors import (
     ActivationAlreadyUsedError,
     BootstrapAlreadyCompletedError,
     DuplicateUsernameError,
 )
 from messenger.application.ports.identity import IdentityUnitOfWork
-from messenger.application.use_cases.activate_account import (
-    ActivateAccount,
-    ActivateAccountCommand,
-    ActivateAccountResult,
-)
-from messenger.application.use_cases.bootstrap_admin import (
-    BootstrapAdmin,
-    BootstrapAdminCommand,
-    BootstrapAdminResult,
-)
-from messenger.application.use_cases.create_user_invitation import (
-    CreateUserInvitation,
-    CreateUserInvitationCommand,
-)
 from messenger.infrastructure.auth.activation_secrets import SecureActivationSecretService
 from messenger.infrastructure.auth.passwords import Argon2PasswordHasher
 from messenger.infrastructure.persistence.database import create_engine, create_session_factory
@@ -190,5 +190,5 @@ async def run_flow(database_url: str) -> None:
 
 
 @pytest.mark.integration
-def test_postgresql_invitation_and_concurrent_activation() -> None:
-    asyncio.run(run_flow(configured_database_url()))
+async def test_postgresql_invitation_and_concurrent_activation() -> None:
+    await run_flow(configured_database_url())

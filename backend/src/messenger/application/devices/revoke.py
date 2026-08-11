@@ -1,30 +1,26 @@
-"""Rename one device owned by the authenticated user."""
+"""Revoke one non-current device/session owned by the authenticated user."""
 
 from dataclasses import dataclass
 from uuid import UUID
 
-from messenger.application.errors import OwnedDeviceNotFoundError
+from messenger.application.errors import (
+    CurrentDeviceRevocationError,
+    OwnedDeviceNotFoundError,
+)
 from messenger.application.ports.clock import Clock
 from messenger.application.ports.identity import IdentityUnitOfWorkFactory
-from messenger.application.security_event_policy import SecurityEventPolicy
+from messenger.application.security_events.policy import SecurityEventPolicy
 from messenger.domain.entities import SecurityEvent, SecurityEventType
 
 
 @dataclass(frozen=True, slots=True)
-class RenameMyDeviceCommand:
+class RevokeMyDeviceCommand:
     user_id: UUID
     current_session_id: UUID
     device_id: UUID
-    name: str
 
 
-@dataclass(frozen=True, slots=True)
-class RenameMyDeviceResult:
-    device_id: UUID
-    name: str
-
-
-class RenameMyDevice:
+class RevokeMyDevice:
     def __init__(
         self,
         *,
@@ -36,28 +32,28 @@ class RenameMyDevice:
         self._clock = clock
         self._event_policy = event_policy
 
-    async def execute(self, command: RenameMyDeviceCommand) -> RenameMyDeviceResult:
+    async def execute(self, command: RevokeMyDeviceCommand) -> None:
         now = self._clock.now()
         async with self._unit_of_work() as uow:
-            device = await uow.devices.get_owned_by_id(
+            record = await uow.sessions.get_by_device_for_user_for_update(
                 user_id=command.user_id,
                 device_id=command.device_id,
-                for_update=True,
             )
-            if device is None or device.revoked_at is not None:
+            if record is None or record.device.revoked_at is not None:
                 raise OwnedDeviceNotFoundError("device was not found")
-            renamed = device.rename(command.name)
-            await uow.devices.update(renamed)
+            if record.session.id == command.current_session_id:
+                raise CurrentDeviceRevocationError("current device must use logout")
+            await uow.sessions.update(record.session.revoke(now))
+            await uow.devices.update(record.device.revoke(now))
             await uow.security_events.prune_expired(now)
             await uow.security_events.add(
                 SecurityEvent.create(
                     user_id=command.user_id,
-                    event_type=SecurityEventType.DEVICE_RENAMED,
+                    event_type=SecurityEventType.DEVICE_REVOKED,
                     now=now,
                     retention=self._event_policy.retention,
                     actor_session_id=command.current_session_id,
-                    target_device_id=device.id,
+                    target_device_id=record.device.id,
                 )
             )
             await uow.commit()
-        return RenameMyDeviceResult(device_id=renamed.id, name=renamed.name)

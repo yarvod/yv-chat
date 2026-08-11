@@ -4,7 +4,7 @@ from datetime import timedelta
 
 import pytest
 
-from messenger.application.session_policy import SessionPolicy
+from messenger.application.sessions.policy import SessionPolicy
 
 
 def policy(**overrides: timedelta) -> SessionPolicy:

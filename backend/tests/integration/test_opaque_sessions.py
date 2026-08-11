@@ -8,29 +8,29 @@ import pytest
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from messenger.application.accounts.bootstrap_admin import (
+    BootstrapAdmin,
+    BootstrapAdminCommand,
+)
+from messenger.application.devices.revoke_others import (
+    RevokeOtherSessions,
+    RevokeOtherSessionsCommand,
+    RevokeOtherSessionsResult,
+)
 from messenger.application.errors import (
     SessionCredentialReplayError,
     SessionNotAuthenticatedError,
 )
 from messenger.application.ports.identity import IdentityUnitOfWork
-from messenger.application.security_event_policy import SecurityEventPolicy
-from messenger.application.session_policy import SessionPolicy
-from messenger.application.use_cases.authenticate_session import (
+from messenger.application.security_events.policy import SecurityEventPolicy
+from messenger.application.sessions.authenticate import (
     AuthenticateSession,
     AuthenticateSessionCommand,
     AuthenticateSessionResult,
 )
-from messenger.application.use_cases.bootstrap_admin import (
-    BootstrapAdmin,
-    BootstrapAdminCommand,
-)
-from messenger.application.use_cases.login import Login, LoginCommand
-from messenger.application.use_cases.logout import Logout, LogoutCommand
-from messenger.application.use_cases.revoke_other_sessions import (
-    RevokeOtherSessions,
-    RevokeOtherSessionsCommand,
-    RevokeOtherSessionsResult,
-)
+from messenger.application.sessions.login import Login, LoginCommand
+from messenger.application.sessions.logout import Logout, LogoutCommand
+from messenger.application.sessions.policy import SessionPolicy
 from messenger.infrastructure.auth.passwords import Argon2PasswordHasher
 from messenger.infrastructure.auth.session_credentials import SecureSessionCredentialService
 from messenger.infrastructure.persistence.database import create_engine, create_session_factory
@@ -258,5 +258,5 @@ async def run_flow(database_url: str) -> None:
 
 
 @pytest.mark.integration
-def test_postgresql_concurrent_rotation_and_replay_revocation() -> None:
-    asyncio.run(run_flow(configured_database_url()))
+async def test_postgresql_concurrent_rotation_and_replay_revocation() -> None:
+    await run_flow(configured_database_url())
