@@ -200,6 +200,35 @@ fn validate_public_key_package(
     Ok(())
 }
 
+/// Validate a server-delivered KeyPackage against the canonical yv-chat device
+/// identity and both public comparison anchors. This is deliberately performed by
+/// OpenMLS rather than by a TypeScript wire-format parser.
+pub fn validate_external_key_package(
+    user_id: &str,
+    device_id: &str,
+    expected_credential_identity: &[u8],
+    expected_signature_key: &[u8],
+    expected_fingerprint: &str,
+    expected_package_ref: &str,
+    serialized: &[u8],
+) -> Result<(), BootstrapError> {
+    let expected_identity = encode_credential_identity(user_id, device_id)?;
+    if expected_credential_identity != expected_identity {
+        return Err(BootstrapError::ValidationFailed);
+    }
+    let provider = OpenMlsRustCrypto::default();
+    let fingerprint = public_fingerprint(&provider, &expected_identity, expected_signature_key)?;
+    let package_ref = provider
+        .crypto()
+        .hash(CIPHERSUITE.hash_algorithm(), serialized)
+        .map(hex::encode)
+        .map_err(|_| BootstrapError::CryptoUnavailable)?;
+    if fingerprint != expected_fingerprint || package_ref != expected_package_ref {
+        return Err(BootstrapError::ValidationFailed);
+    }
+    validate_public_key_package(serialized, &expected_identity, expected_signature_key)
+}
+
 fn public_fingerprint(
     provider: &OpenMlsRustCrypto,
     identity: &[u8],
@@ -245,6 +274,29 @@ impl DeviceBootstrap {
     pub fn wasm_fingerprint(&self) -> String {
         self.fingerprint().to_owned()
     }
+}
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = validatePublicKeyPackage)]
+pub fn wasm_validate_public_key_package(
+    user_id: &str,
+    device_id: &str,
+    expected_credential_identity: &[u8],
+    expected_signature_key: &[u8],
+    expected_fingerprint: &str,
+    expected_package_ref: &str,
+    serialized: &[u8],
+) -> Result<(), JsError> {
+    validate_external_key_package(
+        user_id,
+        device_id,
+        expected_credential_identity,
+        expected_signature_key,
+        expected_fingerprint,
+        expected_package_ref,
+        serialized,
+    )
+    .map_err(|error| JsError::new(error.to_string().as_str()))
 }
 
 #[cfg(test)]
@@ -324,5 +376,67 @@ mod tests {
             ),
             Err(BootstrapError::ValidationFailed),
         );
+    }
+
+    #[test]
+    fn validates_external_package_and_all_public_bindings() {
+        let bootstrap = DeviceBootstrap::generate(USER_ID, DEVICE_ID).unwrap();
+        let package_ref = hex::encode(
+            OpenMlsRustCrypto::default()
+                .crypto()
+                .hash(CIPHERSUITE.hash_algorithm(), bootstrap.key_package())
+                .unwrap(),
+        );
+        validate_external_key_package(
+            USER_ID,
+            DEVICE_ID,
+            bootstrap.credential_identity(),
+            bootstrap.signature_public_key(),
+            bootstrap.fingerprint(),
+            &package_ref,
+            bootstrap.key_package(),
+        )
+        .unwrap();
+
+        for result in [
+            validate_external_key_package(
+                USER_ID,
+                "d44483ee-2c69-4eef-aeba-5ce92bc9181d",
+                bootstrap.credential_identity(),
+                bootstrap.signature_public_key(),
+                bootstrap.fingerprint(),
+                &package_ref,
+                bootstrap.key_package(),
+            ),
+            validate_external_key_package(
+                USER_ID,
+                DEVICE_ID,
+                bootstrap.credential_identity(),
+                &[0_u8; 32],
+                bootstrap.fingerprint(),
+                &package_ref,
+                bootstrap.key_package(),
+            ),
+            validate_external_key_package(
+                USER_ID,
+                DEVICE_ID,
+                bootstrap.credential_identity(),
+                bootstrap.signature_public_key(),
+                &"00".repeat(32),
+                &package_ref,
+                bootstrap.key_package(),
+            ),
+            validate_external_key_package(
+                USER_ID,
+                DEVICE_ID,
+                bootstrap.credential_identity(),
+                bootstrap.signature_public_key(),
+                bootstrap.fingerprint(),
+                &"00".repeat(32),
+                bootstrap.key_package(),
+            ),
+        ] {
+            assert_eq!(result, Err(BootstrapError::ValidationFailed));
+        }
     }
 }

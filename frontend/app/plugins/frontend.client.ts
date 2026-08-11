@@ -25,7 +25,6 @@ import { ListOutboxMessages } from '../application/messaging/list-outbox-message
 import { QueueOutgoingMessage } from '../application/messaging/queue-outgoing-message'
 import { RetryOutboxMessage } from '../application/messaging/retry-outbox-message'
 import { GetDeviceCryptoRegistration } from '../application/device-crypto/get-device-crypto-registration'
-import { ClaimDeviceKeyPackage } from '../application/device-crypto/claim-device-key-package'
 import { ListDeviceKeyPackages } from '../application/device-crypto/list-device-key-packages'
 import { ReplenishDeviceKeyPackages } from '../application/device-crypto/replenish-device-key-packages'
 import { RegisterDeviceCrypto } from '../application/device-crypto/register-device-crypto'
@@ -152,12 +151,14 @@ export default defineNuxtPlugin(() => {
           new TypingIndicatorService(transport, scheduler, clock)
         ),
         createPresenceIndicators: () => new PresenceIndicatorService(),
-        createDeviceCrypto: createDeviceCryptoScope,
+        createDeviceCrypto: () => createDeviceCryptoScope(
+          deviceCryptoRegistryGateway,
+          deviceKeyPackageGateway,
+        ),
         getDeviceCryptoRegistration: new GetDeviceCryptoRegistration(deviceCryptoRegistryGateway),
         registerDeviceCrypto: new RegisterDeviceCrypto(deviceCryptoRegistryGateway),
         listDeviceKeyPackages: new ListDeviceKeyPackages(deviceKeyPackageGateway),
         replenishDeviceKeyPackages: new ReplenishDeviceKeyPackages(deviceKeyPackageGateway),
-        claimDeviceKeyPackage: new ClaimDeviceKeyPackage(deviceKeyPackageGateway),
       },
     },
   }

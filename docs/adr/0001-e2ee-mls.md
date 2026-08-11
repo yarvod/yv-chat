@@ -162,6 +162,14 @@ credential identity exact и KeyPackage lifetime/ciphersuite/capabilities доп
 Clients проверяют то же binding перед Proposal/Commit merge, а не доверяют display
 name из payload.
 
+Implementation status после `WP-045`: browser consumer уже передаёт claimed bytes в
+pinned OpenMLS WASM Worker и проверяет signature, MLS version/ciphersuite, canonical
+credential, signature key, fingerprint, SHA-256 package ref и trailing bytes.
+Authenticated current-device identity автоматически restore/provision/register-ится
+с exact server comparison. Это закрывает только identity/KeyPackage gate: group,
+Welcome, Commit, epoch storage и MLS application messages ещё не реализованы, поэтому
+secure milestone и E2EE claim остаются запрещены.
+
 Это server-backed AS, поэтому E2EE не скрывает malicious credential substitution
 самим скомпрометированным AS. Обязательные MVP mitigations:
 

@@ -36,15 +36,17 @@ scope.addEventListener('message', async (event: MessageEvent<unknown>) => {
     let result
     if (request.type === 'checkpoint') result = await current.checkpoint()
     else if (request.type === 'provision') result = await current.provision(request.command)
-    else result = await current.restore(request.command)
+    else if (request.type === 'restore') result = await current.restore(request.command)
+    else result = await current.validateKeyPackage(request.command)
     const response = successResponse(request.requestId, result)
-    scope.postMessage(response, {
-      transfer: [
-        result.credentialIdentity.buffer,
-        result.signaturePublicKey.buffer,
-        result.keyPackage.buffer,
-      ],
-    })
+    const transfer = 'credentialIdentity' in result
+      ? [
+          result.credentialIdentity.buffer,
+          result.signaturePublicKey.buffer,
+          result.keyPackage.buffer,
+        ]
+      : []
+    scope.postMessage(response, { transfer })
   } catch (error) {
     const code = error instanceof DeviceCryptoError ? error.code : 'operation-failed'
     scope.postMessage(errorResponse(request.requestId, code))

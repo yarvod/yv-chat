@@ -136,7 +136,8 @@ Telegram/WhatsApp без копирования их бренда.
 Статус: **in progress** (`WP-030` завершил async fail-closed boundary; `WP-031`
 завершил pinned OpenMLS provider/device-bootstrap proof; `WP-032` — private
 snapshot/restore, `WP-033` — WebCrypto sealing и atomic IndexedDB vault, `WP-034` —
-versioned package и isolated Worker runtime; `WP-040` — server one-time delivery).
+versioned package и isolated Worker runtime; `WP-040` — server one-time delivery;
+`WP-045` — consumer validation и authenticated identity lifecycle).
 
 Результат: UI работает с intent-level crypto API, private material не выходит из изолированного слоя.
 
@@ -160,8 +161,12 @@ versioned package и isolated Worker runtime; `WP-040` — server one-time deliv
   migration/update lifecycle;
 - [x] atomic one-time KeyPackage inventory/replenishment/authorized claim с exact
   retry и PostgreSQL concurrency constraints (`WP-040`);
-- [ ] consumer-side OpenMLS validation и только после server comparison подключить
-  restore/provision к authenticated lifecycle;
+- [x] consumer-side OpenMLS KeyPackage validation связывает canonical user/device,
+  credential, signature key, fingerprint, package ref и exact bytes;
+- [x] restore/provision/register подключены к authenticated lifecycle только после
+  exact local/server comparison; registered identity никогда тихо не заменяется;
+- [ ] bounded KeyPackage pool generation/replenishment из того же sealed provider
+  state и automatic foreground inventory policy;
 - [ ] memory/plaintext lifecycle audit и log-redaction gate для полного Worker flow;
 - [ ] known-answer/interop test vectors реального MLS provider;
 - [x] corruption/version-mismatch/no-fallback tests для protocol dispatch;

@@ -5,9 +5,11 @@ import AppIcon from '../components/ui/AppIcon.vue'
 import { selectedConversationId } from '../presentation/chat/conversation-route'
 import type { AppIconName } from '../presentation/icons'
 import { useAuth } from '../presentation/composables/useAuth'
+import { useDeviceCryptoLifecycle } from '../presentation/composables/useDeviceCryptoLifecycle'
 import { usePreferences } from '../presentation/composables/usePreferences'
 
 const auth = useAuth()
+const deviceCrypto = useDeviceCryptoLifecycle(auth.user)
 usePreferences()
 const route = useRoute()
 interface NavigationItem {
@@ -32,6 +34,14 @@ async function logout(): Promise<void> {
 
 <template>
   <main class="product-shell" :class="{ 'product-shell--conversation': conversationFocused }">
+    <p
+      v-if="deviceCrypto.state.status === 'unavailable'"
+      class="device-crypto-warning"
+      role="alert"
+    >
+      Криптомодуль этого устройства не готов. Защищённые функции отключены.
+      <button type="button" @click="deviceCrypto.retry">Повторить</button>
+    </p>
     <aside class="app-rail">
       <NuxtLink class="rail-brand" to="/chat" aria-label="yv-chat">Y</NuxtLink>
       <nav class="rail-nav" aria-label="Основная навигация">

@@ -2,14 +2,15 @@
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
 export const __wbg_devicebootstrap_free: (a: number, b: number) => void;
-export const __wbg_sealedsnapshot_free: (a: number, b: number) => void;
 export const devicebootstrap_credentialIdentity: (a: number) => [number, number];
 export const devicebootstrap_fingerprint: (a: number) => [number, number];
 export const devicebootstrap_keyPackage: (a: number) => [number, number];
 export const devicebootstrap_new: (a: number, b: number, c: number, d: number) => [number, number, number];
+export const devicebootstrap_signaturePublicKey: (a: number) => [number, number];
+export const validatePublicKeyPackage: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number) => [number, number];
+export const __wbg_sealedsnapshot_free: (a: number, b: number) => void;
 export const devicebootstrap_restoreSealedState: (a: any, b: number, c: number, d: number, e: number, f: number, g: number, h: bigint, i: number, j: number, k: number, l: number) => any;
 export const devicebootstrap_sealState: (a: number, b: any, c: bigint) => any;
-export const devicebootstrap_signaturePublicKey: (a: number) => [number, number];
 export const sealedsnapshot_ciphertext: (a: number) => [number, number];
 export const sealedsnapshot_fingerprint: (a: number) => [number, number];
 export const sealedsnapshot_iv: (a: number) => [number, number];

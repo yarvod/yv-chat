@@ -12,6 +12,7 @@ import type { OpenMlsModule } from '../app/infrastructure/crypto/openmls-module'
 import { IndexedDbCryptoVault } from '../app/infrastructure/storage/indexeddb-crypto-vault'
 import initOpenMls, {
   DeviceBootstrap,
+  validatePublicKeyPackage,
 } from '../public/crypto/v1/yv_chat_openmls_provider.js'
 
 const userId = '1b0a32e8-144f-4f60-bcb6-112f71bd5316'
@@ -21,6 +22,12 @@ const otherDeviceId = 'd44483ee-2c69-4eef-aeba-5ce92bc9181d'
 const openMlsModule: OpenMlsModule = {
   default: async () => undefined,
   DeviceBootstrap,
+  validatePublicKeyPackage,
+}
+
+async function sha256Hex(bytes: Uint8Array): Promise<string> {
+  const digest = await webcrypto.subtle.digest('SHA-256', bytes)
+  return [...new Uint8Array(digest)].map(value => value.toString(16).padStart(2, '0')).join('')
 }
 
 function vault(indexedDb: IDBFactory): IndexedDbCryptoVault {
@@ -78,6 +85,38 @@ describe('device crypto runtime with the release OpenMLS WASM', () => {
     expect(right).toEqual(left)
     first.dispose()
     second.dispose()
+  })
+
+  it('validates claimed KeyPackages with OpenMLS and every public binding', async () => {
+    const runtime = new DeviceCryptoRuntime(openMlsModule, vault(indexedDb))
+    const identity = await runtime.provision({ userId, deviceId })
+    const command = {
+      targetUserId: userId,
+      targetDeviceId: deviceId,
+      credentialIdentity: identity.credentialIdentity,
+      signaturePublicKey: identity.signaturePublicKey,
+      fingerprint: identity.fingerprint,
+      packageRef: await sha256Hex(identity.keyPackage),
+      keyPackage: identity.keyPackage,
+    }
+
+    await expect(runtime.validateKeyPackage(command)).resolves.toEqual({ validated: true })
+    await expect(runtime.validateKeyPackage({
+      ...command,
+      targetDeviceId: otherDeviceId,
+    })).rejects.toMatchObject({ code: 'invalid-key-package' })
+    await expect(runtime.validateKeyPackage({
+      ...command,
+      packageRef: '00'.repeat(32),
+    })).rejects.toMatchObject({ code: 'invalid-key-package' })
+    const corrupt = command.keyPackage.slice()
+    corrupt[Math.floor(corrupt.length / 2)] ^= 1
+    await expect(runtime.validateKeyPackage({
+      ...command,
+      keyPackage: corrupt,
+      packageRef: await sha256Hex(corrupt),
+    })).rejects.toMatchObject({ code: 'invalid-key-package' })
+    runtime.dispose()
   })
 
   it('fails closed for wrong AAD and modified ciphertext without replacing identity', async () => {

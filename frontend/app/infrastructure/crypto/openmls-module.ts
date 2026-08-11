@@ -35,6 +35,15 @@ export interface OpenMlsDeviceBootstrapConstructor {
 export interface OpenMlsModule {
   default(moduleOrPath?: URL): Promise<unknown>
   DeviceBootstrap: OpenMlsDeviceBootstrapConstructor
+  validatePublicKeyPackage(
+    targetUserId: string,
+    targetDeviceId: string,
+    credentialIdentity: Uint8Array,
+    signaturePublicKey: Uint8Array,
+    fingerprint: string,
+    packageRef: string,
+    keyPackage: Uint8Array,
+  ): void
 }
 
 function isOpenMlsModule(value: unknown): value is OpenMlsModule {
@@ -43,6 +52,7 @@ function isOpenMlsModule(value: unknown): value is OpenMlsModule {
   return typeof candidate.default === 'function'
     && typeof candidate.DeviceBootstrap === 'function'
     && typeof candidate.DeviceBootstrap.restoreSealedState === 'function'
+    && typeof candidate.validatePublicKeyPackage === 'function'
 }
 
 export async function loadOpenMlsModule(): Promise<OpenMlsModule> {

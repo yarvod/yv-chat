@@ -89,6 +89,7 @@ crypto-wasm-bindgen: crypto-wasm
 	grep -q 'sealState(key: CryptoKey' crypto/target/wasm-bindgen/yv_chat_openmls_provider.d.ts
 	grep -q 'restoreSealedState(key: CryptoKey' crypto/target/wasm-bindgen/yv_chat_openmls_provider.d.ts
 	grep -q 'expected_fingerprint: string' crypto/target/wasm-bindgen/yv_chat_openmls_provider.d.ts
+	grep -q 'validatePublicKeyPackage(user_id: string' crypto/target/wasm-bindgen/yv_chat_openmls_provider.d.ts
 	grep -q 'export class SealedSnapshot' crypto/target/wasm-bindgen/yv_chat_openmls_provider.d.ts
 	! grep -Eq 'snapshotForSealing|restoreFromUnsealedSnapshot' \
 		crypto/target/wasm-bindgen/yv_chat_openmls_provider.d.ts

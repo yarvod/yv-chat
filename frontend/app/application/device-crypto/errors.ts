@@ -2,6 +2,7 @@ export type DeviceCryptoErrorCode =
   | 'conflict'
   | 'corrupt-state'
   | 'invalid-request'
+  | 'invalid-key-package'
   | 'not-provisioned'
   | 'operation-failed'
   | 'rollback'

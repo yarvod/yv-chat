@@ -13,9 +13,26 @@ export interface DeviceCryptoIdentityCommand {
   deviceId: string
 }
 
+export interface PublicKeyPackageValidationCommand {
+  targetUserId: string
+  targetDeviceId: string
+  credentialIdentity: Uint8Array
+  signaturePublicKey: Uint8Array
+  fingerprint: string
+  packageRef: string
+  keyPackage: Uint8Array
+}
+
+export interface PublicKeyPackageValidationResult {
+  validated: true
+}
+
 export interface DeviceCryptoGateway {
   provision(command: DeviceCryptoIdentityCommand): Promise<DeviceCryptoIdentity>
   restore(command: DeviceCryptoIdentityCommand): Promise<DeviceCryptoIdentity>
   checkpoint(): Promise<DeviceCryptoIdentity>
+  validateKeyPackage(
+    command: PublicKeyPackageValidationCommand,
+  ): Promise<PublicKeyPackageValidationResult>
   dispose(): Promise<void>
 }

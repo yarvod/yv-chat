@@ -365,7 +365,7 @@ legend { padding: 0 6px; color: var(--muted); font-size: .8rem; }
   .auth-hero__copy > p:last-child, .security-chip { display: none; }
   .auth-stage { min-height: 70dvh; place-items: start center; padding: 34px 24px max(38px, env(safe-area-inset-bottom)); }
 
-  .product-shell {
+.product-shell {
     --mobile-tabs-slot-height: calc(62px + env(safe-area-inset-bottom, 0px));
     --mobile-tabs-outer-height: calc(62px + var(--safe-area-max-inset-bottom));
     height: 100dvh;
@@ -411,6 +411,27 @@ legend { padding: 0 6px; color: var(--muted); font-size: .8rem; }
   .managed-user-row { grid-template-columns: 42px minmax(0, 1fr) auto; }
   .managed-user-actions { grid-column: 2 / -1; justify-content: flex-start; flex-wrap: wrap; }
   .admin-confirm { align-items: flex-start; flex-direction: column; }
+}
+
+.device-crypto-warning {
+  position: fixed;
+  z-index: 80;
+  inset-block-start: max(0.75rem, env(safe-area-inset-top));
+  inset-inline: 50% auto;
+  max-width: min(32rem, calc(100vw - 2rem));
+  margin: 0;
+  padding: 0.7rem 0.9rem;
+  transform: translateX(-50%);
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent);
+  border-radius: 14px;
+  background: var(--surface-solid);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  font-size: 0.82rem;
+}
+
+.device-crypto-warning button {
+  margin-inline-start: 0.5rem;
 }
 
 @media (max-width: 430px) {

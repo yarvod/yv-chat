@@ -22,6 +22,15 @@ const identity = {
   signaturePublicKey: new Uint8Array(32),
   keyPackage: new Uint8Array([1, 2, 3]),
 }
+const validationCommand = {
+  targetUserId: userId,
+  targetDeviceId: deviceId,
+  credentialIdentity: identity.credentialIdentity,
+  signaturePublicKey: identity.signaturePublicKey,
+  fingerprint: identity.fingerprint,
+  packageRef: 'cd'.repeat(32),
+  keyPackage: identity.keyPackage,
+}
 
 class MockWorker extends EventTarget {
   readonly messages: unknown[] = []
@@ -48,18 +57,27 @@ afterEach(() => {
 describe('device crypto Worker protocol', () => {
   it('accepts only the closed versioned request and bounded public response schema', () => {
     expect(parseWorkerRequest({
-      version: 1,
+      version: 2,
       requestId: firstRequestId,
       type: 'restore',
       command: { userId, deviceId },
     })).toMatchObject({ type: 'restore', command: { userId, deviceId } })
     expect(parseWorkerRequest({
-      version: 2,
+      version: 1,
       requestId: firstRequestId,
       type: 'checkpoint',
     })).toBeNull()
+
     expect(parseWorkerRequest({
-      version: 1,
+      version: 2,
+      requestId: firstRequestId,
+      type: 'validate-key-package',
+      command: validationCommand,
+    })).toMatchObject({ type: 'validate-key-package' })
+    expect(parseWorkerResponse(successResponse(firstRequestId, { validated: true })))
+      .toMatchObject({ ok: true, result: { validated: true } })
+    expect(parseWorkerRequest({
+      version: 2,
       requestId: firstRequestId,
       type: 'provision',
       command: { userId: 'not-a-uuid', deviceId },
@@ -68,7 +86,7 @@ describe('device crypto Worker protocol', () => {
     expect(parseWorkerResponse(successResponse(firstRequestId, identity)))
       .toMatchObject({ ok: true, result: { fingerprint: identity.fingerprint } })
     expect(parseWorkerResponse({
-      version: 1,
+      version: 2,
       requestId: firstRequestId,
       ok: false,
       error: { code: 'raw exception with private state' },
@@ -111,6 +129,23 @@ describe('device crypto Worker protocol', () => {
     await expect(client.restore({ userId, deviceId })).rejects.toMatchObject({
       code: 'runtime-unavailable',
     })
+  })
+
+  it('routes public KeyPackage validation without returning key bytes', async () => {
+    const worker = new MockWorker()
+    const client = new CryptoWorkerClient(
+      () => worker as unknown as Worker,
+      1_000,
+      requestIds(firstRequestId),
+    )
+
+    const validating = client.validateKeyPackage(validationCommand)
+    expect(parseWorkerRequest(worker.messages[0])).toMatchObject({
+      type: 'validate-key-package',
+      command: validationCommand,
+    })
+    worker.reply(successResponse(firstRequestId, { validated: true }))
+    await expect(validating).resolves.toEqual({ validated: true })
   })
 
   it('fails all pending calls on malformed messages and timeouts', async () => {

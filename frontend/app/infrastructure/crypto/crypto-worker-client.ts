@@ -3,6 +3,8 @@ import type {
   DeviceCryptoGateway,
   DeviceCryptoIdentity,
   DeviceCryptoIdentityCommand,
+  PublicKeyPackageValidationCommand,
+  PublicKeyPackageValidationResult,
 } from '../../application/ports/device-crypto-gateway'
 import {
   parseWorkerResponse,
@@ -13,7 +15,7 @@ import {
 const DEFAULT_TIMEOUT_MS = 15_000
 
 interface PendingRequest {
-  resolve(value: DeviceCryptoIdentity | { disposed: true }): void
+  resolve(value: DeviceCryptoIdentity | PublicKeyPackageValidationResult | { disposed: true }): void
   reject(reason: DeviceCryptoError): void
   timeout: ReturnType<typeof setTimeout>
 }
@@ -55,6 +57,16 @@ export class CryptoWorkerClient implements DeviceCryptoGateway {
     return this.identityRequest(requestEnvelope(this.requestId(), 'checkpoint'))
   }
 
+  validateKeyPackage(
+    command: PublicKeyPackageValidationCommand,
+  ): Promise<PublicKeyPackageValidationResult> {
+    return this.validationRequest(requestEnvelope(
+      this.requestId(),
+      'validate-key-package',
+      command,
+    ))
+  }
+
   async dispose(): Promise<void> {
     if (this.disposed) return
     try {
@@ -72,13 +84,23 @@ export class CryptoWorkerClient implements DeviceCryptoGateway {
 
   private async identityRequest(request: DeviceCryptoWorkerRequest): Promise<DeviceCryptoIdentity> {
     const result = await this.send(request)
-    if ('disposed' in result) throw new DeviceCryptoError('runtime-unavailable')
+    if ('disposed' in result || 'validated' in result) {
+      throw new DeviceCryptoError('runtime-unavailable')
+    }
+    return result
+  }
+
+  private async validationRequest(
+    request: DeviceCryptoWorkerRequest,
+  ): Promise<PublicKeyPackageValidationResult> {
+    const result = await this.send(request)
+    if (!('validated' in result)) throw new DeviceCryptoError('runtime-unavailable')
     return result
   }
 
   private send(
     request: DeviceCryptoWorkerRequest,
-  ): Promise<DeviceCryptoIdentity | { disposed: true }> {
+  ): Promise<DeviceCryptoIdentity | PublicKeyPackageValidationResult | { disposed: true }> {
     if (this.disposed) return Promise.reject(new DeviceCryptoError('runtime-unavailable'))
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {

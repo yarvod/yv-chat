@@ -762,10 +762,31 @@ HTTP transport разделён на identity registry и KeyPackage inventory/c
 target identity anchors; session/CSRF/Origin остаются обязательны для mutation.
 Frontend имеет собственный typed port, strict response parser и list/replenish/claim
 use cases. `claim_request_id` создаётся и сохраняется caller/outbox, чтобы retry не
-создавал новую выдачу. Эти операции пока не запускаются автоматически: consumer-side
-OpenMLS validation, Welcome/group lifecycle и authenticated provisioning остаются
-release gates. Private key, wrapping key и sealed state остаются исключительно
-client-side.
+создавал новую выдачу. После `WP-045` server-delivered KeyPackage проходит pinned
+OpenMLS validation внутри isolated Worker: exact TLS bytes должны иметь valid
+signature, MLS 1.0, выбранный ciphersuite и leaf binding с canonical
+user/device credential, Ed25519 public key, fingerprint и SHA-256 package ref.
+TypeScript не разбирает MLS wire format и получает только bounded success/error.
+
+Authenticated app layout автоматически запускает current-device lifecycle:
+
+```text
+GET immutable server registration
+  ├─ exists → restore exact sealed local identity (никакой regeneration)
+  └─ absent → durable local provision → idempotent public registration
+                         ↓
+exact local/server public comparison
+                         ↓
+OpenMLS validate initial KeyPackage + server anchors → ready
+```
+
+Если registered server identity существует, но local vault отсутствует/повреждён,
+клиент fail closed и показывает unavailable state: password/login не восстанавливает
+private signer. Substitution/malformed package/Worker/storage failure не получают
+synthetic fallback для secure operations. Private key, wrapping key и sealed state
+остаются исключительно client-side. Automatic KeyPackage pool replenishment,
+claim orchestration и Welcome/group lifecycle всё ещё release gates; одна ready
+device identity не означает, что messaging уже E2EE.
 
 UI не вызывает concrete crypto adapter: application-facing async operations
 `protectText/unprotectText` получают intent DTO с conversation/client-message

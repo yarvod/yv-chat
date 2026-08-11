@@ -30,19 +30,22 @@ export class SealedSnapshot {
     readonly revision: bigint;
 }
 
+export function validatePublicKeyPackage(user_id: string, device_id: string, expected_credential_identity: Uint8Array, expected_signature_key: Uint8Array, expected_fingerprint: string, expected_package_ref: string, serialized: Uint8Array): void;
+
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_devicebootstrap_free: (a: number, b: number) => void;
-    readonly __wbg_sealedsnapshot_free: (a: number, b: number) => void;
     readonly devicebootstrap_credentialIdentity: (a: number) => [number, number];
     readonly devicebootstrap_fingerprint: (a: number) => [number, number];
     readonly devicebootstrap_keyPackage: (a: number) => [number, number];
     readonly devicebootstrap_new: (a: number, b: number, c: number, d: number) => [number, number, number];
+    readonly devicebootstrap_signaturePublicKey: (a: number) => [number, number];
+    readonly validatePublicKeyPackage: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number) => [number, number];
+    readonly __wbg_sealedsnapshot_free: (a: number, b: number) => void;
     readonly devicebootstrap_restoreSealedState: (a: any, b: number, c: number, d: number, e: number, f: number, g: number, h: bigint, i: number, j: number, k: number, l: number) => any;
     readonly devicebootstrap_sealState: (a: number, b: any, c: bigint) => any;
-    readonly devicebootstrap_signaturePublicKey: (a: number) => [number, number];
     readonly sealedsnapshot_ciphertext: (a: number) => [number, number];
     readonly sealedsnapshot_fingerprint: (a: number) => [number, number];
     readonly sealedsnapshot_iv: (a: number) => [number, number];

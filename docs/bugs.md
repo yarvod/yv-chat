@@ -24,6 +24,30 @@ Physical Pixel acceptance для `BUG-033`/`BUG-034` ожидает пользо
 
 ## Resolved
 
+### BUG-038 — Authenticated PWA не запускала device crypto lifecycle
+
+- Статус: `verified`.
+- Найдено в: E2EE release-gate audit, `WP-045`.
+- Severity: `high`.
+- Условия воспроизведения: войти или перезагрузить authenticated PWA после
+  реализации sealed OpenMLS vault и server identity registry.
+- Ожидаемое поведение: current device restore/provision/register выполняется
+  автоматически, server public response exact сравнивается и KeyPackage проверяется
+  consumer-side перед любым MLS use.
+- Фактическое поведение: plugin экспортировал несвязанные manual use cases, но ни
+  layout, ни auth orchestration их не вызывали; HTTP claim parser проверял только
+  shape/length/base64, а не OpenMLS signature/ciphersuite/leaf binding.
+- Причина: Worker runtime и server delivery были реализованы отдельными vertical
+  slices без завершающего authenticated application use case.
+- Исправление: `InitializeDeviceCrypto` реализует server-first restore-or-provision
+  policy, exact public comparison и Worker validation; authenticated layout запускает
+  scoped runtime и показывает fail-closed warning. Rust/WASM validator проверяет
+  canonical IDs, credential, key, fingerprint, package ref, OpenMLS signature,
+  version/ciphersuite и отсутствие trailing bytes.
+- Проверка: native Rust и real release WASM tests отвергают substitution/corruption;
+  application tests запрещают silent reprovision при registered missing state и
+  проверяют exact registration/claim validation calls.
+
 ### BUG-037 — Outbox старого login-device мог повторить сообщение под новым device scope
 
 - Статус: `verified`.

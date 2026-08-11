@@ -4,64 +4,59 @@
 завершённая работа фиксируется отдельным коммитом, а новый пункт переносится
 сюда из `backlog.md`.
 
-## WP-044 — Encrypted offline outbox and idempotent recovery
+## WP-045 — OpenMLS KeyPackage validation and authenticated device provisioning
 
 Статус: **completed**
-Backlog: `BL-023`
-Цель: отправка из PWA сначала надёжно фиксируется в bounded encrypted local outbox,
-показывается пользователю как optimistic message и безопасно повторяется после
-network failure/restart без дублей или потери уже committed server message.
+Backlog: `BL-013`
+Цель: каждый server-delivered KeyPackage до MLS group operation проверяется pinned
+OpenMLS runtime внутри Worker, а current device identity автоматически и fail-closed
+restore/provision/register-ится после authenticated startup.
 
 ### Инварианты
 
-1. До первого network request immutable envelope получает один UUID
-   `client_message_id`, проходит protocol protection и атомарно сохраняется локально.
-   Retry никогда не создаёт новый ID и не меняет conversation/protocol/ciphertext.
-2. В persistent outbox нет plaintext, session credentials или private crypto state.
-   Записи шифруются AES-256-GCM под per-account non-extractable key; AAD связывает
-   schema, owner, authenticated sender device и client message ID.
-3. Состояния явные: `pending → sending → sent`; retryable network/5xx/invalid-response
-   возвращает запись в `pending` с bounded exponential backoff, permanent 4xx делает
-   `failed`, manual retry переводит только `failed` обратно в `pending`.
-4. Crash в любой точке безопасен. Persisted `sending`/`sent` после restart снова
-   отправляется тем же exact envelope; backend idempotency возвращает существующий
-   authoritative result после crash-between-commit-and-ack.
-5. Entry удаляется только после server acknowledgement и локального reconciliation.
-   Для активного conversation authoritative message сначала попадает в history
-   archive/timeline; для неактивного conversation durable sync остаётся источником
-   истины.
-6. Reconnect WebSocket, fallback poll и ручной retry запускают flush, но одновременно
-   работает не более одного account+device-scoped flush loop.
-7. Queue ограничена количеством записей и размером envelope. При quota/full/corrupt
-   storage отправка не выполняется напрямую в обход durable enqueue; UI сохраняет
-   draft и показывает честную ошибку.
-8. UI различает `В очереди`, `Отправляем`, `Отправлено` и `Не отправлено`; failed
-   bubble имеет доступную кнопку повторной попытки. Pending status не выдаётся за
-   server delivery/read receipt.
-9. Logout/account/device switch не смешивает записи: каждый query/mutation scoped
-   по owner и текущему authenticated `device_id`; stale outbox старого login-device
-   никогда не отправляется под новым backend idempotency scope. API не принимает
-   owner/device ID от UI как authorization boundary — оба берутся из principal.
+1. TypeScript не разбирает и не имитирует TLS serialization/подпись KeyPackage.
+   Exact bytes передаются isolated Worker, где pinned OpenMLS 0.8.1 выполняет
+   deserialize, signature validation и проверку MLS 1.0 + выбранного ciphersuite.
+2. Validation связывает одновременно canonical target user/device credential,
+   Ed25519 public key, device fingerprint, SHA-256 package reference и exact package
+   bytes; trailing/corrupt/substituted data отвергаются fail closed.
+3. Worker protocol — closed, versioned и bounded. Main thread получает только
+   `{validated: true}` или bounded error code; private signer/provider/vault state
+   не сериализуются и не возвращаются.
+4. Authenticated startup сначала читает immutable server registration. Если она
+   существует, разрешён только restore exact local identity — silent generation
+   replacement запрещена. Если registration отсутствует, local identity сначала
+   durable provisioned, затем public fields регистрируются idempotently.
+5. Server response после register/get exact сравнивается с local public identity,
+   а initial KeyPackage заново проверяется OpenMLS вместе с server package ref до
+   состояния `ready`.
+6. Missing/corrupt local state при существующей server identity, substitution,
+   malformed package или Worker/storage failure оставляют crypto lifecycle в
+   `unavailable`. UI показывает честное предупреждение; secure MLS operations не
+   получают fallback.
+7. Текущий synthetic message codec остаётся явно insecure и не становится E2EE от
+   одной регистрации identity. MLS group/Welcome/Commit/message protection входят
+   в `BL-014` и остаются release gate.
 
 ### План
 
-- [x] Проверить backend exact-idempotency и transport response contract.
-- [x] Добавить typed outbox domain model, ports и отдельные use cases.
-- [x] Реализовать bounded encrypted IndexedDB adapter и strict codec.
-- [x] Возвращать typed authoritative send receipt из HTTP gateway.
-- [x] Интегрировать enqueue/flush/reconcile/retry в messenger и realtime reconnect.
-- [x] Добавить optimistic status/retry UX без plaintext persistence.
-- [x] Покрыть encryption/tamper/quota, crash/restart, retry/backoff/conflict и UI tests.
-- [x] Обновить architecture/backlog/bugs и local-first security limitations.
+- [x] Аудировать Rust/WASM Worker, server registry и KeyPackage claim contracts.
+- [x] Добавить OpenMLS consumer validation с canonical identity/public anchors.
+- [x] Расширить exact Worker protocol и typed application gateway/use cases.
+- [x] Подключить restore/provision/register/compare/validate к authenticated layout.
+- [x] Добавить visible fail-closed lifecycle state без synthetic downgrade.
+- [x] Покрыть valid/corrupt/trailing/substitution, missing-state и registration races.
+- [x] Обновить architecture/backlog/bugs/README и WASM build gates.
 - [x] Прогнать полный CI, commit/push, production deploy и external smoke-test.
 
 ### Definition of Done
 
-- offline submit очищает composer только после durable encrypted enqueue и остаётся
-  видимым после reload;
-- reconnect доставляет exact envelope один раз логически, включая server commit без
-  полученного client acknowledgement;
-- permanent failure виден на конкретном optimistic bubble и допускает manual retry;
-- outbox не растёт без лимита и не содержит recoverable plaintext в raw IndexedDB;
-- successful reconciliation удаляет queue entry и оставляет authoritative message;
-- lint/typecheck/Vitest/build и полный repository CI проходят.
+- claimed package нельзя передать будущему MLS group use case без OpenMLS validation;
+- local/server user, device, credential, key, fingerprint, ref и bytes образуют одну
+  проверяемую binding;
+- reload восстанавливает прежнюю identity, а потеря local state не создаёт тихую
+  replacement identity под зарегистрированным device;
+- malformed Worker input/output и любой validation failure закрываются bounded error;
+- authenticated PWA запускает lifecycle автоматически и не заявляет E2EE раньше
+  реализации MLS group/message path;
+- Rust/clippy/WASM, frontend lint/typecheck/Vitest/build и полный CI проходят.

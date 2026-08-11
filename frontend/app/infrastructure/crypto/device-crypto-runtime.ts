@@ -2,6 +2,8 @@ import { DeviceCryptoError } from '../../application/device-crypto/errors'
 import type {
   DeviceCryptoIdentity,
   DeviceCryptoIdentityCommand,
+  PublicKeyPackageValidationCommand,
+  PublicKeyPackageValidationResult,
 } from '../../application/ports/device-crypto-gateway'
 import {
   CryptoVaultError,
@@ -119,6 +121,35 @@ export class DeviceCryptoRuntime {
       return this.publicIdentity(active)
     } catch (error) {
       throw translateError(error)
+    }
+  }
+
+  async validateKeyPackage(
+    command: PublicKeyPackageValidationCommand,
+  ): Promise<PublicKeyPackageValidationResult> {
+    if (
+      !UUID_PATTERN.test(command.targetUserId)
+      || !UUID_PATTERN.test(command.targetDeviceId)
+      || command.credentialIdentity.byteLength !== CREDENTIAL_IDENTITY_BYTES
+      || command.signaturePublicKey.byteLength !== SIGNATURE_PUBLIC_KEY_BYTES
+      || !FINGERPRINT_PATTERN.test(command.fingerprint)
+      || !FINGERPRINT_PATTERN.test(command.packageRef)
+      || command.keyPackage.byteLength === 0
+      || command.keyPackage.byteLength > MAX_KEY_PACKAGE_BYTES
+    ) throw new DeviceCryptoError('invalid-request')
+    try {
+      this.module.validatePublicKeyPackage(
+        command.targetUserId,
+        command.targetDeviceId,
+        command.credentialIdentity,
+        command.signaturePublicKey,
+        command.fingerprint,
+        command.packageRef,
+        command.keyPackage,
+      )
+      return { validated: true }
+    } catch {
+      throw new DeviceCryptoError('invalid-key-package')
     }
   }
 

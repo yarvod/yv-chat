@@ -2,14 +2,17 @@ import type { DeviceCryptoErrorCode } from '../../application/device-crypto/erro
 import type {
   DeviceCryptoIdentity,
   DeviceCryptoIdentityCommand,
+  PublicKeyPackageValidationCommand,
+  PublicKeyPackageValidationResult,
 } from '../../application/ports/device-crypto-gateway'
 
-const PROTOCOL_VERSION = 1
+const PROTOCOL_VERSION = 2
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const FINGERPRINT_PATTERN = /^[0-9a-f]{64}$/
 const ERROR_CODES = new Set<DeviceCryptoErrorCode>([
   'conflict',
   'corrupt-state',
+  'invalid-key-package',
   'invalid-request',
   'not-provisioned',
   'operation-failed',
@@ -32,6 +35,10 @@ export type DeviceCryptoWorkerRequest =
       type: 'restore'
       command: DeviceCryptoIdentityCommand
     })
+  | (WorkerRequestBase & {
+      type: 'validate-key-package'
+      command: PublicKeyPackageValidationCommand
+    })
   | (WorkerRequestBase & { type: 'checkpoint' })
   | (WorkerRequestBase & { type: 'dispose' })
 
@@ -40,7 +47,7 @@ export type DeviceCryptoWorkerResponse =
       version: typeof PROTOCOL_VERSION
       requestId: string
       ok: true
-      result: DeviceCryptoIdentity | { disposed: true }
+      result: DeviceCryptoIdentity | PublicKeyPackageValidationResult | { disposed: true }
     }
   | {
       version: typeof PROTOCOL_VERSION
@@ -74,6 +81,35 @@ function validIdentityCommand(value: unknown): value is DeviceCryptoIdentityComm
     && UUID_PATTERN.test(candidate.userId)
     && typeof candidate.deviceId === 'string'
     && UUID_PATTERN.test(candidate.deviceId)
+}
+
+function validKeyPackageCommand(value: unknown): value is PublicKeyPackageValidationCommand {
+  const candidate = record(value)
+  return candidate !== null
+    && exactKeys(candidate, [
+      'credentialIdentity',
+      'fingerprint',
+      'keyPackage',
+      'packageRef',
+      'signaturePublicKey',
+      'targetDeviceId',
+      'targetUserId',
+    ])
+    && typeof candidate.targetUserId === 'string'
+    && UUID_PATTERN.test(candidate.targetUserId)
+    && typeof candidate.targetDeviceId === 'string'
+    && UUID_PATTERN.test(candidate.targetDeviceId)
+    && candidate.credentialIdentity instanceof Uint8Array
+    && candidate.credentialIdentity.byteLength === 33
+    && candidate.signaturePublicKey instanceof Uint8Array
+    && candidate.signaturePublicKey.byteLength === 32
+    && typeof candidate.fingerprint === 'string'
+    && FINGERPRINT_PATTERN.test(candidate.fingerprint)
+    && typeof candidate.packageRef === 'string'
+    && FINGERPRINT_PATTERN.test(candidate.packageRef)
+    && candidate.keyPackage instanceof Uint8Array
+    && candidate.keyPackage.byteLength > 0
+    && candidate.keyPackage.byteLength <= 1024 * 1024
 }
 
 function parseIdentity(value: unknown): DeviceCryptoIdentity | null {
@@ -144,6 +180,18 @@ export function parseWorkerRequest(value: unknown): DeviceCryptoWorkerRequest | 
       command: candidate.command,
     }
   }
+  if (
+    candidate.type === 'validate-key-package'
+    && exactKeys(candidate, ['command', 'requestId', 'type', 'version'])
+    && validKeyPackageCommand(candidate.command)
+  ) {
+    return {
+      version: PROTOCOL_VERSION,
+      requestId: candidate.requestId,
+      type: candidate.type,
+      command: candidate.command,
+    }
+  }
   return null
 }
 
@@ -185,6 +233,14 @@ export function parseWorkerResponse(value: unknown): DeviceCryptoWorkerResponse 
       result: { disposed: true },
     }
   }
+  if (result?.validated === true && exactKeys(result, ['validated'])) {
+    return {
+      version: PROTOCOL_VERSION,
+      requestId: candidate.requestId,
+      ok: true,
+      result: { validated: true },
+    }
+  }
   const identity = parseIdentity(candidate.result)
   if (!identity) return null
   return {
@@ -206,11 +262,22 @@ export function requestEnvelope(
 ): DeviceCryptoWorkerRequest
 export function requestEnvelope(
   requestId: string,
+  type: 'validate-key-package',
+  command: PublicKeyPackageValidationCommand,
+): DeviceCryptoWorkerRequest
+export function requestEnvelope(
+  requestId: string,
   type: DeviceCryptoWorkerRequest['type'],
-  command?: DeviceCryptoIdentityCommand,
+  command?: DeviceCryptoIdentityCommand | PublicKeyPackageValidationCommand,
 ): DeviceCryptoWorkerRequest {
   if (type === 'provision' || type === 'restore') {
-    if (!command) throw new Error('identity command is required')
+    if (!command || !validIdentityCommand(command)) throw new Error('identity command is required')
+    return { version: PROTOCOL_VERSION, requestId, type, command }
+  }
+  if (type === 'validate-key-package') {
+    if (!command || !validKeyPackageCommand(command)) {
+      throw new Error('KeyPackage validation command is required')
+    }
     return { version: PROTOCOL_VERSION, requestId, type, command }
   }
   return { version: PROTOCOL_VERSION, requestId, type }
@@ -218,7 +285,7 @@ export function requestEnvelope(
 
 export function successResponse(
   requestId: string,
-  result: DeviceCryptoIdentity | { disposed: true },
+  result: DeviceCryptoIdentity | PublicKeyPackageValidationResult | { disposed: true },
 ): DeviceCryptoWorkerResponse {
   return { version: PROTOCOL_VERSION, requestId, ok: true, result }
 }
