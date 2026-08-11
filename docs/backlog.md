@@ -119,6 +119,8 @@ storage следует отдельным slice).
 - [ ] `encryptAttachment/decryptAttachment` и MLS membership boundary;
 - [x] pinned OpenMLS native/WASM provider и canonical memory-only device identity/
   KeyPackage proof (`WP-031`);
+- [x] deterministic versioned/bounded private provider snapshot+restore core без JS
+  export (`WP-032`);
 - [ ] encrypted persistent device identity и protocol state;
 - [ ] safe IndexedDB persistence, memory/plaintext lifecycle и log redaction;
 - [ ] known-answer/interop test vectors реального MLS provider;

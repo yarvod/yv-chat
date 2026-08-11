@@ -4,103 +4,86 @@
 завершённая работа фиксируется отдельным коммитом, а новый пункт переносится
 сюда из `backlog.md`.
 
-## WP-031 — Pinned OpenMLS provider и device bootstrap proof
+## WP-032 — Versioned restorable OpenMLS state snapshot core
 
 Статус: **completed**
-Backlog item: `BL-013` (provider/device-bootstrap slice)
-Цель: добавить минимальный repository-owned Rust core, который с pinned stable
-OpenMLS создаёт canonical MLS device identity и one-time KeyPackage, компилируется
-native и в `wasm32-unknown-unknown`, но ещё не подключается к production messages и
-не объявляется production-ready E2EE.
-
-### Проверенный upstream baseline
-
-- OpenMLS stable `0.8.1`, release tag `openmls-v0.8.1`, commit
-  `47dbedecad0c1fd8eb5368d582250ebfcc1e1ce6`;
-- `openmls_rust_crypto = 0.5.1`, `openmls_traits = 0.5.0`,
-  `openmls_basic_credential = 0.5.0`;
-- prerelease `0.9.0-rc.2` намеренно не выбран;
-- ciphersuite только
-  `MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519`;
-- `crypto-debug`, `content-debug`, test-utils и upstream experimental binding не
-  входят в production dependency features.
+Backlog item: `BL-013` (encrypted-persistence prerequisite)
+Цель: сделать private OpenMLS provider state воспроизводимо snapshot/restore внутри
+Rust crate, с version/bounds/identity consistency/fail-closed parsing, не экспортируя
+plaintext snapshot через WASM/TypeScript API. Следующий slice будет sealing через
+non-extractable WebCrypto key и atomic IndexedDB.
 
 ### Security invariants
 
-1. BasicCredential identity — fixed schema bytes: version `1` + canonical user UUID
-   + canonical device UUID; display name/username не участвуют.
-2. Private signature/init keys никогда не возвращаются через Rust public DTO,
-   JavaScript binding, logs или test snapshots.
-3. Public bootstrap result содержит только bounded credential identity, signature
-   public key, TLS-serialized KeyPackage и non-secret fingerprint.
-4. KeyPackage использует ровно MLS 1.0 и выбранный MTI ciphersuite; другой suite или
-   malformed UUID отклоняется.
-5. Каждый bootstrap создаёт новый independent device keypair/KeyPackage; private
-   material не копируется между devices.
-6. Provider state в этом proof остаётся memory-only и поэтому не используется
-   production frontend. Persistence/worker binding — следующий отдельный slice.
-7. Все dependencies exact-pinned в Cargo manifest+lock; no floating git dependency.
-8. Native tests и `wasm32-unknown-unknown` compile обязательны. Browser/WASM runtime,
-   encrypted IndexedDB и server upload остаются release gates, не симулируются.
-9. Synthetic protocol v1 остаётся outgoing и с постоянным insecure warning.
+1. Snapshot содержит private MLS material и поэтому не является public DTO/API.
+   Ни один `wasm_bindgen` getter не возвращает snapshot bytes.
+2. Формат имеет magic, schema/provider revision, exact lengths/counts и общий size
+   limit; trailing/truncated/oversized/duplicate records отвергаются.
+3. Map сериализуется deterministic sorted order; HashMap iteration не влияет на
+   bytes/test fixtures.
+4. Restore создаёт новый provider, затем находит signer только в restored OpenMLS
+   storage по expected public key; отсутствие/подмена private signer fail closed.
+5. Public identity/signature/KeyPackage/fingerprint после restore должны exact
+   совпасть и KeyPackage повторно проходит OpenMLS validation.
+6. Snapshot revision монотонный и включён в envelope для будущей rollback policy;
+   revision `0` и unsupported schema/provider version запрещены.
+7. Plain snapshot не пишется на disk/IndexedDB, не логируется и не попадает в test
+   output. В этом slice он существует только как short-lived Rust memory buffer.
+8. Corruption checks этого формата не заменяют AEAD authenticity. Production
+   persistence запрещён до следующего encrypted sealing/atomic storage slice.
+9. Synthetic message protocol/outgoing/deployment не меняются.
 
 ### План
 
-- [x] Добавить scoped Rust workspace/crate и pinned `rust-toolchain.toml`.
-- [x] Реализовать typed identity encoder без unstructured JSON/string identity.
-- [x] Реализовать OpenMLS provider bootstrap и safe public result/error taxonomy.
-- [x] TLS-serialize и validate generated KeyPackage; вычислить public fingerprint.
-- [x] Native tests: deterministic identity layout, distinct devices, exact suite,
-  valid signature/KeyPackage, malformed UUID/identity rejection.
-- [x] Minimal WASM export без private-state serialization и raw internal errors.
-- [x] Проверить native lint/test, release WASM compilation и forbidden feature graph.
-- [x] Добавить CI/Makefile gates без увеличения production VPS runtime footprint.
-- [x] Architecture/backlog/bugs/workplan sync и full repository CI.
+- [x] Добавить cohesive internal snapshot module и bounded typed errors.
+- [x] Deterministic encode provider storage + public restore anchors.
+- [x] Strict parser с overflow/duplicate/trailing/unsupported-version checks.
+- [x] Restore provider/signer/credential и повторная KeyPackage validation.
+- [x] Tests: exact round-trip, stable re-encode, truncation/trailing/corruption,
+  wrong identity/public key, missing signer и bounds.
+- [x] Подтвердить отсутствие snapshot export в WASM surface.
+- [x] Native Clippy/tests + locked release WASM compilation + full repository CI.
+- [x] Architecture/backlog/bugs/workplan sync.
 
 ### Не входит в этот slice
 
-- encrypted IndexedDB `StorageProvider` и Web Worker lifecycle;
-- загрузка public credentials/KeyPackages на backend;
-- MLS group create/add/remove/Commit/Welcome;
-- application message encrypt/decrypt и переключение outgoing protocol на v2;
-- claim, что текущий messenger уже E2EE.
+- AES-GCM/WebCrypto wrapping key;
+- IndexedDB schema/transactions/rollback ledger;
+- Worker/glue/browser runtime и service-worker migration;
+- backend credential/KeyPackage endpoints;
+- MLS groups/messages или E2EE claim.
 
 ### Definition of Done
 
-- repository воспроизводимо строит и тестирует exact OpenMLS core;
-- public API не может экспортировать private/provider state;
-- canonical device credential и KeyPackage проверены OpenMLS validation;
-- forbidden debug feature gate и dependency pins проверяются CI;
-- `wasm32-unknown-unknown` release compile зелёный;
-- docs честно отделяют provider proof от secure messenger milestone.
+- bootstrap → snapshot → restore сохраняет public identity и usable private signer;
+- format deterministic/bounded/versioned и fail closed на negative corpus;
+- private snapshot не пересекает JS binding;
+- native/WASM/full repository gates зелёные;
+- docs явно говорят, что unsealed snapshot ещё нельзя сохранять production client.
 
 ### Реализовано
 
-- Добавлены exact-pinned Rust workspace/lock/toolchain и repository-owned
-  `yv-chat-openmls-provider`; upstream experimental binding не импортирован.
-- `DeviceBootstrap` владеет memory provider, Ed25519 signer и private KeyPackage
-  bundle как opaque non-serializable value. Наружу доступны только public credential
-  bytes, signature public key, validated TLS KeyPackage и bounded fingerprint.
-- Canonical BasicCredential layout фиксирует schema/user/device binding. KeyPackage
-  создаётся только с MLS 1.0 MTI AES-128-GCM suite и повторно разбирается/проверяется
-  OpenMLS; trailing/corrupt bytes fail closed.
-- `wasm_bindgen` surface возвращает те же public values и bounded typed error text;
-  provider/private key getters отсутствуют. Runtime остаётся memory-only и не
-  подключён к outgoing message path.
-- Makefile и отдельный CI job проверяют format, Clippy `-D warnings`, native tests,
-  locked release WASM compilation и отсутствие sensitive OpenMLS debug features.
+- Cohesive private `snapshot` module кодирует provider storage в deterministic
+  sorted binary envelope с format/provider version, non-zero revision и строгими
+  per-field/entry/total limits.
+- Restore exact-сверяет expected user/device credential, public signature key и
+  TLS KeyPackage, восстанавливает memory provider, извлекает signer и private
+  KeyPackage bundle из его storage и повторно запускает OpenMLS validation.
+- Snapshot methods имеют только crate visibility, не помечены `wasm_bindgen` и не
+  доступны TypeScript/application UI. Документация запрещает persisting unsealed
+  bytes до authenticated WebCrypto sealing.
+- 6 новых tests (11 Rust total) покрывают deterministic round-trip и подпись после
+  restore, wrong identity/public key, zero/unsupported revision, missing signer,
+  truncation/trailing, duplicate records и oversized field.
 
 ### Проверено
 
-- `rtk env CARGO_HOME=/tmp/yv-chat-cargo RUSTUP_HOME=/tmp/yv-chat-rustup make
-  crypto-check CARGO=/tmp/yv-chat-cargo/bin/cargo`: 5 Rust tests, Clippy/format,
-  release `wasm32-unknown-unknown`, forbidden feature graph — passed; WASM artifact
-  `1.1M` до wasm-bindgen glue/size optimization следующего slice.
-- `rtk env CARGO_HOME=/tmp/yv-chat-cargo RUSTUP_HOME=/tmp/yv-chat-rustup
-  UV_CACHE_DIR=/tmp/yv-chat-uv-cache make ci CARGO=/tmp/yv-chat-cargo/bin/cargo`:
-  backend Ruff/format/import-linter/mypy, `172 passed, 6 skipped`; frontend
-  ESLint/Nuxt typecheck, `37 passed`, production PWA build; crypto gates,
-  dev/default/prod Compose, deploy scripts и documentation contracts.
-- Шесть backend PostgreSQL integration/concurrency tests локально skipped из-за
-  недоступного container runtime; новый crypto slice базы данных не меняет, а эти
-  тесты остаются обязательным GitHub CI/release gate.
+- Rust `cargo fmt`, Clippy `--all-targets --locked -- -D warnings`, `11 passed`.
+- Locked `wasm32-unknown-unknown --release` compilation passed; production feature
+  graph по-прежнему содержит только OpenMLS `js`, без `crypto-debug`,
+  `content-debug` или `test-utils`.
+- Полный `make ci`: backend Ruff/format/import-linter/mypy, `172 passed, 6 skipped`;
+  frontend ESLint/Nuxt typecheck, `37 passed`, production PWA build; Rust 11 tests,
+  Clippy/format/release WASM/feature graph; Compose/deploy/docs contracts — passed.
+  PostgreSQL-only skips остаются отдельным GitHub release gate и этим Rust-only
+  slice не изменяются.

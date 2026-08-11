@@ -635,6 +635,21 @@ outgoing v1 и не получает E2EE badge. Следующий slice дол
 WASM glue/Worker и encrypted versioned IndexedDB storage; терять memory provider при
 reload и молча генерировать новую identity под тем же device ID запрещено.
 
+Внутри Rust crate существует private unsealed snapshot prerequisite. Формат имеет
+fixed magic, format/provider versions, monotonic non-zero revision, canonical
+identity/public KeyPackage anchors и bounded deterministic sorted storage records.
+Restore exact-сверяет ожидаемые user/device UUID, повторно валидирует KeyPackage,
+находит Ed25519 signer и private KeyPackage bundle только в restored OpenMLS storage
+и доказывает usable signer. Unsupported/truncated/trailing/duplicate/oversized или
+inconsistent state переводится в typed fail-closed error.
+
+Unsealed snapshot содержит private MLS material. Он не является public API, не имеет
+`wasm_bindgen` export и не может записываться в IndexedDB/файл или логироваться.
+Structural validation не является authentication: только следующий WebCrypto
+AES-GCM sealing slice с device-bound AAD, non-extractable wrapping key и atomic
+revision ledger разрешит persistent use. До этого reload остаётся явным unsupported
+state, а не поводом silently заменить identity.
+
 UI не вызывает concrete crypto adapter: application-facing async operations
 `protectText/unprotectText` получают intent DTO с conversation/client-message
 binding и возвращают versioned result. Exact-version router fail closed; tombstone

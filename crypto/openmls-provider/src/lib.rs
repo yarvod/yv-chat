@@ -20,6 +20,8 @@ use uuid::Uuid;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
+mod snapshot;
+
 pub const CREDENTIAL_SCHEMA_VERSION: u8 = 1;
 pub const CREDENTIAL_IDENTITY_LENGTH: usize = 33;
 pub const DEVICE_FINGERPRINT_LABEL: &[u8] = b"yv-chat-device-fingerprint-v1\0";
@@ -41,6 +43,14 @@ pub enum BootstrapError {
     SerializationFailed,
     #[error("generated key package validation failed")]
     ValidationFailed,
+    #[error("private state snapshot is too large")]
+    SnapshotTooLarge,
+    #[error("private state snapshot is corrupt")]
+    SnapshotCorrupt,
+    #[error("private state snapshot version is unsupported")]
+    SnapshotVersionUnsupported,
+    #[error("private state snapshot identity does not match this device")]
+    SnapshotIdentityMismatch,
 }
 
 /// Opaque in-memory owner of private signature and KeyPackage state.
@@ -133,6 +143,26 @@ impl DeviceBootstrap {
             self.credential_identity(),
             self.signature_public_key(),
         )
+    }
+
+    #[allow(
+        dead_code,
+        reason = "consumed by the encrypted sealing adapter in the next slice"
+    )]
+    pub(crate) fn snapshot_for_sealing(&self, revision: u64) -> Result<Vec<u8>, BootstrapError> {
+        snapshot::encode(self, revision)
+    }
+
+    #[allow(
+        dead_code,
+        reason = "consumed by the encrypted sealing adapter in the next slice"
+    )]
+    pub(crate) fn restore_from_unsealed_snapshot(
+        bytes: &[u8],
+        expected_user_id: &str,
+        expected_device_id: &str,
+    ) -> Result<(Self, u64), BootstrapError> {
+        snapshot::restore(bytes, expected_user_id, expected_device_id)
     }
 }
 
