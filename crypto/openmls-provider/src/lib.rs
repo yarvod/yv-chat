@@ -25,7 +25,9 @@ use wasm_bindgen::prelude::*;
 mod conversation;
 mod snapshot;
 
-pub use conversation::{AddMembersOutput, ConversationError, ProtectedApplicationMessage};
+pub use conversation::{
+    AddMembersOutput, ConversationError, ProtectedApplicationMessage, UpdateMembersOutput,
+};
 
 #[cfg(any(test, target_arch = "wasm32"))]
 mod sealing;
@@ -404,6 +406,59 @@ impl DeviceBootstrap {
                 ratchet_tree: output.ratchet_tree,
                 epoch: output.epoch,
             })
+            .map_err(|error| JsError::new(error.to_string().as_str()))
+    }
+
+    #[wasm_bindgen(js_name = updateMembersAndMerge)]
+    pub fn wasm_update_members_and_merge(
+        &mut self,
+        conversation_id: &str,
+        desired_device_ids: Array,
+        serialized_key_packages: Array,
+    ) -> Result<ConversationBootstrapOutput, JsError> {
+        let desired = desired_device_ids
+            .iter()
+            .map(|value| {
+                value
+                    .as_string()
+                    .ok_or_else(|| JsError::new("invalid MLS device roster"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let packages = serialized_key_packages
+            .iter()
+            .map(|value| {
+                if !value.is_instance_of::<Uint8Array>() {
+                    return Err(JsError::new("invalid MLS key package"));
+                }
+                Ok(Uint8Array::new(&value).to_vec())
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        self.update_members_and_merge(conversation_id, &desired, &packages)
+            .map(|output| ConversationBootstrapOutput {
+                commit: output.commit,
+                welcome: output.welcome,
+                ratchet_tree: output.ratchet_tree,
+                epoch: output.epoch,
+            })
+            .map_err(|error| JsError::new(error.to_string().as_str()))
+    }
+
+    #[wasm_bindgen(js_name = applyCommitAndMerge)]
+    pub fn wasm_apply_commit_and_merge(
+        &mut self,
+        conversation_id: &str,
+        commit: &[u8],
+        desired_device_ids: Array,
+    ) -> Result<u64, JsError> {
+        let desired = desired_device_ids
+            .iter()
+            .map(|value| {
+                value
+                    .as_string()
+                    .ok_or_else(|| JsError::new("invalid MLS device roster"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        self.apply_commit_and_merge(conversation_id, commit, &desired)
             .map_err(|error| JsError::new(error.to_string().as_str()))
     }
 

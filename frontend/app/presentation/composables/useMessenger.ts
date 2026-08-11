@@ -76,6 +76,7 @@ export interface MessengerDependencies extends MessageOutboxDependencies {
   leaveGroup: LeaveGroup
   pageVisibility: PageVisibility
   initializeDeviceCrypto?: () => Promise<unknown>
+  invalidateConversationCrypto?: (conversationId: string) => void
 }
 
 export function useMessenger(
@@ -112,6 +113,9 @@ export function useMessenger(
         userId: actorUserId,
         deviceId: actorDeviceId,
       }),
+      invalidateConversationCrypto: conversationId => (
+        $frontend.deviceCryptoSession.invalidateConversation(conversationId)
+      ),
     }
   })()
   const {
@@ -538,6 +542,7 @@ export function useMessenger(
     state.message = null
     try {
       const conversation = await operation()
+      dependencies.invalidateConversationCrypto?.(conversation.conversationId)
       state.conversations = state.conversations.map(item => (
         item.conversationId === conversation.conversationId ? conversation : item
       ))
@@ -577,6 +582,7 @@ export function useMessenger(
     state.message = null
     try {
       await leaveGroup.execute(conversationId)
+      dependencies.invalidateConversationCrypto?.(conversationId)
       await reloadConversations()
       await persistSnapshot()
       state.phase = 'ready'
@@ -676,6 +682,9 @@ export function useMessenger(
           return
         }
         for (const event of page.events) {
+          if (event.eventType === 'conversation_updated') {
+            dependencies.invalidateConversationCrypto?.(event.conversationId)
+          }
           conversationsChanged ||= event.eventType === 'conversation_updated'
           activeMessagesChanged ||= (
             event.eventType === 'message_created'

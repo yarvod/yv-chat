@@ -54,19 +54,56 @@ class BeginConversationCrypto:
                 bootstrap_request_id=command.bootstrap_request_id,
                 for_update=True,
             )
-            if retry is not None:
-                if retry.conversation_id != command.conversation_id:
-                    raise ConversationCryptoConflictError(
-                        "bootstrap request is bound to another conversation"
-                    )
-                return await materialize_generation(uow, retry)
+            if retry is not None and retry.conversation_id != command.conversation_id:
+                raise ConversationCryptoConflictError(
+                    "bootstrap request is bound to another conversation"
+                )
 
             current = await uow.generations.get_current(
                 command.conversation_id,
                 for_update=True,
             )
-            if current is not None and current.status is not ConversationCryptoStatus.BLOCKED:
+
+            active_user_ids = {
+                member.user_id for member in conversation.members if member.is_active
+            }
+            active_devices = sorted(
+                await uow.devices.list_active_for_users(active_user_ids),
+                key=lambda item: item.id.int,
+            )
+            active_device_ids = {item.id for item in active_devices}
+            current_required = (
+                await uow.required_devices.list_by_generation(current.id)
+                if current is not None
+                else []
+            )
+            if (
+                current is not None
+                and current.status is not ConversationCryptoStatus.BLOCKED
+                and {item.device_id for item in current_required} == active_device_ids
+            ):
                 return await materialize_generation(uow, current)
+
+            previous_ready = (
+                current
+                if current is not None and current.status is ConversationCryptoStatus.READY
+                else await uow.generations.get_latest_ready(command.conversation_id)
+            )
+            previous_device_ids = (
+                {
+                    item.device_id
+                    for item in await uow.required_devices.list_by_generation(previous_ready.id)
+                }
+                if previous_ready is not None
+                else set()
+            )
+            existing_coordinators = [
+                item for item in active_devices if item.id in previous_device_ids
+            ]
+            coordinator = next(
+                (item for item in existing_coordinators if item.id == command.device_id),
+                existing_coordinators[0] if existing_coordinators else device,
+            )
 
             now = self._clock.now()
             if current is not None:
@@ -77,21 +114,17 @@ class BeginConversationCrypto:
                     await uow.generations.latest_generation_number(command.conversation_id)
                 )
                 + 1,
-                coordinator_user_id=command.user_id,
-                coordinator_device_id=command.device_id,
+                coordinator_user_id=coordinator.user_id,
+                coordinator_device_id=coordinator.id,
                 bootstrap_request_id=command.bootstrap_request_id,
                 now=now,
             )
-            active_user_ids = {
-                member.user_id for member in conversation.members if member.is_active
-            }
-            active_devices = await uow.devices.list_active_for_users(active_user_ids)
             required = tuple(
                 ConversationCryptoRequiredDevice(
                     generation_id=generation.id,
                     user_id=item.user_id,
                     device_id=item.id,
-                    is_coordinator=item.id == command.device_id,
+                    is_coordinator=item.id == coordinator.id,
                     key_package_id=None,
                     snapshot_at=now,
                 )
@@ -109,7 +142,12 @@ class BeginConversationCrypto:
             if missing_identity:
                 generation = generation.block(ConversationCryptoBlockReason.MISSING_IDENTITY, now)
             else:
-                targets = tuple(item for item in required if not item.is_coordinator)
+                added_device_ids = (
+                    active_device_ids - previous_device_ids
+                    if previous_ready is not None
+                    else active_device_ids - {coordinator.id}
+                )
+                targets = tuple(item for item in required if item.device_id in added_device_ids)
                 availability = {
                     item.device_id: await uow.key_packages.count_available(item.device_id)
                     for item in targets
@@ -122,7 +160,7 @@ class BeginConversationCrypto:
                 else:
                     claimed_required: list[ConversationCryptoRequiredDevice] = []
                     for item in required:
-                        if item.is_coordinator:
+                        if item.device_id not in added_device_ids:
                             claimed_required.append(item)
                             continue
                         key_package = await uow.key_packages.get_next_available_for_update(

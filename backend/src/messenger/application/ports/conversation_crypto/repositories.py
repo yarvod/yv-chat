@@ -25,6 +25,11 @@ class ConversationCryptoGenerationRepository(Protocol):
         for_update: bool = False,
     ) -> ConversationCryptoGeneration | None: ...
 
+    async def get_latest_ready(
+        self,
+        conversation_id: UUID,
+    ) -> ConversationCryptoGeneration | None: ...
+
     async def get_by_bootstrap_request(
         self,
         *,

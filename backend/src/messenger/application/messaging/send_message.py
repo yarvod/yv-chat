@@ -10,6 +10,7 @@ from messenger.application.conversations.authorization import (
 )
 from messenger.application.errors import (
     AuthorizationDeniedError,
+    ConversationCryptoNotReadyError,
     MessageIdempotencyConflictError,
 )
 from messenger.application.messaging.policy import MessageEnvelopePolicy
@@ -21,7 +22,12 @@ from messenger.application.realtime import notifications_from_sync
 from messenger.application.realtime.publish import publish_best_effort
 from messenger.application.sync import SyncEventType, SyncPolicy
 from messenger.application.sync.emission import events_for_users
-from messenger.domain.entities import ConversationDeliveryState, ConversationReadState, Message
+from messenger.domain.entities import (
+    ConversationCryptoStatus,
+    ConversationDeliveryState,
+    ConversationReadState,
+    Message,
+)
 from messenger.domain.entities.message import digest_ciphertext
 
 
@@ -33,6 +39,8 @@ class SendOpaqueMessageCommand:
     client_message_id: UUID
     protocol_version: int
     ciphertext: bytes
+    crypto_generation_id: UUID | None = None
+    crypto_epoch: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +51,8 @@ class SendOpaqueMessageResult:
     sender_user_id: UUID
     sender_device_id: UUID
     protocol_version: int
+    crypto_generation_id: UUID | None
+    crypto_epoch: int | None
     sequence: int
     created_at: datetime
     expires_at: datetime
@@ -92,12 +102,35 @@ class SendOpaqueMessage:
                     existing.conversation_id != conversation.id
                     or existing.sender_user_id != command.actor_user_id
                     or existing.protocol_version != command.protocol_version
+                    or existing.crypto_generation_id != command.crypto_generation_id
+                    or existing.crypto_epoch != command.crypto_epoch
                     or existing.ciphertext_digest != digest_ciphertext(command.ciphertext)
                 ):
                     raise MessageIdempotencyConflictError(
                         "client message ID was reused for different envelope"
                     )
                 return result_from(existing)
+            if command.protocol_version == 2:
+                generation = await unit_of_work.crypto_generations.get_current(
+                    conversation.id,
+                    for_update=True,
+                )
+                if generation is None or generation.status is not ConversationCryptoStatus.READY:
+                    raise ConversationCryptoNotReadyError("current MLS generation is not ready")
+                if (
+                    command.crypto_generation_id != generation.id
+                    or command.crypto_epoch != generation.epoch
+                ):
+                    raise ConversationCryptoNotReadyError(
+                        "message is bound to a stale MLS generation"
+                    )
+                required = await unit_of_work.crypto_required_devices.list_by_generation(
+                    generation.id
+                )
+                if command.actor_device_id not in {item.device_id for item in required}:
+                    raise ConversationCryptoNotReadyError(
+                        "sender device is outside current MLS roster"
+                    )
             sequence = await unit_of_work.messages.next_sequence(conversation.id)
             message = Message.create(
                 conversation_id=conversation.id,
@@ -109,6 +142,8 @@ class SendOpaqueMessage:
                 ciphertext=command.ciphertext,
                 now=self._clock.now(),
                 retention=self._retention_policy.ciphertext_retention,
+                crypto_generation_id=command.crypto_generation_id,
+                crypto_epoch=command.crypto_epoch,
             )
             await unit_of_work.messages.add(message)
             current_read_state = await unit_of_work.read_states.get(
@@ -191,6 +226,8 @@ def result_from(message: Message) -> SendOpaqueMessageResult:
         sender_user_id=message.sender_user_id,
         sender_device_id=message.sender_device_id,
         protocol_version=message.protocol_version,
+        crypto_generation_id=message.crypto_generation_id,
+        crypto_epoch=message.crypto_epoch,
         sequence=message.sequence,
         created_at=message.created_at,
         expires_at=message.expires_at,

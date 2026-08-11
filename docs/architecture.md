@@ -751,8 +751,9 @@ dispose. Composition root предоставляет один lazy authenticated
 initialize сходятся в один promise, а logout/device change детерминированно dispose-ит
 старый scope. Worker не стартует на public login/activation page.
 
-Runtime v4 также реализует intent-level bounded KeyPackage generation и
-create/join/protect/unprotect. Каждая state-changing операция считается успешной
+Runtime v5 также реализует intent-level bounded KeyPackage generation и
+create/join/update/apply-commit/protect/unprotect. Каждая state-changing операция
+считается успешной
 только после следующего optimistic vault revision и
 atomic sealed-state commit. Commit/Welcome/ciphertext/plaintext копируются наружу
 только после durability barrier. Любая ошибка MLS mutation, sealing или IndexedDB
@@ -760,7 +761,8 @@ atomic sealed-state commit. Commit/Welcome/ciphertext/plaintext копируют
 через restore последнего подтверждённого snapshot. Это предотвращает ratchet/epoch
 rollback после частичного сбоя и повторное использование неподтверждённого state.
 Main-thread gateway достигает этих операций только через exact Worker envelopes
-`mls-bootstrap`, `mls-join`, `mls-protect`, `mls-unprotect`. Каждый command/result
+`mls-bootstrap`, `mls-join`, `mls-update`, `mls-apply-commit`, `mls-protect`,
+`mls-unprotect`. Каждый command/result
 variant имеет закрытый набор полей, canonical UUID, bounded binary sizes и safe
 integer epoch/revision. Лишнее поле делает весь envelope invalid; private state не
 является допустимым типом. Commit/Welcome/tree/ciphertext/plaintext передаются как
@@ -834,16 +836,44 @@ target кроме coordinator. Отсутствие identity/package созда�
 `(coordinator_device_id, bootstrap_request_id)`; database uniqueness и conversation
 row lock закрывают concurrent duplicate generations.
 
+При изменении active device roster backend создаёт следующую generation. Он сохраняет
+предыдущие листья без повторного KeyPackage claim, получает новые one-time packages
+только для добавленных устройств и выбирает coordinator из пересечения предыдущего
+и нового roster. Rust/OpenMLS coordinator строит один Commit с remove/add proposals;
+существующие листья применяют и проверяют Commit, новые получают Welcome. Removed
+leaf не входит в новый required snapshot и реальный WASM тест подтверждает, что он
+не расшифровывает future epoch.
+
 Только coordinator текущей pending generation может загрузить bounded opaque
-Commit, ratchet tree и точный набор per-device Welcome. Ready retry обязан совпасть
+Commit, ratchet tree и точный набор per-device Welcome. Welcome требуется ровно для
+строк с claimed KeyPackage; существующие листья не получают фиктивный Welcome.
+Ready retry обязан совпасть
 побайтно, лишний/пропущенный target отклоняется. `GET .../crypto` возвращает Welcome
 только текущему device из required snapshot, а `welcome-ack` идемпотентно отмечает
 доставку до expiry. Server не получает signer/init/group/application secrets,
 message plaintext или attachment key. Frontend typed gateway и
 `ReconcileConversationCrypto` соединяют coordination с Worker. Coordinator перед
 finalize шифрованно checkpoint-ит точные Commit/Welcome/tree bytes для crash retry;
-target checkpoint-ит join до Welcome ack. Outgoing router использует v2, а v1
-остаётся только read-only historical adapter.
+target checkpoint-ит join/apply-commit до Welcome ack/ready. Group mutations и
+conversation sync invalidates cached reconciliation, поэтому следующий protect
+сверяется с server roster. Outgoing router использует v2, а v1 остаётся только
+read-only historical adapter.
+
+Каждый v2 message transport содержит `crypto_generation_id` и `crypto_epoch`,
+полученные от того же reconciliation/protect operation. Backend под conversation
+row lock принимает новый message только для exact current READY generation и если
+sender device входит в required roster. Эти поля входят в immutable outbox,
+idempotency comparison, HTTP response, domain entity и PostgreSQL row. Поэтому
+зашифрованная до membership change очередь не может быть принята после rotation.
+Exact retry уже сохранённого envelope возвращает исходный receipt даже после
+перехода на следующую generation; новый client message со старой binding получает
+conflict. Non-v2 rows обязаны иметь оба поля `NULL`.
+
+Текущий release gate: сервер хранит поколения и Commit, но клиенту ещё нужен
+authorized ordered catch-up API для применения нескольких пропущенных generations,
+а повторно добавленному тому же device — явный verified rejoin вместо конфликта с
+локальной старой group. До закрытия этих пунктов production не объявляется secure
+multi-device messaging.
 
 Подготовка history page параллельна, поэтому `DeviceCryptoSession` применяет
 single-flight по conversation: concurrent decrypt делят одну reconciliation, а
@@ -869,9 +899,10 @@ inventory target 8 → generate/seal unique packages → upload public bytes →
 клиент fail closed и показывает unavailable state: password/login не восстанавливает
 private signer. Substitution/malformed package/Worker/storage failure не получают
 synthetic fallback для secure operations. Private key, wrapping key и sealed state
-остаются исключительно client-side. Initial bootstrap/Welcome lifecycle и pool
-replenishment реализованы; existing-member Commit/remove/re-add, fork handling и
-production multi-device acceptance остаются release gates.
+остаются исключительно client-side. Initial bootstrap/Welcome lifecycle, pool
+replenishment и existing-member Commit реализованы; ordered catch-up, same-device
+remove/re-add, fork handling и production multi-device acceptance остаются release
+gates.
 
 UI не вызывает concrete crypto adapter: application-facing async operations
 `protectText/unprotectText` получают intent DTO с conversation/client-message

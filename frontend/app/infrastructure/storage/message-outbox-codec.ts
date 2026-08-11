@@ -54,6 +54,8 @@ function parseOutboxMessage(
   const status = item.status
   const failureCode = item.failureCode
   const nextAttemptAt = item.nextAttemptAt
+  const cryptoGenerationId = item.cryptoGenerationId ?? null
+  const cryptoEpoch = item.cryptoEpoch ?? null
   if (
     (status !== 'pending' && status !== 'sending' && status !== 'sent' && status !== 'failed')
     || (failureCode !== null && failureCode !== 'conflict'
@@ -65,6 +67,12 @@ function parseOutboxMessage(
     || !Number.isSafeInteger(item.protocolVersion)
     || Number(item.protocolVersion) <= 0
     || Number(item.protocolVersion) > 65_535
+    || (cryptoGenerationId !== null && (
+      typeof cryptoGenerationId !== 'string' || cryptoGenerationId.length > 64
+    ))
+    || (cryptoEpoch !== null && (
+      !Number.isSafeInteger(cryptoEpoch) || Number(cryptoEpoch) <= 0
+    ))
     || !Number.isSafeInteger(item.attemptCount)
     || Number(item.attemptCount) < 0
     || Number(item.attemptCount) > 1_000_000
@@ -82,6 +90,8 @@ function parseOutboxMessage(
       'ciphertextBase64',
       MAX_CIPHERTEXT_BASE64_LENGTH,
     ),
+    cryptoGenerationId,
+    cryptoEpoch: cryptoEpoch === null ? null : Number(cryptoEpoch),
     status,
     attemptCount: Number(item.attemptCount),
     createdAt: item.createdAt,
@@ -96,6 +106,12 @@ function parseOutboxMessage(
     || (parsed.status === 'failed') !== (parsed.failureCode !== null)
     || (parsed.status !== 'pending' && parsed.nextAttemptAt !== null)
     || !validBase64(parsed.ciphertextBase64)
+    || (parsed.protocolVersion === 2) !== (
+      parsed.cryptoGenerationId !== null && parsed.cryptoEpoch !== null
+    )
+    || (parsed.protocolVersion !== 2 && (
+      parsed.cryptoGenerationId !== null || parsed.cryptoEpoch !== null
+    ))
     || Date.parse(parsed.updatedAt) < Date.parse(parsed.createdAt)
     || (parsed.status !== 'pending' && parsed.attemptCount === 0)
   ) {

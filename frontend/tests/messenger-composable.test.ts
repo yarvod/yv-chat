@@ -50,7 +50,9 @@ const message = {
   conversationId: 'conversation-1',
   senderUserId: 'bob-id',
   senderDeviceId: 'device-1',
-  protocolVersion: 1,
+    protocolVersion: 1,
+    cryptoGenerationId: null,
+    cryptoEpoch: null,
   sequence: 1,
   createdAt: '2026-08-11T12:00:01Z',
   ciphertextBase64: 'aGVsbG8=',
@@ -203,6 +205,8 @@ beforeEach(() => {
       senderUserId: 'alice-id',
       senderDeviceId: 'device-alice',
       protocolVersion: 1,
+      cryptoGenerationId: null,
+      cryptoEpoch: null,
       sequence: 2,
       createdAt: '2026-08-11T12:00:03Z',
       expiresAt: '2026-09-10T12:00:03Z',
@@ -281,6 +285,8 @@ describe('messenger orchestration', () => {
         senderUserId: 'alice-id',
         senderDeviceId: 'device-alice',
         protocolVersion: 1,
+        cryptoGenerationId: null,
+        cryptoEpoch: null,
         sequence: 2,
         createdAt: '2026-08-11T12:00:03Z',
         expiresAt: '2026-09-10T12:00:03Z',
@@ -311,9 +317,11 @@ describe('messenger orchestration', () => {
 
     expect(gateway.sendMessage).toHaveBeenNthCalledWith(
       1, 'conversation-1', 'client-generated-id', 1, 'b2ZmbGluZSBib2R5',
+      null, null,
     )
     expect(gateway.sendMessage).toHaveBeenNthCalledWith(
       2, 'conversation-1', 'client-generated-id', 1, 'b2ZmbGluZSBib2R5',
+      null, null,
     )
     expect(restarted.outbox.state.messages).toEqual([])
     expect(restarted.state.messages.at(-1)).toMatchObject({
@@ -382,6 +390,7 @@ describe('messenger orchestration', () => {
     expect(await messenger.send('  hello  ')).toBe(true)
     await vi.waitFor(() => expect(gateway.sendMessage).toHaveBeenCalledWith(
       'conversation-1', 'client-generated-id', 1, 'aGVsbG8=',
+      null, null,
     ))
     expect(await messenger.deleteMessage('message-1')).toBe(true)
     expect(gateway.deleteMessage).toHaveBeenCalledWith('conversation-1', 'message-1')

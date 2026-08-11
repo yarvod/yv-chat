@@ -24,7 +24,7 @@ from messenger.bootstrap.settings import AppSettings
 class MessagingUseCaseProvider(Provider):
     @provide(scope=Scope.APP)
     def message_policy(self) -> MessageEnvelopePolicy:
-        return MessageEnvelopePolicy()
+        return MessageEnvelopePolicy(supported_protocol_versions=frozenset({2}))
 
     @provide(scope=Scope.APP)
     def sync_policy(self, settings: AppSettings) -> SyncPolicy:

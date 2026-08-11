@@ -87,6 +87,8 @@ describe('api boundary', () => {
       sender_user_id: 'user-1',
       sender_device_id: 'device-1',
       protocol_version: 1,
+      crypto_generation_id: null,
+      crypto_epoch: null,
       sequence: 7,
       created_at: '2026-08-11T12:00:01Z',
       expires_at: '2026-09-10T12:00:01Z',
@@ -97,7 +99,7 @@ describe('api boundary', () => {
     ))
 
     await expect(new HttpMessagingGateway(new ApiClient()).sendMessage(
-      'conversation-1', 'client-1', 1, 'Y2lwaGVydGV4dA==',
+      'conversation-1', 'client-1', 1, 'Y2lwaGVydGV4dA==', null, null,
     )).resolves.toMatchObject({ messageId: 'message-1', sequence: 7 })
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/v1/conversations/conversation-1/messages',
@@ -108,6 +110,8 @@ describe('api boundary', () => {
           client_message_id: 'client-1',
           protocol_version: 1,
           ciphertext_base64: 'Y2lwaGVydGV4dA==',
+          crypto_generation_id: null,
+          crypto_epoch: null,
         }),
       }),
     )
@@ -122,6 +126,8 @@ describe('api boundary', () => {
         sender_user_id: 'user-1',
         sender_device_id: 'device-1',
         protocol_version: 1,
+        crypto_generation_id: null,
+        crypto_epoch: null,
         sequence: 1,
         created_at: '2026-08-11T12:00:00Z',
         expires_at: '2026-09-10T12:00:00Z',

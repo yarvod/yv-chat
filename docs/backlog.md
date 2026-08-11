@@ -192,9 +192,12 @@ versioned package и isolated Worker runtime; `WP-040` — server one-time deliv
 
 Результат: direct/group сообщения шифруются выбранным протоколом на каждом авторизованном устройстве.
 
-- create/join group crypto state;
-- multi-device fan-out и membership change commits;
-- removal/revocation и key rotation;
+- [x] create/join group crypto state и sealed crash-safe checkpoint;
+- [x] initial multi-device fan-out и add/remove membership Commit в native/WASM;
+- [x] exact message binding к current READY generation/epoch и sender leaf;
+- [ ] ordered catch-up нескольких пропущенных Commit/Welcome generations;
+- [ ] same-device remove/re-add rejoin без epoch rollback;
+- [ ] proactive device revocation routing и key rotation acceptance;
 - protocol-version compatibility/error UX;
 - удаление synthetic shortcuts до объявления secure milestone готовым.
 

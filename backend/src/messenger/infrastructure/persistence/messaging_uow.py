@@ -4,6 +4,10 @@ from types import TracebackType
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from messenger.application.ports.conversation_crypto import (
+    ConversationCryptoGenerationRepository,
+    ConversationCryptoRequiredDeviceRepository,
+)
 from messenger.application.ports.conversations import ConversationRepository
 from messenger.application.ports.identity import DeviceRepository, UserRepository
 from messenger.application.ports.messages import (
@@ -14,6 +18,8 @@ from messenger.application.ports.messages import (
 )
 from messenger.application.ports.sync import SyncRepository
 from messenger.infrastructure.persistence.repositories import (
+    SqlAlchemyConversationCryptoGenerationRepository,
+    SqlAlchemyConversationCryptoRequiredDeviceRepository,
     SqlAlchemyConversationDeliveryStateRepository,
     SqlAlchemyConversationReadStateRepository,
     SqlAlchemyConversationRepository,
@@ -35,6 +41,8 @@ class SqlAlchemyMessagingUnitOfWork:
         self.users: UserRepository
         self.devices: DeviceRepository
         self.sync_events: SyncRepository
+        self.crypto_generations: ConversationCryptoGenerationRepository
+        self.crypto_required_devices: ConversationCryptoRequiredDeviceRepository
 
     async def __aenter__(self) -> "SqlAlchemyMessagingUnitOfWork":
         self._session = self._session_factory()
@@ -45,6 +53,10 @@ class SqlAlchemyMessagingUnitOfWork:
         self.users = SqlAlchemyUserRepository(self._session)
         self.devices = SqlAlchemyDeviceRepository(self._session)
         self.sync_events = SqlAlchemySyncRepository(self._session)
+        self.crypto_generations = SqlAlchemyConversationCryptoGenerationRepository(self._session)
+        self.crypto_required_devices = SqlAlchemyConversationCryptoRequiredDeviceRepository(
+            self._session
+        )
         return self
 
     async def __aexit__(

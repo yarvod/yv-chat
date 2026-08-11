@@ -1,7 +1,9 @@
 export type ConversationCryptoLocalPhase =
   | 'bootstrap-requested'
   | 'coordinator-checkpointed'
+  | 'coordinator-update-checkpointed'
   | 'joined'
+  | 'commit-applied'
   | 'ready'
 
 export interface ConversationCryptoLocalState {

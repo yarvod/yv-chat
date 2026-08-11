@@ -30,6 +30,8 @@ export interface OpaqueMessage {
   senderUserId: string
   senderDeviceId: string
   protocolVersion: number
+  cryptoGenerationId: string | null
+  cryptoEpoch: number | null
   sequence: number
   createdAt: string
   expiresAt: string
@@ -45,6 +47,8 @@ export interface SendMessageReceipt {
   senderUserId: string
   senderDeviceId: string
   protocolVersion: number
+  cryptoGenerationId: string | null
+  cryptoEpoch: number | null
   sequence: number
   createdAt: string
   expiresAt: string

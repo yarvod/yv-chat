@@ -91,10 +91,18 @@ function parseStatus(value: string): ConversationCryptoStatus {
 }
 
 function parseBlockReason(value: string | null): ConversationCryptoBlockReason | null {
-  if (value !== null && value !== 'missing_identity' && value !== 'missing_key_package') {
-    invalidResponse()
+  switch (value) {
+    case null:
+    case 'missing_identity':
+    case 'missing_key_package':
+    case 'membership_changed':
+    case 'device_roster_changed':
+    case 'coordinator_revoked':
+    case 'protocol_failure':
+      return value
+    default:
+      return invalidResponse()
   }
-  return value
 }
 
 export function parseConversationCryptoGeneration(value: unknown): ConversationCryptoGeneration {

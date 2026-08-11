@@ -60,6 +60,8 @@ const receipt = {
   senderUserId: 'user-1',
   senderDeviceId: 'device-1',
   protocolVersion: 1,
+  cryptoGenerationId: null,
+  cryptoEpoch: null,
   sequence: 7,
   createdAt: '2026-08-11T12:00:01Z',
   expiresAt: '2026-09-10T12:00:01Z',
@@ -77,6 +79,8 @@ describe('message outbox use cases', () => {
       conversationId: 'conversation-1',
       protocolVersion: 1,
       ciphertextBase64: 'Zmlyc3Q=',
+      cryptoGenerationId: null,
+      cryptoEpoch: null,
       status: 'pending',
       attemptCount: 1,
       createdAt: '2026-08-11T12:00:00Z',
@@ -90,6 +94,8 @@ describe('message outbox use cases', () => {
       conversationId: 'conversation-1',
       protocolVersion: 1,
       ciphertextBase64: 'c2Vjb25k',
+      cryptoGenerationId: null,
+      cryptoEpoch: null,
       status: 'pending',
       attemptCount: 0,
       createdAt: '2026-08-11T12:00:00.001Z',
@@ -103,6 +109,8 @@ describe('message outbox use cases', () => {
       conversationId: 'conversation-2',
       protocolVersion: 1,
       ciphertextBase64: 'b3RoZXI=',
+      cryptoGenerationId: null,
+      cryptoEpoch: null,
       status: 'pending',
       attemptCount: 0,
       createdAt: '2026-08-11T12:00:00.002Z',
@@ -147,6 +155,7 @@ describe('message outbox use cases', () => {
     )
     expect(send).toHaveBeenCalledWith(
       'conversation-2', 'client-other', 1, 'b3RoZXI=',
+      null, null,
     )
     expect([...entries.values()].some(item => item.clientMessageId === 'client-blocked')).toBe(true)
     expect([...entries.values()].some(item => item.clientMessageId === 'client-later')).toBe(true)
@@ -198,9 +207,11 @@ describe('message outbox use cases', () => {
     expect(second).toMatchObject({ kind: 'sent', receipt })
     expect(send).toHaveBeenNthCalledWith(
       1, 'conversation-1', 'client-fixed', 1, queued.ciphertextBase64,
+      null, null,
     )
     expect(send).toHaveBeenNthCalledWith(
       2, 'conversation-1', 'client-fixed', 1, queued.ciphertextBase64,
+      null, null,
     )
   })
 
@@ -214,6 +225,8 @@ describe('message outbox use cases', () => {
       conversationId: 'conversation-1',
       protocolVersion: 1,
       ciphertextBase64: 'Y2lwaGVydGV4dA==',
+      cryptoGenerationId: null,
+      cryptoEpoch: null,
       status: 'sending',
       attemptCount: 1,
       createdAt: '2026-08-11T12:00:00Z',
@@ -229,6 +242,7 @@ describe('message outbox use cases', () => {
     expect(result.message).toMatchObject({ status: 'pending', attemptCount: 2 })
     expect(send).toHaveBeenCalledWith(
       'conversation-1', 'client-fixed', 1, 'Y2lwaGVydGV4dA==',
+      null, null,
     )
   })
 
@@ -242,6 +256,8 @@ describe('message outbox use cases', () => {
       conversationId: 'conversation-1',
       protocolVersion: 1,
       ciphertextBase64: 'Y2lwaGVydGV4dA==',
+      cryptoGenerationId: null,
+      cryptoEpoch: null,
       status: 'pending',
       attemptCount: 0,
       createdAt: '2026-08-11T12:00:00Z',

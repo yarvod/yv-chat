@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from messenger.application.errors import (
     AuthorizationDeniedError,
+    ConversationCryptoNotReadyError,
     ConversationNotFoundError,
     InvalidMessageEnvelopeError,
     MessageIdempotencyConflictError,
@@ -47,6 +48,8 @@ class SendOpaqueMessageRequest(BaseModel):
     client_message_id: UUID
     protocol_version: int = Field(ge=1, le=32_767)
     ciphertext_base64: str = Field(min_length=1, max_length=87_384)
+    crypto_generation_id: UUID | None = None
+    crypto_epoch: int | None = Field(default=None, gt=0)
 
 
 class SendOpaqueMessageResponse(BaseModel):
@@ -56,6 +59,8 @@ class SendOpaqueMessageResponse(BaseModel):
     sender_user_id: UUID
     sender_device_id: UUID
     protocol_version: int
+    crypto_generation_id: UUID | None
+    crypto_epoch: int | None
     sequence: int
     created_at: datetime
     expires_at: datetime
@@ -101,6 +106,8 @@ def serialize_message(message: Message) -> OpaqueMessageResponse:
         sender_user_id=message.sender_user_id,
         sender_device_id=message.sender_device_id,
         protocol_version=message.protocol_version,
+        crypto_generation_id=message.crypto_generation_id,
+        crypto_epoch=message.crypto_epoch,
         sequence=message.sequence,
         created_at=message.created_at,
         expires_at=message.expires_at,
@@ -135,6 +142,8 @@ async def send_opaque_message(
                 client_message_id=payload.client_message_id,
                 protocol_version=payload.protocol_version,
                 ciphertext=decode_ciphertext(payload.ciphertext_base64),
+                crypto_generation_id=payload.crypto_generation_id,
+                crypto_epoch=payload.crypto_epoch,
             )
         )
     except ConversationNotFoundError as error:
@@ -153,6 +162,11 @@ async def send_opaque_message(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="client message id conflict",
+        ) from error
+    except ConversationCryptoNotReadyError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="conversation encryption is not ready",
         ) from error
     return SendOpaqueMessageResponse.model_validate(result, from_attributes=True)
 

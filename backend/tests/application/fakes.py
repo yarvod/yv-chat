@@ -57,6 +57,7 @@ from messenger.domain.entities import (
     Conversation,
     ConversationCryptoGeneration,
     ConversationCryptoRequiredDevice,
+    ConversationCryptoStatus,
     ConversationCryptoWelcome,
     ConversationDeliveryState,
     ConversationReadState,
@@ -736,6 +737,18 @@ class FakeConversationCryptoGenerationRepository:
         del for_update
         return self._state.conversation_crypto_generations.get(generation_id)
 
+    async def get_latest_ready(
+        self,
+        conversation_id: UUID,
+    ) -> ConversationCryptoGeneration | None:
+        matching = [
+            item
+            for item in self._state.conversation_crypto_generations.values()
+            if item.conversation_id == conversation_id
+            and item.status is ConversationCryptoStatus.READY
+        ]
+        return max(matching, key=lambda item: item.generation_number, default=None)
+
     async def get_by_bootstrap_request(
         self,
         *,
@@ -1195,6 +1208,12 @@ class FakeMessagingUnitOfWork:
         self.users: UserRepository = FakeUserRepository(state)
         self.devices: DeviceRepository = FakeDeviceRepository(state)
         self.sync_events: SyncRepository = FakeSyncRepository(state)
+        self.crypto_generations: ConversationCryptoGenerationRepository = (
+            FakeConversationCryptoGenerationRepository(state)
+        )
+        self.crypto_required_devices: ConversationCryptoRequiredDeviceRepository = (
+            FakeConversationCryptoRequiredDeviceRepository(state)
+        )
 
     async def __aenter__(self) -> Self:
         return self

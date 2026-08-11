@@ -1,6 +1,7 @@
 import { MessageProtectionError } from '../../application/messaging/message-protection'
 import type {
   MessageProtocolAdapter,
+  ProtectedProtocolText,
   ProtectTextInput,
   UnprotectTextInput,
 } from '../../application/ports/message-protocol-adapter'
@@ -11,7 +12,7 @@ export class UnavailableMlsMessageProtocol implements MessageProtocolAdapter {
   readonly secure = true
   readonly label = 'MLS E2EE недоступно на этом устройстве'
 
-  async protectText(_input: ProtectTextInput): Promise<string> {
+  async protectText(_input: ProtectTextInput): Promise<ProtectedProtocolText> {
     throw new MessageProtectionError('provider-unavailable')
   }
 

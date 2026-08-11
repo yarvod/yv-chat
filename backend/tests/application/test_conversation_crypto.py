@@ -45,6 +45,7 @@ BOB_ID = UUID("22222222-2222-4222-8222-222222222222")
 ALICE_PHONE_ID = UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1")
 ALICE_LAPTOP_ID = UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2")
 BOB_PHONE_ID = UUID("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1")
+BOB_LAPTOP_ID = UUID("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2")
 CONVERSATION_ID = UUID("cccccccc-cccc-4ccc-8ccc-cccccccccccc")
 BOOTSTRAP_REQUEST_ID = UUID("dddddddd-dddd-4ddd-8ddd-dddddddddddd")
 
@@ -223,3 +224,87 @@ async def test_finalize_routes_exact_welcomes_and_device_ack_is_idempotent() -> 
                 ),
             )
         )
+
+
+async def test_ready_roster_drift_creates_incremental_generation_and_only_claims_new_leaf() -> None:
+    state = bootstrap_state()
+    factory = FakeConversationCryptoUnitOfWorkFactory(state)
+    first = (
+        await BeginConversationCrypto(unit_of_work=factory, clock=FixedClock(NOW)).execute(
+            begin_command()
+        )
+    ).generation
+    await FinalizeConversationCrypto(
+        unit_of_work=factory,
+        clock=FixedClock(NOW + timedelta(seconds=1)),
+    ).execute(
+        FinalizeConversationCryptoCommand(
+            user_id=ALICE_ID,
+            device_id=ALICE_PHONE_ID,
+            conversation_id=CONVERSATION_ID,
+            generation_id=first.id,
+            epoch=1,
+            commit_message=b"initial-commit",
+            ratchet_tree=b"initial-tree",
+            welcomes=(
+                DeviceWelcomeInput(ALICE_LAPTOP_ID, b"welcome-alice-laptop"),
+                DeviceWelcomeInput(BOB_PHONE_ID, b"welcome-bob-phone"),
+            ),
+        )
+    )
+    bob_laptop = Device.create(
+        user_id=BOB_ID,
+        name="Bob laptop",
+        now=NOW + timedelta(seconds=2),
+        device_id=BOB_LAPTOP_ID,
+    )
+    state.devices[BOB_LAPTOP_ID] = bob_laptop
+    state.device_crypto_identities[BOB_LAPTOP_ID] = crypto_identity(
+        BOB_ID,
+        BOB_LAPTOP_ID,
+        9,
+    )
+    new_package = DeviceKeyPackage.create(
+        user_id=BOB_ID,
+        device_id=BOB_LAPTOP_ID,
+        key_package=b"public-package-bob-laptop",
+        now=NOW + timedelta(seconds=2),
+    )
+    state.device_key_packages[new_package.id] = new_package
+
+    second = await BeginConversationCrypto(
+        unit_of_work=factory,
+        clock=FixedClock(NOW + timedelta(seconds=3)),
+    ).execute(
+        replace(
+            begin_command(),
+            bootstrap_request_id=UUID("eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"),
+        )
+    )
+
+    assert second.generation.generation_number == 2
+    assert second.generation.coordinator_device_id == ALICE_PHONE_ID
+    assert second.generation.status is ConversationCryptoStatus.PENDING
+    by_device = {item.device_id: item for item in second.required_devices}
+    assert by_device[BOB_LAPTOP_ID].key_package is not None
+    assert by_device[ALICE_LAPTOP_ID].key_package is None
+    assert by_device[BOB_PHONE_ID].key_package is None
+    assert state.conversation_crypto_generations[first.id].is_current is False
+
+    ready = await FinalizeConversationCrypto(
+        unit_of_work=factory,
+        clock=FixedClock(NOW + timedelta(seconds=4)),
+    ).execute(
+        FinalizeConversationCryptoCommand(
+            user_id=ALICE_ID,
+            device_id=ALICE_PHONE_ID,
+            conversation_id=CONVERSATION_ID,
+            generation_id=second.generation.id,
+            epoch=2,
+            commit_message=b"incremental-commit",
+            ratchet_tree=b"incremental-tree",
+            welcomes=(DeviceWelcomeInput(BOB_LAPTOP_ID, b"welcome-bob-laptop"),),
+        )
+    )
+    assert ready.generation.status is ConversationCryptoStatus.READY
+    assert (second.generation.id, BOB_LAPTOP_ID) in state.conversation_crypto_welcomes

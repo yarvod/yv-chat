@@ -9,6 +9,8 @@ export interface OutboxMessage {
   conversationId: string
   protocolVersion: number
   ciphertextBase64: string
+  cryptoGenerationId: string | null
+  cryptoEpoch: number | null
   status: OutboxMessageStatus
   attemptCount: number
   createdAt: string

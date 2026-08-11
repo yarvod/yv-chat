@@ -32,6 +32,8 @@ class Message:
     ciphertext_digest: str
     created_at: datetime
     expires_at: datetime
+    crypto_generation_id: UUID | None = None
+    crypto_epoch: int | None = None
     deletion_reason: MessageDeletionReason | None = None
     deleted_at: datetime | None = None
     deleted_by_user_id: UUID | None = None
@@ -40,6 +42,15 @@ class Message:
     def __post_init__(self) -> None:
         if self.protocol_version <= 0:
             raise DomainValidationError("protocol_version must be positive")
+        if self.protocol_version == 2:
+            if (
+                self.crypto_generation_id is None
+                or self.crypto_epoch is None
+                or self.crypto_epoch <= 0
+            ):
+                raise DomainValidationError("MLS message requires generation and positive epoch")
+        elif self.crypto_generation_id is not None or self.crypto_epoch is not None:
+            raise DomainValidationError("non-MLS message cannot bind an MLS generation")
         if self.sequence <= 0:
             raise DomainValidationError("sequence must be positive")
         if (
@@ -100,6 +111,8 @@ class Message:
         ciphertext: bytes,
         now: datetime,
         retention: timedelta,
+        crypto_generation_id: UUID | None = None,
+        crypto_epoch: int | None = None,
         message_id: UUID | None = None,
     ) -> "Message":
         timestamp = require_aware_datetime(now, "now")
@@ -117,6 +130,8 @@ class Message:
             ciphertext_digest=digest_ciphertext(ciphertext),
             created_at=timestamp,
             expires_at=timestamp + retention,
+            crypto_generation_id=crypto_generation_id,
+            crypto_epoch=crypto_epoch,
         )
 
     @property

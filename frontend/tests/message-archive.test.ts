@@ -24,6 +24,8 @@ function message(sequence: number): OpaqueMessage {
     createdAt: `2026-08-11T12:00:${String(sequence % 60).padStart(2, '0')}Z`,
     expiresAt: '2026-09-10T12:00:00Z',
     ciphertextBase64: btoa(`private message ${sequence}`),
+    cryptoGenerationId: null,
+    cryptoEpoch: null,
     deletionReason: null,
     deletedAt: null,
   }

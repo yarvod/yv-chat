@@ -102,6 +102,8 @@ export class HttpMessagingGateway implements MessagingGateway {
     clientMessageId: string,
     protocolVersion: number,
     ciphertextBase64: string,
+    cryptoGenerationId: string | null,
+    cryptoEpoch: number | null,
   ): Promise<SendMessageReceipt> {
     return parseSendMessageReceipt(await this.apiClient.request(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`, {
       method: 'POST',
@@ -109,6 +111,8 @@ export class HttpMessagingGateway implements MessagingGateway {
         client_message_id: clientMessageId,
         protocol_version: protocolVersion,
         ciphertext_base64: ciphertextBase64,
+        crypto_generation_id: cryptoGenerationId,
+        crypto_epoch: cryptoEpoch,
       },
     }))
   }

@@ -1,6 +1,7 @@
 import { MessageProtectionError } from '../../application/messaging/message-protection'
 import type {
   MessageProtocolAdapter,
+  ProtectedProtocolText,
   ProtectTextInput,
   UnprotectTextInput,
 } from '../../application/ports/message-protocol-adapter'
@@ -30,8 +31,12 @@ export class SyntheticMessageProtocol implements MessageProtocolAdapter {
   readonly secure = false
   readonly label = 'Тестовый режим: сообщения не защищены E2EE'
 
-  async protectText(input: ProtectTextInput): Promise<string> {
-    return bytesToBase64(new TextEncoder().encode(input.plaintext))
+  async protectText(input: ProtectTextInput): Promise<ProtectedProtocolText> {
+    return {
+      ciphertextBase64: bytesToBase64(new TextEncoder().encode(input.plaintext)),
+      cryptoGenerationId: null,
+      cryptoEpoch: null,
+    }
   }
 
   async unprotectText(input: UnprotectTextInput): Promise<string> {

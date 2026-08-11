@@ -101,6 +101,21 @@ class SqlAlchemyConversationCryptoGenerationRepository:
         model = await self._session.scalar(statement)
         return _map_generation(model) if model is not None else None
 
+    async def get_latest_ready(
+        self,
+        conversation_id: UUID,
+    ) -> ConversationCryptoGeneration | None:
+        model = await self._session.scalar(
+            select(ConversationCryptoGenerationModel)
+            .where(
+                ConversationCryptoGenerationModel.conversation_id == conversation_id,
+                ConversationCryptoGenerationModel.status == ConversationCryptoStatus.READY.value,
+            )
+            .order_by(ConversationCryptoGenerationModel.generation_number.desc())
+            .limit(1)
+        )
+        return _map_generation(model) if model is not None else None
+
     async def get_by_bootstrap_request(
         self,
         *,

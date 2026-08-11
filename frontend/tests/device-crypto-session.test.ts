@@ -66,10 +66,10 @@ describe('shared authenticated device crypto session', () => {
       replenish: vi.fn(),
       claim: vi.fn(),
     }
-    const getCurrent = vi.fn(async () => readyGeneration())
+    const begin = vi.fn(async () => readyGeneration())
     const conversations: ConversationCryptoGateway = {
-      getCurrent,
-      begin: vi.fn(),
+      getCurrent: vi.fn(async () => readyGeneration()),
+      begin,
       finalize: vi.fn(),
       acknowledgeWelcome: vi.fn(async () => undefined),
     }
@@ -82,6 +82,8 @@ describe('shared authenticated device crypto session', () => {
       generateKeyPackages: vi.fn(),
       bootstrapConversation: vi.fn(),
       joinConversation,
+      updateConversation: vi.fn(),
+      applyCommit: vi.fn(),
       protectMessage: vi.fn(),
       unprotectMessage: vi.fn(),
       dispose: vi.fn(async () => undefined),
@@ -102,14 +104,14 @@ describe('shared authenticated device crypto session', () => {
       () => session.reconcileConversation(conversationId),
     ))
     expect(results.every(result => result.status === 'ready')).toBe(true)
-    expect(getCurrent).toHaveBeenCalledTimes(1)
+    expect(begin).toHaveBeenCalledTimes(1)
     expect(joinConversation).toHaveBeenCalledTimes(1)
 
     await session.reconcileConversation(conversationId)
-    expect(getCurrent).toHaveBeenCalledTimes(1)
+    expect(begin).toHaveBeenCalledTimes(1)
     session.invalidateConversation(conversationId)
     await session.reconcileConversation(conversationId)
-    expect(getCurrent).toHaveBeenCalledTimes(2)
+    expect(begin).toHaveBeenCalledTimes(2)
     expect(joinConversation).toHaveBeenCalledTimes(1)
     await session.dispose()
   })

@@ -81,12 +81,14 @@ export default defineNuxtConfig({
     },
     workbox: {
       navigateFallback: '/',
+      maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
       globPatterns: ['**/*.{css,html,ico,js,png,svg,wasm,webmanifest}'],
       globIgnores: [
         'splash/**/*.png',
         'crypto/v1/**/*',
         'crypto/v2/**/*',
         'crypto/v3/**/*',
+        'crypto/v4/**/*',
       ],
     },
   },

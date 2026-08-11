@@ -3,6 +3,7 @@ import {
 } from '../../application/messaging/message-protection'
 import type {
   MessageProtocolAdapter,
+  ProtectedProtocolText,
   ProtectTextInput,
   UnprotectTextInput,
 } from '../../application/ports/message-protocol-adapter'
@@ -50,15 +51,22 @@ export class MlsMessageProtocol implements MessageProtocolAdapter {
 
   constructor(private readonly session: MlsMessageSession) {}
 
-  async protectText(input: ProtectTextInput): Promise<string> {
-    await this.requireReady(input.conversationId)
+  async protectText(input: ProtectTextInput): Promise<ProtectedProtocolText> {
+    const generation = await this.requireReady(input.conversationId)
     try {
       const result = await this.session.protectMessage({
         conversationId: input.conversationId,
         clientMessageId: input.clientMessageId,
         plaintext: new TextEncoder().encode(input.plaintext),
       })
-      return encodeBase64(result.ciphertext)
+      if (result.epoch !== generation.epoch || generation.epoch === null) {
+        throw new MessageProtectionError('provider-unavailable')
+      }
+      return {
+        ciphertextBase64: encodeBase64(result.ciphertext),
+        cryptoGenerationId: generation.generationId,
+        cryptoEpoch: result.epoch,
+      }
     } catch {
       throw new MessageProtectionError('provider-unavailable')
     }
@@ -79,10 +87,15 @@ export class MlsMessageProtocol implements MessageProtocolAdapter {
     }
   }
 
-  private async requireReady(conversationId: string): Promise<void> {
+  private async requireReady(
+    conversationId: string,
+  ): Promise<ReconcileConversationCryptoResult> {
     try {
       const state = await this.session.reconcileConversation(conversationId)
-      if (state.status !== 'ready') throw new Error('generation is not ready')
+      if (state.status !== 'ready' || state.epoch === null) {
+        throw new Error('generation is not ready')
+      }
+      return state
     } catch {
       throw new MessageProtectionError('provider-unavailable')
     }

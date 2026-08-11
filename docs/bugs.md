@@ -4,6 +4,33 @@
 
 ## Active
 
+### BUG-044 — Текущий OpenMLS WASM не помещался в стандартный Workbox precache limit
+
+- Статус: `fixed`, ожидает installed-PWA acceptance.
+- Найдено в: `WP-047`, production Nuxt build immutable `/crypto/v5/`.
+- Severity: `high`; build завершался ошибкой, а исключение WASM из app shell снова
+  сделало бы crypto runtime зависимым от сети после установки/перезапуска PWA.
+- Причина: release WASM вырос до 2.16 MiB после membership operations, а Workbox по
+  умолчанию принимает в precache не более 2 MiB.
+- Исправление: локальный явный limit поднят до 3 MiB; rolling v1–v4 исключены, а
+  только binding-compatible v5 JS/WASM входит в текущий service worker precache.
+- Проверка: production build содержит 51 precache entry и Makefile проверяет exact
+  v5 WASM path в `sw.js`.
+
+### BUG-043 — Старый MLS outbox мог пережить rotation без точной server binding
+
+- Статус: `fixed`, ожидает multi-device browser acceptance.
+- Найдено в: `WP-047`, аудит group mutation и offline retry.
+- Severity: `critical`; шифротекст, созданный до смены roster, мог быть повторно
+  отправлен после готовности новой generation, если server проверял лишь `READY`.
+- Исправление: protocol v2 требует immutable `crypto_generation_id + crypto_epoch`
+  во frontend outbox/API/domain/PostgreSQL. Backend сравнивает их с current READY
+  generation и sender leaf; response scope тоже обязан вернуть exact binding.
+- Идемпотентность: exact retry уже принятого envelope возвращает прежний receipt
+  после rotation, но новый client message со старой binding отклоняется.
+- Проверка: backend negative tests покрывают missing/stale/substituted binding и
+  retry после supersede; frontend tests покрывают persistence и exact gateway args.
+
 ### BUG-042 — Параллельная подготовка истории могла повторно bootstrap-ить MLS group
 
 - Статус: `fixed`, ожидает browser acceptance.

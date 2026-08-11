@@ -11,6 +11,7 @@ import type {
 import type {
   BootstrapMlsConversationCommand,
   BootstrapMlsConversationResult,
+  ApplyMlsCommitCommand,
   JoinMlsConversationCommand,
   MlsConversationGateway,
   MlsConversationStateResult,
@@ -18,6 +19,8 @@ import type {
   ProtectMlsMessageResult,
   UnprotectMlsMessageCommand,
   UnprotectMlsMessageResult,
+  UpdateMlsConversationCommand,
+  UpdateMlsConversationResult,
 } from '../../application/ports/mls-conversation-gateway'
 import {
   mlsRequestEnvelope,
@@ -109,13 +112,35 @@ export class CryptoWorkerClient implements DeviceCryptoGateway, MlsConversationG
       command,
     ))
     if (!('commit' in result)) throw new DeviceCryptoError('worker-protocol')
-    return result
+    const welcome = result.welcome
+    if (welcome === null) {
+      throw new DeviceCryptoError('worker-protocol')
+    }
+    return { ...result, welcome }
   }
 
   async joinConversation(
     command: JoinMlsConversationCommand,
   ): Promise<MlsConversationStateResult> {
     const result = await this.send(mlsRequestEnvelope(this.requestId(), 'mls-join', command))
+    if (!isConversationState(result)) throw new DeviceCryptoError('worker-protocol')
+    return result
+  }
+
+  async updateConversation(
+    command: UpdateMlsConversationCommand,
+  ): Promise<UpdateMlsConversationResult> {
+    const result = await this.send(mlsRequestEnvelope(this.requestId(), 'mls-update', command))
+    if (!('commit' in result)) throw new DeviceCryptoError('worker-protocol')
+    return result
+  }
+
+  async applyCommit(command: ApplyMlsCommitCommand): Promise<MlsConversationStateResult> {
+    const result = await this.send(mlsRequestEnvelope(
+      this.requestId(),
+      'mls-apply-commit',
+      command,
+    ))
     if (!isConversationState(result)) throw new DeviceCryptoError('worker-protocol')
     return result
   }

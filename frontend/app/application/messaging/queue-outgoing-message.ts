@@ -44,6 +44,8 @@ export class QueueOutgoingMessage {
       conversationId: command.conversationId,
       protocolVersion: protectedMessage.protocolVersion,
       ciphertextBase64: protectedMessage.ciphertextBase64,
+      cryptoGenerationId: protectedMessage.cryptoGenerationId,
+      cryptoEpoch: protectedMessage.cryptoEpoch,
       status: 'pending',
       attemptCount: 0,
       createdAt: now,

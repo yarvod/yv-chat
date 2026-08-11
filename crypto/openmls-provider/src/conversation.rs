@@ -4,6 +4,8 @@
 //! secrets, sender ratchets and application plaintext remain in this crate and
 //! are persisted only as part of the sealed provider snapshot.
 
+use std::collections::{HashMap, HashSet};
+
 use openmls::{
     key_packages::{KeyPackage, KeyPackageIn},
     prelude::{
@@ -17,7 +19,7 @@ use thiserror::Error;
 use tls_codec::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{DeviceBootstrap, CIPHERSUITE};
+use crate::{DeviceBootstrap, CIPHERSUITE, CREDENTIAL_IDENTITY_LENGTH, CREDENTIAL_SCHEMA_VERSION};
 
 const APPLICATION_AAD_LABEL: &[u8] = b"yv-chat-mls-v2\0";
 const MAX_WIRE_BYTES: usize = 1024 * 1024;
@@ -56,6 +58,14 @@ pub enum ConversationError {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct AddMembersOutput {
+    pub commit: Vec<u8>,
+    pub welcome: Vec<u8>,
+    pub ratchet_tree: Vec<u8>,
+    pub epoch: u64,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct UpdateMembersOutput {
     pub commit: Vec<u8>,
     pub welcome: Vec<u8>,
     pub ratchet_tree: Vec<u8>,
@@ -126,6 +136,133 @@ impl DeviceBootstrap {
             ratchet_tree,
             epoch: group.epoch().as_u64(),
         })
+    }
+
+    /// Advance an existing group to exactly the requested device roster.
+    pub fn update_members_and_merge(
+        &mut self,
+        conversation_id: &str,
+        desired_device_ids: &[String],
+        serialized_key_packages: &[Vec<u8>],
+    ) -> Result<UpdateMembersOutput, ConversationError> {
+        let desired = parse_desired_device_ids(desired_device_ids)?;
+        let own_device_id = credential_device_id(self.credential.credential.serialized_content())?;
+        if !desired.contains(&own_device_id) {
+            return Err(ConversationError::MembershipUpdateFailed);
+        }
+        let mut group = self.load_group(conversation_id)?;
+        let members = group.members().collect::<Vec<_>>();
+        let current = members
+            .iter()
+            .map(|member| {
+                credential_device_id(member.credential.serialized_content())
+                    .map(|device_id| (device_id, member.index))
+            })
+            .collect::<Result<HashMap<_, _>, _>>()?;
+        if current.len() != members.len() {
+            return Err(ConversationError::MembershipUpdateFailed);
+        }
+        let current_ids = current.keys().copied().collect::<HashSet<_>>();
+        let added = desired
+            .difference(&current_ids)
+            .copied()
+            .collect::<HashSet<_>>();
+        let removed = current_ids
+            .difference(&desired)
+            .copied()
+            .collect::<HashSet<_>>();
+        if added.is_empty() && removed.is_empty() {
+            return Err(ConversationError::MembershipUpdateFailed);
+        }
+
+        let mut packages = serialized_key_packages
+            .iter()
+            .map(|serialized| {
+                let package = parse_key_package(&self._provider, serialized)?;
+                let device_id =
+                    credential_device_id(package.leaf_node().credential().serialized_content())?;
+                Ok((device_id, package))
+            })
+            .collect::<Result<Vec<_>, ConversationError>>()?;
+        packages.sort_by_key(|(device_id, _)| *device_id);
+        let package_devices = packages
+            .iter()
+            .map(|(device_id, _)| *device_id)
+            .collect::<HashSet<_>>();
+        if packages.len() != package_devices.len() || package_devices != added {
+            return Err(ConversationError::InvalidKeyPackage);
+        }
+
+        let mut removals = removed
+            .iter()
+            .map(|device_id| (*device_id, current[device_id]))
+            .collect::<Vec<_>>();
+        removals.sort_by_key(|(device_id, _)| *device_id);
+        for (_, index) in removals {
+            group
+                .propose_remove_member_by_value(&self._provider, &self.signer, index)
+                .map_err(|_| ConversationError::MembershipUpdateFailed)?;
+        }
+        for (_, package) in packages {
+            group
+                .propose_add_member_by_value(&self._provider, &self.signer, package)
+                .map_err(|_| ConversationError::MembershipUpdateFailed)?;
+        }
+        let (commit, welcome, _) = group
+            .commit_to_pending_proposals(&self._provider, &self.signer)
+            .map_err(|_| ConversationError::MembershipUpdateFailed)?;
+        let commit = commit
+            .tls_serialize_detached()
+            .map_err(|_| ConversationError::SerializationFailed)?;
+        let welcome = welcome
+            .map(|message| message.tls_serialize_detached())
+            .transpose()
+            .map_err(|_| ConversationError::SerializationFailed)?
+            .unwrap_or_default();
+        group
+            .merge_pending_commit(&self._provider)
+            .map_err(|_| ConversationError::MembershipUpdateFailed)?;
+        ensure_group_roster(&group, &desired)?;
+        let ratchet_tree = group
+            .export_ratchet_tree()
+            .tls_serialize_detached()
+            .map_err(|_| ConversationError::SerializationFailed)?;
+        Ok(UpdateMembersOutput {
+            commit,
+            welcome,
+            ratchet_tree,
+            epoch: group.epoch().as_u64(),
+        })
+    }
+
+    /// Authenticate, apply, and verify a coordinator Commit on an existing leaf.
+    pub fn apply_commit_and_merge(
+        &mut self,
+        conversation_id: &str,
+        serialized_commit: &[u8],
+        desired_device_ids: &[String],
+    ) -> Result<u64, ConversationError> {
+        let desired = parse_desired_device_ids(desired_device_ids)?;
+        let own_device_id = credential_device_id(self.credential.credential.serialized_content())?;
+        if !desired.contains(&own_device_id) {
+            return Err(ConversationError::MembershipUpdateFailed);
+        }
+        let mut group = self.load_group(conversation_id)?;
+        let message = parse_message(serialized_commit, ConversationError::MembershipUpdateFailed)?
+            .try_into_protocol_message()
+            .map_err(|_| ConversationError::MembershipUpdateFailed)?;
+        let processed = group
+            .process_message(&self._provider, message)
+            .map_err(|_| ConversationError::MembershipUpdateFailed)?;
+        let staged = match processed.into_content() {
+            ProcessedMessageContent::StagedCommitMessage(staged) => staged,
+            _ => return Err(ConversationError::MembershipUpdateFailed),
+        };
+        group
+            .merge_staged_commit(&self._provider, *staged)
+            .map_err(|_| ConversationError::MembershipUpdateFailed)?;
+        ensure_group_roster(&group, &desired)?;
+        Ok(group.epoch().as_u64())
     }
 
     pub fn join_conversation(
@@ -216,6 +353,38 @@ impl DeviceBootstrap {
     }
 }
 
+fn parse_desired_device_ids(values: &[String]) -> Result<HashSet<Uuid>, ConversationError> {
+    if values.is_empty() || values.len() > MAX_ADD_MEMBERS + 1 {
+        return Err(ConversationError::MembershipUpdateFailed);
+    }
+    let desired = values
+        .iter()
+        .map(|value| canonical_uuid(value, ConversationError::MembershipUpdateFailed))
+        .collect::<Result<HashSet<_>, _>>()?;
+    if desired.len() != values.len() {
+        return Err(ConversationError::MembershipUpdateFailed);
+    }
+    Ok(desired)
+}
+
+fn credential_device_id(identity: &[u8]) -> Result<Uuid, ConversationError> {
+    if identity.len() != CREDENTIAL_IDENTITY_LENGTH || identity[0] != CREDENTIAL_SCHEMA_VERSION {
+        return Err(ConversationError::MembershipUpdateFailed);
+    }
+    Uuid::from_slice(&identity[17..33]).map_err(|_| ConversationError::MembershipUpdateFailed)
+}
+
+fn ensure_group_roster(group: &MlsGroup, desired: &HashSet<Uuid>) -> Result<(), ConversationError> {
+    let actual = group
+        .members()
+        .map(|member| credential_device_id(member.credential.serialized_content()))
+        .collect::<Result<HashSet<_>, _>>()?;
+    if actual != *desired {
+        return Err(ConversationError::MembershipUpdateFailed);
+    }
+    Ok(())
+}
+
 fn canonical_uuid(value: &str, error: ConversationError) -> Result<Uuid, ConversationError> {
     let parsed = Uuid::parse_str(value).map_err(|_| error)?;
     if parsed.hyphenated().to_string() != value {
@@ -296,6 +465,8 @@ mod tests {
     const ALICE_DEVICE: &str = "50d6b08a-84ae-4bd7-829a-f40f38e9a2c1";
     const BOB_USER: &str = "abfef0af-10d0-4655-b4c7-84b3b418e4b7";
     const BOB_DEVICE: &str = "d44483ee-2c69-4eef-aeba-5ce92bc9181d";
+    const CHARLIE_USER: &str = "f26cf4db-07c7-41c5-9925-01da4a7f7b22";
+    const CHARLIE_DEVICE: &str = "47782869-4399-4534-9202-ae53bed6a0fa";
     const CONVERSATION: &str = "f6a5941b-c417-4e50-a69c-9a30bd7ed28c";
     const MESSAGE_ONE: &str = "538998bb-1943-4cf3-beb1-8b87cadf0fc1";
     const MESSAGE_TWO: &str = "784ace60-fba9-445d-b1e4-df34d56ad053";
@@ -415,6 +586,67 @@ mod tests {
         assert_eq!(
             bob.join_conversation(MESSAGE_ONE, &added.welcome, &added.ratchet_tree),
             Err(ConversationError::InvalidWelcome),
+        );
+    }
+
+    #[test]
+    fn roster_commit_adds_and_removes_leaves_without_recreating_the_group() {
+        let (mut alice, mut bob) = joined_pair();
+        let mut charlie = DeviceBootstrap::generate(CHARLIE_USER, CHARLIE_DEVICE).unwrap();
+        let with_charlie = vec![
+            ALICE_DEVICE.to_owned(),
+            BOB_DEVICE.to_owned(),
+            CHARLIE_DEVICE.to_owned(),
+        ];
+        let added = alice
+            .update_members_and_merge(
+                CONVERSATION,
+                &with_charlie,
+                &[charlie.key_package().to_vec()],
+            )
+            .unwrap();
+        assert_eq!(added.epoch, 2);
+        assert!(!added.welcome.is_empty());
+        assert_eq!(
+            bob.apply_commit_and_merge(CONVERSATION, &added.commit, &with_charlie)
+                .unwrap(),
+            2,
+        );
+        assert_eq!(
+            charlie
+                .join_conversation(CONVERSATION, &added.welcome, &added.ratchet_tree)
+                .unwrap(),
+            2,
+        );
+        assert_eq!(
+            bob.apply_commit_and_merge(CONVERSATION, &added.commit, &with_charlie),
+            Err(ConversationError::MembershipUpdateFailed),
+        );
+
+        let without_bob = vec![ALICE_DEVICE.to_owned(), CHARLIE_DEVICE.to_owned()];
+        let removed = alice
+            .update_members_and_merge(CONVERSATION, &without_bob, &[])
+            .unwrap();
+        assert_eq!(removed.epoch, 3);
+        assert!(removed.welcome.is_empty());
+        assert_eq!(
+            charlie
+                .apply_commit_and_merge(CONVERSATION, &removed.commit, &without_bob)
+                .unwrap(),
+            3,
+        );
+        let future = alice
+            .protect_application_message(CONVERSATION, MESSAGE_TWO, b"future epoch")
+            .unwrap();
+        assert_eq!(
+            charlie
+                .unprotect_application_message(CONVERSATION, MESSAGE_TWO, &future.ciphertext)
+                .unwrap(),
+            b"future epoch",
+        );
+        assert_eq!(
+            bob.unprotect_application_message(CONVERSATION, MESSAGE_TWO, &future.ciphertext),
+            Err(ConversationError::InvalidApplicationMessage),
         );
     }
 }

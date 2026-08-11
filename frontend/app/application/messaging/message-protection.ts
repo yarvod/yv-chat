@@ -19,6 +19,8 @@ export class MessageProtectionError extends Error {
 export interface ProtectedText {
   protocolVersion: number
   ciphertextBase64: string
+  cryptoGenerationId: string | null
+  cryptoEpoch: number | null
 }
 
 export interface UnprotectedText {
@@ -54,9 +56,10 @@ export class ProtocolMessageProtection {
   }
 
   async protectText(input: ProtectTextInput): Promise<ProtectedText> {
+    const protectedText = await this.outgoingAdapter.protectText(input)
     return {
       protocolVersion: this.outgoingAdapter.protocolVersion,
-      ciphertextBase64: await this.outgoingAdapter.protectText(input),
+      ...protectedText,
     }
   }
 

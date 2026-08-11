@@ -3,12 +3,15 @@
 import type {
   BootstrapMlsConversationCommand,
   BootstrapMlsConversationResult,
+  ApplyMlsCommitCommand,
   JoinMlsConversationCommand,
   MlsConversationStateResult,
   ProtectMlsMessageCommand,
   ProtectMlsMessageResult,
   UnprotectMlsMessageCommand,
   UnprotectMlsMessageResult,
+  UpdateMlsConversationCommand,
+  UpdateMlsConversationResult,
 } from '../../application/ports/mls-conversation-gateway'
 
 const PROTOCOL_VERSION = 2
@@ -25,6 +28,8 @@ interface WorkerRequestBase {
 export type MlsWorkerRequest =
   | (WorkerRequestBase & { type: 'mls-bootstrap', command: BootstrapMlsConversationCommand })
   | (WorkerRequestBase & { type: 'mls-join', command: JoinMlsConversationCommand })
+  | (WorkerRequestBase & { type: 'mls-update', command: UpdateMlsConversationCommand })
+  | (WorkerRequestBase & { type: 'mls-apply-commit', command: ApplyMlsCommitCommand })
   | (WorkerRequestBase & { type: 'mls-protect', command: ProtectMlsMessageCommand })
   | (WorkerRequestBase & { type: 'mls-unprotect', command: UnprotectMlsMessageCommand })
 
@@ -33,6 +38,7 @@ export type MlsWorkerResult =
   | MlsConversationStateResult
   | ProtectMlsMessageResult
   | UnprotectMlsMessageResult
+  | UpdateMlsConversationResult
 
 function record(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null
@@ -83,6 +89,34 @@ function validJoinCommand(value: unknown): value is JoinMlsConversationCommand {
     && validBytes(candidate.ratchetTree, MAX_WIRE_BYTES)
 }
 
+function validRoster(value: unknown): value is string[] {
+  return Array.isArray(value)
+    && value.length > 0
+    && value.length <= MAX_ADD_MEMBERS + 1
+    && value.every(validUuid)
+    && new Set(value).size === value.length
+}
+
+function validUpdateCommand(value: unknown): value is UpdateMlsConversationCommand {
+  const candidate = record(value)
+  return candidate !== null
+    && exactKeys(candidate, ['conversationId', 'desiredDeviceIds', 'keyPackages'])
+    && validUuid(candidate.conversationId)
+    && validRoster(candidate.desiredDeviceIds)
+    && Array.isArray(candidate.keyPackages)
+    && candidate.keyPackages.length <= MAX_ADD_MEMBERS
+    && candidate.keyPackages.every(item => validBytes(item, MAX_WIRE_BYTES))
+}
+
+function validApplyCommitCommand(value: unknown): value is ApplyMlsCommitCommand {
+  const candidate = record(value)
+  return candidate !== null
+    && exactKeys(candidate, ['commit', 'conversationId', 'desiredDeviceIds'])
+    && validUuid(candidate.conversationId)
+    && validRoster(candidate.desiredDeviceIds)
+    && validBytes(candidate.commit, MAX_WIRE_BYTES)
+}
+
 function validProtectCommand(value: unknown): value is ProtectMlsMessageCommand {
   const candidate = record(value)
   return candidate !== null
@@ -115,6 +149,12 @@ export function parseMlsWorkerRequest(value: unknown): MlsWorkerRequest | null {
   if (candidate.type === 'mls-join' && validJoinCommand(candidate.command)) {
     return { version: PROTOCOL_VERSION, requestId: candidate.requestId, type: candidate.type, command: candidate.command }
   }
+  if (candidate.type === 'mls-update' && validUpdateCommand(candidate.command)) {
+    return { version: PROTOCOL_VERSION, requestId: candidate.requestId, type: candidate.type, command: candidate.command }
+  }
+  if (candidate.type === 'mls-apply-commit' && validApplyCommitCommand(candidate.command)) {
+    return { version: PROTOCOL_VERSION, requestId: candidate.requestId, type: candidate.type, command: candidate.command }
+  }
   if (candidate.type === 'mls-protect' && validProtectCommand(candidate.command)) {
     return { version: PROTOCOL_VERSION, requestId: candidate.requestId, type: candidate.type, command: candidate.command }
   }
@@ -135,6 +175,13 @@ export function parseMlsWorkerResult(value: unknown): MlsWorkerResult | null {
     && validBytes(candidate.ratchetTree, MAX_WIRE_BYTES)
   ) return candidate as unknown as BootstrapMlsConversationResult
   if (
+    exactKeys(candidate, ['commit', 'epoch', 'ratchetTree', 'revision', 'welcome'])
+    && validEpoch(candidate.epoch)
+    && validBytes(candidate.commit, MAX_WIRE_BYTES)
+    && candidate.welcome === null
+    && validBytes(candidate.ratchetTree, MAX_WIRE_BYTES)
+  ) return candidate as unknown as UpdateMlsConversationResult
+  if (
     exactKeys(candidate, ['ciphertext', 'epoch', 'revision'])
     && validEpoch(candidate.epoch)
     && validBytes(candidate.ciphertext, MAX_WIRE_BYTES)
@@ -154,6 +201,7 @@ export function mlsRequestEnvelope(
   requestId: string,
   type: MlsWorkerRequest['type'],
   command: BootstrapMlsConversationCommand | JoinMlsConversationCommand
+    | UpdateMlsConversationCommand | ApplyMlsCommitCommand
     | ProtectMlsMessageCommand | UnprotectMlsMessageCommand,
 ): MlsWorkerRequest {
   const candidate = { version: PROTOCOL_VERSION, requestId, type, command }
@@ -165,7 +213,8 @@ export function mlsRequestEnvelope(
 export function mlsResultTransferables(result: MlsWorkerResult): ArrayBuffer[] {
   let bytes: Uint8Array[]
   if ('commit' in result) {
-    bytes = [result.commit, result.welcome, result.ratchetTree]
+    bytes = [result.commit, result.ratchetTree]
+    if (result.welcome !== null) bytes.push(result.welcome)
   } else if ('ciphertext' in result) bytes = [result.ciphertext]
   else if ('plaintext' in result) bytes = [result.plaintext]
   else bytes = []

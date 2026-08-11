@@ -21,6 +21,7 @@ import type {
 import type {
   BootstrapMlsConversationCommand,
   BootstrapMlsConversationResult,
+  ApplyMlsCommitCommand,
   JoinMlsConversationCommand,
   MlsConversationGateway,
   MlsConversationStateResult,
@@ -28,6 +29,8 @@ import type {
   ProtectMlsMessageResult,
   UnprotectMlsMessageCommand,
   UnprotectMlsMessageResult,
+  UpdateMlsConversationCommand,
+  UpdateMlsConversationResult,
 } from '../app/application/ports/mls-conversation-gateway'
 
 const conversationId = '1b0a32e8-144f-4f60-bcb6-112f71bd5316'
@@ -37,6 +40,8 @@ const coordinatorUserId = '318887ee-2517-45fc-9635-07cf915b31b4'
 const memberDeviceId = 'f34b0d48-6dc9-4ed1-9c5b-eb76544ead0a'
 const memberUserId = 'd8f16ee6-7063-494e-a71b-558392476527'
 const requestId = 'b24a030d-a3f0-4eed-a463-a1722920615c'
+const secondGenerationId = 'e109d71c-8e4f-43fa-aafd-7ef7d16b2475'
+const newDeviceId = '3ce72df7-3921-4c03-8ba8-4f1c0370bca9'
 
 class MemoryState implements ConversationCryptoStateRepository {
   value: ConversationCryptoLocalState | null = null
@@ -101,6 +106,20 @@ class FakeMls implements MlsConversationGateway {
     _command: JoinMlsConversationCommand,
   ): Promise<MlsConversationStateResult> => ({ epoch: 2, revision: 2 }))
 
+  readonly updateConversation = vi.fn(async (
+    _command: UpdateMlsConversationCommand,
+  ): Promise<UpdateMlsConversationResult> => ({
+    commit: new Uint8Array([9]),
+    welcome: new Uint8Array([10]),
+    ratchetTree: new Uint8Array([11]),
+    epoch: 3,
+    revision: 3,
+  }))
+
+  readonly applyCommit = vi.fn(async (
+    _command: ApplyMlsCommitCommand,
+  ): Promise<MlsConversationStateResult> => ({ epoch: 3, revision: 3 }))
+
   protectMessage(_command: ProtectMlsMessageCommand): Promise<ProtectMlsMessageResult> {
     throw new Error('not used')
   }
@@ -118,8 +137,8 @@ class CoordinatorServer implements ConversationCryptoGateway {
     return generation('pending', coordinatorDeviceId)
   }
 
-  begin(): Promise<ConversationCryptoGeneration> {
-    throw new Error('not used')
+  async begin(): Promise<ConversationCryptoGeneration> {
+    return generation('pending', coordinatorDeviceId)
   }
 
   async finalize(_command: FinalizeConversationCryptoCommand): Promise<ConversationCryptoGeneration> {
@@ -141,8 +160,8 @@ class MemberServer implements ConversationCryptoGateway {
     return generation('ready', coordinatorDeviceId, memberDeviceId)
   }
 
-  begin(): Promise<ConversationCryptoGeneration> {
-    throw new Error('not used')
+  async begin(): Promise<ConversationCryptoGeneration> {
+    return generation('ready', coordinatorDeviceId, memberDeviceId)
   }
 
   finalize(): Promise<ConversationCryptoGeneration> {
@@ -234,7 +253,114 @@ describe('conversation crypto reconciliation', () => {
       generationId: null,
     })
   })
+
+  it('creates one incremental Commit and routes Welcome only to a new device', async () => {
+    const state = new MemoryState()
+    state.value = readyLocalState(coordinatorDeviceId)
+    const pending = incrementalGeneration('pending')
+    const finalize = vi.fn(async () => incrementalGeneration('ready'))
+    const server: ConversationCryptoGateway = {
+      getCurrent: vi.fn(),
+      begin: vi.fn(async () => pending),
+      finalize,
+      acknowledgeWelcome: vi.fn(),
+    }
+    const mls = new FakeMls()
+    const useCase = new ReconcileConversationCrypto(
+      server,
+      state,
+      new FakeDeviceCrypto(),
+      mls,
+      new FixedIds([requestId]),
+    )
+
+    await expect(useCase.execute({ conversationId, deviceId: coordinatorDeviceId }))
+      .resolves.toMatchObject({ status: 'ready', generationNumber: 2, epoch: 3 })
+    expect(mls.updateConversation).toHaveBeenCalledWith({
+      conversationId,
+      desiredDeviceIds: [coordinatorDeviceId, memberDeviceId, newDeviceId],
+      keyPackages: [new Uint8Array([12])],
+    })
+    expect(mls.bootstrapConversation).not.toHaveBeenCalled()
+    expect(finalize).toHaveBeenCalledWith(expect.objectContaining({
+      welcomes: [{ targetDeviceId: newDeviceId, welcome: new Uint8Array([10]) }],
+    }))
+    expect(state.value?.phase).toBe('ready')
+  })
+
+  it('applies a ready membership Commit to an existing device without a Welcome', async () => {
+    const state = new MemoryState()
+    state.value = readyLocalState(memberDeviceId)
+    const ready = incrementalGeneration('ready')
+    const server: ConversationCryptoGateway = {
+      getCurrent: vi.fn(),
+      begin: vi.fn(async () => ready),
+      finalize: vi.fn(),
+      acknowledgeWelcome: vi.fn(),
+    }
+    const mls = new FakeMls()
+    const useCase = new ReconcileConversationCrypto(
+      server,
+      state,
+      new FakeDeviceCrypto(),
+      mls,
+      new FixedIds([requestId]),
+    )
+
+    await expect(useCase.execute({ conversationId, deviceId: memberDeviceId }))
+      .resolves.toMatchObject({ status: 'ready', generationNumber: 2, epoch: 3 })
+    expect(mls.applyCommit).toHaveBeenCalledWith({
+      conversationId,
+      commit: new Uint8Array([9]),
+      desiredDeviceIds: [coordinatorDeviceId, memberDeviceId, newDeviceId],
+    })
+    expect(mls.joinConversation).not.toHaveBeenCalled()
+    expect(state.saveCalls.map(item => item.phase)).toEqual(['commit-applied', 'ready'])
+  })
 })
+
+function readyLocalState(ownerDeviceId: string): ConversationCryptoLocalState {
+  return {
+    ownerDeviceId,
+    conversationId,
+    bootstrapRequestId: 'ee4a35f8-23dc-45fa-933b-25ce50b7cf16',
+    generationId,
+    generationNumber: 1,
+    phase: 'ready',
+    epoch: 2,
+    commit: null,
+    ratchetTree: null,
+    welcome: null,
+    targetDeviceIds: [],
+    updatedAt: '2026-08-11T12:01:00Z',
+  }
+}
+
+function incrementalGeneration(status: 'pending' | 'ready'): ConversationCryptoGeneration {
+  const base = generation(status, coordinatorDeviceId)
+  return {
+    ...base,
+    generationId: secondGenerationId,
+    generationNumber: 2,
+    epoch: status === 'ready' ? 3 : null,
+    commit: status === 'ready' ? new Uint8Array([9]) : null,
+    ratchetTree: status === 'ready' ? new Uint8Array([11]) : null,
+    requiredDevices: [
+      base.requiredDevices[0]!,
+      { ...base.requiredDevices[1]!, keyPackageRef: null, keyPackage: null },
+      {
+        userId: memberUserId,
+        deviceId: newDeviceId,
+        isCoordinator: false,
+        fingerprint: '12'.repeat(32),
+        credentialIdentity: new Uint8Array(33),
+        signaturePublicKey: new Uint8Array(32),
+        keyPackageRef: '34'.repeat(32),
+        keyPackage: new Uint8Array([12]),
+      },
+    ],
+  }
+}
 
 function generation(
   status: 'pending' | 'ready',

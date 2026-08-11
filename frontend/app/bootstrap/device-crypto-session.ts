@@ -16,6 +16,7 @@ import type { DeviceKeyPackageGateway } from '../application/ports/device-key-pa
 import type {
   BootstrapMlsConversationCommand,
   BootstrapMlsConversationResult,
+  ApplyMlsCommitCommand,
   JoinMlsConversationCommand,
   MlsConversationGateway,
   MlsConversationStateResult,
@@ -23,6 +24,8 @@ import type {
   ProtectMlsMessageResult,
   UnprotectMlsMessageCommand,
   UnprotectMlsMessageResult,
+  UpdateMlsConversationCommand,
+  UpdateMlsConversationResult,
 } from '../application/ports/mls-conversation-gateway'
 
 interface ActiveDeviceCryptoScope {
@@ -101,6 +104,14 @@ export class DeviceCryptoSession implements MlsConversationGateway {
 
   joinConversation(command: JoinMlsConversationCommand): Promise<MlsConversationStateResult> {
     return this.requireActive().gateway.joinConversation(command)
+  }
+
+  updateConversation(command: UpdateMlsConversationCommand): Promise<UpdateMlsConversationResult> {
+    return this.requireActive().gateway.updateConversation(command)
+  }
+
+  applyCommit(command: ApplyMlsCommitCommand): Promise<MlsConversationStateResult> {
+    return this.requireActive().gateway.applyCommit(command)
   }
 
   protectMessage(command: ProtectMlsMessageCommand): Promise<ProtectMlsMessageResult> {

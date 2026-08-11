@@ -46,7 +46,11 @@ describe('MLS v2 message protocol adapter', () => {
       conversationId,
       clientMessageId,
       plaintext: 'привет',
-    })).resolves.toBe('AQID')
+    })).resolves.toEqual({
+      ciphertextBase64: 'AQID',
+      cryptoGenerationId: 'dd7c15b7-f8d2-402d-9abc-07ba98b79bfd',
+      cryptoEpoch: 1,
+    })
     expect(session.reconcileConversation).toHaveBeenCalledWith(conversationId)
     expect(session.protectMessage.mock.calls[0]?.[0].plaintext)
       .toEqual(new TextEncoder().encode('привет'))

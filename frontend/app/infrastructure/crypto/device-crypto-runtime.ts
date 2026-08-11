@@ -10,12 +10,15 @@ import type {
 import type {
   BootstrapMlsConversationCommand,
   BootstrapMlsConversationResult,
+  ApplyMlsCommitCommand,
   JoinMlsConversationCommand,
   MlsConversationStateResult,
   ProtectMlsMessageCommand,
   ProtectMlsMessageResult,
   UnprotectMlsMessageCommand,
   UnprotectMlsMessageResult,
+  UpdateMlsConversationCommand,
+  UpdateMlsConversationResult,
 } from '../../application/ports/mls-conversation-gateway'
 import {
   CryptoVaultError,
@@ -234,6 +237,52 @@ export class DeviceCryptoRuntime {
     }))
   }
 
+  async updateConversation(
+    command: UpdateMlsConversationCommand,
+  ): Promise<UpdateMlsConversationResult> {
+    if (
+      !validConversationRoster(command.conversationId, command.desiredDeviceIds)
+      || command.keyPackages.length > MAX_MLS_ADD_MEMBERS
+      || command.keyPackages.some(item => !validWireBytes(item))
+    ) throw new DeviceCryptoError('invalid-request')
+    return await this.mutateAndCheckpoint(active => {
+      const output = active.updateMembersAndMerge(
+        command.conversationId,
+        [...command.desiredDeviceIds],
+        command.keyPackages.map(item => item.slice()),
+      )
+      try {
+        if (
+          !validWireBytes(output.commit)
+          || !validWireBytes(output.ratchetTree)
+          || (output.welcome.byteLength > 0 && !validWireBytes(output.welcome))
+        ) throw new DeviceCryptoError('operation-failed')
+        return {
+          commit: output.commit.slice(),
+          welcome: output.welcome.byteLength > 0 ? output.welcome.slice() : null,
+          ratchetTree: output.ratchetTree.slice(),
+          epoch: safeUnsignedInteger(output.epoch),
+        }
+      } finally {
+        output.free()
+      }
+    })
+  }
+
+  async applyCommit(command: ApplyMlsCommitCommand): Promise<MlsConversationStateResult> {
+    if (
+      !validConversationRoster(command.conversationId, command.desiredDeviceIds)
+      || !validWireBytes(command.commit)
+    ) throw new DeviceCryptoError('invalid-request')
+    return await this.mutateAndCheckpoint(active => ({
+      epoch: safeUnsignedInteger(active.applyCommitAndMerge(
+        command.conversationId,
+        command.commit,
+        [...command.desiredDeviceIds],
+      )),
+    }))
+  }
+
   async protectMessage(command: ProtectMlsMessageCommand): Promise<ProtectMlsMessageResult> {
     if (
       !validMessageRouting(command.conversationId, command.clientMessageId)
@@ -445,4 +494,15 @@ function validWireBytes(value: unknown): value is Uint8Array {
 
 function validMessageRouting(conversationId: string, clientMessageId: string): boolean {
   return UUID_PATTERN.test(conversationId) && UUID_PATTERN.test(clientMessageId)
+}
+
+function validConversationRoster(
+  conversationId: string,
+  desiredDeviceIds: readonly string[],
+): boolean {
+  return UUID_PATTERN.test(conversationId)
+    && desiredDeviceIds.length > 0
+    && desiredDeviceIds.length <= MAX_MLS_ADD_MEMBERS + 1
+    && desiredDeviceIds.every(item => UUID_PATTERN.test(item))
+    && new Set(desiredDeviceIds).size === desiredDeviceIds.length
 }

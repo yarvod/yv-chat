@@ -3,6 +3,10 @@
 from types import TracebackType
 from typing import Protocol, Self
 
+from messenger.application.ports.conversation_crypto import (
+    ConversationCryptoGenerationRepository,
+    ConversationCryptoRequiredDeviceRepository,
+)
 from messenger.application.ports.conversations import ConversationRepository
 from messenger.application.ports.identity import DeviceRepository, UserRepository
 from messenger.application.ports.messages.delivery_states import ConversationDeliveryStateRepository
@@ -19,6 +23,8 @@ class MessagingUnitOfWork(Protocol):
     users: UserRepository
     devices: DeviceRepository
     sync_events: SyncRepository
+    crypto_generations: ConversationCryptoGenerationRepository
+    crypto_required_devices: ConversationCryptoRequiredDeviceRepository
 
     async def __aenter__(self) -> Self: ...
 

@@ -28,6 +28,11 @@ class MessageModel(Base):
             name="protocol_version_range",
         ),
         CheckConstraint(
+            "(protocol_version = 2 AND crypto_generation_id IS NOT NULL AND crypto_epoch > 0) "
+            "OR (protocol_version <> 2 AND crypto_generation_id IS NULL AND crypto_epoch IS NULL)",
+            name="crypto_binding_shape",
+        ),
+        CheckConstraint(
             "ciphertext IS NULL OR octet_length(ciphertext) BETWEEN 1 AND 1048576",
             name="ciphertext_size",
         ),
@@ -50,6 +55,7 @@ class MessageModel(Base):
             "id",
         ),
         Index("ix_messages_sender_device", "sender_device_id"),
+        Index("ix_messages_crypto_generation_id", "crypto_generation_id"),
         Index(
             "ix_messages_expiry_active",
             "expires_at",
@@ -92,6 +98,12 @@ class MessageModel(Base):
         nullable=False,
     )
     protocol_version: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    crypto_generation_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("conversation_crypto_generations.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    crypto_epoch: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     sequence: Mapped[int] = mapped_column(BigInteger, nullable=False)
     ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     ciphertext_digest: Mapped[str] = mapped_column(String(64), nullable=False)

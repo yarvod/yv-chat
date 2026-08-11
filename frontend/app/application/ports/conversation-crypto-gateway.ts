@@ -3,6 +3,10 @@ export type ConversationCryptoStatus = 'blocked' | 'pending' | 'ready'
 export type ConversationCryptoBlockReason =
   | 'missing_identity'
   | 'missing_key_package'
+  | 'membership_changed'
+  | 'device_roster_changed'
+  | 'coordinator_revoked'
+  | 'protocol_failure'
 
 export interface RequiredConversationCryptoDevice {
   readonly userId: string

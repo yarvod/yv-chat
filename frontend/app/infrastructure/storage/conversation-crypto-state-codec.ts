@@ -61,7 +61,9 @@ function phase(value: unknown): ConversationCryptoLocalPhase {
   if (
     value !== 'bootstrap-requested'
     && value !== 'coordinator-checkpointed'
+    && value !== 'coordinator-update-checkpointed'
     && value !== 'joined'
+    && value !== 'commit-applied'
     && value !== 'ready'
   ) fail()
   return value

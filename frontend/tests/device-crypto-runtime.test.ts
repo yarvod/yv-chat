@@ -13,12 +13,14 @@ import { IndexedDbCryptoVault } from '../app/infrastructure/storage/indexeddb-cr
 import initOpenMls, {
   DeviceBootstrap,
   validatePublicKeyPackage,
-} from '../public/crypto/v4/yv_chat_openmls_provider.js'
+} from '../public/crypto/v5/yv_chat_openmls_provider.js'
 
 const userId = '1b0a32e8-144f-4f60-bcb6-112f71bd5316'
 const deviceId = '50d6b08a-84ae-4bd7-829a-f40f38e9a2c1'
 const otherDeviceId = 'd44483ee-2c69-4eef-aeba-5ce92bc9181d'
 const otherUserId = 'abfef0af-10d0-4655-b4c7-84b3b418e4b7'
+const thirdDeviceId = '47782869-4399-4534-9202-ae53bed6a0fa'
+const thirdUserId = 'f26cf4db-07c7-41c5-9925-01da4a7f7b22'
 const conversationId = 'f6a5941b-c417-4e50-a69c-9a30bd7ed28c'
 const messageId = '538998bb-1943-4cf3-beb1-8b87cadf0fc1'
 
@@ -41,7 +43,7 @@ function vault(indexedDb: IDBFactory): IndexedDbCryptoVault {
 }
 
 beforeAll(async () => {
-  const wasm = await readFile('public/crypto/v4/yv_chat_openmls_provider_bg.wasm')
+  const wasm = await readFile('public/crypto/v5/yv_chat_openmls_provider_bg.wasm')
   await initOpenMls({ module_or_path: wasm })
 })
 
@@ -252,5 +254,76 @@ describe('device crypto runtime with the release OpenMLS WASM', () => {
 
     const persisted = await vault(indexedDb).load(userId, deviceId)
     expect(persisted.status === 'ready' && persisted.state.fingerprint).toBe(identity.fingerprint)
+  })
+
+  it('checkpoints add/remove Commit convergence and excludes a removed leaf from future epochs', async () => {
+    const alice = new DeviceCryptoRuntime(openMlsModule, vault(new IDBFactory()))
+    const bob = new DeviceCryptoRuntime(openMlsModule, vault(new IDBFactory()))
+    const charlie = new DeviceCryptoRuntime(openMlsModule, vault(new IDBFactory()))
+    await alice.provision({ userId, deviceId })
+    const bobIdentity = await bob.provision({ userId: otherUserId, deviceId: otherDeviceId })
+    const charlieIdentity = await charlie.provision({ userId: thirdUserId, deviceId: thirdDeviceId })
+    const initial = await alice.bootstrapConversation({
+      conversationId,
+      keyPackages: [bobIdentity.keyPackage],
+    })
+    await bob.joinConversation({
+      conversationId,
+      welcome: initial.welcome,
+      ratchetTree: initial.ratchetTree,
+    })
+
+    const withCharlie = [deviceId, otherDeviceId, thirdDeviceId]
+    const added = await alice.updateConversation({
+      conversationId,
+      desiredDeviceIds: withCharlie,
+      keyPackages: [charlieIdentity.keyPackage],
+    })
+    expect(added).toMatchObject({ epoch: 2, revision: 3 })
+    expect(added.welcome).toBeInstanceOf(Uint8Array)
+    await expect(bob.applyCommit({
+      conversationId,
+      commit: added.commit,
+      desiredDeviceIds: withCharlie,
+    })).resolves.toMatchObject({ epoch: 2, revision: 3 })
+    if (added.welcome === null) throw new Error('new leaf requires Welcome')
+    await charlie.joinConversation({
+      conversationId,
+      welcome: added.welcome,
+      ratchetTree: added.ratchetTree,
+    })
+
+    const withoutBob = [deviceId, thirdDeviceId]
+    const removed = await alice.updateConversation({
+      conversationId,
+      desiredDeviceIds: withoutBob,
+      keyPackages: [],
+    })
+    expect(removed).toMatchObject({ epoch: 3, welcome: null, revision: 4 })
+    await expect(charlie.applyCommit({
+      conversationId,
+      commit: removed.commit,
+      desiredDeviceIds: withoutBob,
+    })).resolves.toMatchObject({ epoch: 3, revision: 3 })
+
+    const futureMessageId = 'c59e7dc2-9d80-4aac-8d46-a785c7844a25'
+    const future = await alice.protectMessage({
+      conversationId,
+      clientMessageId: futureMessageId,
+      plaintext: new TextEncoder().encode('after removal'),
+    })
+    await expect(charlie.unprotectMessage({
+      conversationId,
+      clientMessageId: futureMessageId,
+      ciphertext: future.ciphertext,
+    })).resolves.toMatchObject({ plaintext: new TextEncoder().encode('after removal') })
+    await expect(bob.unprotectMessage({
+      conversationId,
+      clientMessageId: futureMessageId,
+      ciphertext: future.ciphertext,
+    })).rejects.toMatchObject({ code: 'operation-failed' })
+    alice.dispose()
+    bob.dispose()
+    charlie.dispose()
   })
 })

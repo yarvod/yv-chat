@@ -1,5 +1,6 @@
 """Opaque message send authorization specifications."""
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
@@ -7,6 +8,7 @@ import pytest
 
 from messenger.application.errors import (
     AuthorizationDeniedError,
+    ConversationCryptoNotReadyError,
     ConversationNotFoundError,
     InvalidMessageEnvelopeError,
     MessageIdempotencyConflictError,
@@ -25,7 +27,15 @@ from messenger.application.messaging.send_message import (
     SendOpaqueMessageCommand,
 )
 from messenger.application.sync import SyncEventType, SyncPolicy
-from messenger.domain.entities import Conversation, Device, Message, MessageDeletionReason, User
+from messenger.domain.entities import (
+    Conversation,
+    ConversationCryptoGeneration,
+    ConversationCryptoRequiredDevice,
+    Device,
+    Message,
+    MessageDeletionReason,
+    User,
+)
 from tests.application.fakes import (
     FakeMessagingUnitOfWorkFactory,
     FixedClock,
@@ -372,3 +382,104 @@ async def test_realtime_failure_does_not_rollback_committed_message() -> None:
 
     assert state.messages[result.message_id].ciphertext == b"opaque"
     assert state.commits == 1
+
+
+async def test_v2_send_requires_ready_generation_and_sender_leaf() -> None:
+    state, alice, _, _, device, conversation = messaging_state()
+    use_case = SendOpaqueMessage(
+        unit_of_work=FakeMessagingUnitOfWorkFactory(state),
+        clock=FixedClock(NOW + timedelta(seconds=2)),
+        message_policy=MessageEnvelopePolicy(supported_protocol_versions=frozenset({2})),
+        retention_policy=RETENTION,
+        sync_policy=SyncPolicy(),
+        realtime_notifier=RecordingRealtimeNotifier(),
+    )
+    command = SendOpaqueMessageCommand(
+        alice.id,
+        device.id,
+        conversation.id,
+        uuid4(),
+        2,
+        b"opaque-mls-private-message",
+    )
+    with pytest.raises(ConversationCryptoNotReadyError):
+        await use_case.execute(command)
+
+    pending = ConversationCryptoGeneration.create(
+        conversation_id=conversation.id,
+        generation_number=1,
+        coordinator_user_id=alice.id,
+        coordinator_device_id=device.id,
+        bootstrap_request_id=uuid4(),
+        now=NOW,
+    )
+    state.conversation_crypto_generations[pending.id] = pending
+    state.conversation_crypto_required_devices[(pending.id, device.id)] = (
+        ConversationCryptoRequiredDevice(
+            generation_id=pending.id,
+            user_id=alice.id,
+            device_id=device.id,
+            is_coordinator=True,
+            key_package_id=None,
+            snapshot_at=NOW,
+        )
+    )
+    with pytest.raises(ConversationCryptoNotReadyError):
+        await use_case.execute(command)
+
+    state.conversation_crypto_generations[pending.id] = pending.finalize(
+        epoch=1,
+        commit_message=b"opaque-commit",
+        ratchet_tree=b"opaque-tree",
+        now=NOW + timedelta(seconds=1),
+    )
+    with pytest.raises(ConversationCryptoNotReadyError):
+        await use_case.execute(replace(command, crypto_generation_id=pending.id, crypto_epoch=2))
+    with pytest.raises(ConversationCryptoNotReadyError):
+        await use_case.execute(replace(command, crypto_generation_id=uuid4(), crypto_epoch=1))
+    bound_command = replace(
+        command,
+        crypto_generation_id=pending.id,
+        crypto_epoch=1,
+    )
+    sent = await use_case.execute(bound_command)
+    assert sent.protocol_version == 2
+    assert state.messages[sent.message_id].ciphertext == b"opaque-mls-private-message"
+
+    next_generation = ConversationCryptoGeneration.create(
+        conversation_id=conversation.id,
+        generation_number=2,
+        coordinator_user_id=alice.id,
+        coordinator_device_id=device.id,
+        bootstrap_request_id=uuid4(),
+        now=NOW + timedelta(seconds=3),
+    ).finalize(
+        epoch=2,
+        commit_message=b"next-opaque-commit",
+        ratchet_tree=b"next-opaque-tree",
+        now=NOW + timedelta(seconds=4),
+    )
+    state.conversation_crypto_generations[pending.id] = state.conversation_crypto_generations[
+        pending.id
+    ].supersede(NOW + timedelta(seconds=3))
+    state.conversation_crypto_generations[next_generation.id] = next_generation
+    state.conversation_crypto_required_devices[(next_generation.id, device.id)] = replace(
+        state.conversation_crypto_required_devices[(pending.id, device.id)],
+        generation_id=next_generation.id,
+    )
+    assert await use_case.execute(bound_command) == sent
+    with pytest.raises(ConversationCryptoNotReadyError):
+        await use_case.execute(replace(bound_command, client_message_id=uuid4()))
+
+    state.conversation_crypto_required_devices.clear()
+    with pytest.raises(ConversationCryptoNotReadyError):
+        await use_case.execute(
+            SendOpaqueMessageCommand(
+                alice.id,
+                device.id,
+                conversation.id,
+                uuid4(),
+                2,
+                b"another-opaque-message",
+            )
+        )

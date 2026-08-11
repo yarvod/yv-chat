@@ -78,13 +78,16 @@ export function parseOpaqueMessage(value: unknown): OpaqueMessage {
   ) {
     throw new ApplicationError(200, 'invalid-response', 'invalid message tombstone shape')
   }
+  const protocolVersion = integerField(item, 'protocol_version')
+  const crypto = parseCryptoBinding(item, protocolVersion)
   return {
     messageId: stringField(item, 'message_id'),
     clientMessageId: stringField(item, 'client_message_id'),
     conversationId: stringField(item, 'conversation_id'),
     senderUserId: stringField(item, 'sender_user_id'),
     senderDeviceId: stringField(item, 'sender_device_id'),
-    protocolVersion: integerField(item, 'protocol_version'),
+    protocolVersion,
+    ...crypto,
     sequence: integerField(item, 'sequence'),
     createdAt: stringField(item, 'created_at'),
     expiresAt: stringField(item, 'expires_at'),
@@ -96,17 +99,34 @@ export function parseOpaqueMessage(value: unknown): OpaqueMessage {
 
 export function parseSendMessageReceipt(value: unknown): SendMessageReceipt {
   const item = record(value)
+  const protocolVersion = integerField(item, 'protocol_version')
   return {
     messageId: stringField(item, 'message_id'),
     clientMessageId: stringField(item, 'client_message_id'),
     conversationId: stringField(item, 'conversation_id'),
     senderUserId: stringField(item, 'sender_user_id'),
     senderDeviceId: stringField(item, 'sender_device_id'),
-    protocolVersion: integerField(item, 'protocol_version'),
+    protocolVersion,
+    ...parseCryptoBinding(item, protocolVersion),
     sequence: integerField(item, 'sequence'),
     createdAt: stringField(item, 'created_at'),
     expiresAt: stringField(item, 'expires_at'),
   }
+}
+
+function parseCryptoBinding(
+  item: Record<string, unknown>,
+  protocolVersion: number,
+): { cryptoGenerationId: string | null, cryptoEpoch: number | null } {
+  const cryptoGenerationId = nullableStringField(item, 'crypto_generation_id')
+  const rawEpoch = item.crypto_epoch
+  const cryptoEpoch = rawEpoch === null ? null : Number(rawEpoch)
+  if (
+    (rawEpoch !== null && (!Number.isSafeInteger(rawEpoch) || Number(rawEpoch) <= 0))
+    || (protocolVersion === 2) !== (cryptoGenerationId !== null && cryptoEpoch !== null)
+    || (protocolVersion !== 2 && (cryptoGenerationId !== null || cryptoEpoch !== null))
+  ) throw new ApplicationError(200, 'invalid-response', 'invalid message crypto binding')
+  return { cryptoGenerationId, cryptoEpoch }
 }
 
 export function parseDeleteMessageResult(value: unknown): DeleteMessageResult {

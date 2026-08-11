@@ -66,6 +66,8 @@ export class DeliverOutboxMessage {
         sending.clientMessageId,
         sending.protocolVersion,
         sending.ciphertextBase64,
+        sending.cryptoGenerationId,
+        sending.cryptoEpoch,
       )
       if (
         receipt.clientMessageId !== sending.clientMessageId
@@ -73,6 +75,8 @@ export class DeliverOutboxMessage {
         || receipt.senderUserId !== sending.ownerUserId
         || receipt.senderDeviceId !== sending.senderDeviceId
         || receipt.protocolVersion !== sending.protocolVersion
+        || receipt.cryptoGenerationId !== sending.cryptoGenerationId
+        || receipt.cryptoEpoch !== sending.cryptoEpoch
         || !Number.isSafeInteger(receipt.sequence)
         || receipt.sequence <= 0
       ) {

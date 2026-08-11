@@ -68,7 +68,9 @@ class FinalizeConversationCrypto:
             if generation.coordinator_device_id != command.device_id:
                 raise ConversationCryptoNotFoundError("current crypto generation not found")
             required = await uow.required_devices.list_by_generation(generation.id)
-            expected_targets = {item.device_id for item in required if not item.is_coordinator}
+            expected_targets = {
+                item.device_id for item in required if item.key_package_id is not None
+            }
             supplied_by_target = {item.target_device_id: item for item in command.welcomes}
             if len(supplied_by_target) != len(command.welcomes):
                 raise ConversationCryptoConflictError("duplicate Welcome target")

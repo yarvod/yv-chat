@@ -10,10 +10,16 @@ export interface UnprotectTextInput {
   ciphertextBase64: string
 }
 
+export interface ProtectedProtocolText {
+  readonly ciphertextBase64: string
+  readonly cryptoGenerationId: string | null
+  readonly cryptoEpoch: number | null
+}
+
 export interface MessageProtocolAdapter {
   readonly protocolVersion: number
   readonly secure: boolean
   readonly label: string
-  protectText(input: ProtectTextInput): Promise<string>
+  protectText(input: ProtectTextInput): Promise<ProtectedProtocolText>
   unprotectText(input: UnprotectTextInput): Promise<string>
 }

@@ -17,6 +17,8 @@ const pending: OutboxMessage = {
   conversationId: 'conversation-1',
   protocolVersion: 1,
   ciphertextBase64: 'UHJpdmF0ZSBvZmZsaW5lIG1lc3NhZ2U=',
+  cryptoGenerationId: null,
+  cryptoEpoch: null,
   status: 'pending',
   attemptCount: 0,
   createdAt: '2026-08-11T12:00:00Z',

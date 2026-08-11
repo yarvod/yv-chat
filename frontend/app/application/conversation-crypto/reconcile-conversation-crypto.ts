@@ -40,21 +40,18 @@ export class ReconcileConversationCrypto {
       throw new TypeError('conversation and device binding is required')
     }
     let local = await this.state.load(command.deviceId, command.conversationId)
-    let generation = await this.server.getCurrent(command.conversationId)
-    if (generation === null || generation.status === 'blocked') {
-      const bootstrapRequestId = generation === null
-        && local?.phase === 'bootstrap-requested'
-        && local.generationId === null
-        ? local.bootstrapRequestId
-        : this.ids.create()
+    const bootstrapRequestId = local?.phase === 'ready'
+      ? this.ids.create()
+      : local?.bootstrapRequestId ?? this.ids.create()
+    if (local === null) {
       local = bootstrapState(command, bootstrapRequestId)
       await this.state.save(local)
-      generation = await this.server.begin(command.conversationId, bootstrapRequestId)
     }
+    const generation = await this.server.begin(command.conversationId, bootstrapRequestId)
     this.assertGenerationBinding(generation, command.conversationId)
     if (generation.status === 'blocked') return result(generation)
     if (generation.coordinatorDeviceId === command.deviceId) {
-      return await this.reconcileCoordinator(command, generation, local)
+      return await this.reconcileCoordinator(command, generation, local, bootstrapRequestId)
     }
     return await this.reconcileMember(command, generation, local)
   }
@@ -63,21 +60,27 @@ export class ReconcileConversationCrypto {
     command: ReconcileConversationCryptoCommand,
     generation: ConversationCryptoGeneration,
     local: ConversationCryptoLocalState | null,
+    bootstrapRequestId: string,
   ): Promise<ReconcileConversationCryptoResult> {
     if (generation.status === 'ready') {
-      if (!sameGeneration(local, generation) || (
-        local.phase !== 'coordinator-checkpointed' && local.phase !== 'ready'
+      if (!sameGeneration(local, generation) || !(
+        local.phase === 'coordinator-checkpointed'
+        || local.phase === 'coordinator-update-checkpointed'
+        || local.phase === 'ready'
       )) throw new DeviceCryptoError('conflict')
       await this.state.save(readyState(local, generation))
       return result(generation)
     }
 
     let checkpoint = sameGeneration(local, generation)
-      && local.phase === 'coordinator-checkpointed'
+      && (
+        local.phase === 'coordinator-checkpointed'
+        || local.phase === 'coordinator-update-checkpointed'
+      )
       ? local
       : null
     if (checkpoint === null) {
-      const targets = generation.requiredDevices.filter(device => !device.isCoordinator)
+      const targets = generation.requiredDevices.filter(device => device.keyPackage !== null)
       for (const target of targets) {
         if (
           target.fingerprint === null
@@ -96,21 +99,33 @@ export class ReconcileConversationCrypto {
           keyPackage: target.keyPackage,
         })
       }
-      const created = await this.mls.bootstrapConversation({
-        conversationId: command.conversationId,
-        keyPackages: targets.map(target => target.keyPackage as Uint8Array),
-      })
+      const previousReady = local?.phase === 'ready'
+        && local.generationNumber !== null
+        && local.generationNumber === generation.generationNumber - 1
+      const created = previousReady
+        ? await this.mls.updateConversation({
+            conversationId: command.conversationId,
+            desiredDeviceIds: generation.requiredDevices.map(device => device.deviceId),
+            keyPackages: targets.map(target => target.keyPackage as Uint8Array),
+          })
+        : await this.mls.bootstrapConversation({
+            conversationId: command.conversationId,
+            keyPackages: targets.map(target => target.keyPackage as Uint8Array),
+          })
+      if (previousReady && ((targets.length > 0) !== (created.welcome !== null))) {
+        throw new DeviceCryptoError('conflict')
+      }
       checkpoint = {
         ownerDeviceId: command.deviceId,
         conversationId: command.conversationId,
-        bootstrapRequestId: local?.bootstrapRequestId ?? this.ids.create(),
+        bootstrapRequestId,
         generationId: generation.generationId,
         generationNumber: generation.generationNumber,
-        phase: 'coordinator-checkpointed',
+        phase: previousReady ? 'coordinator-update-checkpointed' : 'coordinator-checkpointed',
         epoch: created.epoch,
         commit: created.commit.slice(),
         ratchetTree: created.ratchetTree.slice(),
-        welcome: created.welcome.slice(),
+        welcome: created.welcome?.slice() ?? null,
         targetDeviceIds: targets.map(target => target.deviceId),
         updatedAt: new Date().toISOString(),
       }
@@ -120,8 +135,10 @@ export class ReconcileConversationCrypto {
       checkpoint.epoch === null
       || checkpoint.commit === null
       || checkpoint.ratchetTree === null
-      || checkpoint.welcome === null
     ) throw new DeviceCryptoError('corrupt-state')
+    if (checkpoint.targetDeviceIds.length > 0 && checkpoint.welcome === null) {
+      throw new DeviceCryptoError('corrupt-state')
+    }
     const finalized = await this.server.finalize({
       conversationId: command.conversationId,
       generationId: generation.generationId,
@@ -144,12 +161,42 @@ export class ReconcileConversationCrypto {
     local: ConversationCryptoLocalState | null,
   ): Promise<ReconcileConversationCryptoResult> {
     if (generation.status === 'pending') return result(generation)
+    if (sameGeneration(local, generation) && local.phase === 'ready') {
+      return result(generation)
+    }
+    if (sameGeneration(local, generation) && local.phase === 'commit-applied') {
+      await this.state.save(readyState(local, generation))
+      return result(generation)
+    }
     const welcome = generation.welcome
+    if (generation.epoch === null) throw new DeviceCryptoError('conflict')
+    if (welcome === null) {
+      if (
+        local?.phase !== 'ready'
+        || local.generationNumber !== generation.generationNumber - 1
+        || generation.commit === null
+      ) throw new DeviceCryptoError('conflict')
+      const applied = await this.mls.applyCommit({
+        conversationId: command.conversationId,
+        commit: generation.commit,
+        desiredDeviceIds: generation.requiredDevices.map(device => device.deviceId),
+      })
+      if (applied.epoch !== generation.epoch) throw new DeviceCryptoError('conflict')
+      const checkpoint: ConversationCryptoLocalState = {
+        ...local,
+        generationId: generation.generationId,
+        generationNumber: generation.generationNumber,
+        phase: 'commit-applied',
+        epoch: applied.epoch,
+        updatedAt: new Date().toISOString(),
+      }
+      await this.state.save(checkpoint)
+      await this.state.save(readyState(checkpoint, generation))
+      return result(generation)
+    }
     if (
-      welcome === null
-      || welcome.targetDeviceId !== command.deviceId
+      welcome.targetDeviceId !== command.deviceId
       || generation.ratchetTree === null
-      || generation.epoch === null
     ) throw new DeviceCryptoError('conflict')
     let joined = sameGeneration(local, generation)
       && (local.phase === 'joined' || local.phase === 'ready')

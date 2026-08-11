@@ -84,9 +84,21 @@ function parseMessage(value: unknown): OpaqueMessage {
   const ciphertextBase64 = item.ciphertextBase64
   const deletedAt = item.deletedAt
   const deletionReason = item.deletionReason as 'manual' | 'expired' | null
+  const cryptoGenerationId = item.cryptoGenerationId ?? null
+  const cryptoEpoch = item.cryptoEpoch ?? null
   if (
     (ciphertextBase64 !== null && (deletionReason !== null || deletedAt !== null))
     || (ciphertextBase64 === null && (deletionReason === null || deletedAt === null))
+    || (cryptoGenerationId !== null && typeof cryptoGenerationId !== 'string')
+    || (cryptoEpoch !== null && (
+      !Number.isSafeInteger(cryptoEpoch) || Number(cryptoEpoch) <= 0
+    ))
+    || (Number(item.protocolVersion) === 2) !== (
+      cryptoGenerationId !== null && cryptoEpoch !== null
+    )
+    || (Number(item.protocolVersion) !== 2 && (
+      cryptoGenerationId !== null || cryptoEpoch !== null
+    ))
   ) {
     throw new MessageArchiveError('corrupt')
   }
@@ -97,6 +109,8 @@ function parseMessage(value: unknown): OpaqueMessage {
     senderUserId: item.senderUserId as string,
     senderDeviceId: item.senderDeviceId as string,
     protocolVersion: Number(item.protocolVersion),
+    cryptoGenerationId,
+    cryptoEpoch: cryptoEpoch === null ? null : Number(cryptoEpoch),
     sequence: Number(item.sequence),
     createdAt: item.createdAt as string,
     expiresAt: item.expiresAt as string,
@@ -114,6 +128,8 @@ function transportSnapshot(message: OpaqueMessage): OpaqueMessage {
     senderUserId: message.senderUserId,
     senderDeviceId: message.senderDeviceId,
     protocolVersion: message.protocolVersion,
+    cryptoGenerationId: message.cryptoGenerationId,
+    cryptoEpoch: message.cryptoEpoch,
     sequence: message.sequence,
     createdAt: message.createdAt,
     expiresAt: message.expiresAt,

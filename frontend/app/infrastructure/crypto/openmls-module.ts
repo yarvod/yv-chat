@@ -1,8 +1,8 @@
 import { DeviceCryptoError } from '../../application/device-crypto/errors'
 
 // A new immutable path is mandatory whenever the generated JS/WASM binding changes.
-// v4 adds bounded KeyPackage pool generation; v1-v3 remain rolling assets.
-const MODULE_URL = '/crypto/v4/yv_chat_openmls_provider.js'
+// v5 adds authenticated membership Commit/apply; v1-v4 remain rolling assets.
+const MODULE_URL = '/crypto/v5/yv_chat_openmls_provider.js'
 
 export interface OpenMlsSealedSnapshot {
   readonly revision: bigint
@@ -23,6 +23,16 @@ export interface OpenMlsDeviceBootstrap {
     conversationId: string,
     serializedKeyPackages: Uint8Array[],
   ): OpenMlsConversationBootstrapOutput
+  updateMembersAndMerge(
+    conversationId: string,
+    desiredDeviceIds: string[],
+    serializedKeyPackages: Uint8Array[],
+  ): OpenMlsConversationBootstrapOutput
+  applyCommitAndMerge(
+    conversationId: string,
+    commit: Uint8Array,
+    desiredDeviceIds: string[],
+  ): bigint
   joinConversation(
     conversationId: string,
     welcome: Uint8Array,
@@ -95,6 +105,8 @@ function isOpenMlsModule(value: unknown): value is OpenMlsModule {
     && typeof prototype?.createConversation === 'function'
     && typeof prototype.generateKeyPackages === 'function'
     && typeof prototype.addMembersAndMerge === 'function'
+    && typeof prototype.updateMembersAndMerge === 'function'
+    && typeof prototype.applyCommitAndMerge === 'function'
     && typeof prototype.joinConversation === 'function'
     && typeof prototype.protectApplicationMessage === 'function'
     && typeof prototype.unprotectApplicationMessage === 'function'
