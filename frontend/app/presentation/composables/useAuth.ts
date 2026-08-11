@@ -83,6 +83,20 @@ export function useAuth() {
     initialized.value = true
   }
 
+  function replaceCurrentUser(user: CurrentAccount): void {
+    state.value = { phase: 'authenticated', user, message: null }
+    initialized.value = true
+  }
+
+  function securityResetCompleted(): void {
+    state.value = {
+      phase: 'signed-out',
+      user: null,
+      message: 'Все сеансы завершены. Войдите снова.',
+    }
+    initialized.value = true
+  }
+
   return {
     state: readonly(state),
     user: computed(() => state.value.user),
@@ -91,5 +105,7 @@ export function useAuth() {
     login,
     logout,
     sessionExpired,
+    replaceCurrentUser,
+    securityResetCompleted,
   }
 }

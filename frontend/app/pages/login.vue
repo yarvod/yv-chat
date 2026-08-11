@@ -24,6 +24,7 @@ async function login(payload: { username: string, password: string }): Promise<v
     :device-label="deviceLabel"
     :activation-complete="route.query.activated === '1'"
     :password-reset-complete="route.query.reset === '1'"
+    :security-reset-complete="route.query['security-reset'] === '1'"
     @submit="login"
     @retry="auth.bootstrap(true)"
   />

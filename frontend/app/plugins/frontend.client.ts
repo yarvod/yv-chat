@@ -1,15 +1,23 @@
 import { ActivateAccount } from '../application/accounts/activate-account'
+import { ChangePassword } from '../application/accounts/change-password'
 import { BuildInvitationLink, ConsumeActivationFragment } from '../application/accounts/invitation-links'
 import { InviteUser } from '../application/accounts/invite-user'
 import { IssuePasswordReset } from '../application/accounts/issue-password-reset'
 import { ListManagedUsers } from '../application/accounts/list-managed-users'
+import { ListDeviceSessions } from '../application/accounts/list-device-sessions'
+import { ListSecurityEvents } from '../application/accounts/list-security-events'
 import {
   BuildPasswordResetLink,
   ConsumePasswordResetFragment,
 } from '../application/accounts/password-reset-links'
 import { ReissueActivation } from '../application/accounts/reissue-activation'
+import { RenameDevice } from '../application/accounts/rename-device'
 import { ResetPassword } from '../application/accounts/reset-password'
+import { RevokeDevice } from '../application/accounts/revoke-device'
+import { RevokeOtherSessions } from '../application/accounts/revoke-other-sessions'
+import { SecurityReset } from '../application/accounts/security-reset'
 import { SetManagedUserActive } from '../application/accounts/set-user-active'
+import { UpdateProfile } from '../application/accounts/update-profile'
 import { LoadCurrentAccount } from '../application/auth/load-current-account'
 import { Login } from '../application/auth/login'
 import { Logout } from '../application/auth/logout'
@@ -21,6 +29,7 @@ import { BrowserLocation } from '../infrastructure/browser/browser-location'
 import { BrowserThemePreferences } from '../infrastructure/browser/theme-preferences'
 import { syntheticMessageCodec } from '../infrastructure/crypto/synthetic-message-codec'
 import { HttpAdminAccountsGateway } from '../infrastructure/http/admin-accounts-gateway'
+import { HttpAccountSecurityGateway } from '../infrastructure/http/account-security-gateway'
 import { ApiClient } from '../infrastructure/http/api-client'
 import { HttpAuthGateway } from '../infrastructure/http/auth-gateway'
 import { HttpMessagingGateway } from '../infrastructure/http/messaging-gateway'
@@ -29,6 +38,7 @@ export default defineNuxtPlugin(() => {
   const apiClient = new ApiClient()
   const authGateway = new HttpAuthGateway(apiClient)
   const adminAccountsGateway = new HttpAdminAccountsGateway(apiClient)
+  const accountSecurityGateway = new HttpAccountSecurityGateway(apiClient)
   const messagingGateway = new HttpMessagingGateway(apiClient)
   const deviceInfo = new BrowserDeviceInfo()
   const haptics = new BrowserHaptics()
@@ -61,6 +71,14 @@ export default defineNuxtPlugin(() => {
         consumeActivationFragment: new ConsumeActivationFragment(browserLocation),
         buildPasswordResetLink: new BuildPasswordResetLink(browserLocation),
         consumePasswordResetFragment: new ConsumePasswordResetFragment(browserLocation),
+        updateProfile: new UpdateProfile(accountSecurityGateway),
+        listDeviceSessions: new ListDeviceSessions(accountSecurityGateway),
+        renameDevice: new RenameDevice(accountSecurityGateway),
+        revokeDevice: new RevokeDevice(accountSecurityGateway),
+        revokeOtherSessions: new RevokeOtherSessions(accountSecurityGateway),
+        changePassword: new ChangePassword(accountSecurityGateway),
+        securityReset: new SecurityReset(accountSecurityGateway),
+        listSecurityEvents: new ListSecurityEvents(accountSecurityGateway),
       },
     },
   }

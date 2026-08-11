@@ -4,99 +4,92 @@
 завершённая работа фиксируется отдельным коммитом, а новый пункт переносится
 сюда из `backlog.md`.
 
-## WP-021 — Admin account lifecycle и безопасный password recovery
+## WP-022 — User settings, devices и security center
 
 Статус: **completed**  
-Backlog item: `BL-039`  
-Цель: дать администратору полный безопасный lifecycle закрытых аккаунтов —
-поиск и просмотр, блокировку/разблокировку, перевыпуск invitation и отдельный
-одноразовый password-reset flow, в котором администратор никогда не видит и не
-задаёт постоянный пароль пользователя.
+Backlog item: `BL-040`  
+Цель: превратить settings placeholder в рабочий self-service security center,
+который использует существующие защищённые backend operations через typed
+frontend layers и не раскрывает credential/hash material.
 
 ### Результат
 
-Admin page вызывает отдельные typed application use cases через gateway и
-показывает явные состояния аккаунта. Для уже активированного пользователя
-администратор может выпустить короткоживущую одноразовую reset-ссылку. Сервер
-хранит только SHA-256 digest purpose-bound reset credential; открытие ссылки не
-отправляет secret в HTTP/referrer, а пользователь сам задаёт новый Argon2id
-password. Успешный reset атомарно погашает token и отзывает все sessions/devices.
+Пользователь меняет display name, видит active device-bound sessions, может
+переименовать устройство, отозвать отдельное чужое устройство или все остальные
+сеансы. Отдельные step-up формы меняют пароль либо выполняют полный security
+reset. Theme/haptics остаются локальными несекретными preferences и не
+смешиваются с server account state.
 
-### Security invariants
+### Invariants
 
-1. Activation и password reset — разные domain entities, таблицы, repositories,
-   use cases, DTO и endpoints; credential одного purpose не подходит другому.
-2. Plaintext reset secret возвращается только один раз непосредственно в ответе
-   на admin action, не хранится в БД, audit event, exception или log.
-3. Reset token имеет bounded TTL, SHA-256 lookup digest, single-use/revocation
-   lifecycle и row lock; два конкурентных consume не могут оба успешно пройти.
-4. Admin не задаёт новый password. Public reset endpoint принимает purpose-bound
-   credential и новый password, проверяет общий password policy и возвращает
-   одинаковую bounded ошибку для unknown/expired/used/revoked token.
-5. Target account должен быть активирован. Invitation account использует только
-   activation flow; disabled account reset не делает активным автоматически.
-6. Успешный reset отзывает все target sessions и devices в той же transaction,
-   обновляет Argon2id hash и добавляет bounded security event без secret.
-7. Admin endpoint требует active admin session, exact Origin и CSRF. Нельзя
-   reset-ить свой admin account этим endpoint: для него есть step-up settings flow.
-8. Frontend читает secret только из URL fragment, немедленно очищает address bar,
-   держит его в памяти формы и очищает после submit/unmount.
-9. Vue components не вызывают raw HTTP/browser APIs; block/reactivate/reissue/
-   reset operations проходят presentation → application → port → infrastructure.
-10. API/OpenAPI и session/admin list responses не раскрывают token hashes,
-    password hashes, session credentials или внутренние persistence objects.
+1. Presentation вызывает account/security use cases; raw HTTP и untrusted DTO
+   parsing остаются в infrastructure adapters.
+2. Device/session DTO не содержит session credentials, token hashes, password
+   hashes или private crypto material.
+3. Current device нельзя отозвать guessed DELETE: для него используются logout
+   или explicit security reset; foreign device ID остаётся 404 на backend.
+4. Rename/revoke/revoke-others/profile/password/reset требуют cookie session,
+   exact Origin и CSRF; password/reset дополнительно требуют current password.
+5. Password fields очищаются до ожидания network response и при unmount; они не
+   попадают в URL, storage, logs или persistent Vue state.
+6. Password change сохраняет current session и отзывает остальные. Security
+   reset отзывает все sessions/devices, очищает auth state и ведёт на login.
+7. IP и best-effort browser metadata отображаются только как approximate
+   security context, никогда как authorization/risk verdict.
+8. Device actions имеют явное подтверждение, busy/error/empty/offline states и
+   не допускают повторного destructive submit.
+9. Theme/haptics сохраняются только как non-secret preference; security events
+   читаются bounded page и отображаются без свободного server payload.
 
 ### План
 
-- [x] Завершить WP-020 implementation: PWA shell, frontend layers и full CI;
-  physical 390px visual acceptance перенесён в `BL-041`/release checklist.
-- [x] Добавить `PasswordResetToken` domain entity, repository port/adapter,
-  identity UoW binding, ORM model и Alembic `0011`.
-- [x] Добавить configurable reset TTL, secure secret port/adapter и небольшие
-  Dishka bindings в существующие тематические providers.
-- [x] Реализовать `IssuePasswordReset` и `ResetPasswordWithToken` use cases с
-  authorization, self-safety, revocation и audit event.
-- [x] Добавить admin/public HTTP endpoints, uniform error translation, Origin/
-  CSRF contracts и schema-leak regression tests.
-- [x] Расширить frontend account domain/application gateway: block/reactivate,
-  activation reissue, password-reset issuance и transient link handling.
-- [x] Добавить `/reset-password`, fragment consumption и password form; обновить
-  guest middleware/navigation без browser credential persistence.
-- [x] Добавить pytest domain/application/HTTP/PostgreSQL concurrency tests и
-  Vitest frontend use-case/page-state tests.
-- [x] Обновить `.env.example`, architecture/backlog/bugs и migration/deployment
-  documentation.
-- [x] Прогнать полный `make ci`, проверить diff/secrets и подготовить отдельный
-  commit; production rollout выполнять после успешного protected workflow.
+- [x] Добавить frontend domain DTO для device sessions/security events и
+  account-security gateway port.
+- [x] Реализовать HTTP adapter/runtime parsers для profile, devices, revoke,
+  revoke-others, password change, security reset и recent events.
+- [x] Добавить по одному application use case на каждую operation и wiring в
+  Nuxt composition root.
+- [x] Разбить settings UI на ProfileCard, DeviceSessionsCard,
+  PasswordSecurityCard и SecurityEventsCard; page оставить composition shell.
+- [x] Реализовать rename/revoke confirmation, revoke-all-others и безопасные
+  password/reset forms с очисткой secrets.
+- [x] Синхронизировать изменённый profile с auth state без reload и завершать
+  local auth state после security reset.
+- [x] Добавить Vitest для parsers/use cases/critical UI flows и negative secret
+  persistence contract.
+- [x] Обновить architecture/backlog/bugs и подготовить полный CI/diff/security
+  review перед отдельным commit/push.
 
 ### Не входит в scope
 
-- profile/device settings UI (`BL-040`);
-- visual regression/install-update polish (`BL-041`);
-- WebSocket/receipts/presence (`BL-009`, `BL-011`);
-- E2EE, encrypted local archive, attachments и push.
+- device model enrichment User-Agent/GeoIP полями, которых ещё нет в schema;
+- Web Push preferences/subscriptions (`BL-026`–`BL-028`);
+- E2EE identity/device enrollment и crypto reset (`BL-012`–`BL-015`);
+- visual regression/install-update polish (`BL-041`).
 
 ### Проверка готовности
 
-- invitation secret не принимается reset endpoint и наоборот;
-- unknown/expired/used/revoked reset credentials внешне неразличимы;
-- одновременное двойное использование даёт ровно один success;
-- reset отзывает все target sessions/devices, но не затрагивает admin session;
-- normal user, missing CSRF и foreign Origin не могут issue reset;
-- self-admin reset через admin API отклоняется;
-- URL fragment очищается до первого network request и secret не сохраняется;
-- backend lint/typecheck/pytest/migration, frontend lint/test/typecheck/build и
-  repository compose/deploy checks зелёные.
+- settings page не содержит raw `fetch`, localStorage или browser identity logic;
+- current/other device визуально различаются, current revoke action отсутствует;
+- rename и revoke отражаются после server response;
+- password mismatch/weak/wrong-current/network outcomes bounded и credentials
+  очищены;
+- security reset удаляет local auth state и redirect-ит на login;
+- session/event API parsers reject malformed/secret-bearing assumptions;
+- full repository CI зелёный.
 
 ### Проверено
 
-- `make ci`: Ruff/format/import contracts, mypy, 135 pytest passed и 6
-  PostgreSQL tests skipped без URL; ESLint, Nuxt typecheck/build, 17 Vitest и
-  Compose/deploy checks прошли;
-- на изолированной локальной PostgreSQL выполнен fresh `base → 0011` Alembic
-  upgrade и все 6 integration tests, включая concurrent reset consume;
-- HTTP critical path подтверждает CSRF/Origin/admin/self restrictions,
-  purpose separation, немедленный revoke, replay rejection и новый login;
-- persistence/OpenAPI tests не находят plaintext secret, password/session hash
-  или credential fields в публичных schemas;
-- временные local test database/role после проверки удалены.
+- `make ci`: backend Ruff/format/import contracts/mypy/pytest, frontend
+  ESLint/typecheck/Vitest/build и Compose/deploy checks прошли полностью;
+  backend — 135 passed, 6 PostgreSQL-only tests skipped без integration URL,
+  frontend — 21 passed.
+- In-app browser QA локальной production-сборки: desktop и viewport 390×844,
+  console warnings отсутствуют, `scrollWidth === clientWidth === 390`, найденный
+  overflow скрытого haptics input исправлен.
+- Profile, theme, haptics, device, password/reset и event cards визуально
+  проверены; переименование текущего тестового устройства прошло через реальный
+  HTTP flow и отобразило authoritative server state.
+- Смена пароля/security reset вручную не отправлялись: очистка credential refs до
+  завершения запроса, double-confirm reset и redirect проверяются Vitest без
+  лишней мутации локальных credentials.

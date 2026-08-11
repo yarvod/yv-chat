@@ -49,6 +49,8 @@ Implementation и desktop browser smoke завершены; physical 390px scree
 
 ### BL-040 — User settings, devices и security center
 
+Статус: **completed** (`WP-022`).
+
 Результат: settings page управляет профилем, темой, haptics и безопасностью
 текущего аккаунта через существующие и новые typed use cases.
 

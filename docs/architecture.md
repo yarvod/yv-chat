@@ -375,7 +375,22 @@ Cookie-authenticated writes требуют exact allowed `Origin` и CSRF protec
 
 Active-device API выводит только non-revoked/non-expired sessions текущего пользователя, сервером отмечает current session и позволяет rename, revoke одной не-current device-bound session или atomic revoke-all-others. Ownership всегда ограничивается authenticated `user_id`; guessed foreign UUID возвращает тот же not-found outcome. Typed security events (`login`, `logout`, credential replay и device actions) содержат только opaque IDs/timestamps, имеют configurable bounded retention и не принимают free-form payload.
 
+Frontend security center реализует те же операции через отдельный
+`AccountSecurityGateway`: infrastructure runtime-validates device/event/profile
+DTO, application предоставляет небольшие intent-level use cases, а settings
+components отвечают только за формы и подтверждения. Current device помечается
+сервером и не получает revoke action. Rename/revoke/revoke-others обновляют
+authoritative list после response. IP показывается только как приблизительный
+контекст. Event UI принимает закрытый набор typed event names и не ожидает
+free-form payload.
+
 Current-account API получает identity исключительно из authenticated principal. `GET/PATCH /api/v1/me` возвращает/изменяет только bounded profile fields. Password change и explicit security reset используют текущий пароль как step-up factor внутри row-locked identity transaction; IP/GeoIP/User-Agent не участвуют. Password change обновляет Argon2id hash и отзывает все остальные sessions/devices, сохраняя current session. Security reset отзывает все sessions/devices, включая current, после чего transport удаляет auth/CSRF cookies. Обе операции создают typed bounded audit events без password/token payload. E2EE identity/key reset в эту account-операцию не входит и проектируется только после protocol ADR.
+
+Password inputs существуют только в локальных refs соответствующей формы:
+значения копируются в краткоживущие параметры вызова, UI refs очищаются до
+ожидания network response и повторно на unmount. Успешный profile update заменяет
+current-account DTO в auth state без reload; успешный security reset очищает
+auth state и переводит приложение на login. Это не является E2EE key reset.
 
 PWA замыкает закрытый onboarding без public registration: admin-only panel вызывает отдельные list/invite/reissue/block/reset use cases, а logged-out формы — `ActivateAccount` и `ResetPassword`. Admin list использует server-side bounded search/pagination и batch session summary без N+1. Plaintext activation/reset secret существует в frontend state только в момент ввода или одноразового admin response, находится в URL только после fragment marker, не попадает в HTTP/referrer, localStorage, IndexedDB или logs и удаляется при success/скрытии/unmount/reload. Новый password и confirmation очищаются до ожидания response. Опасные admin actions требуют явного UI confirmation; видимость controls остаётся только UX, серверная `require_active_admin` — authorization boundary.
 
