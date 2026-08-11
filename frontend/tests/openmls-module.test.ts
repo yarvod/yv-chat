@@ -7,11 +7,18 @@ import {
 
 function moduleFixture(initialize: () => Promise<unknown>): OpenMlsModule {
   const Bootstrap = Object.assign(
-    () => undefined,
+    function BootstrapFixture() { return undefined },
     { restoreSealedState(): Promise<never> {
       return Promise.reject(new Error('not used'))
     } },
   )
+  Object.assign(Bootstrap.prototype, {
+    createConversation: vi.fn(),
+    addMembersAndMerge: vi.fn(),
+    joinConversation: vi.fn(),
+    protectApplicationMessage: vi.fn(),
+    unprotectApplicationMessage: vi.fn(),
+  })
   return {
     default: initialize,
     DeviceBootstrap: Bootstrap as unknown as OpenMlsModule['DeviceBootstrap'],

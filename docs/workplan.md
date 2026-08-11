@@ -56,8 +56,9 @@ synthetic v1 payload виден серверу; положить туда file k
 - [x] Расширить native Rust core: deterministic create group, add validated
   packages + merge, accept Welcome с exact group/suite/tree binding и
   protect/unprotect application message с outer AAD.
-- [ ] Добавить обработку Commit существующими members, remove/re-add leaf и
-  безопасные WASM bindings поверх проверенного native контракта.
+- [x] Экспортировать initial create/add/Welcome и protect/unprotect через безопасные
+  WASM bindings поверх проверенного native контракта.
+- [ ] Добавить обработку Commit существующими members и remove/re-add leaf.
 - [ ] Расширить closed Worker protocol; все state-changing crypto operations должны
   checkpoint-ить sealed provider state до success наружу.
 - [ ] Добавить frontend bootstrap/reconcile coordinator и typed server gateways;

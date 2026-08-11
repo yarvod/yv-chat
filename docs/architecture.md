@@ -697,8 +697,9 @@ Application AAD имеет точный формат
 `"yv-chat-mls-v2" || 0x00 || conversation UUID || client-message UUID`; mismatch,
 не-application record, trailing/corrupt wire data и replay закрываются без plaintext
 наружу. Native Alice/Bob tests доказывают round-trip и продолжение sender/receiver
-ratchets после sealed snapshot restore. Этот core ещё не экспортирован в WASM и не
-переключает production transport до server generation/Welcome coordination.
+ratchets после sealed snapshot restore. Initial create/add/Welcome и
+protect/unprotect экспортированы в versioned WASM v3 без private getters; production
+transport не переключается до Worker atomic checkpoint и frontend reconciliation.
 
 Unsealed snapshot содержит private MLS material. Он не является public API, не имеет
 `wasm_bindgen` export и не может записываться в IndexedDB/файл или логироваться.
@@ -724,15 +725,17 @@ Vue/application DTO. Fake IndexedDB + Node WebCrypto tests фиксируют tr
 metadata semantics. Physical Chromium и чистый Firefox подтверждены; Safari и
 storage-denial scenarios всё ещё release-gated.
 
-Repository хранит текущий generated package под immutable asset path `/crypto/v2/`:
+Repository хранит текущий generated package под immutable asset path `/crypto/v3/`:
 JS glue, TypeScript declaration и WASM производятся exact `Rust 1.91.0` /
 `wasm-bindgen 0.2.127`; CI пересобирает их и отклоняет tracked drift и private
 snapshot exports. Nuxt production build обязан выпустить отдельный module Worker
 chunk, скопировать WASM и включить оба versioned crypto assets и Worker в Workbox
 precache. Версия URL меняется вместе с несовместимой binding/schema revision, чтобы
 active service worker не смешивал новые JS bindings со старым WASM.
-Старый `/crypto/v1/` временно остаётся только rolling-compatibility asset для уже
-открытого Worker и не используется новым runtime. Import, binding-shape, WASM init,
+Старые `/crypto/v1/` и `/crypto/v2/` временно остаются только rolling-compatibility
+assets для уже открытых Worker, не используются новым runtime и не входят в новый
+precache. Import,
+binding-shape, WASM init,
 Worker crash/protocol/timeout имеют разные bounded error codes без raw exception.
 
 `DeviceCryptoRuntime` существует только внутри dedicated Worker. Он различает

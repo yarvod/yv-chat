@@ -18,6 +18,8 @@ use tls_codec::{Deserialize, Serialize};
 use uuid::Uuid;
 
 #[cfg(target_arch = "wasm32")]
+use js_sys::{Array, Uint8Array};
+#[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
 mod conversation;
@@ -79,6 +81,60 @@ pub struct DeviceBootstrap {
     credential: CredentialWithKey,
     key_package: Vec<u8>,
     fingerprint: String,
+}
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub struct ConversationBootstrapOutput {
+    commit: Vec<u8>,
+    welcome: Vec<u8>,
+    ratchet_tree: Vec<u8>,
+    epoch: u64,
+}
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+impl ConversationBootstrapOutput {
+    #[wasm_bindgen(getter)]
+    pub fn commit(&self) -> Vec<u8> {
+        self.commit.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn welcome(&self) -> Vec<u8> {
+        self.welcome.clone()
+    }
+
+    #[wasm_bindgen(getter, js_name = ratchetTree)]
+    pub fn ratchet_tree(&self) -> Vec<u8> {
+        self.ratchet_tree.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn epoch(&self) -> u64 {
+        self.epoch
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub struct ProtectedMessageOutput {
+    ciphertext: Vec<u8>,
+    epoch: u64,
+}
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+impl ProtectedMessageOutput {
+    #[wasm_bindgen(getter)]
+    pub fn ciphertext(&self) -> Vec<u8> {
+        self.ciphertext.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn epoch(&self) -> u64 {
+        self.epoch
+    }
 }
 
 fn parse_canonical_uuid(value: &str, error: BootstrapError) -> Result<Uuid, BootstrapError> {
@@ -276,6 +332,74 @@ impl DeviceBootstrap {
     #[wasm_bindgen(js_name = fingerprint)]
     pub fn wasm_fingerprint(&self) -> String {
         self.fingerprint().to_owned()
+    }
+
+    #[wasm_bindgen(js_name = createConversation)]
+    pub fn wasm_create_conversation(&mut self, conversation_id: &str) -> Result<u64, JsError> {
+        self.create_conversation(conversation_id)
+            .map_err(|error| JsError::new(error.to_string().as_str()))
+    }
+
+    #[wasm_bindgen(js_name = addMembersAndMerge)]
+    pub fn wasm_add_members_and_merge(
+        &mut self,
+        conversation_id: &str,
+        serialized_key_packages: Array,
+    ) -> Result<ConversationBootstrapOutput, JsError> {
+        let packages = serialized_key_packages
+            .iter()
+            .map(|value| {
+                if !value.is_instance_of::<Uint8Array>() {
+                    return Err(JsError::new("invalid MLS key package"));
+                }
+                Ok(Uint8Array::new(&value).to_vec())
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        self.add_members_and_merge(conversation_id, &packages)
+            .map(|output| ConversationBootstrapOutput {
+                commit: output.commit,
+                welcome: output.welcome,
+                ratchet_tree: output.ratchet_tree,
+                epoch: output.epoch,
+            })
+            .map_err(|error| JsError::new(error.to_string().as_str()))
+    }
+
+    #[wasm_bindgen(js_name = joinConversation)]
+    pub fn wasm_join_conversation(
+        &mut self,
+        conversation_id: &str,
+        welcome: &[u8],
+        ratchet_tree: &[u8],
+    ) -> Result<u64, JsError> {
+        self.join_conversation(conversation_id, welcome, ratchet_tree)
+            .map_err(|error| JsError::new(error.to_string().as_str()))
+    }
+
+    #[wasm_bindgen(js_name = protectApplicationMessage)]
+    pub fn wasm_protect_application_message(
+        &mut self,
+        conversation_id: &str,
+        client_message_id: &str,
+        plaintext: &[u8],
+    ) -> Result<ProtectedMessageOutput, JsError> {
+        self.protect_application_message(conversation_id, client_message_id, plaintext)
+            .map(|output| ProtectedMessageOutput {
+                ciphertext: output.ciphertext,
+                epoch: output.epoch,
+            })
+            .map_err(|error| JsError::new(error.to_string().as_str()))
+    }
+
+    #[wasm_bindgen(js_name = unprotectApplicationMessage)]
+    pub fn wasm_unprotect_application_message(
+        &mut self,
+        conversation_id: &str,
+        client_message_id: &str,
+        ciphertext: &[u8],
+    ) -> Result<Vec<u8>, JsError> {
+        self.unprotect_application_message(conversation_id, client_message_id, ciphertext)
+            .map_err(|error| JsError::new(error.to_string().as_str()))
     }
 }
 

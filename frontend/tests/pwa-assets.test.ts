@@ -54,7 +54,9 @@ describe('PWA install assets', () => {
     expect(config).toContain('/icons/icon-v2-maskable-512.png')
     expect(config).toContain("rel: 'apple-touch-startup-image'")
     expect(config).toContain('viewport-fit=cover')
-    expect(config).toContain("globIgnores: ['splash/**/*.png']")
+    expect(config).toContain("'splash/**/*.png'")
+    expect(config).toContain("'crypto/v1/**/*'")
+    expect(config).toContain("'crypto/v2/**/*'")
   })
 
   it('offers activation of a waiting service worker without erasing local state', () => {

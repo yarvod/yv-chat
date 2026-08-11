@@ -1,9 +1,8 @@
 import { DeviceCryptoError } from '../../application/device-crypto/errors'
 
-// v2 intentionally bypasses the old immutable Workbox entry. The public WASM
-// binding remains protocol-compatible, but a new URL prevents active PWAs from
-// mixing an older JS glue response with a newer WASM response during rollout.
-const MODULE_URL = '/crypto/v2/yv_chat_openmls_provider.js'
+// A new immutable path is mandatory whenever the generated JS/WASM binding changes.
+// v3 adds MLS conversation operations; v1/v2 remain rolling-compatibility assets.
+const MODULE_URL = '/crypto/v3/yv_chat_openmls_provider.js'
 
 export interface OpenMlsSealedSnapshot {
   readonly revision: bigint
@@ -18,11 +17,46 @@ export interface OpenMlsDeviceBootstrap {
   signaturePublicKey(): Uint8Array
   keyPackage(): Uint8Array
   fingerprint(): string
+  createConversation(conversationId: string): bigint
+  addMembersAndMerge(
+    conversationId: string,
+    serializedKeyPackages: Uint8Array[],
+  ): OpenMlsConversationBootstrapOutput
+  joinConversation(
+    conversationId: string,
+    welcome: Uint8Array,
+    ratchetTree: Uint8Array,
+  ): bigint
+  protectApplicationMessage(
+    conversationId: string,
+    clientMessageId: string,
+    plaintext: Uint8Array,
+  ): OpenMlsProtectedMessageOutput
+  unprotectApplicationMessage(
+    conversationId: string,
+    clientMessageId: string,
+    ciphertext: Uint8Array,
+  ): Uint8Array
   sealState(key: CryptoKey, revision: bigint): Promise<OpenMlsSealedSnapshot>
   free(): void
 }
 
+export interface OpenMlsConversationBootstrapOutput {
+  readonly commit: Uint8Array
+  readonly welcome: Uint8Array
+  readonly ratchetTree: Uint8Array
+  readonly epoch: bigint
+  free(): void
+}
+
+export interface OpenMlsProtectedMessageOutput {
+  readonly ciphertext: Uint8Array
+  readonly epoch: bigint
+  free(): void
+}
+
 export interface OpenMlsDeviceBootstrapConstructor {
+  readonly prototype: OpenMlsDeviceBootstrap
   new(userId: string, deviceId: string): OpenMlsDeviceBootstrap
   restoreSealedState(
     key: CryptoKey,
@@ -52,10 +86,16 @@ export interface OpenMlsModule {
 function isOpenMlsModule(value: unknown): value is OpenMlsModule {
   if (typeof value !== 'object' || value === null) return false
   const candidate = value as Partial<OpenMlsModule>
+  const prototype = candidate.DeviceBootstrap?.prototype as Partial<OpenMlsDeviceBootstrap> | undefined
   return typeof candidate.default === 'function'
     && typeof candidate.DeviceBootstrap === 'function'
     && typeof candidate.DeviceBootstrap.restoreSealedState === 'function'
     && typeof candidate.validatePublicKeyPackage === 'function'
+    && typeof prototype?.createConversation === 'function'
+    && typeof prototype.addMembersAndMerge === 'function'
+    && typeof prototype.joinConversation === 'function'
+    && typeof prototype.protectApplicationMessage === 'function'
+    && typeof prototype.unprotectApplicationMessage === 'function'
 }
 
 type OpenMlsModuleLoader = () => Promise<unknown>
