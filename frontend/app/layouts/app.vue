@@ -5,7 +5,11 @@ import AppIcon from '../components/ui/AppIcon.vue'
 import { selectedConversationId } from '../presentation/chat/conversation-route'
 import type { AppIconName } from '../presentation/icons'
 import { useAuth } from '../presentation/composables/useAuth'
-import { useDeviceCryptoLifecycle } from '../presentation/composables/useDeviceCryptoLifecycle'
+import {
+  deviceCryptoIssueMessage,
+  deviceCryptoIssueNeedsReconnect,
+  useDeviceCryptoLifecycle,
+} from '../presentation/composables/useDeviceCryptoLifecycle'
 import { usePreferences } from '../presentation/composables/usePreferences'
 
 const auth = useAuth()
@@ -30,6 +34,10 @@ async function logout(): Promise<void> {
   await auth.logout()
   await navigateTo('/login')
 }
+
+async function reconnectDevice(): Promise<void> {
+  await logout()
+}
 </script>
 
 <template>
@@ -39,8 +47,16 @@ async function logout(): Promise<void> {
       class="device-crypto-warning"
       role="alert"
     >
-      Криптомодуль этого устройства не готов. Защищённые функции отключены.
-      <button type="button" @click="deviceCrypto.retry">Повторить</button>
+      {{ deviceCryptoIssueMessage(deviceCrypto.state.issue) }}
+      Защищённые функции отключены.
+      <button
+        v-if="deviceCryptoIssueNeedsReconnect(deviceCrypto.state.issue)"
+        type="button"
+        @click="reconnectDevice"
+      >
+        Переподключить
+      </button>
+      <button v-else type="button" @click="deviceCrypto.retry">Повторить</button>
     </p>
     <aside class="app-rail">
       <NuxtLink class="rail-brand" to="/chat" aria-label="yv-chat">Y</NuxtLink>

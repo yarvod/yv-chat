@@ -1,14 +1,63 @@
 import { onBeforeUnmount, onMounted, reactive, readonly, watch, type ComputedRef } from 'vue'
 
 import type { CurrentAccount } from '../../domain/accounts/account'
+import { ApplicationError } from '../../application/errors'
+import { DeviceCryptoError, type DeviceCryptoErrorCode } from '../../application/device-crypto/errors'
+
+export type DeviceCryptoLifecycleIssue =
+  | DeviceCryptoErrorCode
+  | 'network'
+  | 'server'
+  | 'unknown'
 
 interface DeviceCryptoLifecycleState {
   status: 'idle' | 'initializing' | 'ready' | 'unavailable'
+  issue: DeviceCryptoLifecycleIssue | null
+}
+
+export function deviceCryptoIssueMessage(issue: DeviceCryptoLifecycleIssue | null): string {
+  if (issue === 'not-provisioned') {
+    return 'Локальные ключи этого входа отсутствуют. Переподключите устройство.'
+  }
+  if (issue === 'conflict' || issue === 'corrupt-state' || issue === 'rollback') {
+    return 'Локальные ключи не совпадают с регистрацией устройства. Переподключите его.'
+  }
+  if (issue === 'invalid-key-package') {
+    return 'Проверка ключевого пакета устройства не прошла. Переподключите устройство.'
+  }
+  if (issue === 'storage-unavailable') {
+    return 'Браузер не дал доступ к защищённому локальному хранилищу.'
+  }
+  if (issue === 'runtime-unavailable') {
+    return 'Не загрузился локальный OpenMLS-модуль. Проверьте сеть и обновите приложение.'
+  }
+  if (issue === 'network') return 'Не удалось проверить ключи из-за потери соединения.'
+  if (issue === 'server') return 'Сервер временно не смог проверить регистрацию устройства.'
+  return 'Криптомодуль этого устройства не готов. Защищённые функции отключены.'
+}
+
+export function deviceCryptoIssueNeedsReconnect(
+  issue: DeviceCryptoLifecycleIssue | null,
+): boolean {
+  return issue === 'not-provisioned'
+    || issue === 'conflict'
+    || issue === 'corrupt-state'
+    || issue === 'rollback'
+    || issue === 'invalid-key-package'
+}
+
+function issueFrom(error: unknown): DeviceCryptoLifecycleIssue {
+  if (error instanceof DeviceCryptoError) return error.code
+  if (error instanceof ApplicationError) {
+    if (error.kind === 'network') return 'network'
+    return error.status !== null && error.status >= 500 ? 'server' : 'unknown'
+  }
+  return 'unknown'
 }
 
 export function useDeviceCryptoLifecycle(user: ComputedRef<CurrentAccount | null>) {
   const { $frontend } = useNuxtApp()
-  const state = reactive<DeviceCryptoLifecycleState>({ status: 'idle' })
+  const state = reactive<DeviceCryptoLifecycleState>({ status: 'idle', issue: null })
   let scope: ReturnType<typeof $frontend.createDeviceCrypto> | null = null
   let generation = 0
   let stopWatching: (() => void) | null = null
@@ -26,9 +75,11 @@ export function useDeviceCryptoLifecycle(user: ComputedRef<CurrentAccount | null
     scope = null
     if (!current) {
       state.status = 'idle'
+      state.issue = null
       return
     }
     state.status = 'initializing'
+    state.issue = null
     try {
       const next = $frontend.createDeviceCrypto()
       scope = next
@@ -36,9 +87,15 @@ export function useDeviceCryptoLifecycle(user: ComputedRef<CurrentAccount | null
         userId: current.userId,
         deviceId: current.deviceId,
       })
-      if (operation === generation) state.status = 'ready'
-    } catch {
-      if (operation === generation) state.status = 'unavailable'
+      if (operation === generation) {
+        state.status = 'ready'
+        state.issue = null
+      }
+    } catch (error) {
+      if (operation === generation) {
+        state.status = 'unavailable'
+        state.issue = issueFrom(error)
+      }
     }
   }
 
