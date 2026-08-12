@@ -585,10 +585,11 @@ legend { padding: 0 6px; color: var(--muted); font-size: .8rem; }
   .mobile-tabs { position: absolute; z-index: 15; inset-inline: 0; bottom: 0; display: flex; height: var(--mobile-tabs-outer-height); align-items: flex-start; justify-content: space-around; padding: 7px 12px env(safe-area-inset-bottom, 0px); border-top: 1px solid var(--border); background: var(--surface-solid); }
   html.app-keyboard-active .product-shell { --mobile-tabs-slot-height: 0px; }
   html.app-keyboard-active .mobile-tabs { display: none; }
-  .mobile-tab { display: grid; min-width: 72px; min-height: 48px; place-items: center; gap: 1px; border-radius: 14px; color: var(--muted); text-decoration: none; }
+  .mobile-tab { display: grid; min-width: 72px; min-height: 48px; place-items: center; gap: 1px; border-radius: 14px; color: var(--muted); text-decoration: none; transform: translateZ(0); transition: color .16s ease, background .16s ease, transform .1s ease; }
   .mobile-tab > .app-icon { font-size: 1.15rem; }
   .mobile-tab small { font-size: .63rem; font-weight: 750; }
   .mobile-tab.active { color: var(--primary); background: color-mix(in srgb, var(--primary) 10%, transparent); }
+  .mobile-tab:active { background: color-mix(in srgb, var(--primary) 17%, var(--surface-solid)); transform: scale(.91); }
 
   .messenger-shell { height: 100%; min-height: 0; grid-template-columns: 1fr; }
   .sidebar, .workspace-main, .message-panel { min-height: 0; height: 100%; }

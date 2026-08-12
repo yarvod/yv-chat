@@ -75,6 +75,16 @@ describe('mobile application shell', () => {
     expect(mobileBlock).toMatch(/\.conversation-header \{[^}]*padding: 7px 9px;/)
   })
 
+  it('pairs bottom-tab press feedback with a semantic selection haptic', () => {
+    const css = readFileSync(resolve(process.cwd(), 'app/assets/main.css'), 'utf8')
+    const layout = readFileSync(resolve(process.cwd(), 'app/layouts/app.vue'), 'utf8')
+
+    expect(css).toMatch(/\.mobile-tab \{[^}]*transition:[^}]*transform \.1s ease;/)
+    expect(css).toMatch(/\.mobile-tab:active \{[^}]*transform: scale\(\.91\);/)
+    expect(layout).toContain('@click="performMobileTabSelection(item.to)"')
+    expect(layout).toMatch(/function performMobileTabSelection\(to: string\): void \{\s+if \(isNavigationItemActive\(to\)\) return\s+\$frontend\.haptics\.perform\('selection'\)/)
+  })
+
   it('keeps the PWA rubber-band canvas aligned with the selected page theme', () => {
     const css = readFileSync(resolve(process.cwd(), 'app/assets/main.css'), 'utf8')
     const config = readFileSync(resolve(process.cwd(), 'nuxt.config.ts'), 'utf8')

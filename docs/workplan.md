@@ -74,4 +74,6 @@
   а standalone video note отображается без общей rectangular card (`BUG-070`);
 - дополнительный iPhone acceptance перенёс top safe area с отдельных chat headers на
   общий mobile shell; keyboard text-entry скрывает bottom tabs, а PWA canvas и
-  `theme-color` совпадают с фоном выбранной темы при iOS rubber-band (`BUG-071`).
+  `theme-color` совпадают с фоном выбранной темы при iOS rubber-band (`BUG-071`);
+- bottom navigation получила общий press animation на iOS/Android и короткий
+  `selection` vibration на поддерживающем Vibration API Android при смене раздела.

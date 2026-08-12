@@ -17,6 +17,7 @@ import {
 import { usePreferences } from '../presentation/composables/usePreferences'
 
 const auth = useAuth()
+const { $frontend } = useNuxtApp()
 const deviceCrypto = useDeviceCryptoLifecycle(auth.user)
 const reenrollmentVisible = ref(false)
 const reenrollmentBusy = ref(false)
@@ -36,6 +37,15 @@ const items = computed<NavigationItem[]>(() => [
 const conversationFocused = computed(() => (
   route.path === '/chat' && selectedConversationId(route.query.conversation) !== null
 ))
+
+function isNavigationItemActive(to: string): boolean {
+  return route.path.startsWith(to)
+}
+
+function performMobileTabSelection(to: string): void {
+  if (isNavigationItemActive(to)) return
+  $frontend.haptics.perform('selection')
+}
 
 function openReenrollment(): void {
   reenrollmentMessage.value = null
@@ -118,7 +128,8 @@ async function enrollReplacementDevice(password: string): Promise<void> {
         :key="item.to"
         :to="item.to"
         class="mobile-tab"
-        :class="{ active: route.path.startsWith(item.to) }"
+        :class="{ active: isNavigationItemActive(item.to) }"
+        @click="performMobileTabSelection(item.to)"
       >
         <AppIcon :name="item.icon" /><small>{{ item.label }}</small>
       </NuxtLink>
