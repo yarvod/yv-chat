@@ -21,6 +21,10 @@ v2 без fallback, group — только synthetic v1. Synthetic v1 — UTF-8/
 серверу. Исторические v1/v2 записи не переписываются и читаются своей exact version.
 Вложения пока не поддерживаются и являются следующим vertical slice.
 
+Runtime v7 восстанавливает утраченный conversation control-checkpoint по exact
+совпадению public local MLS epoch/roster с server generation без logout/login.
+Permanent primary device нет: coordinator — временная роль одной MLS generation.
+
 Install assets адаптированы для Android circle/squircle и Apple Dock. После смены
 launcher icon уже установленную Android PWA может потребоваться удалить и установить
 заново: Chrome/launcher не гарантируют немедленное обновление install icon.

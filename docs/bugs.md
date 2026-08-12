@@ -6,7 +6,7 @@
 
 ### BUG-053 — Потеря conversation checkpoint требовала logout/login
 
-- Статус: `in progress` (`WP-054`).
+- Статус: `fixed, full-CI and production rollout verified` (`WP-054`, `01ef0ac`).
 - Severity: `critical availability`; после deploy/reload existing non-coordinator
   device получал READY bootstrap HTTP 200, но не мог отправлять direct MLS v2 message.
 - Reproduction: sealed `yv-chat-crypto-v1` snapshot содержит действующий OpenMLS group,
@@ -19,6 +19,9 @@
 - Security invariant: checkpoint можно восстановить только по exact conversation,
   epoch и полному roster; при отсутствии/несовпадении private state direct chat
   остаётся fail-closed без v1 downgrade.
+- Проверка: real WASM/Worker regression восстанавливает потерянный control checkpoint
+  и применяет следующий Commit без logout/login; mismatch/missing-group tests остаются
+  blocked. CI `31549397608` и production deploy `31549397629` green.
 
 ### BUG-052 — Direct generation could omit a participant with no capable device
 

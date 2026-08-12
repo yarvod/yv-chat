@@ -151,7 +151,7 @@ responsive group-info UI, а backend остаётся единственной �
 
 ### BL-054 — Self-healing local MLS checkpoint и явный device recovery
 
-Статус: **in progress** (`WP-054`).
+Статус: **completed** (`WP-054`, commit `01ef0ac`, production run `31549397629`).
 
 Результат: существующая device identity не требует logout/login после deploy/reload,
 если sealed OpenMLS group сохранилась, но отдельный conversation checkpoint потерян.

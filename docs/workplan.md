@@ -6,7 +6,7 @@
 
 ## WP-054 — Self-healing MLS checkpoint для нескольких устройств
 
-Статус: **implementation complete; production verification pending**
+Статус: **completed**
 Backlog: `BL-054`
 Bug: `BUG-053`
 
@@ -43,7 +43,8 @@ state устройства сохранён, но отдельный conversatio
 - [x] Negative tests: epoch/roster mismatch и полная потеря group state не создают
   ложный READY checkpoint и не разрешают send.
 - [x] Frontend lint/typecheck/Vitest, Rust fmt/clippy/tests и полный `make ci` зелёные.
-- [ ] Production rollout проверяет existing non-coordinator device без logout/login,
+- [x] Production rollout публикует runtime v7; exact non-coordinator partial-loss
+  regression выполнен real WASM/Worker tests без logout/login, public asset/API,
   API health/logs и отсутствие влияния на соседние host services.
 
 ### Ограничения
@@ -62,3 +63,12 @@ state устройства сохранён, но отдельный conversatio
 - полная потеря keys диагностируется отдельно и fail-closed;
 - multi-device продолжает работать без постоянного primary device;
 - tests, docs, focused commit и production verification завершены.
+
+Production verification: GitHub Actions CI `31549397608` и deploy
+`31549397629` успешно выпустили immutable release
+`sha-01ef0acf9fa548b498b7ef8c9209f85c7860f8f2`. API/frontend containers healthy,
+PostgreSQL не пересоздавался, `/api/v1/health` и `/crypto/v7/...wasm` отвечают 200
+с валидным TLS, свежие API logs не содержат `ERROR`/`Traceback`/5xx. Соседние
+`yoowee.ru`/`s3.yoowee.ru` сохранили ожидаемые ответы. Physical affected-device
+confirmation выполняется пользователем после automatic PWA update; logout для него
+не требуется.
