@@ -21,6 +21,7 @@ import type {
 import { buildTimelineLayout } from '../../presentation/chat/timeline-layout'
 import AppIcon from '../ui/AppIcon.vue'
 import MessageAttachments from './MessageAttachments.vue'
+import MessageText from './MessageText.vue'
 
 const props = withDefaults(defineProps<{
   conversation: Conversation | null
@@ -46,7 +47,11 @@ const props = withDefaults(defineProps<{
   ) => Promise<boolean>
   searchMessages?: (query: string) => Promise<readonly TimelineMessage[]>
   openMessage?: (messageId: string) => Promise<void>
-  loadAttachment?: (conversationId: string, attachment: MessageAttachment) => Promise<Blob>
+  loadAttachment?: (
+    conversationId: string,
+    attachment: MessageAttachment,
+    expiresAt: string,
+  ) => Promise<Blob>
   retryOutgoing?: (clientMessageId: string) => Promise<boolean>
   loadOlder?: () => Promise<void>
   returnToLatest?: () => Promise<void>
@@ -242,27 +247,6 @@ function mentionedUserIds(): string[] {
     member.leftAt === null
     && text.includes(`@${member.username.toLocaleLowerCase('ru-RU')}`)
   )).map(member => member.userId) ?? []
-}
-
-function messageSegments(message: TimelineMessage): Array<{ text: string, mention: boolean, own: boolean }> {
-  const body = message.displayBody ?? ''
-  const intended = new Set(message.mentionedUserIds ?? [])
-  if (intended.size === 0) return [{ text: body, mention: false, own: false }]
-  const members = new Map(
-    (props.conversation?.members ?? []).map(member => [member.username.toLocaleLowerCase('ru-RU'), member]),
-  )
-  const segments: Array<{ text: string, mention: boolean, own: boolean }> = []
-  let cursor = 0
-  for (const match of body.matchAll(/@[\p{L}\p{N}_.-]+/gu)) {
-    const index = match.index ?? 0
-    if (index > cursor) segments.push({ text: body.slice(cursor, index), mention: false, own: false })
-    const member = members.get(match[0].slice(1).toLocaleLowerCase('ru-RU'))
-    const mention = member !== undefined && intended.has(member.userId)
-    segments.push({ text: match[0], mention, own: mention && member.userId === props.actorUserId })
-    cursor = index + match[0].length
-  }
-  if (cursor < body.length) segments.push({ text: body.slice(cursor), mention: false, own: false })
-  return segments
 }
 
 async function chooseMention(username: string): Promise<void> {
@@ -940,6 +924,7 @@ onBeforeUnmount(() => {
             v-if="item.message.contentState === 'available' && (item.message.displayAttachments?.length ?? 0) > 0"
             :conversation-id="item.message.conversationId"
             :attachments="item.message.displayAttachments ?? []"
+            :expires-at="item.message.expiresAt"
             :load-attachment="loadAttachment"
           />
           <button
@@ -951,13 +936,13 @@ onBeforeUnmount(() => {
             <strong>{{ repliedMessage(item.message) ? senderName(repliedMessage(item.message)!) : 'Ответ' }}</strong>
             <span>{{ replyPreview(repliedMessage(item.message)) }}</span>
           </button>
-          <p v-if="item.message.contentState === 'available' && item.message.displayBody">
-            <span
-              v-for="(segment, segmentIndex) in messageSegments(item.message)"
-              :key="segmentIndex"
-              :class="{ mention: segment.mention, 'mention--own': segment.own }"
-            >{{ segment.text }}</span>
-          </p>
+          <MessageText
+            v-if="item.message.contentState === 'available' && item.message.displayBody"
+            :body="item.message.displayBody"
+            :members="conversation.members"
+            :mentioned-user-ids="item.message.mentionedUserIds ?? []"
+            :actor-user-id="actorUserId"
+          />
           <p v-else-if="item.message.contentState === 'deleted'" class="message-tombstone">
             {{ item.message.deletionReason === 'expired' ? 'Срок хранения сообщения истёк' : 'Сообщение удалено для всех' }}
           </p>
@@ -1050,7 +1035,7 @@ onBeforeUnmount(() => {
             </template>
           </span>
         </div>
-        <p v-if="message.displayBody">{{ message.displayBody }}</p>
+        <MessageText v-if="message.displayBody" :body="message.displayBody" />
         <small class="message-meta outbox-meta">
           <time :datetime="message.createdAt">
             {{ new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}

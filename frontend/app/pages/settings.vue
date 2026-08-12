@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 
 import DeviceSessionsCard from '../components/settings/DeviceSessionsCard.vue'
+import DeviceStorageCard from '../components/settings/DeviceStorageCard.vue'
 import PasswordSecurityCard from '../components/settings/PasswordSecurityCard.vue'
 import ProfileCard from '../components/settings/ProfileCard.vue'
 import SecurityEventsCard from '../components/settings/SecurityEventsCard.vue'
@@ -78,6 +79,11 @@ async function logoutCurrentDevice(): Promise<void> {
         <small class="muted">Информация приблизительная и не используется для авторизации.</small>
       </article>
       <DeviceSessionsCard />
+      <DeviceStorageCard
+        v-if="account"
+        :owner-user-id="account.userId"
+        :owner-device-id="account.deviceId"
+      />
       <NotificationSettingsCard />
       <PasswordSecurityCard @security-reset="securityResetCompleted" />
       <SecurityEventsCard />

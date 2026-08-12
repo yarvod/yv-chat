@@ -22,8 +22,14 @@ v2 без fallback, group — только synthetic v1. Synthetic v1 — UTF-8/
 Групповые чаты поддерживают до 10 ordered фото, видео или произвольных файлов на
 сообщение: этот поток server-readable, не является E2EE и хранит media не дольше
 server TTL. Поддерживаемые видео воспроизводятся внутри PWA, остальные форматы
-безопасно скачиваются. Вложения в личных MLS-чатах пока запрещены до отдельного
-client-side encrypted flow.
+безопасно скачиваются. Уже открытые group media сохраняются локально в отдельном
+AES-GCM encrypted OPFS/IndexedDB cache с LRU ceiling 2 GiB на установку устройства;
+browser может предоставить меньше quota или удалить evictable cache. Вложения в
+личных MLS-чатах пока запрещены до отдельного client-side encrypted flow.
+В Settings можно посмотреть размер и число локальных media-копий и после отдельного
+подтверждения очистить только этот кэш: переписки, offline-очередь, session/device
+identity и MLS keys не удаляются. `http/https` ссылки в тексте сообщений кликабельны
+и открываются обычным browser/OS link handling устройства; unsafe URL schemes inert.
 
 Действующие group-media лимиты конфигурируемы: фото — 12 MiB, видео — 100 MiB,
 произвольный файл — 25 MiB, до 10 вложений на сообщение и 5 GiB активных media

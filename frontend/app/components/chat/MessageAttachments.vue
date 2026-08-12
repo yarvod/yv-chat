@@ -12,8 +12,13 @@ interface MediaState {
 
 const props = defineProps<{
   conversationId: string
+  expiresAt: string
   attachments: readonly MessageAttachment[]
-  loadAttachment: (conversationId: string, attachment: MessageAttachment) => Promise<Blob>
+  loadAttachment: (
+    conversationId: string,
+    attachment: MessageAttachment,
+    expiresAt: string,
+  ) => Promise<Blob>
 }>()
 
 const mediaStates = ref(new Map<string, MediaState>())
@@ -64,7 +69,7 @@ async function load(attachment: MessageAttachment): Promise<MediaState> {
   const running = pending.get(attachment.attachmentId)
   if (running) return await running
   setState(attachment.attachmentId, { phase: 'loading' })
-  const request = props.loadAttachment(props.conversationId, attachment)
+  const request = props.loadAttachment(props.conversationId, attachment, props.expiresAt)
     .then(blob => {
       const url = URL.createObjectURL(blob)
       if (disposed) {

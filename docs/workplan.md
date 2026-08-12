@@ -4,58 +4,61 @@
 завершённая работа фиксируется отдельным коммитом, а новый пункт переносится
 сюда из `backlog.md`.
 
-## WP-070 — Telegram-like chat interactions
+## WP-072 — Device data controls and safe message links
 
-Статус: **implemented and locally verified**
+Статус: **complete; local browser acceptance and full CI green**
 
-Цель: сделать повседневную работу с перепиской привычной: свежие диалоги всегда
-сверху, внутри чата доступны локальный поиск, reply, mentions и reactions, а фото
-и видео удобно смотреть inline и в полноэкранном viewer.
+Цель: пользователь видит объём локального media cache и может безопасно очистить
+его в Settings, не затрагивая переписки/session/device identity/MLS; `http(s)` URL
+в сообщениях открываются обычной ссылкой через browser/OS устройства.
 
 ### Scope
 
-- [x] атомарно обновлять activity time при создании сообщения и сортировать список
-  по последней message activity;
-- [x] выполнять bounded поиск по расшифрованной client-side истории без server
-  plaintext index;
-- [x] хранить reply target и intended mention IDs внутри versioned protected content;
-- [x] добавить mention autocomplete/highlight и reply composer/jump UX;
-- [x] добавить авторизованные idempotent reactions, агрегаты и durable sync event;
-- [x] добавить pinch/double-click zoom, bounded pan/reset и swipe navigation фото;
-- [x] сохранить inline/fullscreen playback поддерживаемого browser video и честный
-  download fallback для неподдерживаемого codec;
-- [x] документировать действующие per-item limits и per-user active-media quota.
+- [x] account+device-scoped media cache statistics: bytes, entries, 2 GiB ceiling;
+- [x] explicit confirm перед очисткой и понятное описание точной области удаления;
+- [x] persistent OPFS/IDB media entries, отдельный media key и hot decrypted RAM
+  очищаются как одна user action;
+- [x] concurrent in-flight download после clear не может снова записать старый cache;
+- [x] message renderer linkify-ит только valid `http:`, `https:` и `www.` URL;
+- [x] normal `<a target="_blank">` делегирует открытие default browser/OS без
+  privileged API и сохраняет `noopener noreferrer external`;
+- [x] входной message text остаётся escaped Vue text, без `v-html`.
 
-### Security invariants
+### Security and data invariants
 
-- server не получает plaintext direct message, search query, reply preview или
-  intended mentions;
-- search работает только с доступным этому device decrypted content;
-- reaction API проверяет active conversation membership и не принимает client user ID;
-- media остаётся streamed и bounded; user-provided filename не становится storage path;
-- group v1 media по-прежнему явно не называется E2EE.
+- clear не открывает и не меняет `yv-chat-messages-v1`, snapshot, outbox,
+  conversation crypto или `yv-chat-crypto-v1`;
+- clear не удаляет session credential, device identity, MLS wrapping key или archive;
+- операция ограничена exact authenticated `user_id + device_id`; media другого
+  аккаунта/device в том же browser origin остаются;
+- unsafe schemes (`javascript:`, `data:`, `file:`) никогда не становятся ссылками;
+- link click не выполняет содержимое сообщения и не получает `window.opener`.
 
 ### Exclusions
 
-- direct encrypted attachment flow (`BL-017`);
-- server-side plaintext full-text index или server-generated thumbnails/transcoding;
-- unlimited uploads/quota и remote guarantee для expired media;
-- edit/forward/pin сообщений.
+- destructive clear всей encrypted переписки или crypto identity;
+- pinned media, per-chat cache controls и configurable cache ceiling;
+- composer draft storage и local message retention controls;
+- URL preview fetching, unfurl metadata и server-side URL inspection.
 
 ### Definition of Done
 
-- два чата меняют порядок после сообщения без ручного membership update;
-- поиск находит доступные historical messages и открывает найденное сообщение;
-- reply/mention round-trip совместим с legacy raw text и group attachment envelopes;
-- reactions idempotent, агрегируются, синхронизируются и закрыты negative auth tests;
-- mouse/touch/keyboard media interaction и inline video покрыты frontend tests;
-- backend lint/type/tests, frontend lint/typecheck/tests/build и migration upgrade
-  проходят.
+- Settings показывает текущий media usage и entry count;
+- confirm clear освобождает только media cache и сразу показывает zero state;
+- reopen доступного media после clear выполняет обычный authenticated download;
+- сообщения, MLS keys/checkpoints и данные другого device переживают clear;
+- URL с punctuation и mention рядом отображается корректно; unsafe scheme inert;
+- frontend tests/lint/typecheck/build и полный repository CI проходят;
+- local Docker/browser проверяет settings clear и real external-link element.
 
 ### Verification evidence
 
-- backend: Ruff check/format, mypy, `240 passed, 9 skipped`;
-- frontend: ESLint, Nuxt typecheck, `43 files / 237 tests`, production build;
-- fresh PostgreSQL: Alembic `base -> 0022_message_reactions` прошёл в отдельной
-  временной БД, после проверки БД удалена;
-- Compose development config валиден; `git diff --check` проходит.
+- targeted storage/link tests: `21 passed`;
+- full frontend: `46 files / 250 tests`, lint/typecheck/build green;
+- local Docker/browser: real group message produced one safe external anchor with
+  exact `href`, `_blank`, `noopener noreferrer external`; `javascript:` stayed text;
+  Settings reported `836 B / 1 file`, required confirm, then reported `0 B / 0 files`;
+  reopening the chat preserved message/link, re-downloaded PNG and returned cache to
+  `836 B / 1 file` without console errors;
+- full `make ci`: backend `241 passed / 9 skipped`, Rust `21 passed`, frontend
+  `46 files / 250 tests`, lint/typecheck/build/docs/config checks green.
