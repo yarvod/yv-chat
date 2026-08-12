@@ -6,7 +6,7 @@
 
 ## WP-073 — Telegram-style group video notes
 
-Статус: **implementation complete; full CI green; physical-camera acceptance pending**
+Статус: **deployed; installed-PWA permission recovery fix in verification**
 
 Цель: участник server-readable group v1 записывает компактное круглое видео прямо
 из composer, управляет записью привычными мобильными жестами и получает устойчивое
@@ -49,6 +49,8 @@
 - 60-second boundary автоматически завершает запись;
 - permission denial, unsupported recorder, capture error и too-large output имеют
   понятный recoverable UI, а active tracks всегда остановлены;
+- повторный PWA capture после уже отклонённого native prompt объясняет, что browser
+  больше не может открыть prompt сам, и направляет в настройки PWA/site;
 - старый metadata consumer безопасно воспринимает video note как обычное video;
 - получатель видит круглый player, а generic video rendering не меняется;
 - frontend tests/lint/typecheck/build и полный repository CI проходят.
@@ -61,3 +63,5 @@
   `48 files / 260 tests`, lint/typecheck/build/docs/config checks green;
 - physical Android/iOS installed-PWA camera, permission and codec acceptance не
   запускались в текущем environment и остаются обязательным pre-deploy smoke.
+- production rollout `31645619731` успешно развернул основной video-note flow;
+  последующий permission-recovery regression закрывает `BUG-068` локально.

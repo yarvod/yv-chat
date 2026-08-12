@@ -30,6 +30,11 @@ function stopTracks(stream: MediaStream | null): void {
   for (const track of stream?.getTracks() ?? []) track.stop()
 }
 
+function captureErrorName(error: unknown): string | null {
+  if (typeof error !== 'object' || error === null || !('name' in error)) return null
+  return typeof error.name === 'string' ? error.name : null
+}
+
 function cameraConstraints(facingMode: VideoNoteFacingMode): MediaTrackConstraints {
   return {
     facingMode: { ideal: facingMode },
@@ -341,8 +346,10 @@ export class BrowserVideoNoteRecorder implements VideoNoteRecorder {
         video: cameraConstraints(facingMode),
       })
     } catch (error) {
-      const denied = error instanceof DOMException
-        && (error.name === 'NotAllowedError' || error.name === 'SecurityError')
+      const errorName = captureErrorName(error)
+      const denied = errorName === 'NotAllowedError'
+        || errorName === 'PermissionDeniedError'
+        || errorName === 'SecurityError'
       throw new VideoNoteCaptureError(denied ? 'permission' : 'capture')
     }
     return await BrowserVideoNoteSession.create(stream, facingMode)

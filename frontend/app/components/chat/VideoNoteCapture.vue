@@ -42,7 +42,9 @@ function errorMessage(error: unknown): string {
   if (typeof error === 'object' && error !== null && 'code' in error) {
     const code = (error as { code?: unknown }).code
     if (code === 'unsupported') return 'Этот браузер не поддерживает запись видеокружков.'
-    if (code === 'permission') return 'Разрешите доступ к камере и микрофону в настройках браузера.'
+    if (code === 'permission') {
+      return 'Доступ к камере или микрофону не выдан. Если системный запрос не появился, разрешите оба устройства в настройках установленной PWA или сайта, затем снова удерживайте кнопку.'
+    }
     if (code === 'too-large') return 'Запись получилась слишком большой. Попробуйте записать короче.'
   }
   return 'Не удалось записать видеокружок. Проверьте камеру и повторите.'

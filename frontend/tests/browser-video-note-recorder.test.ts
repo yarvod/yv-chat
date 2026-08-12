@@ -130,4 +130,18 @@ describe('browser video note recorder', () => {
       expect.objectContaining<Partial<VideoNoteCaptureError>>({ code: 'permission' }),
     )
   })
+
+  it('recognizes a cross-realm-style PWA permission denial by its error name', async () => {
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn().mockRejectedValue({ name: 'PermissionDeniedError' }),
+      },
+    })
+    const recorder = new BrowserVideoNoteRecorder()
+
+    await expect(recorder.open('user')).rejects.toEqual(
+      expect.objectContaining<Partial<VideoNoteCaptureError>>({ code: 'permission' }),
+    )
+  })
 })

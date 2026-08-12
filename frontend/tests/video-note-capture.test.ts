@@ -142,4 +142,30 @@ describe('video note capture gestures', () => {
     await flushPromises()
     expect(session.cancel).toHaveBeenCalledOnce()
   })
+
+  it('explains an already denied PWA permission and permits another hold after settings change', async () => {
+    const { recorder, session } = recordingHarness()
+    recorder.open = vi.fn()
+      .mockRejectedValueOnce({ code: 'permission' })
+      .mockResolvedValueOnce(session)
+    const wrapper = mount(VideoNoteCapture, {
+      props: { recorder, disabled: false },
+      global: { stubs: { Teleport: true } },
+    })
+
+    wrapper.get('.video-note-button').element.dispatchEvent(pointer('pointerdown', 15, 200, 500))
+    await flushPromises()
+
+    expect(wrapper.emitted('error')?.[0]?.[0]).toContain('Если системный запрос не появился')
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+
+    wrapper.get('.video-note-button').element.dispatchEvent(pointer('pointerdown', 16, 200, 500))
+    await flushPromises()
+
+    expect(recorder.open).toHaveBeenCalledTimes(2)
+    expect(session.start).toHaveBeenCalledOnce()
+    wrapper.unmount()
+    await flushPromises()
+    expect(session.cancel).toHaveBeenCalledOnce()
+  })
 })

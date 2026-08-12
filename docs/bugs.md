@@ -4,6 +4,22 @@
 
 ## Active
 
+### BUG-068 — PWA не объясняла отсутствие повторного camera/microphone prompt
+
+- Статус: `fixed locally; installed-PWA acceptance pending` (`WP-073`).
+- Severity: `medium video-note availability/UX`.
+- Reproduction: один раз запретить camera или microphone установленной PWA, затем
+  снова удержать кнопку кружка; browser ожидаемо не показывает native prompt и сразу
+  возвращает permission error, а UI просил лишь открыть абстрактные настройки.
+- Причина: browser не имеет права повторно открыть prompt после persisted denial;
+  дополнительно client распознавал denial только через realm-sensitive
+  `instanceof DOMException` и мог ошибочно показать generic capture failure.
+- Исправление: denial классифицируется по стандартному error name без привязки к
+  realm; сообщение прямо объясняет отсутствие prompt, требует разрешить camera и
+  microphone для установленной PWA/site и предлагает снова удержать кнопку.
+- Проверка: recorder regression покрывает cross-realm-style `PermissionDeniedError`,
+  component regression подтверждает понятный текст, закрытие overlay и повторный hold.
+
 ### BUG-067 — MLS roster обновлялся только при открытии того же личного чата
 
 - Статус: `fixed locally; production rollout pending` (`WP-069`).
