@@ -4,6 +4,23 @@
 
 ## Active
 
+### BUG-064 — Возврат в открытый чат очищал timeline и терял viewport
+
+- Статус: `fixed locally; automated and real-browser verified` (`WP-066`).
+- Severity: `high core chat UX/performance`.
+- Reproduction: открыть длинный chat A, остановиться в середине истории, открыть B и
+  сразу вернуться в A; сообщения исчезают до повторного IndexedDB/network load, а
+  scroll возвращается поздно или к неверному месту.
+- Причина: conversation switch всегда сбрасывал reactive window; anchor lookup был
+  network-first; 220-ms debounce вычислял anchor уже после смены active conversation.
+- Исправление: bounded 12-window RAM cache рисуется синхронно, encrypted IndexedDB
+  остаётся cold source, network только reconciles; anchor захватывается при scroll и
+  flush-ится до switch, stale async result игнорируется.
+- Проверка: unit regressions с искусственно задержанным server; isolated Docker + два
+  browser origins, 45 сообщений появились за 47 ms, sequence 16/тот же message ID
+  восстановлен за 625 ms с offset delta 14 px; после reconciliation drift и console
+  warnings/errors отсутствуют.
+
 ### BUG-063 — Параллельная history decrypt повреждала device-local MLS ratchet
 
 - Статус: `fixed locally; production rollout pending`.
@@ -575,7 +592,7 @@ Physical Pixel acceptance для `BUG-033`/`BUG-034` ожидает пользо
 
 ### BUG-033 — Gesture navigation area и pull-to-refresh ломали Android PWA shell
 
-- Статус: `fixed`, physical verification pending.
+- Статус: `partially fixed; Chrome-owned navigation bar background remains`.
 - Найдено в: production Pixel PWA QA, `WP-043`.
 - Severity: `high`.
 - Условия воспроизведения: открыть установленную Chrome PWA на Pixel, использовать
@@ -584,12 +601,17 @@ Physical Pixel acceptance для `BUG-033`/`BUG-034` ожидает пользо
   pull-to-refresh не запускается, обновление контролируется PWA lifecycle.
 - Фактическое поведение: область под gesture pill имела чужой фон, а browser refresh
   мог перезагрузить приложение и сбросить transient UI state.
-- Причина: root не запрещал overscroll default action; bottom bar использовал только
-  dynamic inset, а не Chrome 135 dynamic/maximum-inset edge-to-edge pattern.
+- Причина: root не запрещал overscroll default action; дополнительно ошибочно
+  предполагалось, что manifest/meta `theme-color` или CSS safe-area могут управлять
+  нижним Android system navigation surface установленного Chrome WebAPK.
 - Исправление: `WP-043` задаёт root `overscroll-behavior: none`, отдельные internal
-  scroll containers, opaque theme surface и max/dynamic safe-area geometry.
-- Проверка: CSS/theme contract tests проходят; окончательная standalone проверка
-  gesture pill и pull-down выполняется на физическом Pixel после deploy.
+  scroll containers и safe-area geometry; `WP-064` синхронизирует status-bar theme.
+  Однако нижний navigation bar остаётся platform/Chrome-owned и не принимает цвет
+  сайта через standard PWA API.
+- Проверка: pull-to-refresh/layout contract tests проходят; production Pixel retest
+  подтвердил чёрную подложку под gesture handle. Telegram-like exact control требует
+  отдельного Android TWA/APK wrapper с native edge-to-edge/navigation-bar policy либо
+  принятия platform rendering для обычной installed PWA.
 
 ### BUG-030 — Существующая история длиннее 100 сообщений загружалась не полностью
 

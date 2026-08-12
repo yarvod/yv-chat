@@ -57,6 +57,7 @@ import {
 
 type MessengerPhase = 'loading' | 'ready' | 'offline' | 'error'
 type ConversationCryptoPhase = 'checking' | 'ready' | 'pending' | 'blocked' | 'unavailable'
+const MAX_HOT_CONVERSATION_WINDOWS = 12
 
 interface MessengerState {
   phase: MessengerPhase
@@ -210,6 +211,7 @@ export function useMessenger(
   let snapshotPersistQueue = Promise.resolve()
   const readAdvances = new Map<string, number>()
   const deliveryAdvances = new Map<string, number>()
+  const hotHistoryWindows = new Map<string, ConversationHistoryWindow>()
 
   const activeConversation = computed(() => (
     state.conversations.find(item => item.conversationId === state.activeConversationId) ?? null
@@ -256,6 +258,7 @@ export function useMessenger(
   })
 
   async function refreshConversationCrypto(conversationId: string): Promise<void> {
+    if (state.activeConversationId !== conversationId) return
     const conversation = state.conversations.find(item => item.conversationId === conversationId)
     if (!conversation || !conversationUsesEndToEndEncryption(conversation.conversationType)) {
       state.conversationCryptoPhase = 'unavailable'
@@ -370,10 +373,51 @@ export function useMessenger(
     }
   }
 
-  function applyHistoryWindow(window: ConversationHistoryWindow): void {
-    state.messages = window.messages
-    state.historyHasMore = window.hasMore
-    state.historyHasNewer = window.hasNewer
+  function rememberHotHistoryWindow(
+    conversationId: string,
+    window: ConversationHistoryWindow,
+  ): ConversationHistoryWindow {
+    const remembered = {
+      messages: [...window.messages],
+      hasMore: window.hasMore,
+      hasNewer: window.hasNewer,
+    }
+    hotHistoryWindows.delete(conversationId)
+    hotHistoryWindows.set(conversationId, remembered)
+    while (hotHistoryWindows.size > MAX_HOT_CONVERSATION_WINDOWS) {
+      const oldestConversationId = hotHistoryWindows.keys().next().value
+      if (typeof oldestConversationId !== 'string') break
+      hotHistoryWindows.delete(oldestConversationId)
+    }
+    return remembered
+  }
+
+  function hotHistoryWindow(conversationId: string): ConversationHistoryWindow | null {
+    const window = hotHistoryWindows.get(conversationId)
+    if (!window) return null
+    return rememberHotHistoryWindow(conversationId, window)
+  }
+
+  function rememberActiveHistoryWindow(): void {
+    const conversationId = state.activeConversationId
+    if (!conversationId || state.messages.length === 0) return
+    rememberHotHistoryWindow(conversationId, {
+      messages: state.messages,
+      hasMore: state.historyHasMore,
+      hasNewer: state.historyHasNewer,
+    })
+  }
+
+  function applyHistoryWindow(
+    window: ConversationHistoryWindow,
+    conversationId: string | null = state.activeConversationId,
+  ): void {
+    if (!conversationId) return
+    const remembered = rememberHotHistoryWindow(conversationId, window)
+    if (state.activeConversationId !== conversationId) return
+    state.messages = remembered.messages
+    state.historyHasMore = remembered.hasMore
+    state.historyHasNewer = remembered.hasNewer
   }
 
   function syncArchiveStatus(): void {
@@ -559,6 +603,9 @@ export function useMessenger(
     state.directory = directory
     state.conversations = conversations
     const conversationIds = new Set(conversations.map(item => item.conversationId))
+    for (const conversationId of hotHistoryWindows.keys()) {
+      if (!conversationIds.has(conversationId)) hotHistoryWindows.delete(conversationId)
+    }
     state.viewportAnchors = state.viewportAnchors.filter(anchor => (
       conversationIds.has(anchor.conversationId)
     ))
@@ -633,9 +680,13 @@ export function useMessenger(
     targetMessageId: string | null = null,
   ): Promise<void> {
     const changed = conversationId !== state.activeConversationId
+    let hotWindow: ConversationHistoryWindow | null = null
     if (changed) {
+      rememberActiveHistoryWindow()
       state.activeConversationId = conversationId
-      resetHistoryWindow()
+      hotWindow = hotHistoryWindow(conversationId)
+      if (hotWindow) applyHistoryWindow(hotWindow, conversationId)
+      else resetHistoryWindow()
     }
     state.message = null
     try {
@@ -645,14 +696,28 @@ export function useMessenger(
       const anchorLoaded = anchor !== undefined
         && state.messages.some(message => message.messageId === anchor.messageId)
       if (targetMessageId && !targetLoaded) {
-        applyHistoryWindow(await history.loadMessageWindow(conversationId, targetMessageId))
+        applyHistoryWindow(
+          await history.loadMessageWindow(conversationId, targetMessageId),
+          conversationId,
+        )
       } else if (!targetMessageId && anchor && !anchor.atLatest && !anchorLoaded) {
-        applyHistoryWindow(await history.loadEndingAtSequence(conversationId, anchor.sequence))
+        applyHistoryWindow(await history.loadEndingAtSequence(
+          conversationId,
+          anchor.sequence,
+          cached => {
+            if (state.activeConversationId !== conversationId) return
+            applyHistoryWindow(cached, conversationId)
+            state.phase = 'ready'
+          },
+        ), conversationId)
+      } else if (changed && hotWindow) {
+        state.phase = 'ready'
+        if (!hotWindow.hasNewer) await loadForwardMessages(conversationId)
       } else if (changed) {
         const cached = await history.loadCachedLatest(conversationId)
         syncArchiveStatus()
         if (cached) {
-          applyHistoryWindow(cached)
+          applyHistoryWindow(cached, conversationId)
           state.phase = 'ready'
           await loadForwardMessages(conversationId)
         } else {
@@ -666,7 +731,7 @@ export function useMessenger(
       await refreshConversationCrypto(conversationId)
       state.phase = 'ready'
     } catch (error) {
-      fail(error)
+      if (state.activeConversationId === conversationId) fail(error)
     }
   }
 
@@ -911,6 +976,7 @@ export function useMessenger(
             }
           : message
       ))
+      rememberActiveHistoryWindow()
       const tombstone = state.messages.find(message => message.messageId === result.messageId)
       if (tombstone) {
         await history.persist(conversationId, [tombstone])
@@ -998,6 +1064,17 @@ export function useMessenger(
           state.messages = state.messages.map(message => (
             message.messageId === event.messageId ? tombstone : message
           ))
+          rememberActiveHistoryWindow()
+        } else {
+          const inactiveWindow = hotHistoryWindows.get(event.conversationId)
+          if (inactiveWindow?.messages.some(message => message.messageId === event.messageId)) {
+            rememberHotHistoryWindow(event.conversationId, {
+              ...inactiveWindow,
+              messages: inactiveWindow.messages.map(message => (
+                message.messageId === event.messageId ? tombstone : message
+              )),
+            })
+          }
         }
       }
       if (activeMessagesChanged && state.activeConversationId) {

@@ -92,6 +92,7 @@ const showScrollToLatest = ref(false)
 const restorationPending = ref(true)
 const highlightedMessageId = ref<string | null>(null)
 let viewportSaveTimer: ReturnType<typeof setTimeout> | null = null
+let pendingViewportAnchor: ConversationViewportAnchor | null = null
 let highlightTimer: ReturnType<typeof setTimeout> | null = null
 let resizeObserver: ResizeObserver | null = null
 let adjustingViewport = false
@@ -417,16 +418,24 @@ function currentViewportAnchor(): ConversationViewportAnchor | null {
   }
 }
 
-function persistViewport(): void {
+function persistViewport(conversationId?: string): void {
   if (viewportSaveTimer) {
     clearTimeout(viewportSaveTimer)
     viewportSaveTimer = null
   }
-  const anchor = currentViewportAnchor()
+  const captured = pendingViewportAnchor
+  pendingViewportAnchor = null
+  const anchor = captured && (!conversationId || captured.conversationId === conversationId)
+    ? captured
+    : conversationId
+      ? null
+      : currentViewportAnchor()
   if (anchor) void props.saveViewport(anchor)
 }
 
 function scheduleViewportSave(): void {
+  pendingViewportAnchor = currentViewportAnchor()
+  if (!pendingViewportAnchor) return
   if (viewportSaveTimer) clearTimeout(viewportSaveTimer)
   viewportSaveTimer = setTimeout(persistViewport, 220)
 }
@@ -581,6 +590,7 @@ watch(draft, value => {
 watch(
   () => props.conversation?.conversationId,
   async (conversationId, previousConversationId) => {
+    if (previousConversationId) persistViewport(previousConversationId)
     if (previousConversationId) props.setTyping(previousConversationId, false)
     if (conversationId !== previousConversationId) {
       draft.value = ''

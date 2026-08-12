@@ -837,4 +837,89 @@ describe('message panel', () => {
       atLatest: false,
     }))
   })
+
+  it('captures the previous chat viewport before a debounced save can be lost on switch', async () => {
+    const saveViewport = vi.fn().mockResolvedValue(undefined)
+    const firstMessage = {
+      messageId: 'message-first',
+      clientMessageId: 'client-first',
+      conversationId: 'conversation-1',
+      senderUserId: 'bob-id',
+      senderDeviceId: 'bob-device',
+      protocolVersion: 1,
+      sequence: 9,
+      createdAt: '2026-08-11T12:09:00Z',
+      expiresAt: '2026-09-10T12:09:00Z',
+      ciphertextBase64: 'Zmlyc3Q=',
+      deletionReason: null,
+      deletedAt: null,
+      contentState: 'available' as const,
+      displayBody: 'first',
+      contentSecure: false,
+    }
+    const secondConversation = {
+      ...conversation,
+      conversationId: 'conversation-2',
+      title: 'Second group',
+    }
+    const secondMessage = {
+      ...firstMessage,
+      messageId: 'message-second',
+      clientMessageId: 'client-second',
+      conversationId: 'conversation-2',
+      sequence: 3,
+      displayBody: 'second',
+    }
+    const wrapper = mount(MessagePanel, {
+      props: {
+        conversation,
+        messages: [firstMessage],
+        actorUserId: 'alice-id',
+        sending: false,
+        protectionSecure: false,
+        protectionLabel: 'Тестовый режим без E2EE',
+        sendMessage: vi.fn(),
+        deleteMessage: vi.fn(),
+        deletingMessageId: null,
+        typingActorIds: [],
+        onlineActorIds: [],
+        deliveryStates: [],
+        connectionState: 'connected',
+        setTyping: vi.fn(),
+        saveViewport,
+      },
+    })
+    const timeline = wrapper.get('.message-timeline').element as HTMLElement
+    const bubble = wrapper.get('[data-message-id="message-first"]').element as HTMLElement
+    Object.defineProperties(timeline, {
+      scrollHeight: { configurable: true, value: 1_200 },
+      clientHeight: { configurable: true, value: 400 },
+      scrollTop: { configurable: true, value: 300, writable: true },
+      scrollTo: { configurable: true, value: vi.fn() },
+      getBoundingClientRect: {
+        configurable: true,
+        value: () => ({ top: 100, bottom: 500, height: 400, left: 0, right: 300, width: 300, x: 0, y: 100, toJSON() {} }),
+      },
+    })
+    Object.defineProperty(bubble, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({ top: 220, bottom: 260, height: 40, left: 0, right: 200, width: 200, x: 0, y: 220, toJSON() {} }),
+    })
+    saveViewport.mockClear()
+
+    await wrapper.get('.message-timeline').trigger('scroll')
+    await wrapper.setProps({
+      conversation: secondConversation,
+      messages: [secondMessage],
+    })
+
+    expect(saveViewport).toHaveBeenCalledWith(expect.objectContaining({
+      conversationId: 'conversation-1',
+      messageId: 'message-first',
+      sequence: 9,
+      offset: 120,
+      atLatest: false,
+    }))
+    wrapper.unmount()
+  })
 })

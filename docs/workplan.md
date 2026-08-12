@@ -4,62 +4,60 @@
 завершённая работа фиксируется отдельным коммитом, а новый пункт переносится
 сюда из `backlog.md`.
 
-## WP-065 — Desktop attachment paste and drag/drop
+## WP-066 — Instant cached conversation return
 
 Статус: **implemented and verified locally**
 
-Цель: пользователь desktop PWA добавляет изображения и файлы в composer привычным
-`Ctrl/Cmd+V` или перетаскиванием, видит понятную drop-zone и отправляет их через уже
-существующий ordered attachment flow без обхода лимитов или E2EE boundary.
+Цель: уже открытый conversation при переключении A → B → A появляется немедленно из
+bounded app-memory cache, сохраняет точный viewport anchor и только затем незаметно
+догоняет server; cold anchor сначала рисуется из encrypted IndexedDB.
 
 ### Reproduction
 
-- composer принимает вложения только через скрытые media/file inputs и attachment menu;
-- clipboard image/file paste всплывает как обычное событие, но файл не попадает в
-  attachment preview;
-- drag/drop файла на открытый диалог не имеет visual affordance и может привести к
-  browser navigation вместо добавления в сообщение.
+- `selectConversation()` очищал reactive timeline перед каждым чтением IndexedDB и
+  server catch-up, поэтому возврат в уже открытый чат показывал пустой UI;
+- anchor-window загружался network-first, хотя нужные ciphertext уже лежали локально;
+- debounced scroll save вычислял anchor после смены active conversation и терял
+  позицию предыдущего чата при быстром переключении.
 
 ### Scope
 
-- [x] извлекать file clipboard items при paste внутри открытого desktop chat;
-- [x] не перехватывать обычную текстовую вставку;
-- [x] принимать ordered `DataTransfer.files` через drag/drop по message panel;
-- [x] показывать устойчивую drop-zone без flicker при проходе через дочерние элементы;
-- [x] переиспользовать единый count/type/size validator для picker, paste и drop;
-- [x] давать clipboard image без имени безопасное понятное display name;
-- [x] не разрешать paste/drop в direct conversation до готового E2EE media flow;
-- [x] покрыть clipboard, text paste, drag state/drop order и direct boundary тестами.
+- [x] хранить последние reactive history windows для 12 conversations в bounded LRU;
+- [x] рисовать hot window синхронно и выполнять forward catch-up в фоне;
+- [x] для cold saved anchor сначала отдавать encrypted IndexedDB page, затем server;
+- [x] не применять поздний результат к уже неактивному conversation;
+- [x] захватывать viewport anchor в момент scroll и flush-ить его до смены chat;
+- [x] обновлять inactive hot window при tombstone и очищать удалённые conversations;
+- [x] покрыть delayed network, повторный switch и debounce race regressions.
 
 ### Security invariants
 
-- текущий group v1 attachment flow остаётся явно server-readable и не получает
-  secure/E2EE badge;
-- direct MLS conversation не загружает plaintext media через новый input path;
-- paste/drop не ослабляет лимит 10 файлов и существующие image/video/file byte limits;
-- browser filename остаётся display metadata и не используется как storage path;
-- файл только подготавливается в composer и отправляется после явного submit.
+- decrypted `TimelineMessage` живёт только в bounded RAM текущего app instance;
+- IndexedDB по-прежнему хранит только encrypted transport envelopes;
+- cache не подменяет cursor sync и не становится источником authoritative ordering;
+- stale async result не может перерисовать другой активный conversation.
 
 ### Exclusions
 
-- direct E2EE attachment encryption/upload/download;
-- recursive directory traversal и folder upload;
-- offline-persisted attachment drafts, cancel/retry и OPFS media cache;
-- изменение backend attachment API, TTL или quota policy;
-- системная mobile share sheet и camera capture.
+- persistent decrypted archive или `localStorage` message cache;
+- OPFS media cache, draft persistence и attachment eviction/pinning;
+- изменение server history/cursor/retention protocol;
+- сохранение component instance для каждого когда-либо открытого chat.
 
 ### Definition of Done
 
-- `Ctrl/Cmd+V` добавляет clipboard image/file, сохраняя обычный text paste;
-- drag-over показывает доступную drop-zone, drop добавляет файлы в исходном порядке;
-- picker, paste и drop одинаково применяют лимиты и attachment preview;
-- direct chat показывает честное E2EE-boundary сообщение и ничего не загружает;
-- frontend lint, typecheck, tests и production build проходят.
+- A → B → A возвращает все уже отрисованные сообщения без blank/loading flash;
+- сохранённый message-relative anchor восстанавливает то же сообщение и offset;
+- IndexedDB anchor page появляется до задержанного network reconciliation;
+- frontend lint, typecheck, tests и production build проходят;
+- реальный локальный browser acceptance подтверждает hot paint и stable viewport.
 
 ### Verification evidence
 
-- frontend `42` files / `221` tests, ESLint, Nuxt typecheck и production PWA build: green;
-- полный `make ci`: backend `238 passed, 9 skipped`, Rust `21 passed`, frontend
-  `221 passed`; Ruff/format/import-linter/mypy/clippy/build/config/docs contracts green;
-- authenticated visual drop-zone acceptance требует доступного local session/backend;
-  unauthenticated desktop shell загружается без console warnings/errors.
+- frontend `42` files / `224` tests, ESLint, Nuxt typecheck и production PWA build: green;
+- isolated Docker stack `localhost:18091`, fresh PostgreSQL migrations и два browser
+  origins/devices: 45-message history + 5-message switch target;
+- hot return painted all 45 messages in `47 ms`; anchor sequence `16` restored in
+  `625 ms`, сохранил тот же message ID и offset в пределах `14 px`;
+- после `800 ms` background reconciliation count/anchor не изменились; browser
+  console warnings/errors: `0`.

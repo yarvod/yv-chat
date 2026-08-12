@@ -1258,6 +1258,16 @@ cursor catch-up. `load older` использует exclusive cursor и сохр�
 Reactive/DOM window ограничен 300 envelopes; при уходе в более ранний диапазон UI
 показывает явный возврат к latest. IndexedDB denial/corruption отключает archive на
 текущую сессию и показывает non-blocking warning, не ломая online sync.
+
+Повторное A → B → A внутри живого app instance не перечитывает тот же decrypted
+window: messenger держит bounded LRU из 12 последних reactive windows только в RAM и
+рисует его до cursor catch-up. Это не persistent plaintext cache и не источник
+authoritative ordering. Cold start/saved anchor по-прежнему читается из encrypted
+IndexedDB; server reconciliation идёт после local paint, а поздний async result не
+может примениться к уже другому active conversation. Viewport anchor захватывается в
+момент scroll и flush-ится до смены conversation, поэтому debounce не перепривязывает
+позицию к новому chat.
+
 Durable `message_deleted` event не вызывает грубый timeline reset: клиент через
 отдельный authorized `GetMessage` use case получает конкретный tombstone, заменяет
 loaded item и идемпотентно перезаписывает encrypted archive record, в том числе для
@@ -1318,11 +1328,12 @@ provider revision и keyed `device + conversation + client_message` content reco
 PrivateMessage в OpenMLS второй раз. Transaction failure откатывает обе записи и
 runtime уничтожает потенциально продвинутый in-memory state.
 
-Это ещё не полный local-first: protocol state, attachment metadata, IndexedDB
-cross-version upgrade compatibility, Background Sync и secure device-to-device
-history transfer остаются в `BL-022`–`BL-025`. Workbox по-прежнему кэширует только
-executable app shell/assets, а user-data БД принадлежат application adapters и не
-попадают в Cache Storage Service Worker.
+Это ещё не полный local-first: protocol state уже хранится в sealed atomic
+IndexedDB crypto vault, но attachment metadata/media/drafts, IndexedDB/OPFS
+cross-version upgrade compatibility, Background Sync ownership и secure
+device-to-device history transfer остаются в `BL-024`, `BL-025` и `BL-015`.
+Workbox по-прежнему кэширует только executable app shell/assets, а user-data БД
+принадлежат application adapters и не попадают в Cache Storage Service Worker.
 
 WebSocket обслуживает foreground realtime и передаёт только wake-up hints. Web Push будит background Service Worker. Sync восстанавливает correctness. Current implementation сохраняет редкий HTTP fallback poll, поэтому недоступный WebSocket ухудшает latency, но не correctness.
 

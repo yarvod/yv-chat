@@ -638,6 +638,130 @@ describe('messenger orchestration', () => {
     }))
   })
 
+  it('restores an already opened conversation synchronously from a bounded hot window', async () => {
+    const secondConversation = {
+      ...conversation,
+      conversationId: 'conversation-2',
+      title: 'Second group',
+    }
+    const secondMessage = {
+      ...message,
+      messageId: 'message-2',
+      clientMessageId: 'client-2',
+      conversationId: 'conversation-2',
+      sequence: 2,
+    }
+    vi.mocked(gateway.listConversations).mockResolvedValue([conversation, secondConversation])
+    vi.mocked(gateway.listSync).mockReset().mockResolvedValue({
+      events: [], nextCursor: 0, streamCursor: 0, hasMore: false, resetRequired: false,
+    })
+    vi.mocked(gateway.listMessageHistory).mockImplementation(async conversationId => ({
+      messages: [conversationId === 'conversation-1' ? message : secondMessage],
+      hasMore: false,
+      oldestSequence: conversationId === 'conversation-1' ? 1 : 2,
+      newestSequence: conversationId === 'conversation-1' ? 1 : 2,
+    }))
+    vi.mocked(gateway.listMessages).mockReset().mockResolvedValue([])
+    const messenger = useMessenger('alice-id', 'device-alice', vi.fn(), messengerDependencies())
+
+    await messenger.load()
+    await messenger.selectConversation('conversation-2')
+    expect(messenger.state.messages[0]?.messageId).toBe('message-2')
+
+    let releaseCatchUp: ((messages: Array<typeof message>) => void) | null = null
+    vi.mocked(gateway.listMessages).mockImplementation((conversationId) => (
+      conversationId === 'conversation-1'
+        ? new Promise(resolve => { releaseCatchUp = resolve })
+        : Promise.resolve([])
+    ))
+    const archiveReadsBeforeReturn = vi.mocked(messageArchive.loadLatest).mock.calls.length
+    const returning = messenger.selectConversation('conversation-1')
+
+    expect(messenger.state.activeConversationId).toBe('conversation-1')
+    expect(messenger.state.messages[0]).toMatchObject({
+      messageId: 'message-1',
+      displayBody: 'hello',
+    })
+    expect(messageArchive.loadLatest).toHaveBeenCalledTimes(archiveReadsBeforeReturn)
+    releaseCatchUp?.([])
+    await returning
+    expect(messenger.state.messages[0]?.messageId).toBe('message-1')
+  })
+
+  it('paints an anchored local archive window before server reconciliation finishes', async () => {
+    const secondConversation = {
+      ...conversation,
+      conversationId: 'conversation-2',
+      title: 'Second group',
+    }
+    const secondMessage = {
+      ...message,
+      messageId: 'message-2',
+      clientMessageId: 'client-2',
+      conversationId: 'conversation-2',
+      sequence: 2,
+    }
+    const anchoredMessage = {
+      ...message,
+      messageId: 'message-anchor',
+      clientMessageId: 'client-anchor',
+      sequence: 42,
+    }
+    vi.mocked(messengerSnapshotStore.load).mockResolvedValue({
+      ownerUserId: 'alice-id',
+      directory: [],
+      conversations: [conversation, secondConversation],
+      readStates: [],
+      deliveryStates: [],
+      viewportAnchors: [{
+        conversationId: 'conversation-1',
+        messageId: 'message-anchor',
+        sequence: 42,
+        offset: 28,
+        atLatest: false,
+        savedAt: '2026-08-11T12:45:00Z',
+      }],
+      syncCursor: 8,
+      savedAt: '2026-08-11T11:59:00Z',
+    })
+    vi.mocked(messageArchive.loadLatest).mockImplementation(async (_owner, conversationId) => (
+      conversationId === 'conversation-2' ? [secondMessage] : []
+    ))
+    vi.mocked(messageArchive.loadBefore).mockResolvedValue([anchoredMessage])
+    vi.mocked(gateway.listSync).mockReset().mockResolvedValue({
+      events: [], nextCursor: 8, streamCursor: 8, hasMore: false, resetRequired: false,
+    })
+    let releaseNetwork: ((value: {
+      messages: Array<typeof message>
+      hasMore: boolean
+      oldestSequence: number | null
+      newestSequence: number | null
+    }) => void) | null = null
+    vi.mocked(gateway.listMessageHistory).mockReturnValue(new Promise(resolve => {
+      releaseNetwork = resolve
+    }))
+    const messenger = useMessenger('alice-id', 'device-alice', vi.fn(), messengerDependencies())
+    await messenger.load('conversation-2')
+
+    let settled = false
+    const selecting = messenger.selectConversation('conversation-1').finally(() => {
+      settled = true
+    })
+    await vi.waitFor(() => expect(messenger.state.messages[0]?.messageId).toBe('message-anchor'))
+    expect(messenger.state.historyHasNewer).toBe(true)
+    expect(settled).toBe(false)
+    expect(messageArchive.loadBefore).toHaveBeenCalledWith('alice-id', 'conversation-1', 43, 100)
+
+    releaseNetwork?.({
+      messages: [anchoredMessage],
+      hasMore: true,
+      oldestSequence: 42,
+      newestSequence: 42,
+    })
+    await selecting
+    expect(messenger.state.messages[0]?.messageId).toBe('message-anchor')
+  })
+
   it('loads an exact deep-linked message window and persists its encrypted viewport anchor', async () => {
     const target = {
       ...message,

@@ -145,9 +145,19 @@ export class ConversationHistory {
   async loadEndingAtSequence(
     conversationId: string,
     sequence: number,
+    onCached?: HistoryListener,
   ): Promise<ConversationHistoryWindow> {
     if (!Number.isSafeInteger(sequence) || sequence <= 0) return this.loadLatest(conversationId)
     const beforeSequence = sequence === Number.MAX_SAFE_INTEGER ? sequence : sequence + 1
+    const cached = await this.readBefore(conversationId, beforeSequence)
+    const cachedWindow = cached.some(message => message.sequence === sequence)
+      ? {
+          messages: this.latestWindow(await this.prepare(cached)),
+          hasMore: cached.length === HISTORY_PAGE_SIZE,
+          hasNewer: true,
+        }
+      : null
+    if (cachedWindow) onCached?.(cachedWindow)
     try {
       const page = await this.gateway.listMessageHistory(
         conversationId,
@@ -165,14 +175,7 @@ export class ConversationHistory {
     } catch {
       // The encrypted local archive remains a valid device-local fallback.
     }
-    const cached = await this.readBefore(conversationId, beforeSequence)
-    if (cached.some(message => message.sequence === sequence)) {
-      return {
-        messages: this.latestWindow(await this.prepare(cached)),
-        hasMore: cached.length === HISTORY_PAGE_SIZE,
-        hasNewer: true,
-      }
-    }
+    if (cachedWindow) return cachedWindow
     const latestCached = await this.readLatest(conversationId)
     if (latestCached.length > 0) {
       return {

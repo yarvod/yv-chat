@@ -4,167 +4,86 @@
 
 В работу одновременно берётся одна фича. Для неё создаётся подробный `docs/workplan.md`; после реализации, проверок и отдельного коммита пункт переносится в `Completed`. Архитектурные правила не считаются задачами и не дублируются здесь без конкретного проверяемого результата.
 
+## Приоритет исполнения после ревизии 2026-08-12
+
+Порядок ниже является единственной активной очередью. Категории дальше по документу
+сохраняют полные требования, но не задают порядок реализации.
+
+### Release gate — сначала закрыть уже реализованное
+
+1. Завершить текущий `WP-066`: diff review и отдельный commit для instant cached
+   conversation return; automated и real-browser local acceptance уже green.
+2. Развернуть current head и production-проверить `BUG-063`: serial history
+   decrypt должен сохранить MLS ratchet и позволить reply после reload.
+3. Исправить `BUG-059`: cache-first startup обязан reconciled-ить directory после
+   активации нового пользователя. Это bounded correctness fix, а не новая platform-фича.
+
+### P0 — безопасность истории и сохранность production-данных
+
+1. `BL-064` — retention-aligned multi-epoch offline recovery. Без него корректный
+   ciphertext в пределах server TTL может стать нечитаемым после нескольких MLS
+   rotations, поэтому это следующий большой security/correctness slice.
+2. `BL-031` — encrypted offsite backup + проверяемый restore. Local browser archive
+   не заменяет backup account, membership и server sync state.
+3. `BL-019` — global quota, low-disk admission и storage visibility. Group media уже
+   доступно production, поэтому disk-full защита нужна до дальнейшего роста media UX.
+
+### P1 — настоящее local-first приложение и безопасные вложения
+
+1. `BL-025` — IndexedDB/Service Worker compatibility gate и cross-release tests;
+   schema/update safety должна появиться до новых persistent stores.
+2. `BL-024` — encrypted OPFS media cache, persisted drafts/attachment metadata,
+   byte-bounded eviction, pinning и device storage controls.
+3. `BL-017` вместе с оставшейся attachment-частью `BL-013` — direct MLS attachment
+   encryption/upload/download без server plaintext или file keys.
+4. `BL-043` — оставшийся offline draft, cancel/retry и polished
+   attachment UX поверх уже готовых secure storage boundaries.
+5. `BL-015` — authenticated device-to-device history transfer после `BL-064`.
+6. `BL-051` — возврат group MLS только после multi-epoch и multi-device acceptance.
+
+### P2 — assurance, product controls и эксплуатация
+
+1. Оставшийся cross-browser/tamper/interop audit `BL-013` и configurable retention
+   policy `BL-018`.
+2. `BL-032` observability/runbooks, затем `BL-033` release E2E/security checklist.
+3. Остатки `BL-028` notification controls и `BL-041` accessibility/visual gate.
+
+### P3 — после стабильного messaging/E2EE
+
+`BL-034` → `BL-035` → `BL-036`: signaling, audio, затем video calls. Эти задачи не
+должны вытеснять recovery, backup, local storage или attachment security.
+
 ## Frontend application и administration
-
-### BL-038 — Native-feeling PWA shell и frontend Clean Architecture
-
-Статус: **completed** (`WP-020`, commit `c9c7bcf`).
-
-Результат: frontend имеет явные `domain/application/infrastructure/presentation`
-boundaries, Nuxt pages/layouts вместо монолитного `app.vue` и responsive shell,
-который ощущается как цельное desktop/mobile приложение.
-
-- routes `/login`, `/activate`, `/chat`, `/settings`, `/admin/users` и guards;
-- desktop navigation rail + mobile bottom navigation с safe-area/touch targets;
-- light/dark/system design tokens, persisted non-secret preference;
-- restrained motion и обязательный `prefers-reduced-motion` fallback;
-- semantic haptics port с Vibration capability/no-op adapter;
-- автоматический bounded device label вместо login input;
-- URL-fragment invite consumption без попадания secret в HTTP/referrer;
-- app-scoped auth/application state без SSR cross-request singleton;
-- runtime DTO parsers и отсутствие raw HTTP/browser APIs в components;
-- mobile/desktop visual QA, Vitest, lint/typecheck/build.
-
-Implementation и desktop browser smoke завершены; physical 390px screenshot не
-был сфальсифицирован при заблокированном test Mac и остаётся acceptance-пунктом
-`BL-041`/`BL-033`, не блокирующим независимые backend vertical slices.
-
-### BL-039 — Admin account lifecycle и password recovery
-
-Статус: **completed** (`WP-021`).
-
-Результат: администратор управляет пользователями через отдельную страницу, но
-не получает и не задаёт чужой постоянный пароль.
-
-- bounded paginated user list/search с role/state/session summary;
-- deactivate/block и explicit reactivate с self/admin safety invariants;
-- admin-triggered password reset: все target sessions/devices revoked atomically;
-- отдельный purpose-bound one-time reset token хранится только hashed, имеет TTL,
-  single-use/revocation/concurrency constraints и не смешивается с activation;
-- reset URL использует fragment/transient client memory; пользователь сам задаёт
-  новый Argon2id password, admin его не видит;
-- one-time invitation URL вместо неудобного raw code, explicit copy/hide/expiry;
-- audit events без token/password и negative authorization/CSRF/guessing tests;
-- Alembic migration, repository/use cases, split Dishka providers и pytest.
-
-### BL-040 — User settings, devices и security center
-
-Статус: **completed** (`WP-022`).
-
-Результат: settings page управляет профилем, темой, haptics и безопасностью
-текущего аккаунта через существующие и новые typed use cases.
-
-- profile/display name и user-editable device display name;
-- current/other active devices с browser/OS/device class/IP/approximate metadata;
-- revoke one, revoke all others, change password и security reset;
-- theme/haptics/motion/notification/privacy preferences;
-- session/token hashes и raw subscription/crypto material никогда не выводятся;
-- best-effort device metadata не используется как authorization factor.
 
 ### BL-041 — Visual system, accessibility и PWA polish
 
-Статус: **production-verified through `WP-060`** (`WP-041` завершил core messenger viewport/interaction и
-первую install surface; `WP-043` добавил Pixel edge-to-edge/pull-to-refresh contract
-и maskable v2 assets; `WP-053` добавил branded shell, connection status и automatic
-update lifecycle; `WP-055` убирает stable connection bar из viewport и оставляет
-только transient/offline overlay; `WP-059` исправляет Pixel adaptive icon/generated
-splash и invalidates install-time v2 cache; полный accessibility/visual-regression
-gate остаётся).
+Статус: **remaining accessibility/visual gate**. Реализованные shell, responsive
+timeline, mobile viewport, install assets и update UX перенесены в `Completed` как
+`BL-041A`; здесь перечислено только незавершённое.
 
-`WP-059` (`59495f0`, deploy `31577182322`) восстановил explicit manifest discovery,
-выпустил versioned `v3` transparent `any`/opaque solid `maskable` assets, зафиксировал
-Android safe-zone/background pixel regressions и убрал причину белого fallback-круга,
-вложенного квадрата и серого Pixel generated splash.
+Результат: ключевые desktop/mobile состояния проходят воспроизводимый accessibility
+и visual-regression gate, а не только ручной happy-path smoke.
 
-`WP-060` (`ddf76f9`, deploy `31579379964`) добавил и production-верифицировал
-byte-accurate upload progress для group image/video/file batches: typed transport
-callback, aggregate/per-item UI и accessibility regressions без изменения server
-media API или direct MLS policy.
-
-Результат: приложение имеет единый визуальный язык, install/update UX и
-доступность, а messenger shell по плотности и поведению привычен пользователю
-Telegram/WhatsApp без копирования их бренда.
-
-- [x] semantic color/spacing/typography/elevation/motion tokens;
-- [x] stable `100dvh`/visual-viewport shell без page-level скачков при длинном content,
-  mobile browser chrome, safe areas и открытии software keyboard;
-- [x] desktop split view: фиксированная conversation list/sidebar и отдельный timeline;
-- [x] mobile master/detail navigation с естественным back flow и без горизонтального overflow;
-- [x] закреплённые conversation header и composer; скроллится только timeline, новые
-  сообщения не выдёргивают пользователя с прочитанной позиции;
-- [x] компактные chat rows, avatars, timestamps, unread/presence indicators и
-  touch-friendly contextual actions;
-- [x] readable grouped bubbles, day separators, delivery state, typing и
-  scroll-to-latest control;
-- [x] composer с multiline auto-grow в заданных пределах,
-  Enter/Shift+Enter policy и mobile keyboard-safe positioning;
-- [ ] attachment/emoji-ready composer slots после encrypted attachments boundary;
-- [ ] полный focus-visible, keyboard navigation, ARIA/live regions и contrast audit;
-- [ ] skeleton/empty/error/offline states без layout shift;
-- [x] PWA standard/maskable/touch icons, portrait Apple splash, theme colors и
-  standalone safe areas;
-- [x] Android gesture-area surface и запрет root pull-to-refresh при сохранении
-  независимого scrolling timeline/list;
-- [x] отдельная прозрачная `any` icon и full-bleed opaque `maskable` icon без baked
-  square/squircle, с versioned manifest URLs и воспроизводимым SVG→PNG pipeline;
-- [x] automatic foreground/periodic update detection, activation и reload;
-- [ ] migration-compatible service worker lifecycle и user-facing install education;
-- [ ] repository-owned visual regression screenshots для short/long timeline, empty/loading/error,
-  mobile keyboard-sized viewport и основных desktop/mobile состояний.
+- attachment/emoji-ready composer slots после secure attachment boundary;
+- полный focus-visible, keyboard navigation, ARIA/live regions и contrast audit;
+- skeleton/empty/error/offline states без layout shift;
+- user-facing install/update education; schema compatibility принадлежит `BL-025`;
+- repository-owned visual regression screenshots для short/long timeline,
+  empty/loading/error, keyboard-sized mobile viewport и основных desktop states.
 
 ## Messaging foundation
 
-### BL-042 — Управление группой и составом участников
-
-Статус: **completed** (`WP-046`, commit `8fb3720`).
-
-Результат: owner/admin управляет названием и активным составом группы через
-responsive group-info UI, а backend остаётся единственной границей авторизации.
-
-- rename title отдельным use case и versioned endpoint;
-- add/remove/re-add участника с single-membership lifecycle;
-- максимум 50 активных участников вместе с owner;
-- role-aware UI без обещания передачи ownership;
-- atomic `conversation_updated` для старых и новых recipients;
-- immediate local encrypted snapshot update и multi-device catch-up;
-- negative authorization, concurrency, persistence и frontend interaction tests;
-- явная интеграционная граница для MLS Commit/Welcome без фиктивной key rotation.
-
-### BL-009 — Receipts, unread state, typing и presence
-
-Статус: **implementation complete; verification pending** (`WP-024` завершил shared read cursor/unread slice;
-`WP-025` завершил ephemeral typing; `WP-026` завершил best-effort presence;
-`WP-027` завершил delivered-per-device).
-
-Результат: read state согласуется между устройствами, а ephemeral indicators не становятся durable truth.
-
-- [x] shared per-user/per-conversation read cursor и durable `read_receipt`;
-- [x] server-derived unread counters, согласованные на нескольких devices;
-- [x] foreground-only mark-read до реально загруженной server sequence;
-- [x] delivered cursor/receipt на уровне device (`WP-027`);
-- [x] typing events с server expiry без долговременной истории (`WP-025`);
-- [x] best-effort multi-device online presence из active WebSockets (`WP-026`);
-- [x] deduplication и tests после reconnect.
-
-### BL-011 — Authenticated WebSocket notifications
-
-Статус: **in progress** (`WP-023` foundation + `WP-024` durable read receipt;
-`WP-025` завершил typing; `WP-026` завершил presence; device-revoked hints остаются).
-
-Результат: WebSocket ускоряет доставку, но не заменяет sync.
-
-- same-origin cookie handshake, active-session и exact Origin validation;
-- explicit `hello`, `new_message`, `message_deleted`, `typing`, `presence`, `read_receipt`, `conversation_updated`, `device_revoked` events;
-- small routing hints вместо дублирования state/ciphertext;
-- heartbeat не продлевает auth session бесконечно;
-- single-process in-memory connection registry без преждевременного Redis;
-- reconnect всегда запускает cursor catch-up.
+В этом разделе нет незавершённого foundation: conversations, ordered/idempotent
+messages, cursor sync, receipts/presence/typing и authenticated WebSocket перенесены
+в `Completed`. Новые correctness-задачи появляются отдельными bounded slices.
 
 ## E2EE и multi-device history
 
 ### BL-064 — Retention-aligned multi-epoch offline recovery
 
-Статус: **queued after `WP-063` rollout**.
+Статус: **next P0 feature after current release gate**. `WP-063` уже deployed;
+`BUG-063` закрыл обнаруженную parallel-ratchet prerequisite локально и требует
+production verification до начала этого slice.
 
 Результат: уже авторизованный MLS device с сохранённым sealed local state после
 долгого offline периода последовательно догоняет все пропущенные generations и
@@ -187,124 +106,21 @@ responsive group-info UI, а backend остаётся единственной �
   generations, out-of-order/duplicate Commit, reload между epochs, expiry boundary,
   removal/re-add и отсутствие downgrade или plaintext/key logging.
 
-### BL-063 — MLS-capable send roster consistency
-
-Статус: **completed and deployed** (`WP-063`, production run `31591911253`).
-
-Результат: bootstrap и v2 message gate используют одну projection активных
-MLS-capable devices. Дополнительный legacy device без crypto identity не блокирует
-READY direct conversation, если у каждого участника остаётся capable leaf. После
-регистрации identity новый device немедленно требует roster rotation; stale
-generation/epoch, revoked sender и participant без capable device остаются
-fail-closed. Exact production topology закреплена unit и PostgreSQL regressions.
-
-### BL-062 — Deploy-safe session и self-healing MLS runtime
-
-Статус: **completed** (`WP-062`).
-
-Результат: существующие browser devices переживают API/frontend container recreation
-без password login, нового `device_id`, скрытого уничтожения MLS runtime и generation
-storm. Только authoritative `401` очищает session; временная API недоступность
-bounded-retry-ится. Любая failed MLS mutation остаётся fail-closed, но runtime сразу
-восстанавливает последний sealed checkpoint. Deploy делает API healthy до публикации
-нового auto-update frontend, а неизменный BLOCKED roster не пересоздаётся конкурирующими
-replacement devices. Production-like два устройства отправляют после hard API restart,
-а peer расшифровывает оба сообщения.
-
-### BL-054 — Self-healing local MLS checkpoint и явный device recovery
-
-Статус: **completed** (`WP-054`, commit `01ef0ac`, production run `31549397629`).
-
-Результат: существующая device identity не требует logout/login после deploy/reload,
-если sealed OpenMLS group сохранилась, но отдельный conversation checkpoint потерян.
-
-- read-only public inspection локального epoch/device roster через Rust/Worker port;
-- точное восстановление server-generation checkpoint только при epoch+roster match;
-- ordered catch-up последующих Commit/Welcome после восстановления;
-- отдельная fail-closed диагностика полной потери device-local MLS state;
-- permanent primary device не вводится: coordinator выбирается на generation;
-- последующий explicit re-enrollment и encrypted history transfer остаются отдельными
-  security slices для случая реального удаления crypto vault.
-
-### BL-050 — Conversation-scoped direct/group protocol policy
-
-Статус: **completed** (`WP-050`, commit `45709c3`, production run `31541538389`).
-
-Результат: direct conversations остаются fail-closed OpenMLS v2 E2EE, а group
-conversations временно используют synthetic v1 без E2EE с постоянной честной
-маркировкой. Выбор протокола является server-enforced policy по conversation type,
-а не client fallback. История остаётся immutable и читается по версии каждой записи.
-
-- direct: только v2 + exact generation/epoch/roster binding;
-- group: только v1, без MLS bootstrap/Commit/Welcome;
-- historical v1/v2 rows не переписываются и не меняют security label;
-- exact historical retry идемпотентен, но не открывает создание нового direct v1;
-- реальные multi-account/device/reload/revoke browser scenarios;
-- отдельный backlog item возвращает group MLS после стабилизации multi-device flow.
-
 ### BL-013 — Frontend crypto adapter и device identity
 
-Статус: **in progress** (`WP-030` завершил async fail-closed boundary; `WP-031`
-завершил pinned OpenMLS provider/device-bootstrap proof; `WP-032` — private
-snapshot/restore, `WP-033` — WebCrypto sealing и atomic IndexedDB vault, `WP-034` —
-versioned package и isolated Worker runtime; `WP-040` — server one-time delivery;
-`WP-045` — consumer validation и authenticated identity lifecycle).
+Статус: **remaining attachment boundary и assurance**. Text protection, sealed vault,
+Worker runtime, device identity и KeyPackage lifecycle перенесены в `Completed` как
+`BL-013A`.
 
-Результат: UI работает с intent-level crypto API, private material не выходит из изолированного слоя.
+Результат: оставшийся crypto surface получает attachment API и независимые
+cross-browser/security assurance gates.
 
-- [x] async `protectText/unprotectText` exact-version boundary без downgrade;
-- [ ] `encryptAttachment/decryptAttachment` и MLS membership boundary;
-- [x] pinned OpenMLS native/WASM provider и canonical memory-only device identity/
-  KeyPackage proof (`WP-031`);
-- [x] deterministic versioned/bounded private provider snapshot+restore core без JS
-  export (`WP-032`);
-- [x] AES-256-GCM sealed persistent state с non-extractable WebCrypto key,
-  device/revision-bound AAD и без JS export private snapshot (`WP-033`);
-- [x] versioned IndexedDB vault с atomic key+state bootstrap, monotonic optimistic
-  update и fail-closed partial/corrupt state (`WP-033`);
-- [x] подключить vault к repository-owned versioned WASM Worker runtime без передачи
-  `CryptoKey`/sealed internals в application/UI (`WP-034`);
-- [x] Chromium physical Worker/WASM/WebCrypto/IndexedDB provision → reload restore →
-  checkpoint smoke (`WP-034`);
-- [x] immutable current-device public identity registry, server-derived fingerprint и
-  отдельно сохранённый initial KeyPackage без выдачи bytes (`WP-035`);
-- [ ] проверить seal/restore/tamper в Firefox и Safari, а также storage denial и
-  migration/update lifecycle;
-- [x] atomic one-time KeyPackage inventory/replenishment/authorized claim с exact
-  retry и PostgreSQL concurrency constraints (`WP-040`);
-- [x] consumer-side OpenMLS KeyPackage validation связывает canonical user/device,
-  credential, signature key, fingerprint, package ref и exact bytes;
-- [x] restore/provision/register подключены к authenticated lifecycle только после
-  exact local/server comparison; registered identity никогда тихо не заменяется;
-- [x] bounded KeyPackage pool generation/replenishment из того же sealed provider
-  state и automatic foreground inventory policy (`WP-047`, target 8);
-- [ ] memory/plaintext lifecycle audit и log-redaction gate для полного Worker flow;
-- [ ] known-answer/interop test vectors реального MLS provider;
-- [x] corruption/version-mismatch/no-fallback tests для protocol dispatch;
-- [x] отсутствие crypto primitives и ciphertext decoding в Vue components.
-
-### BL-014 — E2EE conversations, membership changes и rotation
-
-Статус: **completed crypto foundation** (`WP-047`, commits `91a6765`–`881f648`);
-group outgoing MLS временно отключается type-level policy `WP-050`.
-
-Результат: OpenMLS lifecycle реализован для direct/group и остаётся production
-foundation; текущая product policy использует его только для direct conversations.
-
-- [x] create/join group crypto state и sealed crash-safe checkpoint;
-- [x] initial multi-device fan-out и add/remove membership Commit в native/WASM;
-- [x] exact message binding к current READY generation/epoch и sender leaf;
-- [x] ordered catch-up нескольких пропущенных Commit/Welcome generations;
-- [x] same-device remove/re-add rejoin без epoch rollback;
-- [x] durable explicit device revoke/logout routing, exact active roster send gate
-  и последующий key rotation; admin-wide reset/deactivation использует тот же send
-  gate, а унификация proactive notification остаётся hardening;
-- [x] protocol-version compatibility/error UX с per-conversation
-  checking/pending/blocked/ready состояниями;
-- [x] synthetic v1 удалён из новых sends и оставлен только read-only для явно
-  помеченной исторической записи; downgrade v2→v1 отсутствует;
-- [x] production-like two-origin/device exchange + reload decrypt, PostgreSQL
-  migrations/integration suite, полный CI и immutable production rollout.
+- `encryptAttachment/decryptAttachment` и MLS-bound encrypted metadata contract
+  реализуются вместе с `BL-017` без вывода file keys в Vue;
+- seal/restore/tamper/storage-denial acceptance в Firefox и Safari;
+- migration/update lifecycle покрывается совместно с `BL-025`;
+- memory/plaintext lifecycle audit и log-redaction gate полного Worker flow;
+- known-answer/interop vectors реального MLS provider и pinned dependency review.
 
 ### BL-051 — Возврат group MLS после multi-device stabilization
 
@@ -348,23 +164,10 @@ foundation; текущая product policy использует его тольк
 
 ## Attachments, retention и storage
 
-### BL-016 — MediaStorage port и LocalMediaStorage
-
-Статус: **completed** (`WP-056`, `5135a50`, production run `31551963185`).
-
-Результат: backend потоково хранит bytes под opaque key в `/data/media` за application
-port. В текущем group v1 slice bytes server-readable; будущий direct flow передаст в
-тот же port уже client-encrypted ciphertext.
-
-- generated opaque storage keys и prefix layout;
-- в БД только logical key, никогда absolute path/client filename;
-- streaming save/open/delete/exists без unbounded RAM;
-- traversal, missing-file, partial-write и ownership tests;
-- S3 adapter не добавляется до реальной внешней storage requirement.
-
 ### BL-017 — Encrypted attachment upload/download
 
-Статус: **queued** (`WP-051` WIP сохранён и продолжится после срочных `WP-052`/`WP-053`).
+Статус: **P1 after `BL-025`/`BL-024`**. Старый `WP-051` design/WIP должен быть
+revalidated against current direct-only MLS v2 policy и не считается выполнением.
 
 Результат: клиент шифрует file до upload и расшифровывает только локально.
 
@@ -376,55 +179,43 @@ port. В текущем group v1 slice bytes server-readable; будущий dir
 
 ### BL-043 — Telegram-like photo/file experience поверх encrypted attachments
 
-Статус: **частично выполнено; следующий slice queued** (`WP-056` развернул group-first
-single-file flow; `WP-057`, `09177e7`, production run `31556674459` добавил
-session-safe download и ordered batch до 10 файлов с in-app gallery; `WP-058`,
-`0bc2424`, production run `31575085192` добавил intentional media/file picker,
-произвольные типы файлов и inline/fullscreen video; direct E2EE media, offline draft,
-drag/drop и расширенный cache остаются queued).
+Статус: **desktop paste/drop completed in `WP-065`/`c8d55f6`**. Здесь остаются только
+durable/direct-media slices после `BL-017` и `BL-024`; production group
+picker/batch/gallery/video/download уже перенесён в `Completed`.
 
-Результат: пользователь удобно отправляет изображения и произвольные файлы. В
-текущем group v1 slice backend видит исходные bytes и bounded metadata; direct MLS
-slice позже передаст только encrypted bytes.
+Результат: secure attachment boundary получает цельный offline-capable composer и
+polished desktop/mobile interaction без server-side preview/transcoding.
 
-File key и encrypted metadata direct conversation будут доставляться только внутри
-MLS v2 application message. Group v1 сейчас загружает исходные bytes без file key:
-такой flow явно не является E2EE и не получает secure badge до отдельной crypto-фичи.
-
-- attachment button, picker и drag/drop/paste там, где это поддерживает platform;
-- одно сообщение содержит caption и bounded ordered набор файлов; несколько фото
-  отображаются адаптивной gallery, открываются в полноэкранном viewer и листаются
-  swipe/keyboard без отдельных искусственных сообщений;
-- image preview/thumbnail генерируется локально до encryption, файл показывает
-  локально расшифрованные имя/type/size и отдельное понятное действие download;
-- upload progress, cancel/retry и offline-safe draft/outbox lifecycle;
-- bubble/gallery UX с tap-to-view/download и понятным unavailable/expired state;
-- client-side authenticated encryption metadata интегрирована с выбранным MLS
-  message protection, без server-side plaintext thumbnail/transcoding;
-- streaming/chunked upload/download, quotas, opaque storage keys и membership auth;
-- encrypted bounded OPFS/IndexedDB cache и explicit eviction policy;
-- mobile camera/photo-library/file chooser, desktop keyboard/accessibility tests.
+- [x] desktop drag/drop и clipboard paste с теми же type/size/count checks, что picker;
+- caption и locally generated encrypted preview/thumbnail для direct MLS attachment;
+- upload cancel/retry и offline-safe draft/outbox lifecycle поверх persistent staging;
+- явные download/cache/pin/expired states без обещания доступности удалённого original;
+- mobile camera/photo-library/file chooser и desktop keyboard/accessibility tests;
+- UI не получает file key/private crypto state и не маркирует group v1 media как E2EE.
 
 ### BL-018 — Server TTL cleanup и tombstone retention
 
-Статус: **частично выполнено** (`WP-028` завершил message ciphertext TTL,
-tombstones, bounded PostgreSQL cleanup и monotonic sequence; `WP-056` добавил
-24-hour pending и 30-day committed group media cleanup; per-type/forever policy
-остаётся).
+Статус: **remaining configurable policy only**. Message/media cleanup, tombstones,
+bounded concurrency и missing-file tolerance уже production-ready через `WP-028`/
+`WP-056` и сохранены в `Completed` (`BL-010`, `BL-016`).
 
-Результат: expired ciphertext/media удаляются идемпотентно и безопасно повторяются.
+Результат: администратор выбирает retention policy без нарушения уже проверенной
+cleanup/tombstone семантики.
 
 - configurable retention по типам, включая forever policy;
-- cleanup expired file → metadata/message state с tolerance к missing files;
-- отдельная tombstone retention;
-- metrics/log summary без content;
-- crash/retry/concurrent cleanup tests.
+- migration/config validation для существующих conversations/messages;
+- media expiry наследует effective message policy, pending upload остаётся bounded;
+- policy-boundary tests для forever/type override и tombstone window;
+- документация backup compatibility и redacted operational summary.
 
 ### BL-019 — Quotas, disk pressure и upload backpressure
 
+Статус: **частично выполнено**: per-file limits, per-uploader active-media quota,
+streaming writes и bounded cleanup уже есть; global disk admission/visibility нет.
+
 Результат: небольшой VPS не заполняется неконтролируемо.
 
-- per-file/per-user/global quotas;
+- global media quota и reserved-free-space threshold поверх существующих limits;
 - media usage, PostgreSQL size и free-disk metrics/alerts;
 - admin-only storage dashboard: media/DB usage, filesystem capacity/free/reserved,
   configured quotas и low-disk admission state без раскрытия чужих filename/content;
@@ -434,157 +225,67 @@ tombstones, bounded PostgreSQL cleanup и monotonic sequence; `WP-056` доба�
 
 ## Local-first PWA
 
-### BL-022 — IndexedDB encrypted local archive
-
-Статус: **частично выполнено** (`WP-042` завершил bounded latest/before history и
-encrypted message archive; `WP-043` добавил encrypted conversation/directory/
-receipt/sync snapshot и cache-first startup. Protocol state, attachment metadata,
-upgrade migration gate и offline outbox остаются).
-
-Результат: startup сначала показывает локальную историю, затем применяет sync delta.
-
-- [x] отдельный versioned encrypted snapshot store для conversation index,
-  directory, sync cursor и read/delivery receipts;
-- [ ] versioned stores для protocol state и attachment metadata;
-- [x] отдельный versioned encrypted-message store с bounded per-conversation retention;
-- [x] bounded latest/before pagination и load-older без пропусков для conversation с
-  более чем 100 уже существующими сообщениями;
-- [x] bounded timeline window, чтобы DOM и reactive RAM не росли без лимита;
-- [x] device-local non-extractable AES-256-GCM storage key;
-- [x] plaintext только в RAM на время rendering/processing; archive adapter явно
-  проецирует `TimelineMessage` обратно в transport DTO до encryption;
-- [ ] IndexedDB upgrade migrations и cross-release service-worker compatibility tests;
-- [x] понятный non-blocking UX при недоступном browser storage;
-- [x] encrypted conversation snapshot рендерится до сети и затем выполняет catch-up
-  с persisted cursor без повторного full list bootstrap;
-- [ ] полноценная offline работа без API остаётся зависимой от `BL-023` outbox и
-  будущих локальных mutation/reconciliation правил.
-
-### BL-023 — Offline outbox и conflict recovery
-
-Статус: **completed** (`WP-044`).
-
-Результат: offline send проходит состояния `pending/sending/sent/failed` и безопасно повторяется.
-
-- [x] bounded per-account persistent queue с immutable client idempotency key и
-  active-device scope, совпадающим с backend uniqueness;
-- [x] AES-256-GCM encrypted records и non-extractable device-local key без raw
-  plaintext/session/private protocol state;
-- [x] explicit `pending/sending/sent/failed`, bounded backoff и manual retry;
-- [x] flush на foreground startup, WebSocket reconnect и fallback catch-up;
-- [x] reconcile typed authoritative send receipt с active timeline/archive, а
-  durable sync остаётся correctness path для неактивных conversations;
-- [x] crash-between-send-and-ack и duplicate exact-envelope retry tests;
-- [x] 250-entry account limit, storage/quota fail-closed UX и сохранение composer
-  draft, если durable enqueue не состоялся;
-- [x] stale entry предыдущего login-device не переотправляется под новым
-  `sender_device_id`; current device приходит только из authenticated `/me`;
-- [ ] Service Worker Background Sync не включён: браузерные ограничения и update/
-  protocol-state compatibility должны быть решены вместе с `BL-025`/MLS state;
-- [ ] cross-tab lease является дальнейшим hardening: параллельные вкладки уже не
-  создают server duplicates благодаря exact backend idempotency, но могут выполнять
-  лишний одинаковый request.
-
 ### BL-024 — OPFS media cache и local retention controls
 
-Результат: большие encrypted blobs хранятся отдельно, ограниченно и очищаемо.
+Статус: **queued after `BL-025` compatibility gate**. Текущий UI держит downloaded
+`Blob`/Object URL только в RAM; reload повторно получает media с server.
 
-- OPFS/origin-private adapter с fallback;
-- byte-bounded LRU cache, pinned-media policy;
-- local text retention: forever/1 year/90 days;
-- missing-original UX после server/local eviction;
-- запрос persistent storage и отображение quota pressure без обещания backup.
+Результат: переписка, meaningful UI state и уже загруженные media переживают reload и
+bounded offline-период, не превращая origin storage в безлимитный или plaintext archive.
+
+- OPFS/origin-private adapter с fallback; group v1 bytes дополнительно шифруются
+  device-local key at rest, direct media cache хранит только client-encrypted bytes;
+- versioned encrypted attachment metadata связывает local blob с authoritative
+  conversation/message/attachment ID, digest, size и server expiry;
+- encrypted per-conversation composer draft; выбранные media/file draft bytes
+  копируются в bounded staging store, поэтому reload не теряет подготовленную отправку;
+- byte-bounded LRU cache, configurable device budget и explicit pinned-media policy;
+- local text retention: forever/1 year/90 days без изменения server TTL;
+- offline open для cached media и честный missing-original UX после server/local eviction;
+- `navigator.storage.persist()` только после объяснимого user gesture; quota pressure
+  отображается без обещания backup или невозможности browser eviction;
 - user-facing device storage screen через `navigator.storage.estimate()`: usage/quota,
-  разбиение app cache/archive/media где adapter может посчитать его безопасно,
-  clear-evictable-cache без удаления identity/protocol keys по умолчанию.
-
-### BL-044 — Per-conversation viewport restoration
-
-Статус: **in progress через `WP-064`**.
-
-Результат: каждый чат открывается на последней осмысленной позиции этого device,
-а не всегда внизу и не на случайном DOM offset.
-
-- encrypted local anchor хранит conversation ID, nearest server sequence/message ID
-  и относительное смещение, а не хрупкий абсолютный `scrollTop`;
-- anchor обновляется throttled, восстанавливается после cache/network pagination и
-  корректно переживает prepend старой истории, font/image layout и viewport resize;
-- unread/new-message policy не перетирает сохранённую позицию; явная кнопка «вниз»
-  возвращает к latest и обновляет anchor;
-- bounded cleanup для удалённых/покинутых conversations и mobile/desktop tests.
+  app shell/archive/drafts/media breakdown где adapter может посчитать его безопасно;
+- clear-evictable-cache не удаляет session, device identity, MLS state, pinned media
+  или encrypted message archive без отдельного explicit destructive action;
+- eviction/reload/quota-denial/corrupt-record tests и отсутствие plaintext/media keys
+  в IndexedDB metadata, logs или UI state inspectors.
 
 ### BL-025 — PWA lifecycle и update safety
 
+Статус: **частично выполнено**: install surface, Workbox app shell и automatic update
+готовы; persistent-schema compatibility и background ownership остаются.
+
 Результат: приложение устанавливается, работает с offline shell и безопасно обновляется.
 
-- [x] manifest, versioned transparent `any`/opaque `maskable` icons и Apple touch assets;
-- [x] Android edge-to-edge gesture surface и root pull-to-refresh suppression;
-- service-worker offline shell и background-safe reconnect;
-- [x] automatic foreground/periodic update check и auto-activation/reload (`WP-053`);
-- compatibility gate с IndexedDB schema;
-- tests обновления старой установленной версии.
+- compatibility gate и explicit migrations для всех IndexedDB/OPFS schemas до
+  активации нового Service Worker;
+- upgrade tests со старой установленной version, сохранёнными crypto state, archive,
+  snapshot и outbox без silent reset;
+- определить owner фоновой отправки: Service Worker Background Sync включается только
+  с проверенной cross-release MLS transaction compatibility;
+- cross-tab lease для outbox/crypto mutations; параллельные вкладки уже не создают
+  server duplicate, но не должны выполнять лишнюю state-changing crypto operation;
+- storage-denial/update-failure UX с safe rollback на прежний executable shell.
 
 ## Web Push
 
-### BL-026 — Push subscriptions и VAPID
-
-Статус: **completed и deployed через `WP-061`**.
-
-Результат: каждая browser installation управляет собственной subscription.
-
-- permission только после user gesture, включая installed iOS/iPadOS PWA constraints;
-- device-bound subscription table/CRUD;
-- VAPID public config и private secret вне Git/image/logs;
-- endpoint/key material redaction;
-- changed/expired subscription recovery.
-
-### BL-027 — Privacy-safe push dispatcher
-
-Статус: **completed и deployed через `WP-061`**.
-
-Результат: push будит клиент opaque routing hint, а message correctness остаётся у sync.
-
-- payload только version/event/conversation/message IDs или `sync_required`;
-- никакого plaintext preview, SDP, media keys или sensitive signaling;
-- commit message до best-effort bounded dispatch;
-- permanent invalid/gone subscription disable/delete;
-- push failure не откатывает message.
-
 ### BL-028 — Notification UX, preferences и deduplication
 
-Статус: **MVP slice implemented/deployed через `WP-061`; real-device permission/delivery
-acceptance pending, mute/badge/rich controls остаются**.
+Статус: **remaining controls after deployed `WP-061` MVP**. Device-bound subscription,
+generic background notification, focus/navigation и invalid-subscription cleanup
+перенесены в `Completed` вместе с `BL-026`/`BL-027`.
 
 Результат: foreground/background уведомления не дублируют unread state.
 
-- foreground active conversation: без system notification;
-- background: service worker generic notification и click/focus/navigation/sync;
-- global enabled, conversation mute, privacy mode;
-- настройки являются per-device и включают system notification permission/status,
-  звук/vibration где platform это реально поддерживает, mute до времени и app badge;
-- stable event/message ID dedup WebSocket + Push + sync;
-- multi-device read state, app badge и invalid-subscription tests.
+- authenticated installed Android/iOS real-device permission/delivery/click acceptance;
+- per-device global enable/status и bounded recovery после browser permission change;
+- per-conversation mute до времени без plaintext preview;
+- app badge derived idempotently from authoritative unread state;
+- звук/vibration только там, где platform реально поддерживает управление;
+- stable event/message ID dedup tests для WebSocket + Push + sync на нескольких devices.
 
 ## Production и operations
-
-### BL-029 — Production Nginx, TLS и security headers
-
-Статус: **completed** (`WP-019`, production workflow `31452613018`).
-
-Результат: наружу опубликованы только HTTPS/WSS через проверенный ingress.
-
-- HTTP→HTTPS, certificate automation и HSTS только после проверки TLS;
-- WebSocket upgrade/timeouts и trusted proxy chain;
-- upload limits согласованы с application limits;
-- CSP, `X-Content-Type-Options`, `Referrer-Policy` и минимальное раскрытие backend;
-- PostgreSQL не опубликован наружу.
-
-Production `chat.yoowee.ru` работает через отдельный vhost единственного системного
-Nginx: `/api/`/WebSocket направляются в loopback-only API `127.0.0.1:18081`, `/` —
-в loopback-only Nuxt `127.0.0.1:18082`. Let’s Encrypt certificate, HTTP→HTTPS,
-HSTS/CSP, exact trusted proxy boundary, migration-before-rollout и immutable GHCR
-images проверены; production Nginx container удалён, все соседние `infra-*`
-containers сохранили состояние (`WP-038`).
 
 ### BL-031 — Backup/restore и retention-compatible policy
 
@@ -648,6 +349,264 @@ containers сохранили состояние (`WP-038`).
 - решение о native wrapper только при подтверждённой необходимости.
 
 ## Completed
+
+### BL-066 — Instant cached conversation return
+
+Статус: **implemented and real-browser verified locally** (`WP-066`; commit pending).
+
+- bounded LRU держит reactive windows 12 недавно открытых conversations только в RAM;
+- A → B → A рисует hot window до network catch-up без пустого timeline;
+- cold saved anchor рисуется из encrypted IndexedDB до server reconciliation;
+- scroll anchor захватывается до debounce и flush-ится до смены conversation;
+- late async results не перерисовывают новый active chat, tombstones обновляют cache;
+- isolated two-origin browser acceptance: 45 сообщений за 47 ms, тот же anchor
+  sequence `16` восстановлен за 625 ms без последующего drift или console errors.
+
+### BL-044 — Per-conversation viewport restoration
+
+Статус: **completed** (`WP-064`, `d1eb746`, physical Pixel acceptance documented).
+
+- warm/cold push deep link targets exact authorized conversation/message;
+- encrypted message-relative anchor stores sequence, offset and latest intent;
+- throttled restore survives local/network pagination, prepend and viewport changes;
+- incoming messages do not pull a history reader to bottom;
+- visual viewport keeps composer reachable through keyboard resize;
+- mobile/system-bar contract is tested; physical Pixel confirmed that the lower
+  Android navigation surface remains Chrome/WebAPK-owned and cannot be recolored by
+  standard manifest/meta/CSS APIs. Exact native control would require a TWA/APK wrapper,
+  which remains outside PWA scope rather than an open viewport bug.
+
+### BL-013A — Frontend text crypto, device identity и sealed runtime
+
+Статус: **completed** (`WP-030`–`WP-035`, `WP-040`, `WP-045`, `WP-047`).
+
+- async exact-version `protectText/unprotectText` без downgrade;
+- pinned OpenMLS native/WASM provider и canonical device identity/KeyPackage proof;
+- bounded private snapshot/restore без JS export;
+- AES-256-GCM sealed state с non-extractable key и device/revision-bound AAD;
+- atomic versioned IndexedDB vault и isolated Worker runtime;
+- authenticated immutable identity registry и exact consumer KeyPackage validation;
+- bounded one-time KeyPackage pool/claim/replenishment with concurrency constraints;
+- corruption/version/no-fallback tests и отсутствие crypto primitives в Vue.
+
+### BL-041A — Visual/PWA foundation
+
+Статус: **completed and production-verified** (`WP-041`, `WP-043`, `WP-053`,
+`WP-055`, `WP-059`, `WP-060`).
+
+- semantic visual/motion tokens and reduced-motion fallback;
+- desktop split view, mobile master/detail, fixed header/composer и bounded timeline;
+- compact chat rows, grouped bubbles, day separators, receipts, typing/presence и
+  scroll-to-latest behavior;
+- multiline composer, visual viewport/keyboard positioning, safe areas и gesture bar;
+- explicit manifest, Apple assets, versioned transparent `any`/solid `maskable` icons,
+  reproducible SVG→PNG pipeline и Pixel splash/safe-zone regressions;
+- automatic update activation/reload, transient/offline connection overlay;
+- byte-accurate accessible group media upload progress.
+
+### BL-063 — MLS-capable send roster consistency
+
+Статус: **completed and deployed** (`WP-063`, production run `31591911253`).
+
+Bootstrap и v2 message gate используют одну projection активных MLS-capable devices.
+Legacy device без identity не блокирует READY direct conversation при наличии capable
+leaf у каждого участника; новая identity требует rotation, а stale generation/epoch,
+revoked sender и participant без capable device остаются fail-closed. Exact topology
+закреплена unit и PostgreSQL regressions.
+
+### BL-062 — Deploy-safe session и self-healing MLS runtime
+
+Статус: **completed** (`WP-062`).
+
+Existing browser devices переживают API/frontend recreation без password login,
+нового device ID или generation storm. Только authoritative `401` очищает session,
+transient API failure retry-ится, failed MLS mutation восстанавливает sealed checkpoint,
+а deploy публикует frontend только после healthy API. Production-like два устройства
+успешно отправляют после hard API restart.
+
+### BL-054 — Self-healing local MLS checkpoint и явный device recovery
+
+Статус: **completed** (`WP-054`, `01ef0ac`, production run `31549397629`).
+
+- read-only inspection локального epoch/device roster через Rust/Worker port;
+- exact recovery server checkpoint только при epoch+roster match;
+- ordered catch-up последующих Commit/Welcome;
+- fail-closed диагностика полной потери device-local MLS state;
+- coordinator выбирается на generation без permanent primary device.
+
+### BL-050 — Conversation-scoped direct/group protocol policy
+
+Статус: **completed** (`WP-050`, `45709c3`, production run `31541538389`).
+
+- direct принимает только MLS v2 с exact generation/epoch/roster binding;
+- group временно принимает только явно non-E2EE v1 без client fallback;
+- historical v1/v2 rows immutable и читаются своей exact version;
+- historical exact retry идемпотентен, но не разрешает новый direct v1;
+- multi-account/device/reload/revoke scenarios проверены.
+
+### BL-038 — Native-feeling PWA shell и frontend Clean Architecture
+
+Статус: **completed** (`WP-020`, `c9c7bcf`).
+
+- routes `/login`, `/activate`, `/chat`, `/settings`, `/admin/users` и guards;
+- desktop navigation rail + mobile bottom navigation с safe-area/touch targets;
+- light/dark/system tokens, persisted non-secret preference и reduced-motion fallback;
+- haptics port, bounded device label и safe URL-fragment invite consumption;
+- app-scoped state без SSR singleton, runtime DTO parsers и без raw browser/API calls
+  в components;
+- Vitest, lint/typecheck/build и desktop browser smoke.
+
+Physical mobile visual acceptance остаётся общим gate `BL-041`/`BL-033`, а не
+незавершённой частью shell architecture.
+
+### BL-039 — Admin account lifecycle и password recovery
+
+Статус: **completed** (`WP-021`).
+
+- bounded admin user list/search и deactivate/reactivate safety invariants;
+- admin reset атомарно revokes target sessions/devices;
+- purpose-bound hashed one-time reset secret с TTL/single-use/concurrency policy;
+- fragment-only reset/invitation URL, пользователь сам задаёт Argon2id password;
+- audit без secrets и negative authorization/CSRF/guessing tests;
+- Alembic, repositories/use cases, Dishka wiring и pytest.
+
+### BL-040 — User settings, devices и security center
+
+Статус: **completed** (`WP-022`).
+
+- profile и user-editable device display name;
+- current/other sessions с bounded browser/OS/IP metadata;
+- revoke one/all others, password change и security reset;
+- theme/haptics/motion/notification/privacy preferences;
+- credential hashes/private material не выводятся, metadata не является auth factor.
+
+### BL-042 — Управление группой и составом участников
+
+Статус: **completed** (`WP-046`, `8fb3720`).
+
+- rename, add/remove/re-add и максимум 50 active members;
+- role-aware responsive UI без ложного ownership transfer;
+- atomic `conversation_updated`, local snapshot update и multi-device catch-up;
+- negative authorization/concurrency/persistence/frontend tests;
+- явная MLS Commit/Welcome boundary без фиктивной rotation.
+
+### BL-009 — Receipts, unread state, typing и presence
+
+Статус: **completed** (`WP-024`–`WP-027`).
+
+- shared per-user read cursor, durable read/delivery receipts и server unread count;
+- foreground-only mark-read до загруженной authoritative sequence;
+- ephemeral server-expiring typing и best-effort multi-device WebSocket presence;
+- reconnect deduplication и automated tests.
+
+Physical multi-device release acceptance агрегируется в `BL-033` и не держит
+реализованный foundation в активном backlog.
+
+### BL-011 — Authenticated WebSocket notifications
+
+Статус: **completed** (`WP-023`–`WP-026`).
+
+- same-origin cookie handshake, active-session и exact Origin validation;
+- explicit `hello`, `new_message`, `message_deleted`, `typing`, `presence`,
+  `read_receipt`, `delivery_receipt` и `conversation_updated` frames;
+- small routing hints; durable sync остаётся correctness path;
+- heartbeat не продлевает auth session, periodic revalidation закрывает revoked/
+  expired session без отдельного client-trusted revocation event;
+- single-process registry без Redis и cursor catch-up после reconnect.
+
+### BL-014 — E2EE conversations, membership changes и rotation
+
+Статус: **completed crypto foundation** (`WP-047`, `91a6765`–`881f648`).
+
+- sealed OpenMLS group state, multi-device fan-out и membership Commit;
+- exact READY generation/epoch/sender-leaf binding;
+- ordered Commit/Welcome catch-up и same-device remove/re-add;
+- device revoke/logout routing, active roster send gate и rotation;
+- checking/pending/blocked/ready UX без v2→v1 downgrade;
+- two-origin/device exchange, reload decrypt, PostgreSQL integration и production rollout.
+
+Group outgoing MLS сейчас выключен explicit policy; его возврат отслеживает `BL-051`.
+
+### BL-016 — MediaStorage port и LocalMediaStorage
+
+Статус: **completed** (`WP-056`, `5135a50`, production run `31551963185`).
+
+- opaque generated storage keys и logical key в БД без client path;
+- streaming save/open/delete/exists без unbounded RAM;
+- traversal, missing-file, partial-write и ownership tests;
+- default `/data/media`; S3 adapter не добавлен без external-storage requirement.
+
+### BL-043A — Group photo/file/video experience
+
+Статус: **completed and deployed** (`WP-056`–`WP-060`).
+
+- intentional media/file pickers, arbitrary generic files и ordered batch до 10;
+- adaptive photo gallery, in-app fullscreen swipe/keyboard viewer и inline video;
+- credentialed Blob download без navigation из standalone PWA;
+- byte-accurate aggregate/per-item upload progress;
+- safe unsupported-codec download и unavailable/expired states;
+- streaming server storage, opaque keys, membership authorization и cleanup.
+
+Этот group v1 flow остаётся server-readable и никогда не маркируется E2EE. Direct
+crypto, durable cache/draft и оставшийся interaction polish отслеживают `BL-017`,
+`BL-024` и активный `BL-043`.
+
+### BL-022 — IndexedDB encrypted local archive
+
+Статус: **completed core** (`WP-042`, `WP-043`, `WP-033`/`WP-034`).
+
+- encrypted snapshot для directory/conversations/read-delivery state/sync cursor;
+- bounded encrypted latest/before message archive, 2,000 records per conversation;
+- bounded timeline DOM/RAM и load-older без пропусков;
+- non-extractable AES-256-GCM keys и plaintext только в rendering/processing RAM;
+- cache-first paint, затем catch-up с persisted cursor;
+- sealed versioned crypto provider state в отдельном atomic IndexedDB vault;
+- non-blocking storage-unavailable/corrupt handling и automated reload tests.
+
+Attachment metadata/media/drafts теперь принадлежат `BL-024`, а cross-release schema
+compatibility — `BL-025`; они не делают завершённый text archive «частичным».
+
+### BL-023 — Offline outbox и conflict recovery
+
+Статус: **completed** (`WP-044`).
+
+- bounded 250-entry encrypted queue с device-scoped idempotency key;
+- `pending/sending/sent/failed`, backoff, manual retry и foreground/reconnect flush;
+- authoritative receipt reconciliation и sync correctness для inactive conversations;
+- crash-between-send-and-ack и duplicate retry tests;
+- quota fail-closed UX без потери current composer input;
+- stale previous-login device entries не переотправляются под новым device scope.
+
+Background Sync и cross-tab ownership являются update/runtime hardening в `BL-025`.
+
+### BL-026 — Push subscriptions и VAPID
+
+Статус: **completed and deployed** (`WP-061`).
+
+- permission после user gesture с installed iOS/iPadOS constraints;
+- device-bound subscription CRUD;
+- public VAPID config, private secret вне Git/image/logs;
+- endpoint/key redaction и invalid subscription recovery.
+
+### BL-027 — Privacy-safe push dispatcher
+
+Статус: **completed and deployed** (`WP-061`).
+
+- opaque version/event/conversation/message IDs или `sync_required` only;
+- никакого plaintext preview, media keys или sensitive signaling;
+- commit до best-effort bounded dispatch;
+- permanent `404/410` cleanup; push failure не откатывает message;
+- generic background notification, foreground suppression и scoped click navigation.
+
+### BL-029 — Production Nginx, TLS и security headers
+
+Статус: **completed** (`WP-019`, production workflow `31452613018`).
+
+- HTTP→HTTPS, certificate automation и verified HSTS;
+- WebSocket upgrade/timeouts, upload limits и exact trusted proxy chain;
+- CSP, `X-Content-Type-Options`, `Referrer-Policy` и minimal backend disclosure;
+- system Nginx routes loopback-only API/frontend; PostgreSQL не опубликован;
+- migration-before-rollout, immutable GHCR images и соседние services сохранены.
 
 ### BL-FIX-054 — Branded shell, safe logout и automatic PWA lifecycle
 
