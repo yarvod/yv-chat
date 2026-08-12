@@ -6,7 +6,7 @@
 
 ## WP-061 — Device-bound Web Push notifications
 
-Статус: **in progress**
+Статус: **production deployed; real-device browser acceptance pending**
 Backlog: `BL-026`, `BL-027`, MVP slice `BL-028`
 
 Цель: установленная PWA или поддерживаемый browser получает системное уведомление
@@ -57,14 +57,14 @@ crypto material или session credentials push provider-у.
 
 ### Tests и acceptance
 
-- [ ] migration: fresh database → head (GitHub PostgreSQL verify pending);
+- [x] migration: fresh database → head в GitHub PostgreSQL verify;
 - [x] backend entity/use-case authorization, bounds, config-route redaction и invalidation tests;
 - [x] send-message tests: recipient-only payload, post-commit ordering, failure isolation;
 - [x] frontend permission states, application key conversion, subscribe/upsert/delete tests;
 - [x] Service Worker push/click/visible-client/dedup tests;
 - [x] frontend lint/typecheck/Vitest/build, backend Ruff/mypy/pytest и полный `make ci`;
 - [ ] real production subscription и background notification проверены после deploy;
-- [ ] production health/logs/nginx и соседние `yoowee.ru`/`s3.yoowee.ru` не нарушены.
+- [x] production health/logs/nginx и соседние `yoowee.ru`/`s3.yoowee.ru` не нарушены.
 
 ### Local acceptance evidence
 
@@ -73,6 +73,24 @@ crypto material или session credentials push provider-у.
 - Service Worker build содержит versioned `sw-push.js` в precache и `importScripts`;
 - Rust/OpenMLS `21 passed`; full `make ci`, Compose/deploy/docs checks зелёные;
 - OpenSSL bootstrap output принят `AppSettings` и `py_vapid` без вывода ключевого материала.
+
+### Production rollout evidence
+
+- GitHub CI run `31582865137` и production deploy run `31582865140` завершены успешно;
+- deploy применил migration `0021_push_subscriptions` и immutable API/frontend images
+  `sha-48c8eff9dbbc54ff6ceb120369cab977ddb4c60a`;
+- `/api/v1/health` и frontend отвечают `200`, `/api/v1/push/config` сообщает
+  `enabled=true` и раскрывает только public application server key;
+- API/frontend/PostgreSQL healthy, свежих `ERROR`/`Traceback`/HTTP 500 в runtime logs нет;
+- единственный production ingress — active system Nginx; контейнера Nginx нет;
+- `yoowee.ru` продолжает HTTPS redirect/serve flow, `s3.yoowee.ru` отвечает ожидаемым
+  authenticated-storage `403`, то есть соседние vhost не нарушены;
+- VAPID runtime secret сгенерирован атомарно без чтения/вывода, `.env` принадлежит
+  `devuser:devuser` и имеет режим `0600`.
+
+Реальную доставку notification нельзя отметить автоматически: browser permission
+может быть выдан только user gesture. Acceptance завершается после нажатия
+«Разрешить уведомления» на одном production-устройстве и отправки сообщения с другого.
 
 ### Exclusions
 
