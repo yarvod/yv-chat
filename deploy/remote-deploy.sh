@@ -52,18 +52,26 @@ if test -f .deployed-image-tag; then
     previous_tag=$(sed -n '1p' .deployed-image-tag)
 fi
 
-if ! compose up -d --wait --wait-timeout 120; then
+rollout() {
+    # Keep the old frontend serving until the replacement API is healthy. This
+    # prevents an auto-updating PWA from reloading into the API recreation window
+    # and mistaking a transient 502 for an invalid browser session.
+    compose up -d --wait --wait-timeout 120 postgres media-init api cleanup
+    curl --fail --silent --show-error \
+        "http://127.0.0.1:${YV_CHAT_API_BIND_PORT:-18081}/api/v1/health" >/dev/null
+    compose up -d --wait --wait-timeout 120 frontend
+}
+
+if ! rollout; then
     if test -n "$previous_tag"; then
         IMAGE_TAG="$previous_tag"
         export IMAGE_TAG
         compose pull api cleanup frontend || true
-        compose up -d --wait --wait-timeout 120 || true
+        rollout || true
     fi
     exit 1
 fi
 
-curl --fail --silent --show-error \
-    "http://127.0.0.1:${YV_CHAT_API_BIND_PORT:-18081}/api/v1/health" >/dev/null
 curl --fail --silent --show-error \
     "http://127.0.0.1:${YV_CHAT_FRONTEND_BIND_PORT:-18082}/" >/dev/null
 

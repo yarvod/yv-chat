@@ -162,6 +162,19 @@ responsive group-info UI, а backend остаётся единственной �
 
 ## E2EE и multi-device history
 
+### BL-062 — Deploy-safe session и self-healing MLS runtime
+
+Статус: **completed** (`WP-062`).
+
+Результат: существующие browser devices переживают API/frontend container recreation
+без password login, нового `device_id`, скрытого уничтожения MLS runtime и generation
+storm. Только authoritative `401` очищает session; временная API недоступность
+bounded-retry-ится. Любая failed MLS mutation остаётся fail-closed, но runtime сразу
+восстанавливает последний sealed checkpoint. Deploy делает API healthy до публикации
+нового auto-update frontend, а неизменный BLOCKED roster не пересоздаётся конкурирующими
+replacement devices. Production-like два устройства отправляют после hard API restart,
+а peer расшифровывает оба сообщения.
+
 ### BL-054 — Self-healing local MLS checkpoint и явный device recovery
 
 Статус: **completed** (`WP-054`, commit `01ef0ac`, production run `31549397629`).

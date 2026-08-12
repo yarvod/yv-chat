@@ -192,13 +192,6 @@ describe('device crypto runtime with the release OpenMLS WASM', () => {
       clientMessageId: '784ace60-fba9-445d-b1e4-df34d56ad053',
       ciphertext: protectedMessage.ciphertext,
     })).rejects.toMatchObject({ code: 'operation-failed' })
-    await expect(restoredBob.unprotectMessage({
-      conversationId,
-      clientMessageId: messageId,
-      ciphertext: protectedMessage.ciphertext,
-    })).rejects.toMatchObject({ code: 'not-provisioned' })
-
-    await restoredBob.restore({ userId: otherUserId, deviceId: otherDeviceId })
     const unprotected = await restoredBob.unprotectMessage({
       conversationId,
       clientMessageId: messageId,

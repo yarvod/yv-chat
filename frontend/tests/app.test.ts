@@ -75,4 +75,21 @@ describe('login application flow', () => {
     expect(wrapper.text()).toContain('Chrome · macOS · Компьютер')
     expect(wrapper.html()).not.toContain('correct horse battery staple')
   })
+
+  it('does not invite a password login while the existing session check is temporarily offline', () => {
+    const wrapper = mount(LoginForm, {
+      props: {
+        busy: false,
+        message: 'Сервер временно недоступен. Текущая сессия сохранена.',
+        offline: true,
+        deviceLabel: 'Safari · iOS · Телефон',
+      },
+      global: { stubs: { NuxtLink: { template: '<a><slot /></a>' } } },
+    })
+
+    expect(wrapper.text()).toContain('Текущая сессия сохранена')
+    expect(wrapper.text()).toContain('Повторить подключение')
+    expect(wrapper.find('input[name="username"]').exists()).toBe(false)
+    expect(wrapper.find('input[name="password"]').exists()).toBe(false)
+  })
 })

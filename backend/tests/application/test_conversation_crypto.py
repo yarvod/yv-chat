@@ -506,6 +506,91 @@ async def test_new_device_waits_for_any_existing_leaf_before_package_claim() -> 
     assert joined.welcome.target_device_id == new_phone.id
 
 
+async def test_multiple_new_devices_reuse_one_blocked_roster_snapshot() -> None:
+    state = bootstrap_state()
+    factory = FakeConversationCryptoUnitOfWorkFactory(state)
+    first = (await begin_crypto(factory, NOW).execute(begin_command())).generation
+    await finalize_crypto(factory, NOW + timedelta(seconds=1)).execute(
+        FinalizeConversationCryptoCommand(
+            user_id=ALICE_ID,
+            device_id=ALICE_PHONE_ID,
+            conversation_id=CONVERSATION_ID,
+            generation_id=first.id,
+            epoch=1,
+            commit_message=b"initial-commit",
+            ratchet_tree=b"initial-tree",
+            welcomes=(
+                DeviceWelcomeInput(ALICE_LAPTOP_ID, b"welcome-alice-laptop"),
+                DeviceWelcomeInput(BOB_PHONE_ID, b"welcome-bob-phone"),
+            ),
+        )
+    )
+    replacements = (
+        Device.create(
+            user_id=ALICE_ID,
+            name="Alice replacement",
+            now=NOW + timedelta(seconds=2),
+            device_id=ALICE_REPLACEMENT_ID,
+        ),
+        Device.create(
+            user_id=BOB_ID,
+            name="Bob replacement",
+            now=NOW + timedelta(seconds=2),
+            device_id=BOB_REPLACEMENT_ID,
+        ),
+    )
+    for marker, replacement in enumerate(replacements, start=20):
+        state.devices[replacement.id] = replacement
+        state.device_crypto_identities[replacement.id] = crypto_identity(
+            replacement.user_id,
+            replacement.id,
+            marker,
+        )
+        package = DeviceKeyPackage.create(
+            user_id=replacement.user_id,
+            device_id=replacement.id,
+            key_package=f"public-package-{replacement.id}".encode(),
+            now=NOW + timedelta(seconds=2),
+        )
+        state.device_key_packages[package.id] = package
+
+    announced = await begin_crypto(factory, NOW + timedelta(seconds=3)).execute(
+        BeginConversationCryptoCommand(
+            user_id=ALICE_ID,
+            device_id=ALICE_REPLACEMENT_ID,
+            conversation_id=CONVERSATION_ID,
+            bootstrap_request_id=UUID("aeaeaeae-aeae-4eae-8eae-aeaeaeaeaeae"),
+        )
+    )
+    repeated_from_other_new_device = await begin_crypto(
+        factory,
+        NOW + timedelta(seconds=4),
+    ).execute(
+        BeginConversationCryptoCommand(
+            user_id=BOB_ID,
+            device_id=BOB_REPLACEMENT_ID,
+            conversation_id=CONVERSATION_ID,
+            bootstrap_request_id=UUID("afafafaf-afaf-4faf-8faf-afafafafafaf"),
+        )
+    )
+
+    assert announced.generation.status is ConversationCryptoStatus.BLOCKED
+    assert repeated_from_other_new_device.generation.id == announced.generation.id
+    assert len(state.conversation_crypto_generations) == 2
+
+    pending = await begin_crypto(factory, NOW + timedelta(seconds=5)).execute(
+        BeginConversationCryptoCommand(
+            user_id=ALICE_ID,
+            device_id=ALICE_LAPTOP_ID,
+            conversation_id=CONVERSATION_ID,
+            bootstrap_request_id=UUID("b0b0b0b0-b0b0-40b0-80b0-b0b0b0b0b0b0"),
+        )
+    )
+    assert pending.generation.status is ConversationCryptoStatus.PENDING
+    assert pending.generation.coordinator_device_id == ALICE_LAPTOP_ID
+    assert len(state.conversation_crypto_generations) == 3
+
+
 async def test_full_roster_recovery_never_claims_coordinator_own_key_package() -> None:
     state = bootstrap_state()
     factory = FakeConversationCryptoUnitOfWorkFactory(state)

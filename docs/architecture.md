@@ -793,8 +793,11 @@ create/join/rejoin/update/apply-commit/protect/unprotect. Каждая state-cha
 только после следующего optimistic vault revision и
 atomic sealed-state commit. Commit/Welcome/ciphertext/plaintext копируются наружу
 только после durability barrier. Любая ошибка MLS mutation, sealing или IndexedDB
-уничтожает потенциально продвинутый in-memory instance; продолжение возможно только
-через restore последнего подтверждённого snapshot. Это предотвращает ratchet/epoch
+уничтожает потенциально продвинутый in-memory instance и сразу пытается восстановить
+последний подтверждённый sealed snapshot. Ошибка конкретной операции возвращается
+caller-у, но нерасшифровываемый historical ciphertext не оставляет весь device в
+скрытом `not-provisioned`; если durable restore тоже невалиден/недоступен, runtime
+остаётся fail-closed. Это предотвращает ratchet/epoch
 rollback после частичного сбоя и повторное использование неподтверждённого state.
 Main-thread gateway достигает этих операций только через exact Worker envelopes
 `mls-inspect`, `mls-bootstrap`, `mls-join`, `mls-rejoin`, `mls-update`,
@@ -1397,6 +1400,12 @@ Production runtime изолирован explicit Compose project `yv-chat`. Ед
 API подключён одновременно к non-internal project-owned ingress network `172.30.243.0/24` (иначе Docker published loopback port не активируется в проверенном runtime) и к internal private network `172.30.242.0/24` с PostgreSQL. Frontend подключён только к ingress network, cleanup и PostgreSQL — только к private. Host proxy приходит в API от фактически проверенного bridge gateway `172.30.243.1`; backend доверяет forwarding chain только от этого exact `/32`, не доверяет произвольному клиентскому `X-Forwarded-For` и выбирает первый справа untrusted address. Оба subnet обязательно проверяются на конфликт при переносе на другой host.
 
 Host Nginx владеет TLS/Certbot, HTTP→HTTPS, security headers и WebSocket upgrade для `chat.yoowee.ru`; соседние `yoowee.ru`/`s3.yoowee.ru` vhost не изменяются. Vhost устанавливается из temp file с backup, `nginx -t`, reload и acceptance обоих upstream; graceful reload проверяется bounded retry, потому что старые workers короткое время могут обслуживать прежнюю конфигурацию. Workflow использует immutable `sha-<commit>` GHCR tags, выполняет migration новым backend image до health-checked rollout и не запускает Docker build на VPS. Runtime `.env` и одноразовая initial-admin credential существуют только на сервере с mode `0600`; deploy artifacts не содержат secrets. Полный runbook: [deployment.md](deployment.md).
+
+Rollout пересоздаёт и дожидается healthcheck `postgres/media-init/api/cleanup`, затем
+проверяет API через loopback ingress и только после этого обновляет frontend. Это не
+позволяет auto-update PWA активировать новый app shell в заранее созданном API `502`
+окне. На клиенте transport/408/429/5xx при `/me` являются временной недоступностью;
+только `401` доказывает недействительность opaque session и разрешает очистить account.
 
 ## 18. Documentation-driven workflow
 

@@ -4,6 +4,28 @@
 
 ## Active
 
+### BUG-061 — Restart/deploy мог отключить отправку на всех existing devices
+
+- Статус: `fixed, automated and production-like browser verified` (`WP-062`).
+- Severity: `critical authentication/E2EE availability`.
+- Reproduction: перезагрузить два browser devices одного аккаунта во время API
+  restart/container recreation; UI возвращается в READY без crypto warning, но
+  отправка не доходит до message endpoint. Password login создаёт новый device и
+  временно восстанавливает работу.
+- Причины: transient `502` ошибочно считался logout; deploy одновременно пересоздавал
+  API/frontend при auto-update PWA; failed decrypt старого MLS ciphertext из эпохи
+  до enrollment уничтожала runtime без немедленного sealed restore; два replacement
+  devices попеременно создавали `blocked/device_roster_changed` generations; любой
+  server `409` ложно отображался как identity conflict.
+- Исправление: только `401` очищает подтверждённую session; transient bootstrap
+  bounded-retry-ится, API становится healthy до frontend rollout; failed mutation
+  автоматически откатывается к durable crypto checkpoint; immutable blocked roster
+  переиспользуется всеми новыми devices, пока previous READY leaf не координирует
+  Commit; generic conflict получил честный UI label.
+- Проверка: API остановлен, оба клиента reload-нуты в окно `502`, API поднят снова;
+  обе session/device identity сохранились, оба devices отправили v2 сообщения, peer
+  расшифровал их, device/generation counters не выросли.
+
 ### BUG-060 — Pixel показывал квадратную PWA icon внутри белого круга и серый splash
 
 - Статус: `fixed, automated/browser/production verified` (`WP-059`, `59495f0`,

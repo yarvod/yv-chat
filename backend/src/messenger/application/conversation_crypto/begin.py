@@ -112,17 +112,14 @@ class BeginConversationCrypto:
                 if current is not None
                 else []
             )
+            current_roster_matches = (
+                not member_without_capable_device
+                and {item.device_id for item in current_required} == active_device_ids
+            )
             if (
                 current is not None
-                and (
-                    current.status is not ConversationCryptoStatus.BLOCKED
-                    or (
-                        current.block_reason is ConversationCryptoBlockReason.DEVICE_ROSTER_CHANGED
-                        and current.coordinator_device_id == command.device_id
-                    )
-                )
-                and not member_without_capable_device
-                and {item.device_id for item in current_required} == active_device_ids
+                and current.status is not ConversationCryptoStatus.BLOCKED
+                and current_roster_matches
             ):
                 return await materialize_generation(uow, current)
 
@@ -144,6 +141,19 @@ class BeginConversationCrypto:
                 (item for item in existing_leaves if item.id == command.device_id),
                 None,
             )
+            if (
+                current is not None
+                and current.status is ConversationCryptoStatus.BLOCKED
+                and current.block_reason is ConversationCryptoBlockReason.DEVICE_ROSTER_CHANGED
+                and current_roster_matches
+                and requesting_leaf is None
+            ):
+                # Every newly enrolled device observes the same immutable blocked
+                # roster snapshot. Only a leaf from the latest READY generation may
+                # supersede it and author the add-leaf Commit. Without this
+                # cross-device idempotency two replacement devices can alternate
+                # BLOCKED generations through their conversation_updated wake-ups.
+                return await materialize_generation(uow, current)
             requires_existing_leaf = (
                 previous_ready is not None and bool(existing_leaves) and requesting_leaf is None
             )

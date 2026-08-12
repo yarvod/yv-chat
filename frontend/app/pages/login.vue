@@ -14,6 +14,11 @@ const deviceLabel = $frontend.deviceInfo.current().label
 async function login(payload: { username: string, password: string }): Promise<void> {
   if (await auth.login(payload)) await navigateTo('/chat')
 }
+
+async function retrySession(): Promise<void> {
+  await auth.bootstrap(true)
+  if (auth.isAuthenticated.value) await navigateTo('/chat')
+}
 </script>
 
 <template>
@@ -26,6 +31,6 @@ async function login(payload: { username: string, password: string }): Promise<v
     :password-reset-complete="route.query.reset === '1'"
     :security-reset-complete="route.query['security-reset'] === '1'"
     @submit="login"
-    @retry="auth.bootstrap(true)"
+    @retry="retrySession"
   />
 </template>

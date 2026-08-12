@@ -62,11 +62,14 @@ On push to `main` or manual dispatch, `.github/workflows/deploy.yml`:
 3. publishes immutable `sha-<commit>` and convenience `latest` tags;
 4. copies the production Compose, deploy scripts and reviewed host vhost sources;
 5. starts PostgreSQL and applies Alembic migrations with the new backend image;
-6. rolls out API/cleanup/frontend and waits for container health;
-7. checks both direct loopback upstreams and records the deployed immutable tag.
+6. rolls out PostgreSQL/media-init/API/cleanup and waits for container health;
+7. checks the direct API loopback, then rolls out the frontend and waits for health;
+8. checks the frontend loopback and records the deployed immutable tag.
 
 The VPS does not build images. Normal application rollout does not reload system
 Nginx because its stable loopback upstream addresses do not change.
+Keeping the previous frontend alive until the replacement API is healthy prevents
+an auto-updating PWA from reloading into the expected API recreation/502 window.
 
 ## Server secrets and non-secret runtime settings
 

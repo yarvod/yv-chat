@@ -486,8 +486,9 @@ export class DeviceCryptoRuntime {
     } catch (error) {
       // A failed mutation/checkpoint must never keep a potentially advanced
       // sender/receiver ratchet alive against the previous durable snapshot.
-      active.value.free()
-      this.active = null
+      // Restore that snapshot immediately so one undecryptable historical
+      // message cannot disable every later crypto operation until login.
+      await this.restoreDurableStateAfterFailure(active)
       throw translateError(error)
     }
   }
@@ -519,9 +520,29 @@ export class DeviceCryptoRuntime {
       active.revision = stored.revision
       return { ...result, revision: active.revision }
     } catch (error) {
-      active.value.free()
-      this.active = null
+      await this.restoreDurableStateAfterFailure(active)
       throw translateError(error)
+    }
+  }
+
+  private async restoreDurableStateAfterFailure(failed: ActiveBootstrap): Promise<void> {
+    // Concurrent operations can fail against the same instance. Only the
+    // first failure owns disposal/restoration; later failures must not free
+    // the replacement restored by it.
+    if (this.active !== failed) return
+    this.active = null
+    failed.value.free()
+
+    try {
+      const loaded = await this.vault.load(failed.userId, failed.deviceId)
+      if (loaded.status !== 'ready' || this.active !== null) return
+      await this.activate(
+        { userId: failed.userId, deviceId: failed.deviceId },
+        loaded,
+      )
+    } catch {
+      // Preserve the original operation error. Leaving the runtime inactive
+      // is safer than accepting an unverified or unavailable checkpoint.
     }
   }
 }

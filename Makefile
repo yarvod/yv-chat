@@ -145,6 +145,8 @@ deploy-check:
 	grep -q '^  cleanup:' compose.prod.yml
 	grep -q 'messenger.cleanup_messages' compose.prod.yml
 	grep -q 'compose pull postgres api cleanup frontend' deploy/remote-deploy.sh
+	grep -q 'compose up -d --wait --wait-timeout 120 postgres media-init api cleanup' deploy/remote-deploy.sh
+	grep -q 'compose up -d --wait --wait-timeout 120 frontend' deploy/remote-deploy.sh
 	grep -q 'YV_CHAT_API_BIND_PORT:-18081' deploy/remote-deploy.sh
 	grep -q 'YV_CHAT_FRONTEND_BIND_PORT:-18082' deploy/remote-deploy.sh
 	grep -q 'server_name chat.yoowee.ru' deploy/nginx/host-chat.http.conf

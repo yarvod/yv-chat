@@ -215,7 +215,7 @@ describe('message panel', () => {
 
     expect(wrapper.text()).toContain('queued text')
     expect(wrapper.text()).toContain('В очереди')
-    expect(wrapper.text()).toContain('Конфликт идентификатора')
+    expect(wrapper.text()).toContain('Состояние диалога изменилось')
     expect(wrapper.findAll('.outbox-meta button')).toHaveLength(1)
     await wrapper.get('.outbox-meta button').trigger('click')
     expect(retryOutgoing).toHaveBeenCalledWith('failed-1')

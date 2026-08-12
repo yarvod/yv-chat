@@ -30,8 +30,9 @@ function submit(): void {
   <form class="auth-card" @submit.prevent="submit">
     <header class="auth-card__header">
       <p class="eyebrow">Защищённое пространство</p>
-      <h1>С возвращением</h1>
-      <p>Войдите в аккаунт, созданный администратором.</p>
+      <h1>{{ offline ? 'Восстанавливаем соединение' : 'С возвращением' }}</h1>
+      <p v-if="offline">Повторный вход и создание нового устройства не требуются.</p>
+      <p v-else>Войдите в аккаунт, созданный администратором.</p>
     </header>
 
     <p v-if="activationComplete" class="notice notice--success" role="status">
@@ -44,28 +45,32 @@ function submit(): void {
       Все сеансы завершены. Войдите заново на этом устройстве.
     </p>
 
-    <label class="field">
-      <span>Имя пользователя</span>
-      <input v-model="username" name="username" autocomplete="username" required minlength="3" maxlength="32">
-    </label>
-    <label class="field">
-      <span>Пароль</span>
-      <input v-model="password" name="password" type="password" autocomplete="current-password" required maxlength="128">
-    </label>
+    <template v-if="!offline">
+      <label class="field">
+        <span>Имя пользователя</span>
+        <input v-model="username" name="username" autocomplete="username" required minlength="3" maxlength="32">
+      </label>
+      <label class="field">
+        <span>Пароль</span>
+        <input v-model="password" name="password" type="password" autocomplete="current-password" required maxlength="128">
+      </label>
 
-    <div class="device-hint" aria-label="Устройство определяется автоматически">
-      <span class="device-hint__icon">◈</span>
-      <span><small>Это устройство</small><strong>{{ deviceLabel }}</strong></span>
-      <span class="device-hint__auto">авто</span>
-    </div>
+      <div class="device-hint" aria-label="Устройство определяется автоматически">
+        <span class="device-hint__icon">◈</span>
+        <span><small>Это устройство</small><strong>{{ deviceLabel }}</strong></span>
+        <span class="device-hint__auto">авто</span>
+      </div>
+    </template>
 
     <p v-if="message" class="notice notice--error" role="alert">{{ message }}</p>
     <button v-if="offline" class="button button--secondary" type="button" @click="emit('retry')">
       Повторить подключение
     </button>
-    <button class="button button--primary" type="submit" :disabled="!canSubmit">
-      {{ busy ? 'Входим…' : 'Войти' }}
-    </button>
-    <NuxtLink class="text-link" to="/activate">У меня есть приглашение</NuxtLink>
+    <template v-if="!offline">
+      <button class="button button--primary" type="submit" :disabled="!canSubmit">
+        {{ busy ? 'Входим…' : 'Войти' }}
+      </button>
+      <NuxtLink class="text-link" to="/activate">У меня есть приглашение</NuxtLink>
+    </template>
   </form>
 </template>

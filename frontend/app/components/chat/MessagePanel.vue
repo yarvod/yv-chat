@@ -147,7 +147,7 @@ function outgoingStatusLabel(message: OutgoingMessageView): string {
   if (message.status === 'pending') return 'В очереди'
   if (message.status === 'sending') return 'Отправляем…'
   if (message.status === 'sent') return 'Подтверждено сервером…'
-  if (message.failureCode === 'conflict') return 'Конфликт идентификатора'
+  if (message.failureCode === 'conflict') return 'Состояние диалога изменилось'
   if (message.failureCode === 'forbidden') return 'Нет доступа к диалогу'
   if (message.failureCode === 'unauthorized') return 'Нужно войти заново'
   return 'Не отправлено'

@@ -2,6 +2,10 @@ import { computed, readonly } from 'vue'
 
 import { ApplicationError } from '../../application/errors'
 import type { LoginCommand } from '../../application/auth/login'
+import {
+  isTransientSessionBootstrapError,
+  restoreCurrentAccount,
+} from '../../application/auth/restore-current-account'
 import type { CurrentAccount } from '../../domain/accounts/account'
 
 export type AuthPhase = 'booting' | 'signed-out' | 'submitting' | 'authenticated' | 'offline'
@@ -22,18 +26,19 @@ export function useAuth() {
   const initialized = useState<boolean>('auth-initialized', () => false)
 
   function fail(error: unknown, loginAttempt = false): void {
-    state.value.user = null
     initialized.value = true
     if (error instanceof ApplicationError && error.status === 401) {
+      state.value.user = null
       state.value.phase = 'signed-out'
       state.value.message = loginAttempt ? 'Неверное имя пользователя или пароль.' : null
       return
     }
-    if (error instanceof ApplicationError && error.kind === 'network') {
-      state.value.phase = 'offline'
-      state.value.message = 'Сервер недоступен. Проверьте соединение и повторите попытку.'
+    if (!loginAttempt && isTransientSessionBootstrapError(error)) {
+      state.value.phase = state.value.user === null ? 'offline' : 'authenticated'
+      state.value.message = 'Сервер временно недоступен. Текущая сессия сохранена.'
       return
     }
+    state.value.user = null
     state.value.phase = 'signed-out'
     state.value.message = loginAttempt
       ? 'Не удалось выполнить вход. Повторите попытку.'
@@ -45,7 +50,10 @@ export function useAuth() {
     state.value.phase = 'booting'
     state.value.message = null
     try {
-      state.value.user = await $frontend.loadCurrentAccount.execute()
+      state.value.user = await restoreCurrentAccount(
+        () => $frontend.loadCurrentAccount.execute(),
+        delayMs => new Promise(resolve => window.setTimeout(resolve, delayMs)),
+      )
       state.value.phase = 'authenticated'
       initialized.value = true
     } catch (error) {

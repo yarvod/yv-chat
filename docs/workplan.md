@@ -4,106 +4,88 @@
 завершённая работа фиксируется отдельным коммитом, а новый пункт переносится
 сюда из `backlog.md`.
 
-## WP-061 — Device-bound Web Push notifications
+## WP-062 — Deploy-safe auth and multi-device MLS recovery
 
-Статус: **production deployed; real-device browser acceptance pending**
-Backlog: `BL-026`, `BL-027`, MVP slice `BL-028`
+Статус: **completed locally; production rollout pending**
 
-Цель: установленная PWA или поддерживаемый browser получает системное уведомление
-о новом сообщении в background/closed-tab состоянии, не раскрывая plaintext,
-crypto material или session credentials push provider-у.
+Цель: существующие browser devices переживают API/frontend container recreation
+без ложного logout, нового `device_id`, потери доступного local MLS state и
+зацикленного создания BLOCKED generations.
 
-### Product scope
+### Reproduced defects
 
-- [x] настройка показывает platform support и фактический permission/subscription status;
-- [x] native permission prompt запускается только явной кнопкой пользователя;
-- [x] одна browser installation регистрирует subscription текущего authenticated device;
-- [x] changed/expired subscription пере-регистрируется, UI logout удаляет текущую subscription;
-- [x] background push показывает generic notification без имени/текста/имени файла;
-- [x] click фокусирует существующую PWA либо открывает `/chat?conversation=<id>`;
-- [x] foreground visible client не получает лишнюю system notification;
-- [x] отправитель не получает push собственного сообщения на своих устройствах;
-- [x] unsupported/denied/iOS-not-installed состояния объясняются без бесконечных prompts.
+- reload во время краткого API `502` переводит auth bootstrap в `signed-out` и
+  направляет пользователя на password login, хотя opaque session остаётся valid;
+- новый password login создаёт новую device identity, поэтому старый local MLS leaf
+  больше не соответствует текущему session `device_id`;
+- два новых devices без online previous leaf по очереди supersede-ят один
+  `blocked/device_roster_changed` snapshot и создают unbounded generation/sync storm;
+- undecryptable historical MLS ciphertext уничтожает текущий in-memory runtime;
+  UI остаётся в READY, но следующая отправка падает локально как `not-provisioned`,
+  поэтому logout/login только маскирует дефект созданием нового runtime/device;
+- любой message HTTP `409` отображается как «Конфликт идентификатора», включая
+  `conversation encryption is not ready`.
 
-### Backend implementation
+### Scope
 
-- [x] добавить typed push subscription entity/DTO/repository port и отдельную migration;
-- [x] endpoint public VAPID configuration и authenticated current-device upsert/delete;
-- [x] сервер повторно проверяет ownership текущего `device_id`, endpoint uniqueness и bounds;
-- [x] infrastructure adapter использует стандарт Web Push/VAPID и отправляет bounded payload;
-- [x] после message commit выполняется best-effort dispatch recipient devices;
-- [x] HTTP 404/410 отключает permanent invalid subscription, transient failure только логируется;
-- [x] logs содержат только opaque IDs/count/status class, не endpoint/keys/payload content.
+- [x] считать network/invalid response/408/429/5xx временной auth-недоступностью,
+  не очищать уже подтверждённого пользователя и не требовать password login;
+- [x] bounded retry current-session bootstrap и успешный переход с offline login
+  обратно в messenger без создания нового device;
+- [x] выкатывать/health-check API раньше frontend, чтобы новый auto-update PWA не
+  активировался в заведомое backend downtime window;
+- [x] переиспользовать один `blocked/device_roster_changed` generation для любого
+  нового device при неизменном active roster, сохраняя право previous leaf начать
+  следующий PENDING Commit;
+- [x] автоматически восстанавливать подтверждённый sealed MLS snapshot после failed
+  mutation/decrypt, не продолжая потенциально сдвинутый ratchet и не требуя login;
+- [x] заменить ложный UI-текст «Конфликт идентификатора» на честное bounded описание
+  server conflict без раскрытия внутренних деталей;
+- [x] добавить regression tests для двух replacement devices, transient auth,
+  automatic runtime restore, outbox conflict UX и deploy ordering contract.
 
-### Frontend implementation
+### Security invariants
 
-- [x] application port/use cases изолируют browser Push API и HTTP subscription API;
-- [x] Service Worker обрабатывает `push`/`notificationclick`, dedup по stable `event_id`;
-- [x] payload валидируется и содержит только version/event/conversation/message IDs;
-- [x] settings card позволяет включить/выключить и восстановить changed subscription;
-- [x] CSRF/cookie policy остаётся same-origin; subscription не хранит auth bearer credential;
-- [x] install/update/offline shell lifecycle остаётся совместим с существующим Workbox SW.
+- только HTTP `401` доказывает недействительную browser session; 5xx/transport failure
+  не создаёт новую identity и не ослабляет authorization;
+- новый device без previous MLS state не может самовольно author add-leaf Commit,
+  пока существует active previous leaf;
+- full-roster recovery остаётся разрешён только когда previous leaves явно revoked;
+- server не принимает stale generation/epoch и не делает v2→v1 downgrade;
+- никакие private keys, plaintext messages или session credentials не логируются и
+  не переносятся через backend.
 
-### Security и correctness invariants
+### Verification
 
-- VAPID private key существует только в runtime secret environment и никогда не попадает
-  в Git, image, frontend bundle, API response или logs;
-- API отдаёт только public application server key;
-- notification payload не содержит plaintext preview, sender name, attachment filename,
-  ciphertext, MLS state/key material или device/session credential;
-- message и sync events commit выполняются до push; push failure не откатывает message;
-- WebSocket, Push и sync остаются wake-up/delivery слоями, PostgreSQL cursor sync — correctness;
-- нельзя зарегистрировать subscription на чужой device или удалить чужую subscription.
+- backend unit/integration suite для generation coordination и message gate;
+- frontend Vitest для auth policy, outbox label и existing MLS reconciliation;
+- Ruff, mypy, ESLint, Nuxt typecheck, production build и deploy checks;
+- production-like two-origin browser acceptance: API stop/recreate, frontend reload,
+  session/device ID сохраняются, post-restart direct send/decrypt успешны;
+- generation count остаётся bounded и не растёт после стабильного BLOCKED result.
 
-### Tests и acceptance
+### Acceptance evidence
 
-- [x] migration: fresh database → head в GitHub PostgreSQL verify;
-- [x] backend entity/use-case authorization, bounds, config-route redaction и invalidation tests;
-- [x] send-message tests: recipient-only payload, post-commit ordering, failure isolation;
-- [x] frontend permission states, application key conversion, subscribe/upsert/delete tests;
-- [x] Service Worker push/click/visible-client/dedup tests;
-- [x] frontend lint/typecheck/Vitest/build, backend Ruff/mypy/pytest и полный `make ci`;
-- [ ] real production subscription и background notification проверены после deploy;
-- [x] production health/logs/nginx и соседние `yoowee.ru`/`s3.yoowee.ru` не нарушены.
-
-### Local acceptance evidence
-
-- backend: `236 passed, 8 skipped`; Ruff format/check, mypy strict и import-linter зелёные;
-- frontend: `206 passed` в `41` files; ESLint, Nuxt typecheck и production PWA build зелёные;
-- Service Worker build содержит versioned `sw-push.js` в precache и `importScripts`;
-- Rust/OpenMLS `21 passed`; full `make ci`, Compose/deploy/docs checks зелёные;
-- OpenSSL bootstrap output принят `AppSettings` и `py_vapid` без вывода ключевого материала.
-
-### Production rollout evidence
-
-- GitHub CI run `31582865137` и production deploy run `31582865140` завершены успешно;
-- deploy применил migration `0021_push_subscriptions` и immutable API/frontend images
-  `sha-48c8eff9dbbc54ff6ceb120369cab977ddb4c60a`;
-- `/api/v1/health` и frontend отвечают `200`, `/api/v1/push/config` сообщает
-  `enabled=true` и раскрывает только public application server key;
-- API/frontend/PostgreSQL healthy, свежих `ERROR`/`Traceback`/HTTP 500 в runtime logs нет;
-- единственный production ingress — active system Nginx; контейнера Nginx нет;
-- `yoowee.ru` продолжает HTTPS redirect/serve flow, `s3.yoowee.ru` отвечает ожидаемым
-  authenticated-storage `403`, то есть соседние vhost не нарушены;
-- VAPID runtime secret сгенерирован атомарно без чтения/вывода, `.env` принадлежит
-  `devuser:devuser` и имеет режим `0600`.
-
-Реальную доставку notification нельзя отметить автоматически: browser permission
-может быть выдан только user gesture. Acceptance завершается после нажатия
-«Разрешить уведомления» на одном production-устройстве и отправки сообщения с другого.
+- backend: Ruff/format/import-linter/mypy green; `237 passed, 8 skipped`;
+- OpenMLS/Rust: clippy native+WASM и `21 passed`;
+- frontend: ESLint/Nuxt typecheck, `214 passed` и production PWA build;
+- repository: full `make ci`, Compose/deploy/docs contracts green;
+- production-like three-origin browser: frontend recreated, затем API остановлен,
+  оба account devices reload-нуты в окно `502`, API снова запущен;
+- оба devices сохранили `/chat` session и отправили v2 сообщения без login, peer
+  расшифровал оба; device counters остались `17/10`, current generation — READY
+  `3325`, новых generations после `10:21:04Z` не появилось.
 
 ### Exclusions
 
-- plaintext message previews, notification sounds selected by the server и rich media preview;
-- conversation mute schedules, app badge/read-state fan-out и notification actions/replies;
-- native-like incoming call notifications;
-- guaranteed delivery: browser/OS/push service может задержать или отбросить notification.
+- secure device-to-device historical key transfer;
+- silent recovery при утрате всех private MLS leaves без explicit device revocation;
+- изменение MLS primitives, ciphersuite или wire protocol.
 
 ### Definition of Done
 
-- пользователь явно включает уведомления и видит точный status;
-- новый message вызывает privacy-safe system notification в background install;
-- click открывает нужный conversation, duplicate event не показывает второй notification;
-- revoked/current logout subscription не получает push;
-- VAPID secret безопасно установлен в production без чтения/вывода;
-- проверки, rollout и production acceptance зелёные, worktree чистый.
+- container recreation не требует повторного ввода пароля;
+- два replacement devices не создают generation storm;
+- старые valid devices продолжают direct messaging после рестарта;
+- пользователь видит точную категорию ошибки, а не ложный identity conflict;
+- проверки зелёные, документация обновлена, worktree содержит только намеренные изменения.
