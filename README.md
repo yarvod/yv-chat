@@ -26,6 +26,10 @@ server TTL. Поддерживаемые видео воспроизводятс
 AES-GCM encrypted OPFS/IndexedDB cache с LRU ceiling 2 GiB на установку устройства;
 browser может предоставить меньше quota или удалить evictable cache. Вложения в
 личных MLS-чатах пока запрещены до отдельного client-side encrypted flow.
+В Settings можно посмотреть размер и число локальных media-копий и после отдельного
+подтверждения очистить только этот кэш: переписки, offline-очередь, session/device
+identity и MLS keys не удаляются. `http/https` ссылки в тексте сообщений кликабельны
+и открываются обычным browser/OS link handling устройства; unsafe URL schemes inert.
 
 Действующие group-media лимиты конфигурируемы: фото — 12 MiB, видео — 100 MiB,
 произвольный файл — 25 MiB, до 10 вложений на сообщение и 5 GiB активных media

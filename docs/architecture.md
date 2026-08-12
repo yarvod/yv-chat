@@ -1144,6 +1144,22 @@ Persistent LRU ceiling — 2 GiB на user+device; expired entries удаляю�
 A → B → A; он очищается при messenger unmount/logout. Local cache не является backup,
 не продлевает server TTL и пока обслуживает только явно non-E2EE group v1 media.
 
+`WP-072` добавляет settings operations поверх того же `MediaCache` port: inspect
+возвращает только aggregate plaintext byte count, entry count и application ceiling,
+а clear принимает exact current `user_id + device_id`. Clear сначала invalidates
+decrypted hot LRU generation, затем удаляет только принадлежащие scope media entries,
+opaque OPFS/IDB objects и отдельный media key. Message archive, snapshot, outbox,
+session/device identity, conversation checkpoints и MLS vault не открываются этой
+операцией. In-flight download со старой generation может завершить UI request, но не
+имеет права снова положить bytes в persistent/hot cache после clear.
+
+Message text URL presentation выполняется только client-side после decrypt. Typed
+segmenter принимает `http://`, `https://` и shorthand `www.`, валидирует URL через
+browser `URL`, trim-ит только внешнюю punctuation и выдаёт обычный escaped Vue anchor
+с `target="_blank"` и `rel="noopener noreferrer external"`. `javascript:`, `data:`,
+`file:` и HTML-looking text остаются inert text. Unfurl/network preview отсутствует:
+server и third-party endpoint не узнают ссылку до явного click пользователя.
+
 Authentication может ротировать opaque credential на любом authenticated GET.
 Поэтому attachment route обязан перенести каждый `Set-Cookie` из injected auth
 response в фактически возвращаемый `StreamingResponse`; иначе database уже примет

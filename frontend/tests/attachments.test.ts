@@ -181,6 +181,8 @@ describe('group attachment download use case', () => {
       load: vi.fn().mockResolvedValue(null),
       store: vi.fn().mockResolvedValue(undefined),
       remove: vi.fn().mockResolvedValue(undefined),
+      inspect: vi.fn().mockResolvedValue({ usedBytes: 0, entryCount: 0, limitBytes: 1024 }),
+      clear: vi.fn().mockResolvedValue({ usedBytes: 0, entryCount: 0, limitBytes: 1024 }),
       close: vi.fn(),
     }
     const useCase = new DownloadGroupAttachment(gateway, cache)
@@ -215,6 +217,8 @@ describe('group attachment download use case', () => {
       load: vi.fn().mockResolvedValue(null),
       store: vi.fn().mockResolvedValue(undefined),
       remove: vi.fn().mockResolvedValue(undefined),
+      inspect: vi.fn().mockResolvedValue({ usedBytes: 0, entryCount: 0, limitBytes: 1024 }),
+      clear: vi.fn().mockResolvedValue({ usedBytes: 0, entryCount: 0, limitBytes: 1024 }),
       close: vi.fn(),
     }
     let now = Date.parse('2026-08-13T11:59:00Z')
@@ -231,6 +235,35 @@ describe('group attachment download use case', () => {
 
     expect(gateway.download).toHaveBeenCalledTimes(2)
     expect(cache.load).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not repopulate cache when device media is cleared during a download', async () => {
+    const body = new Blob(['photo'], { type: 'image/png' })
+    let resolveDownload: ((blob: Blob) => void) | undefined
+    const gateway: AttachmentGateway = {
+      upload: vi.fn(),
+      download: vi.fn(() => new Promise<Blob>(resolve => { resolveDownload = resolve })),
+    }
+    const cache = {
+      load: vi.fn().mockResolvedValue(null),
+      store: vi.fn().mockResolvedValue(undefined),
+      remove: vi.fn().mockResolvedValue(undefined),
+      inspect: vi.fn().mockResolvedValue({ usedBytes: 0, entryCount: 0, limitBytes: 1024 }),
+      clear: vi.fn().mockResolvedValue({ usedBytes: 0, entryCount: 0, limitBytes: 1024 }),
+      close: vi.fn(),
+    }
+    const useCase = new DownloadGroupAttachment(gateway, cache)
+    const item = { ...attachment, byteSize: body.size }
+    const request = useCase.execute(
+      'user-1', 'device-1', 'conversation-1', item, expiresAt,
+    )
+    await vi.waitFor(() => expect(gateway.download).toHaveBeenCalledOnce())
+
+    useCase.clearMemory('user-1', 'device-1')
+    resolveDownload?.(body)
+
+    await expect(request).resolves.toBe(body)
+    expect(cache.store).not.toHaveBeenCalled()
   })
 })
 

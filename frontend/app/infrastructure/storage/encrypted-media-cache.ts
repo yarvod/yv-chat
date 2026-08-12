@@ -2,6 +2,7 @@ import {
   DEFAULT_DEVICE_MEDIA_CACHE_BYTES,
   type MediaCache,
   type MediaCacheScope,
+  type MediaCacheStatistics,
 } from '../../application/ports/media-cache'
 import { requestResult, transactionDone } from './indexeddb-operations'
 
@@ -78,6 +79,10 @@ function validScope(scope: MediaCacheScope): boolean {
     && Number.isFinite(expiresAt)
 }
 
+function validOwnerScope(ownerUserId: string, ownerDeviceId: string): boolean {
+  return ownerUserId.length > 0 && ownerDeviceId.length > 0
+}
+
 function validEntry(record: MediaCacheEntryRecord, scopeHash: string, storageKey: string): boolean {
   return record.schemaVersion === ENTRY_SCHEMA_VERSION
     && record.ownerScopeHash === scopeHash
@@ -109,6 +114,7 @@ function responseContentType(scope: MediaCacheScope): string {
 
 export class EncryptedMediaCache implements MediaCache {
   private database: Promise<IDBDatabase> | null = null
+  private readonly ownerGenerations = new Map<string, number>()
   private readonly encoder = new TextEncoder()
 
   constructor(
@@ -131,7 +137,7 @@ export class EncryptedMediaCache implements MediaCache {
   async load(scope: MediaCacheScope): Promise<Blob | null> {
     if (!validScope(scope)) throw new TypeError('invalid media cache scope')
     const [ownerScopeHash, storageKey] = await Promise.all([
-      this.ownerScopeHash(scope),
+      this.ownerScopeHash(scope.ownerUserId, scope.ownerDeviceId),
       this.storageKey(scope),
     ])
     const database = await this.open()
@@ -173,9 +179,10 @@ export class EncryptedMediaCache implements MediaCache {
     if (Date.parse(scope.expiresAt) <= this.now()) return
     const [database, ownerScopeHash, storageKey] = await Promise.all([
       this.open(),
-      this.ownerScopeHash(scope),
+      this.ownerScopeHash(scope.ownerUserId, scope.ownerDeviceId),
       this.storageKey(scope),
     ])
+    const generation = this.ownerGeneration(ownerScopeHash)
     const key = await this.ensureKey(database, ownerScopeHash)
     const nonce = this.randomValues(new Uint8Array(NONCE_BYTES))
     const objectName = hex(this.randomValues(new Uint8Array(24)))
@@ -198,6 +205,10 @@ export class EncryptedMediaCache implements MediaCache {
         expiresAt: Date.parse(scope.expiresAt),
         createdAt: timestamp,
         lastAccessedAt: timestamp,
+      }
+      if (this.ownerGeneration(ownerScopeHash) !== generation) {
+        await this.deleteObject(entry).catch(() => undefined)
+        return
       }
       const transaction = database.transaction(ENTRIES_STORE, 'readwrite')
       const completed = transactionDone(transaction)
@@ -222,6 +233,39 @@ export class EncryptedMediaCache implements MediaCache {
     if (entry) await this.removeEntry(entry)
   }
 
+  async inspect(ownerUserId: string, ownerDeviceId: string): Promise<MediaCacheStatistics> {
+    if (!validOwnerScope(ownerUserId, ownerDeviceId)) {
+      throw new TypeError('invalid media cache owner')
+    }
+    const ownerScopeHash = await this.ownerScopeHash(ownerUserId, ownerDeviceId)
+    await this.prune(ownerScopeHash)
+    const entries = (await this.loadOwnedEntries(ownerScopeHash)).filter(entry => (
+      Number.isSafeInteger(entry.plaintextByteSize) && entry.plaintextByteSize > 0
+    ))
+    return {
+      usedBytes: entries.reduce((sum, entry) => sum + entry.plaintextByteSize, 0),
+      entryCount: entries.length,
+      limitBytes: this.maxBytesPerDevice,
+    }
+  }
+
+  async clear(ownerUserId: string, ownerDeviceId: string): Promise<MediaCacheStatistics> {
+    if (!validOwnerScope(ownerUserId, ownerDeviceId)) {
+      throw new TypeError('invalid media cache owner')
+    }
+    const ownerScopeHash = await this.ownerScopeHash(ownerUserId, ownerDeviceId)
+    this.ownerGenerations.set(ownerScopeHash, this.ownerGeneration(ownerScopeHash) + 1)
+    for (const entry of await this.loadOwnedEntries(ownerScopeHash)) {
+      await this.clearEntry(entry)
+    }
+    const database = await this.open()
+    const transaction = database.transaction(KEYS_STORE, 'readwrite')
+    const completed = transactionDone(transaction)
+    transaction.objectStore(KEYS_STORE).delete(ownerScopeHash)
+    await completed
+    return { usedBytes: 0, entryCount: 0, limitBytes: this.maxBytesPerDevice }
+  }
+
   close(): void {
     if (!this.database) return
     void this.database.then(database => database.close())
@@ -233,8 +277,8 @@ export class EncryptedMediaCache implements MediaCache {
     return hex(new Uint8Array(digest))
   }
 
-  private ownerScopeHash(scope: MediaCacheScope): Promise<string> {
-    return this.digest(`yv-chat-media-owner|${scope.ownerUserId}|${scope.ownerDeviceId}`)
+  private ownerScopeHash(ownerUserId: string, ownerDeviceId: string): Promise<string> {
+    return this.digest(`yv-chat-media-owner|${ownerUserId}|${ownerDeviceId}`)
   }
 
   private storageKey(scope: MediaCacheScope): Promise<string> {
@@ -440,6 +484,32 @@ export class EncryptedMediaCache implements MediaCache {
   }
 
   private async prune(ownerScopeHash: string): Promise<void> {
+    const owned = (await this.loadOwnedEntries(ownerScopeHash))
+      .sort((left, right) => (
+        left.lastAccessedAt - right.lastAccessedAt
+        || left.storageKey.localeCompare(right.storageKey)
+      ))
+    let total = owned.reduce((sum, entry) => (
+      Number.isSafeInteger(entry.plaintextByteSize) && entry.plaintextByteSize > 0
+        ? sum + entry.plaintextByteSize
+        : sum
+    ), 0)
+    for (const entry of owned) {
+      if (
+        !Number.isSafeInteger(entry.plaintextByteSize)
+        || entry.plaintextByteSize <= 0
+        || !Number.isFinite(entry.expiresAt)
+      ) {
+        await this.removeEntry(entry)
+        continue
+      }
+      if (entry.expiresAt > this.now() && total <= this.maxBytesPerDevice) continue
+      await this.removeEntry(entry)
+      total -= entry.plaintextByteSize
+    }
+  }
+
+  private async loadOwnedEntries(ownerScopeHash: string): Promise<MediaCacheEntryRecord[]> {
     const database = await this.open()
     const transaction = database.transaction(ENTRIES_STORE, 'readonly')
     const completed = transactionDone(transaction)
@@ -447,18 +517,7 @@ export class EncryptedMediaCache implements MediaCache {
       transaction.objectStore(ENTRIES_STORE).getAll(),
     ) as MediaCacheEntryRecord[]
     await completed
-    const owned = all
-      .filter(entry => entry.ownerScopeHash === ownerScopeHash)
-      .sort((left, right) => (
-        left.lastAccessedAt - right.lastAccessedAt
-        || left.storageKey.localeCompare(right.storageKey)
-      ))
-    let total = owned.reduce((sum, entry) => sum + entry.plaintextByteSize, 0)
-    for (const entry of owned) {
-      if (entry.expiresAt > this.now() && total <= this.maxBytesPerDevice) continue
-      await this.removeEntry(entry)
-      total -= entry.plaintextByteSize
-    }
+    return all.filter(entry => entry.ownerScopeHash === ownerScopeHash)
   }
 
   private async removeEntry(entry: MediaCacheEntryRecord): Promise<void> {
@@ -468,6 +527,23 @@ export class EncryptedMediaCache implements MediaCache {
     transaction.objectStore(ENTRIES_STORE).delete(entry.storageKey)
     await completed
     await this.deleteObject(entry).catch(() => undefined)
+  }
+
+  private async clearEntry(entry: MediaCacheEntryRecord): Promise<void> {
+    try {
+      await this.deleteObject(entry)
+    } catch (error) {
+      if (!(error instanceof DOMException) || error.name !== 'NotFoundError') throw error
+    }
+    const database = await this.open()
+    const transaction = database.transaction(ENTRIES_STORE, 'readwrite')
+    const completed = transactionDone(transaction)
+    transaction.objectStore(ENTRIES_STORE).delete(entry.storageKey)
+    await completed
+  }
+
+  private ownerGeneration(ownerScopeHash: string): number {
+    return this.ownerGenerations.get(ownerScopeHash) ?? 0
   }
 
   private async deleteObject(entry: Pick<MediaCacheEntryRecord, 'backend' | 'objectName'>): Promise<void> {

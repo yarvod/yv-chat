@@ -4,69 +4,61 @@
 завершённая работа фиксируется отдельным коммитом, а новый пункт переносится
 сюда из `backlog.md`.
 
-## WP-071 — Encrypted 2 GiB device media cache
+## WP-072 — Device data controls and safe message links
 
 Статус: **complete; local browser acceptance and full CI green**
 
-Цель: уже загруженные group v1 изображения, видео и файлы открываются мгновенно при
-возврате в чат и переживают reload/offline-период, не меняя и не подвергая риску
-существующие IndexedDB message/archive/outbox/MLS stores.
+Цель: пользователь видит объём локального media cache и может безопасно очистить
+его в Settings, не затрагивая переписки/session/device identity/MLS; `http(s)` URL
+в сообщениях открываются обычной ссылкой через browser/OS устройства.
 
 ### Scope
 
-- [x] отдельная versioned БД `yv-chat-media-cache-v1`, без upgrade существующих DB;
-- [x] отдельный opaque OPFS directory с IndexedDB fallback только в media DB;
-- [x] AES-256-GCM chunk encryption под отдельным non-extractable per-user-device key;
-- [x] exact account/device/conversation/attachment/type/size/expiry binding через AAD;
-- [x] persistent LRU budget `2 GiB` на user+device и automatic expiry eviction;
-- [x] bounded `128 MiB` hot RAM LRU и coalescing одинаковых concurrent downloads;
-- [x] cache failure/corruption превращается в miss и не ломает authenticated download;
-- [x] при unmount/logout decrypted hot blobs удаляются из application RAM;
-- [x] group images/video/files используют единый cache path; direct media не включается.
+- [x] account+device-scoped media cache statistics: bytes, entries, 2 GiB ceiling;
+- [x] explicit confirm перед очисткой и понятное описание точной области удаления;
+- [x] persistent OPFS/IDB media entries, отдельный media key и hot decrypted RAM
+  очищаются как одна user action;
+- [x] concurrent in-flight download после clear не может снова записать старый cache;
+- [x] message renderer linkify-ит только valid `http:`, `https:` и `www.` URL;
+- [x] normal `<a target="_blank">` делегирует открытие default browser/OS без
+  privileged API и сохраняет `noopener noreferrer external`;
+- [x] входной message text остаётся escaped Vue text, без `v-html`.
 
 ### Security and data invariants
 
-- существующие `yv-chat-messages-v1`, `yv-chat-messenger-snapshot-v1`,
-  `yv-chat-message-outbox-v1`, `yv-chat-conversation-crypto-v1` и
-  `yv-chat-crypto-v1` не открываются cache adapter-ом и не меняют version/schema;
-- media key отдельный, non-extractable и никогда не используется для MLS/messages;
-- OPFS/IDB хранит только AES-GCM ciphertext; filename и media plaintext не входят в
-  operational index или logs;
-- cache не даёт обойти server membership и доступен только exact local owner scope;
-- cache не считается backup и может быть evicted browser/OS;
-- `2 GiB` — application ceiling; меньшая browser quota или disk pressure безопасно
-  отключает конкретную запись, но не messaging/crypto runtime.
+- clear не открывает и не меняет `yv-chat-messages-v1`, snapshot, outbox,
+  conversation crypto или `yv-chat-crypto-v1`;
+- clear не удаляет session credential, device identity, MLS wrapping key или archive;
+- операция ограничена exact authenticated `user_id + device_id`; media другого
+  аккаунта/device в том же browser origin остаются;
+- unsafe schemes (`javascript:`, `data:`, `file:`) никогда не становятся ссылками;
+- link click не выполняет содержимое сообщения и не получает `window.opener`.
 
 ### Exclusions
 
-- direct MLS attachment encryption/upload (`BL-017`);
-- pinned/never-evict media и storage settings UI;
-- offline composer attachment drafts;
-- Service Worker Cache API для authenticated media;
-- изменение server attachment API, TTL или quota.
+- destructive clear всей encrypted переписки или crypto identity;
+- pinned media, per-chat cache controls и configurable cache ceiling;
+- composer draft storage и local message retention controls;
+- URL preview fetching, unfurl metadata и server-side URL inspection.
 
 ### Definition of Done
 
-- A → B → A не вызывает второй HTTP download уже загруженного media;
-- reload читает media из encrypted OPFS/IDB при недоступной сети;
-- LRU/expiry/corruption/account-device mismatch дают bounded safe behavior;
-- cache write/remove/reopen не меняет versions и содержимое existing message/MLS DB;
-- после cache lifecycle сообщения расшифровываются, sealed MLS wrapping key остаётся
-  non-extractable, conversation checkpoint и message stores доступны;
-- frontend lint/typecheck/tests/build и полный repository CI проходят;
-- реальный local Docker/browser сценарий проверяет OPFS, reload и chat switching.
+- Settings показывает текущий media usage и entry count;
+- confirm clear освобождает только media cache и сразу показывает zero state;
+- reopen доступного media после clear выполняет обычный authenticated download;
+- сообщения, MLS keys/checkpoints и данные другого device переживают clear;
+- URL с punctuation и mention рядом отображается корректно; unsafe scheme inert;
+- frontend tests/lint/typecheck/build и полный repository CI проходят;
+- local Docker/browser проверяет settings clear и real external-link element.
 
 ### Verification evidence
 
-- targeted cache/attachment tests: `14 passed`;
-- full frontend: `44 files / 243 tests` green;
-- regression создаёт encrypted message archive + sealed MLS vault + conversation
-  checkpoint, заполняет/удаляет media cache, переоткрывает stores и читает исходные
-  записи с неизменными DB versions;
-- local Docker/browser: два реальных аккаунта, group text + PNG sync, A → B → A,
-  reload после временного удаления server media bytes продолжил показывать PNG из
-  persistent encrypted device cache без console errors;
-- после того же reload peer отправил direct MLS v2 message, второй device успешно
-  расшифровал его; existing crypto persistence продолжила работать;
-- полный `make ci`: backend `241 passed / 9 skipped`, Rust `21 passed`, frontend
-  `44 files / 243 tests`, lint/typecheck/build/docs/config checks green.
+- targeted storage/link tests: `21 passed`;
+- full frontend: `46 files / 250 tests`, lint/typecheck/build green;
+- local Docker/browser: real group message produced one safe external anchor with
+  exact `href`, `_blank`, `noopener noreferrer external`; `javascript:` stayed text;
+  Settings reported `836 B / 1 file`, required confirm, then reported `0 B / 0 files`;
+  reopening the chat preserved message/link, re-downloaded PNG and returned cache to
+  `836 B / 1 file` without console errors;
+- full `make ci`: backend `241 passed / 9 skipped`, Rust `21 passed`, frontend
+  `46 files / 250 tests`, lint/typecheck/build/docs/config checks green.

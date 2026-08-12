@@ -111,6 +111,47 @@ describe('encrypted device media cache', () => {
     await expect(cache.load(second).then(blob => blob?.text())).resolves.toBe('other')
   })
 
+  it('reports and clears only the selected account device media without touching another device', async () => {
+    const cache = new EncryptedMediaCache(
+      indexedDb,
+      webcrypto.subtle as unknown as SubtleCrypto,
+      array => webcrypto.getRandomValues(array),
+      null,
+      1024,
+      () => now,
+    )
+    const first = new Blob(['first'], { type: 'image/png' })
+    const second = new Blob(['other'], { type: 'image/png' })
+    const firstScope = scope('first', first.size)
+    const otherScope = {
+      ...scope('second', second.size),
+      ownerDeviceId: 'other-device',
+    }
+    await cache.store(firstScope, first)
+    await cache.store(otherScope, second)
+
+    await expect(cache.inspect(userId, deviceId)).resolves.toEqual({
+      usedBytes: first.size,
+      entryCount: 1,
+      limitBytes: 1024,
+    })
+    await expect(cache.clear(userId, deviceId)).resolves.toEqual({
+      usedBytes: 0,
+      entryCount: 0,
+      limitBytes: 1024,
+    })
+    await expect(cache.load(firstScope)).resolves.toBeNull()
+    await expect(cache.load(otherScope).then(blob => blob?.text())).resolves.toBe('other')
+
+    const database = await requestResult(indexedDb.open('yv-chat-media-cache-v1', 1))
+    const transaction = database.transaction('device_keys', 'readonly')
+    const completed = transactionDone(transaction)
+    const keys = await requestResult(transaction.objectStore('device_keys').getAll())
+    await completed
+    database.close()
+    expect(keys).toHaveLength(1)
+  })
+
   it('treats expired, cross-device and altered metadata as cache misses', async () => {
     let clock = now
     const cache = new EncryptedMediaCache(

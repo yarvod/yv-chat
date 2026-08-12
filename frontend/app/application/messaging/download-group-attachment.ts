@@ -7,6 +7,7 @@ import { maximumAttachmentBytes } from './group-attachment-policy'
 export class DownloadGroupAttachment {
   private readonly pending = new Map<string, Promise<Blob>>()
   private readonly hot = new Map<string, Blob>()
+  private readonly ownerGenerations = new Map<string, number>()
   private hotBytes = 0
 
   constructor(
@@ -46,13 +47,16 @@ export class DownloadGroupAttachment {
     }
     const running = this.pending.get(cacheKey)
     if (running) return await running
-    const request = this.load(scope).finally(() => this.pending.delete(cacheKey))
+    const generation = this.ownerGeneration(scope.ownerUserId, scope.ownerDeviceId)
+    const request = this.load(scope, generation).finally(() => this.pending.delete(cacheKey))
     this.pending.set(cacheKey, request)
     return await request
   }
 
   clearMemory(ownerUserId: string, ownerDeviceId: string): void {
     const prefix = `${ownerUserId}:${ownerDeviceId}:`
+    const ownerKey = this.ownerKey(ownerUserId, ownerDeviceId)
+    this.ownerGenerations.set(ownerKey, this.ownerGeneration(ownerUserId, ownerDeviceId) + 1)
     for (const [key, blob] of this.hot) {
       if (!key.startsWith(prefix)) continue
       this.hot.delete(key)
@@ -60,10 +64,12 @@ export class DownloadGroupAttachment {
     }
   }
 
-  private async load(scope: MediaCacheScope): Promise<Blob> {
+  private async load(scope: MediaCacheScope, generation: number): Promise<Blob> {
     const cached = await this.cache?.load(scope).catch(() => null)
     if (cached && this.validBlob(cached, scope.attachment)) {
-      this.remember(this.cacheKey(scope), cached)
+      if (this.generationIsCurrent(scope, generation)) {
+        this.remember(this.cacheKey(scope), cached)
+      }
       return cached
     }
     const blob = await this.gateway.download(
@@ -71,8 +77,10 @@ export class DownloadGroupAttachment {
       scope.attachment.attachmentId,
     )
     this.assertBlob(blob, scope.attachment)
-    this.remember(this.cacheKey(scope), blob)
-    await this.cache?.store(scope, blob).catch(() => undefined)
+    if (this.generationIsCurrent(scope, generation)) {
+      this.remember(this.cacheKey(scope), blob)
+      await this.cache?.store(scope, blob).catch(() => undefined)
+    }
     return blob
   }
 
@@ -100,6 +108,18 @@ export class DownloadGroupAttachment {
   private notExpired(expiresAt: string): boolean {
     const expiry = Date.parse(expiresAt)
     return Number.isFinite(expiry) && expiry > this.now()
+  }
+
+  private ownerKey(ownerUserId: string, ownerDeviceId: string): string {
+    return `${ownerUserId}:${ownerDeviceId}`
+  }
+
+  private ownerGeneration(ownerUserId: string, ownerDeviceId: string): number {
+    return this.ownerGenerations.get(this.ownerKey(ownerUserId, ownerDeviceId)) ?? 0
+  }
+
+  private generationIsCurrent(scope: MediaCacheScope, generation: number): boolean {
+    return this.ownerGeneration(scope.ownerUserId, scope.ownerDeviceId) === generation
   }
 
   private remember(key: string, blob: Blob): void {

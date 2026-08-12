@@ -29,6 +29,8 @@ import { ListOutboxMessages } from '../application/messaging/list-outbox-message
 import { QueueOutgoingMessage } from '../application/messaging/queue-outgoing-message'
 import { UploadGroupAttachment } from '../application/messaging/upload-group-attachment'
 import { DownloadGroupAttachment } from '../application/messaging/download-group-attachment'
+import { ClearDeviceMediaCache } from '../application/storage/clear-device-media-cache'
+import { InspectDeviceMediaCache } from '../application/storage/inspect-device-media-cache'
 import { RetryOutboxMessage } from '../application/messaging/retry-outbox-message'
 import { GetDeviceCryptoRegistration } from '../application/device-crypto/get-device-crypto-registration'
 import { ListDeviceKeyPackages } from '../application/device-crypto/list-device-key-packages'
@@ -112,6 +114,7 @@ export default defineNuxtPlugin(() => {
   const messengerSnapshotStore = new IndexedDbMessengerSnapshotStore()
   const messageOutbox = new IndexedDbMessageOutbox()
   const mediaCache = new EncryptedMediaCache()
+  const downloadGroupAttachment = new DownloadGroupAttachment(attachmentGateway, mediaCache)
   const conversationCryptoState = new IndexedDbConversationCryptoState()
   const deviceCryptoSession = new DeviceCryptoSession(
     deviceCryptoRegistryGateway,
@@ -131,7 +134,9 @@ export default defineNuxtPlugin(() => {
       frontend: {
         messagingGateway,
         uploadGroupAttachment: new UploadGroupAttachment(attachmentGateway, clientIdGenerator),
-        downloadGroupAttachment: new DownloadGroupAttachment(attachmentGateway, mediaCache),
+        downloadGroupAttachment,
+        inspectDeviceMediaCache: new InspectDeviceMediaCache(mediaCache),
+        clearDeviceMediaCache: new ClearDeviceMediaCache(mediaCache, downloadGroupAttachment),
         deleteMessageForEveryone: new DeleteMessageForEveryone(messagingGateway),
         addGroupMember: new AddGroupMember(messagingGateway),
         removeGroupMember: new RemoveGroupMember(messagingGateway),

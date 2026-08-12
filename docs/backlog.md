@@ -32,8 +32,8 @@
 
 1. `BL-025` — IndexedDB/Service Worker compatibility gate и cross-release tests;
    schema/update safety должна появиться до новых persistent stores.
-2. `BL-024` — encrypted OPFS media cache, persisted drafts/attachment metadata,
-   byte-bounded eviction, pinning и device storage controls.
+2. `BL-024` — remaining persisted drafts/attachment metadata, pinning и retention
+controls. Encrypted OPFS cache, byte-bounded eviction и safe device clear уже готовы.
 3. `BL-017` вместе с оставшейся attachment-частью `BL-013` — direct MLS attachment
    encryption/upload/download без server plaintext или file keys.
 4. `BL-043` — оставшийся offline draft, cancel/retry и polished
@@ -426,8 +426,9 @@ streaming writes и bounded cleanup уже есть; global disk admission/visib
 
 ### BL-024 — OPFS media cache и local retention controls
 
-Статус: **group v1 encrypted cache active in `WP-071`; remaining controls/drafts
-stay queued after `BL-025` compatibility gate**. Этот slice использует новую
+Статус: **group v1 encrypted cache active in `WP-071`; usage visibility and safe
+device clear active in `WP-072`; remaining drafts/pinning/retention controls stay
+queued after `BL-025` compatibility gate**. Этот slice использует новую
 изолированную media DB/OPFS schema и не мигрирует существующие persistent stores.
 
 Результат: переписка, meaningful UI state и уже загруженные media переживают reload и
@@ -447,10 +448,11 @@ bounded offline-период, не превращая origin storage в безл
   server/local eviction;
 - `navigator.storage.persist()` только после объяснимого user gesture; quota pressure
   отображается без обещания backup или невозможности browser eviction;
-- user-facing device storage screen через `navigator.storage.estimate()`: usage/quota,
-  app shell/archive/drafts/media breakdown где adapter может посчитать его безопасно;
-- clear-evictable-cache не удаляет session, device identity, MLS state, pinned media
-  или encrypted message archive без отдельного explicit destructive action;
+- [x] user-facing media storage screen показывает exact adapter usage/entry count и
+  2 GiB application ceiling; origin-wide `navigator.storage.estimate()` breakdown
+  для app shell/archive/drafts остаётся;
+- [x] clear-evictable-media-cache не удаляет session, device identity, MLS state или
+  encrypted message archive без отдельного explicit destructive action;
 - eviction/reload/quota-denial/corrupt-record tests и отсутствие plaintext/media keys
   в IndexedDB metadata, logs или UI state inspectors.
 
@@ -552,6 +554,17 @@ generic background notification, focus/navigation и invalid-subscription cleanu
 - решение о native wrapper только при подтверждённой необходимости.
 
 ## Completed
+
+### BL-071 — Encrypted 2 GiB device media cache
+
+Статус: **implemented, full-CI and real-browser verified** (`WP-071`, `14a0868`).
+
+- отдельная `yv-chat-media-cache-v1` и opaque OPFS directory не мигрируют message,
+  snapshot, outbox или MLS stores;
+- AES-256-GCM chunks используют отдельный non-extractable per-user-device key;
+- persistent 2 GiB LRU, expiry eviction, 128 MiB hot LRU и concurrent coalescing;
+- real browser reload показал cached PNG после удаления server media bytes, затем
+  direct MLS v2 message успешно расшифровался вторым устройством.
 
 ### BL-070 — Telegram-like chat interactions
 
