@@ -60,6 +60,7 @@ import { BrowserThemePreferences } from '../infrastructure/browser/theme-prefere
 import { IndexedDbMessageArchive } from '../infrastructure/storage/indexeddb-message-archive'
 import { IndexedDbMessengerSnapshotStore } from '../infrastructure/storage/indexeddb-messenger-snapshot-store'
 import { IndexedDbMessageOutbox } from '../infrastructure/storage/indexeddb-message-outbox'
+import { EncryptedMediaCache } from '../infrastructure/storage/encrypted-media-cache'
 import { SyntheticMessageProtocol } from '../infrastructure/crypto/synthetic-message-protocol'
 import { MlsMessageProtocol } from '../infrastructure/crypto/mls-message-protocol'
 import { HttpAdminAccountsGateway } from '../infrastructure/http/admin-accounts-gateway'
@@ -110,6 +111,7 @@ export default defineNuxtPlugin(() => {
   const messageArchive = new IndexedDbMessageArchive()
   const messengerSnapshotStore = new IndexedDbMessengerSnapshotStore()
   const messageOutbox = new IndexedDbMessageOutbox()
+  const mediaCache = new EncryptedMediaCache()
   const conversationCryptoState = new IndexedDbConversationCryptoState()
   const deviceCryptoSession = new DeviceCryptoSession(
     deviceCryptoRegistryGateway,
@@ -129,7 +131,7 @@ export default defineNuxtPlugin(() => {
       frontend: {
         messagingGateway,
         uploadGroupAttachment: new UploadGroupAttachment(attachmentGateway, clientIdGenerator),
-        downloadGroupAttachment: new DownloadGroupAttachment(attachmentGateway),
+        downloadGroupAttachment: new DownloadGroupAttachment(attachmentGateway, mediaCache),
         deleteMessageForEveryone: new DeleteMessageForEveryone(messagingGateway),
         addGroupMember: new AddGroupMember(messagingGateway),
         removeGroupMember: new RemoveGroupMember(messagingGateway),

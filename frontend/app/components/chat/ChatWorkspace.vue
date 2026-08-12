@@ -148,6 +148,7 @@ watch(
 )
 
 onBeforeUnmount(() => {
+  messenger.dispose()
   typing.clear()
   unsubscribeTyping?.()
   unsubscribePresence?.()

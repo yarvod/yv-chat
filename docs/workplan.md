@@ -4,58 +4,69 @@
 завершённая работа фиксируется отдельным коммитом, а новый пункт переносится
 сюда из `backlog.md`.
 
-## WP-070 — Telegram-like chat interactions
+## WP-071 — Encrypted 2 GiB device media cache
 
-Статус: **implemented and locally verified**
+Статус: **complete; local browser acceptance and full CI green**
 
-Цель: сделать повседневную работу с перепиской привычной: свежие диалоги всегда
-сверху, внутри чата доступны локальный поиск, reply, mentions и reactions, а фото
-и видео удобно смотреть inline и в полноэкранном viewer.
+Цель: уже загруженные group v1 изображения, видео и файлы открываются мгновенно при
+возврате в чат и переживают reload/offline-период, не меняя и не подвергая риску
+существующие IndexedDB message/archive/outbox/MLS stores.
 
 ### Scope
 
-- [x] атомарно обновлять activity time при создании сообщения и сортировать список
-  по последней message activity;
-- [x] выполнять bounded поиск по расшифрованной client-side истории без server
-  plaintext index;
-- [x] хранить reply target и intended mention IDs внутри versioned protected content;
-- [x] добавить mention autocomplete/highlight и reply composer/jump UX;
-- [x] добавить авторизованные idempotent reactions, агрегаты и durable sync event;
-- [x] добавить pinch/double-click zoom, bounded pan/reset и swipe navigation фото;
-- [x] сохранить inline/fullscreen playback поддерживаемого browser video и честный
-  download fallback для неподдерживаемого codec;
-- [x] документировать действующие per-item limits и per-user active-media quota.
+- [x] отдельная versioned БД `yv-chat-media-cache-v1`, без upgrade существующих DB;
+- [x] отдельный opaque OPFS directory с IndexedDB fallback только в media DB;
+- [x] AES-256-GCM chunk encryption под отдельным non-extractable per-user-device key;
+- [x] exact account/device/conversation/attachment/type/size/expiry binding через AAD;
+- [x] persistent LRU budget `2 GiB` на user+device и automatic expiry eviction;
+- [x] bounded `128 MiB` hot RAM LRU и coalescing одинаковых concurrent downloads;
+- [x] cache failure/corruption превращается в miss и не ломает authenticated download;
+- [x] при unmount/logout decrypted hot blobs удаляются из application RAM;
+- [x] group images/video/files используют единый cache path; direct media не включается.
 
-### Security invariants
+### Security and data invariants
 
-- server не получает plaintext direct message, search query, reply preview или
-  intended mentions;
-- search работает только с доступным этому device decrypted content;
-- reaction API проверяет active conversation membership и не принимает client user ID;
-- media остаётся streamed и bounded; user-provided filename не становится storage path;
-- group v1 media по-прежнему явно не называется E2EE.
+- существующие `yv-chat-messages-v1`, `yv-chat-messenger-snapshot-v1`,
+  `yv-chat-message-outbox-v1`, `yv-chat-conversation-crypto-v1` и
+  `yv-chat-crypto-v1` не открываются cache adapter-ом и не меняют version/schema;
+- media key отдельный, non-extractable и никогда не используется для MLS/messages;
+- OPFS/IDB хранит только AES-GCM ciphertext; filename и media plaintext не входят в
+  operational index или logs;
+- cache не даёт обойти server membership и доступен только exact local owner scope;
+- cache не считается backup и может быть evicted browser/OS;
+- `2 GiB` — application ceiling; меньшая browser quota или disk pressure безопасно
+  отключает конкретную запись, но не messaging/crypto runtime.
 
 ### Exclusions
 
-- direct encrypted attachment flow (`BL-017`);
-- server-side plaintext full-text index или server-generated thumbnails/transcoding;
-- unlimited uploads/quota и remote guarantee для expired media;
-- edit/forward/pin сообщений.
+- direct MLS attachment encryption/upload (`BL-017`);
+- pinned/never-evict media и storage settings UI;
+- offline composer attachment drafts;
+- Service Worker Cache API для authenticated media;
+- изменение server attachment API, TTL или quota.
 
 ### Definition of Done
 
-- два чата меняют порядок после сообщения без ручного membership update;
-- поиск находит доступные historical messages и открывает найденное сообщение;
-- reply/mention round-trip совместим с legacy raw text и group attachment envelopes;
-- reactions idempotent, агрегируются, синхронизируются и закрыты negative auth tests;
-- mouse/touch/keyboard media interaction и inline video покрыты frontend tests;
-- backend lint/type/tests, frontend lint/typecheck/tests/build и migration upgrade
-  проходят.
+- A → B → A не вызывает второй HTTP download уже загруженного media;
+- reload читает media из encrypted OPFS/IDB при недоступной сети;
+- LRU/expiry/corruption/account-device mismatch дают bounded safe behavior;
+- cache write/remove/reopen не меняет versions и содержимое existing message/MLS DB;
+- после cache lifecycle сообщения расшифровываются, sealed MLS wrapping key остаётся
+  non-extractable, conversation checkpoint и message stores доступны;
+- frontend lint/typecheck/tests/build и полный repository CI проходят;
+- реальный local Docker/browser сценарий проверяет OPFS, reload и chat switching.
 
 ### Verification evidence
 
-- backend: Ruff check/format, mypy, `240 passed, 9 skipped`;
-- frontend: ESLint, Nuxt typecheck, `43 files / 237 tests`, production build;
-- fresh PostgreSQL: Alembic `base -> 0022_message_reactions` прошёл в отдельной
-  временной БД, после проверки БД удалена;
-- Compose development config валиден; `git diff --check` проходит.
+- targeted cache/attachment tests: `14 passed`;
+- full frontend: `44 files / 243 tests` green;
+- regression создаёт encrypted message archive + sealed MLS vault + conversation
+  checkpoint, заполняет/удаляет media cache, переоткрывает stores и читает исходные
+  записи с неизменными DB versions;
+- local Docker/browser: два реальных аккаунта, group text + PNG sync, A → B → A,
+  reload после временного удаления server media bytes продолжил показывать PNG из
+  persistent encrypted device cache без console errors;
+- после того же reload peer отправил direct MLS v2 message, второй device успешно
+  расшифровал его; existing crypto persistence продолжила работать;
+- полный `make ci`: backend `241 passed / 9 skipped`, Rust `21 passed`, frontend
+  `44 files / 243 tests`, lint/typecheck/build/docs/config checks green.

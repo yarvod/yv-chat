@@ -17,6 +17,7 @@ const attachment = {
   contentType: 'image/png',
   byteSize: 321,
 }
+const expiresAt = '2026-08-13T12:00:00Z'
 const originalIntersectionObserver = globalThis.IntersectionObserver
 
 beforeEach(() => {
@@ -154,13 +155,82 @@ describe('group attachment download use case', () => {
     }
     const useCase = new DownloadGroupAttachment(gateway)
 
-    await expect(useCase.execute('conversation-1', {
+    await expect(useCase.execute('user-1', 'device-1', 'conversation-1', {
       ...attachment,
       byteSize: body.size,
-    })).resolves.toBe(body)
-    await expect(useCase.execute('conversation-1', attachment)).rejects.toThrow(
+    }, expiresAt)).resolves.toBe(body)
+    useCase.clearMemory('user-1', 'device-1')
+    await expect(useCase.execute(
+      'user-1',
+      'device-1',
+      'conversation-1',
+      attachment,
+      expiresAt,
+    )).rejects.toThrow(
       'attachment response mismatch',
     )
+  })
+
+  it('coalesces downloads and reuses a bounded hot cache per account device', async () => {
+    const body = new Blob(['photo'], { type: 'image/png' })
+    const gateway: AttachmentGateway = {
+      upload: vi.fn(),
+      download: vi.fn().mockResolvedValue(body),
+    }
+    const cache = {
+      load: vi.fn().mockResolvedValue(null),
+      store: vi.fn().mockResolvedValue(undefined),
+      remove: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn(),
+    }
+    const useCase = new DownloadGroupAttachment(gateway, cache)
+    const item = { ...attachment, byteSize: body.size }
+
+    const first = useCase.execute('user-1', 'device-1', 'conversation-1', item, expiresAt)
+    const concurrent = useCase.execute('user-1', 'device-1', 'conversation-1', item, expiresAt)
+    await expect(Promise.all([first, concurrent])).resolves.toEqual([body, body])
+    await expect(useCase.execute(
+      'user-1', 'device-1', 'conversation-1', item, expiresAt,
+    )).resolves.toBe(body)
+    expect(gateway.download).toHaveBeenCalledOnce()
+    expect(cache.load).toHaveBeenCalledOnce()
+    expect(cache.store).toHaveBeenCalledOnce()
+
+    useCase.clearMemory('user-1', 'device-1')
+    cache.load.mockResolvedValue(body)
+    await expect(useCase.execute(
+      'user-1', 'device-1', 'conversation-1', item, expiresAt,
+    )).resolves.toBe(body)
+    expect(cache.load).toHaveBeenCalledTimes(2)
+    expect(gateway.download).toHaveBeenCalledOnce()
+  })
+
+  it('never serves an expired attachment from the hot cache', async () => {
+    const body = new Blob(['photo'], { type: 'image/png' })
+    const gateway: AttachmentGateway = {
+      upload: vi.fn(),
+      download: vi.fn().mockResolvedValue(body),
+    }
+    const cache = {
+      load: vi.fn().mockResolvedValue(null),
+      store: vi.fn().mockResolvedValue(undefined),
+      remove: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn(),
+    }
+    let now = Date.parse('2026-08-13T11:59:00Z')
+    const useCase = new DownloadGroupAttachment(gateway, cache, 1024, () => now)
+    const item = { ...attachment, byteSize: body.size }
+
+    await expect(useCase.execute(
+      'user-1', 'device-1', 'conversation-1', item, expiresAt,
+    )).resolves.toBe(body)
+    now = Date.parse('2026-08-13T12:01:00Z')
+    await expect(useCase.execute(
+      'user-1', 'device-1', 'conversation-1', item, expiresAt,
+    )).resolves.toBe(body)
+
+    expect(gateway.download).toHaveBeenCalledTimes(2)
+    expect(cache.load).toHaveBeenCalledTimes(2)
   })
 })
 
@@ -173,6 +243,7 @@ describe('message attachment rendering', () => {
     const wrapper = mount(MessageAttachments, {
       props: {
         conversationId: 'conversation-1',
+        expiresAt,
         attachments: [attachment, second],
         loadAttachment,
       },
@@ -180,7 +251,7 @@ describe('message attachment rendering', () => {
     })
     await flushPromises()
 
-    expect(loadAttachment).toHaveBeenCalledWith('conversation-1', attachment)
+    expect(loadAttachment).toHaveBeenCalledWith('conversation-1', attachment, expiresAt)
     expect(wrapper.get('.message-photo img').attributes('src')).toBe('blob:test-321')
     expect(wrapper.find('a[target="_blank"]').exists()).toBe(false)
     await wrapper.findAll('.message-photo')[0]?.trigger('click')
@@ -211,6 +282,7 @@ describe('message attachment rendering', () => {
     const wrapper = mount(MessageAttachments, {
       props: {
         conversationId: 'conversation-1',
+        expiresAt,
         attachments: [video],
         loadAttachment,
       },
@@ -250,13 +322,13 @@ describe('message attachment rendering', () => {
     )
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
     const wrapper = mount(MessageAttachments, {
-      props: { conversationId: 'conversation-1', attachments: [file], loadAttachment },
+      props: { conversationId: 'conversation-1', expiresAt, attachments: [file], loadAttachment },
     })
 
     expect(loadAttachment).not.toHaveBeenCalled()
     await wrapper.get('.message-file').trigger('click')
     await flushPromises()
-    expect(loadAttachment).toHaveBeenCalledWith('conversation-1', file)
+    expect(loadAttachment).toHaveBeenCalledWith('conversation-1', file, expiresAt)
     expect(click).toHaveBeenCalledOnce()
     expect(wrapper.find('a').exists()).toBe(false)
     click.mockRestore()
@@ -271,6 +343,7 @@ describe('message attachment rendering', () => {
     const wrapper = mount(MessageAttachments, {
       props: {
         conversationId: 'conversation-1',
+        expiresAt,
         attachments: [attachment, second],
         loadAttachment,
       },

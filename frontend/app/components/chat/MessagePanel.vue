@@ -46,7 +46,11 @@ const props = withDefaults(defineProps<{
   ) => Promise<boolean>
   searchMessages?: (query: string) => Promise<readonly TimelineMessage[]>
   openMessage?: (messageId: string) => Promise<void>
-  loadAttachment?: (conversationId: string, attachment: MessageAttachment) => Promise<Blob>
+  loadAttachment?: (
+    conversationId: string,
+    attachment: MessageAttachment,
+    expiresAt: string,
+  ) => Promise<Blob>
   retryOutgoing?: (clientMessageId: string) => Promise<boolean>
   loadOlder?: () => Promise<void>
   returnToLatest?: () => Promise<void>
@@ -940,6 +944,7 @@ onBeforeUnmount(() => {
             v-if="item.message.contentState === 'available' && (item.message.displayAttachments?.length ?? 0) > 0"
             :conversation-id="item.message.conversationId"
             :attachments="item.message.displayAttachments ?? []"
+            :expires-at="item.message.expiresAt"
             :load-attachment="loadAttachment"
           />
           <button

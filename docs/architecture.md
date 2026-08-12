@@ -1127,8 +1127,22 @@ URL лениво создаётся около viewport, отзывается п
 browser controls, а unsupported codec получает безопасный download fallback. File
 Blob скачивается без выхода из приложения. Composer разделяет media picker с
 `accept="image/*,video/*"` и unrestricted file picker: конкретный системный UI
-галереи остаётся ответственностью OS/browser. Это пока не durable OPFS cache: reload
-повторно получает media с сервера в пределах TTL.
+галереи остаётся ответственностью OS/browser.
+
+После `WP-071` group v1 download проходит через отдельный encrypted device cache.
+`yv-chat-media-cache-v1` хранит только non-extractable per-user-device AES-256-GCM
+key и bounded operational index; bytes пишутся 1 MiB authenticated chunks в opaque
+OPFS objects, а browser без OPFS использует отдельный fallback object store той же
+media DB. AAD связывает owner user/device, conversation, attachment, kind, MIME,
+размер, server expiry и chunk index. Existing message/snapshot/outbox/conversation
+crypto/MLS vault databases не мигрируются и вообще не открываются этим adapter.
+
+Persistent LRU ceiling — 2 GiB на user+device; expired entries удаляются независимо
+от server cleanup. Это application maximum, а не обещание quota: browser/OS может
+дать меньше или evict origin storage. Cache failure является miss и возвращает поток
+к authenticated server download. Bounded 128 MiB hot RAM LRU убирает OPFS read при
+A → B → A; он очищается при messenger unmount/logout. Local cache не является backup,
+не продлевает server TTL и пока обслуживает только явно non-E2EE group v1 media.
 
 Authentication может ротировать opaque credential на любом authenticated GET.
 Поэтому attachment route обязан перенести каждый `Set-Cookie` из injected auth

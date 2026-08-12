@@ -1070,10 +1070,17 @@ export function useMessenger(
   async function loadAttachment(
     conversationId: string,
     attachment: MessageAttachment,
+    expiresAt: string,
   ): Promise<Blob> {
     if (!downloadGroupAttachment) throw new TypeError('attachment download unavailable')
     try {
-      return await downloadGroupAttachment.execute(conversationId, attachment)
+      return await downloadGroupAttachment.execute(
+        actorUserId,
+        actorDeviceId,
+        conversationId,
+        attachment,
+        expiresAt,
+      )
     } catch (error) {
       if (error instanceof ApplicationError && error.status === 401) onUnauthorized()
       throw error
@@ -1257,6 +1264,10 @@ export function useMessenger(
     }
   }
 
+  function dispose(): void {
+    downloadGroupAttachment?.clearMemory(actorUserId, actorDeviceId)
+  }
+
   return {
     state: readonly(state),
     outbox,
@@ -1287,5 +1298,6 @@ export function useMessenger(
     returnToLatest,
     rememberViewport,
     markActiveRead,
+    dispose,
   }
 }

@@ -426,21 +426,25 @@ streaming writes и bounded cleanup уже есть; global disk admission/visib
 
 ### BL-024 — OPFS media cache и local retention controls
 
-Статус: **queued after `BL-025` compatibility gate**. Текущий UI держит downloaded
-`Blob`/Object URL только в RAM; reload повторно получает media с server.
+Статус: **group v1 encrypted cache active in `WP-071`; remaining controls/drafts
+stay queued after `BL-025` compatibility gate**. Этот slice использует новую
+изолированную media DB/OPFS schema и не мигрирует существующие persistent stores.
 
 Результат: переписка, meaningful UI state и уже загруженные media переживают reload и
 bounded offline-период, не превращая origin storage в безлимитный или plaintext archive.
 
-- OPFS/origin-private adapter с fallback; group v1 bytes дополнительно шифруются
+- [x] OPFS/origin-private adapter с отдельным IndexedDB fallback; group v1 bytes шифруются
   device-local key at rest, direct media cache хранит только client-encrypted bytes;
-- versioned encrypted attachment metadata связывает local blob с authoritative
-  conversation/message/attachment ID, digest, size и server expiry;
+- [x] versioned authenticated metadata связывает local blob с owner/device,
+  conversation/attachment ID, type, size и server expiry; digest binding для новых
+  message envelopes остаётся;
 - encrypted per-conversation composer draft; выбранные media/file draft bytes
   копируются в bounded staging store, поэтому reload не теряет подготовленную отправку;
-- byte-bounded LRU cache, configurable device budget и explicit pinned-media policy;
+- [x] byte-bounded LRU cache с default device budget 2 GiB; configurable UI и
+  explicit pinned-media policy остаются;
 - local text retention: forever/1 year/90 days без изменения server TTL;
-- offline open для cached media и честный missing-original UX после server/local eviction;
+- [x] offline open для cached group media и честный missing-original UX после
+  server/local eviction;
 - `navigator.storage.persist()` только после объяснимого user gesture; quota pressure
   отображается без обещания backup или невозможности browser eviction;
 - user-facing device storage screen через `navigator.storage.estimate()`: usage/quota,
