@@ -189,7 +189,7 @@ responsive group-info UI, а backend остаётся единственной �
 
 ### BL-063 — MLS-capable send roster consistency
 
-Статус: **completed locally; production rollout pending** (`WP-063`).
+Статус: **completed and deployed** (`WP-063`, production run `31591911253`).
 
 Результат: bootstrap и v2 message gate используют одну projection активных
 MLS-capable devices. Дополнительный legacy device без crypto identity не блокирует

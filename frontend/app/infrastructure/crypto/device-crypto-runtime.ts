@@ -83,6 +83,7 @@ function sealedDraft(snapshot: OpenMlsSealedSnapshot): SealedCryptoStateDraft {
 
 export class DeviceCryptoRuntime {
   private active: ActiveBootstrap | null = null
+  private mutationTail: Promise<void> = Promise.resolve()
 
   constructor(
     private readonly module: OpenMlsModule,
@@ -472,25 +473,27 @@ export class DeviceCryptoRuntime {
   private async mutateAndCheckpoint<T extends object>(
     operation: (active: OpenMlsDeviceBootstrap) => T,
   ): Promise<T & { revision: number }> {
-    const active = this.active
-    if (!active) throw new DeviceCryptoError('not-provisioned')
-    try {
-      const result = operation(active.value)
-      const stored = await this.vault.update(
-        active.userId,
-        active.deviceId,
-        (key, revision) => this.seal(active.value, key, revision),
-      )
-      active.revision = stored.revision
-      return { ...result, revision: active.revision }
-    } catch (error) {
-      // A failed mutation/checkpoint must never keep a potentially advanced
-      // sender/receiver ratchet alive against the previous durable snapshot.
-      // Restore that snapshot immediately so one undecryptable historical
-      // message cannot disable every later crypto operation until login.
-      await this.restoreDurableStateAfterFailure(active)
-      throw translateError(error)
-    }
+    return await this.enqueueMutation(async () => {
+      const active = this.active
+      if (!active) throw new DeviceCryptoError('not-provisioned')
+      try {
+        const result = operation(active.value)
+        const stored = await this.vault.update(
+          active.userId,
+          active.deviceId,
+          (key, revision) => this.seal(active.value, key, revision),
+        )
+        active.revision = stored.revision
+        return { ...result, revision: active.revision }
+      } catch (error) {
+        // A failed mutation/checkpoint must never keep a potentially advanced
+        // sender/receiver ratchet alive against the previous durable snapshot.
+        // Restore that snapshot immediately so one undecryptable historical
+        // message cannot disable every later crypto operation until login.
+        await this.restoreDurableStateAfterFailure(active)
+        throw translateError(error)
+      }
+    })
   }
 
   private async mutateAndCheckpointWithMessageContent<
@@ -503,26 +506,34 @@ export class DeviceCryptoRuntime {
     },
     operation: (active: OpenMlsDeviceBootstrap) => T,
   ): Promise<T & { revision: number }> {
-    const active = this.active
-    if (!active) throw new DeviceCryptoError('not-provisioned')
-    try {
-      const result = operation(active.value)
-      const plaintext = 'plaintext' in result ? result.plaintext : routing.plaintext
-      if (!plaintext) throw new DeviceCryptoError('operation-failed')
-      const stored = await this.vault.updateWithMessageContent(
-        active.userId,
-        active.deviceId,
-        routing.conversationId,
-        routing.clientMessageId,
-        plaintext,
-        (key, revision) => this.seal(active.value, key, revision),
-      )
-      active.revision = stored.revision
-      return { ...result, revision: active.revision }
-    } catch (error) {
-      await this.restoreDurableStateAfterFailure(active)
-      throw translateError(error)
-    }
+    return await this.enqueueMutation(async () => {
+      const active = this.active
+      if (!active) throw new DeviceCryptoError('not-provisioned')
+      try {
+        const result = operation(active.value)
+        const plaintext = 'plaintext' in result ? result.plaintext : routing.plaintext
+        if (!plaintext) throw new DeviceCryptoError('operation-failed')
+        const stored = await this.vault.updateWithMessageContent(
+          active.userId,
+          active.deviceId,
+          routing.conversationId,
+          routing.clientMessageId,
+          plaintext,
+          (key, revision) => this.seal(active.value, key, revision),
+        )
+        active.revision = stored.revision
+        return { ...result, revision: active.revision }
+      } catch (error) {
+        await this.restoreDurableStateAfterFailure(active)
+        throw translateError(error)
+      }
+    })
+  }
+
+  private enqueueMutation<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.mutationTail.then(operation)
+    this.mutationTail = result.then(() => undefined, () => undefined)
+    return result
   }
 
   private async restoreDurableStateAfterFailure(failed: ActiveBootstrap): Promise<void> {

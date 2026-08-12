@@ -266,10 +266,12 @@ export class ConversationHistory {
     }
   }
 
-  private prepare(messages: readonly OpaqueMessage[]): Promise<TimelineMessage[]> {
-    return Promise.all(
-      messages.map(message => prepareTimelineMessage(message, this.protection)),
-    )
+  private async prepare(messages: readonly OpaqueMessage[]): Promise<TimelineMessage[]> {
+    const prepared: TimelineMessage[] = []
+    for (const message of messages) {
+      prepared.push(await prepareTimelineMessage(message, this.protection))
+    }
+    return prepared
   }
 
   private latestWindow(messages: readonly TimelineMessage[]): TimelineMessage[] {

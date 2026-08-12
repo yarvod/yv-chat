@@ -4,9 +4,27 @@
 
 ## Active
 
+### BUG-063 — Параллельная history decrypt повреждала device-local MLS ratchet
+
+- Статус: `fixed locally; production rollout pending`.
+- Severity: `critical multi-device E2EE availability`.
+- Production reproduction: один READY direct conversation и одна MLS epoch; шесть
+  корректных ciphertext полностью читаются на одном device, на втором доступно
+  только первое сообщение, остальные помечены corrupt, на третьем весь E2EE runtime
+  становится unavailable и send блокируется.
+- Причина: history page вызывала `Promise.all` для state-changing OpenMLS decrypt;
+  несколько операций одновременно меняли один receiver ratchet и пытались сохранить
+  одинаковую следующую IndexedDB revision. Победивший checkpoint мог содержать уже
+  продвинутый in-memory ratchet без атомарно сохранённого plaintext остальных записей.
+- Исправление: history decrypt выполняется строго в server order, а общий crypto
+  runtime сериализует все ratchet mutations и продолжает очередь после bounded error.
+- Проверка: release OpenMLS/WASM regression из шести сообщений стабильно падал до
+  исправления; теперь вся пачка читается, переживает runtime reload из sealed vault,
+  повторно читается из encrypted content cache и receiver успешно отправляет reply.
+
 ### BUG-062 — Legacy device без MLS identity ложно блокировал READY direct send
 
-- Статус: `fixed locally; production rollout pending` (`WP-063`).
+- Статус: `fixed and deployed` (`WP-063`, production run `31591911253`).
 - Severity: `critical direct-message availability`.
 - Production reproduction: direct generation `READY` содержит все четыре active
   crypto-capable leaves, но у одного участника остаётся второй active Safari device,

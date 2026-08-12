@@ -217,6 +217,91 @@ describe('device crypto runtime with the release OpenMLS WASM', () => {
     reloadedBob.dispose()
   })
 
+  it('decrypts one fetched history batch without losing receiver ratchet updates', async () => {
+    const aliceDb = new IDBFactory()
+    const bobDb = new IDBFactory()
+    const alice = new DeviceCryptoRuntime(openMlsModule, vault(aliceDb))
+    const bob = new DeviceCryptoRuntime(openMlsModule, vault(bobDb))
+    await alice.provision({ userId, deviceId })
+    const bobIdentity = await bob.provision({ userId: otherUserId, deviceId: otherDeviceId })
+    const bootstrap = await alice.bootstrapConversation({
+      conversationId,
+      keyPackages: [bobIdentity.keyPackage],
+    })
+    await bob.joinConversation({
+      conversationId,
+      welcome: bootstrap.welcome,
+      ratchetTree: bootstrap.ratchetTree,
+    })
+    const messageIds = [
+      '10000000-0000-4000-8000-000000000001',
+      '10000000-0000-4000-8000-000000000002',
+      '10000000-0000-4000-8000-000000000003',
+      '10000000-0000-4000-8000-000000000004',
+      '10000000-0000-4000-8000-000000000005',
+      '10000000-0000-4000-8000-000000000006',
+    ]
+    const protectedMessages = []
+    for (const [index, clientMessageId] of messageIds.entries()) {
+      protectedMessages.push(await alice.protectMessage({
+        conversationId,
+        clientMessageId,
+        plaintext: new TextEncoder().encode(`batch-${index + 1}`),
+      }))
+    }
+
+    const decrypted = await Promise.all(protectedMessages.map((message, index) => (
+      bob.unprotectMessage({
+        conversationId,
+        clientMessageId: messageIds[index]!,
+        ciphertext: message.ciphertext,
+      })
+    )))
+
+    expect(decrypted.map(item => new TextDecoder().decode(item.plaintext))).toEqual([
+      'batch-1',
+      'batch-2',
+      'batch-3',
+      'batch-4',
+      'batch-5',
+      'batch-6',
+    ])
+    bob.dispose()
+
+    const restoredBob = new DeviceCryptoRuntime(openMlsModule, vault(bobDb))
+    await restoredBob.restore({ userId: otherUserId, deviceId: otherDeviceId })
+    const cached = await Promise.all(protectedMessages.map((message, index) => (
+      restoredBob.unprotectMessage({
+        conversationId,
+        clientMessageId: messageIds[index]!,
+        ciphertext: message.ciphertext,
+      })
+    )))
+    expect(cached.map(item => new TextDecoder().decode(item.plaintext))).toEqual([
+      'batch-1',
+      'batch-2',
+      'batch-3',
+      'batch-4',
+      'batch-5',
+      'batch-6',
+    ])
+    const replyId = '20000000-0000-4000-8000-000000000001'
+    const reply = await restoredBob.protectMessage({
+      conversationId,
+      clientMessageId: replyId,
+      plaintext: new TextEncoder().encode('reply-after-catch-up'),
+    })
+    await expect(alice.unprotectMessage({
+      conversationId,
+      clientMessageId: replyId,
+      ciphertext: reply.ciphertext,
+    })).resolves.toMatchObject({
+      plaintext: new TextEncoder().encode('reply-after-catch-up'),
+    })
+    alice.dispose()
+    restoredBob.dispose()
+  })
+
   it('fails closed for wrong AAD and modified ciphertext without replacing identity', async () => {
     const initial = new DeviceCryptoRuntime(openMlsModule, vault(indexedDb))
     const identity = await initial.provision({ userId, deviceId })
