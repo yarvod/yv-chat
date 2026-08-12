@@ -142,6 +142,67 @@ export class ConversationHistory {
     return this.loadLatest(conversationId)
   }
 
+  async loadEndingAtSequence(
+    conversationId: string,
+    sequence: number,
+  ): Promise<ConversationHistoryWindow> {
+    if (!Number.isSafeInteger(sequence) || sequence <= 0) return this.loadLatest(conversationId)
+    const beforeSequence = sequence === Number.MAX_SAFE_INTEGER ? sequence : sequence + 1
+    try {
+      const page = await this.gateway.listMessageHistory(
+        conversationId,
+        beforeSequence,
+        HISTORY_PAGE_SIZE,
+      )
+      await this.persist(conversationId, page.messages)
+      if (page.messages.some(message => message.sequence === sequence)) {
+        return {
+          messages: this.latestWindow(await this.prepare(page.messages)),
+          hasMore: page.hasMore,
+          hasNewer: true,
+        }
+      }
+    } catch {
+      // The encrypted local archive remains a valid device-local fallback.
+    }
+    const cached = await this.readBefore(conversationId, beforeSequence)
+    if (cached.some(message => message.sequence === sequence)) {
+      return {
+        messages: this.latestWindow(await this.prepare(cached)),
+        hasMore: cached.length === HISTORY_PAGE_SIZE,
+        hasNewer: true,
+      }
+    }
+    const latestCached = await this.readLatest(conversationId)
+    if (latestCached.length > 0) {
+      return {
+        messages: this.latestWindow(await this.prepare(latestCached)),
+        hasMore: latestCached.length === HISTORY_PAGE_SIZE,
+        hasNewer: false,
+      }
+    }
+    return this.loadLatest(conversationId)
+  }
+
+  async loadMessageWindow(
+    conversationId: string,
+    messageId: string,
+  ): Promise<ConversationHistoryWindow> {
+    const target = await this.gateway.getMessage(conversationId, messageId)
+    const before = await this.gateway.listMessageHistory(
+      conversationId,
+      target.sequence,
+      HISTORY_PAGE_SIZE - 1,
+    )
+    const opaque = [...before.messages, target]
+    await this.persist(conversationId, opaque)
+    return {
+      messages: this.latestWindow(await this.prepare(opaque)),
+      hasMore: before.hasMore,
+      hasNewer: true,
+    }
+  }
+
   async fetchTombstone(conversationId: string, messageId: string): Promise<TimelineMessage> {
     const tombstone = await this.gateway.getMessage(conversationId, messageId)
     await this.persist(conversationId, [tombstone])

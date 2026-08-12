@@ -638,6 +638,53 @@ describe('messenger orchestration', () => {
     }))
   })
 
+  it('loads an exact deep-linked message window and persists its encrypted viewport anchor', async () => {
+    const target = {
+      ...message,
+      messageId: 'message-target',
+      clientMessageId: 'client-target',
+      sequence: 42,
+      createdAt: '2026-08-11T12:42:00Z',
+    }
+    vi.mocked(gateway.getMessage).mockResolvedValue(target)
+    vi.mocked(gateway.listMessageHistory).mockImplementation(async (
+      _conversationId,
+      beforeSequence,
+    ) => ({
+      messages: beforeSequence === 42 ? [{ ...message, sequence: 41 }] : [],
+      hasMore: beforeSequence === 42,
+      oldestSequence: beforeSequence === 42 ? 41 : null,
+      newestSequence: beforeSequence === 42 ? 41 : null,
+    }))
+    const messenger = useMessenger('alice-id', 'device-alice', vi.fn(), messengerDependencies())
+
+    await messenger.load('conversation-1', 'message-target')
+
+    expect(gateway.getMessage).toHaveBeenCalledWith('conversation-1', 'message-target')
+    expect(messenger.state.messages.at(-1)).toMatchObject({
+      messageId: 'message-target',
+      sequence: 42,
+    })
+    expect(messenger.state.historyHasNewer).toBe(true)
+
+    await messenger.rememberViewport({
+      conversationId: 'conversation-1',
+      messageId: 'message-target',
+      sequence: 42,
+      offset: 24,
+      atLatest: false,
+      savedAt: '2026-08-11T12:43:00Z',
+    })
+    expect(messenger.activeViewportAnchor.value).toMatchObject({
+      messageId: 'message-target',
+      sequence: 42,
+      offset: 24,
+    })
+    expect(messengerSnapshotStore.save).toHaveBeenLastCalledWith(expect.objectContaining({
+      viewportAnchors: [expect.objectContaining({ messageId: 'message-target' })],
+    }))
+  })
+
   it('captures a cursor baseline before snapshot and catches up newer messages', async () => {
     const messenger = useMessenger('alice-id', 'device-alice', vi.fn(), messengerDependencies())
 

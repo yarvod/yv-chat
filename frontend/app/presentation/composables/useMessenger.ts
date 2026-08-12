@@ -33,6 +33,7 @@ import type {
 import type { DownloadGroupAttachment } from '../../application/messaging/download-group-attachment'
 import type { MessageArchive } from '../../application/ports/message-archive'
 import type {
+  ConversationViewportAnchor,
   MessengerSnapshot,
   MessengerSnapshotStore,
 } from '../../application/ports/messenger-snapshot-store'
@@ -69,6 +70,7 @@ interface MessengerState {
   archiveStatus: 'ready' | 'unavailable'
   readStates: ConversationReadState[]
   deliveryStates: ParticipantDeliveryState[]
+  viewportAnchors: ConversationViewportAnchor[]
   syncCursor: number
   creating: boolean
   deletingMessageId: string | null
@@ -183,6 +185,7 @@ export function useMessenger(
     archiveStatus: 'ready',
     readStates: [],
     deliveryStates: [],
+    viewportAnchors: [],
     syncCursor: 0,
     creating: false,
     deletingMessageId: null,
@@ -204,6 +207,7 @@ export function useMessenger(
   )
   let polling = false
   let snapshotAvailable = true
+  let snapshotPersistQueue = Promise.resolve()
   const readAdvances = new Map<string, number>()
   const deliveryAdvances = new Map<string, number>()
 
@@ -218,6 +222,9 @@ export function useMessenger(
   const activeOutgoingMessages = computed(() => outbox.state.messages.filter(message => (
     message.conversationId === state.activeConversationId
   )))
+  const activeViewportAnchor = computed(() => state.viewportAnchors.find(anchor => (
+    anchor.conversationId === state.activeConversationId
+  )) ?? null)
   const conversationProtectionSecure = computed(() => (
     activeConversation.value !== null
     && conversationUsesEndToEndEncryption(activeConversation.value.conversationType)
@@ -404,23 +411,27 @@ export function useMessenger(
     // unavailable. Otherwise a later startup could trust that cursor while the
     // corresponding message envelopes were never stored locally.
     if (!snapshotAvailable || history.archiveStatus !== 'ready') return
+    const snapshot: MessengerSnapshot = {
+      ownerUserId: actorUserId,
+      directory: [...state.directory],
+      conversations: [...state.conversations],
+      readStates: [...state.readStates],
+      deliveryStates: [...state.deliveryStates],
+      viewportAnchors: [...state.viewportAnchors],
+      syncCursor: state.syncCursor,
+      savedAt: new Date(clock.nowMilliseconds()).toISOString(),
+    }
     try {
-      await messengerSnapshotStore.save({
-        ownerUserId: actorUserId,
-        directory: state.directory,
-        conversations: state.conversations,
-        readStates: state.readStates,
-        deliveryStates: state.deliveryStates,
-        syncCursor: state.syncCursor,
-        savedAt: new Date(clock.nowMilliseconds()).toISOString(),
-      })
+      const save = () => messengerSnapshotStore.save(snapshot)
+      snapshotPersistQueue = snapshotPersistQueue.then(save, save)
+      await snapshotPersistQueue
     } catch {
       snapshotAvailable = false
       syncArchiveStatus()
     }
   }
 
-  async function hydrateSnapshot(): Promise<boolean> {
+  async function hydrateSnapshot(preferredConversationId: string | null = null): Promise<boolean> {
     let snapshot: MessengerSnapshot | null
     try {
       snapshot = await messengerSnapshotStore.load(actorUserId)
@@ -434,8 +445,16 @@ export function useMessenger(
     state.conversations = [...snapshot.conversations]
     state.readStates = [...snapshot.readStates]
     state.deliveryStates = [...snapshot.deliveryStates]
+    const conversationIds = new Set(snapshot.conversations.map(item => item.conversationId))
+    state.viewportAnchors = (snapshot.viewportAnchors ?? []).filter(anchor => (
+      conversationIds.has(anchor.conversationId)
+    ))
     state.syncCursor = snapshot.syncCursor
-    state.activeConversationId = state.conversations[0]?.conversationId ?? null
+    state.activeConversationId = state.conversations.some(item => (
+      item.conversationId === preferredConversationId
+    ))
+      ? preferredConversationId
+      : state.conversations[0]?.conversationId ?? null
     resetHistoryWindow()
     if (state.activeConversationId) {
       const cached = await history.loadCachedLatest(state.activeConversationId)
@@ -539,6 +558,10 @@ export function useMessenger(
     ])
     state.directory = directory
     state.conversations = conversations
+    const conversationIds = new Set(conversations.map(item => item.conversationId))
+    state.viewportAnchors = state.viewportAnchors.filter(anchor => (
+      conversationIds.has(anchor.conversationId)
+    ))
     if (!state.conversations.some(item => item.conversationId === state.activeConversationId)) {
       state.activeConversationId = state.conversations[0]?.conversationId ?? null
       resetHistoryWindow()
@@ -546,7 +569,10 @@ export function useMessenger(
     }
   }
 
-  async function load(): Promise<void> {
+  async function load(
+    preferredConversationId: string | null = null,
+    targetMessageId: string | null = null,
+  ): Promise<void> {
     state.phase = 'loading'
     state.message = null
     try {
@@ -557,13 +583,16 @@ export function useMessenger(
         // fail-closed because their reconciliation/send paths still require v2.
       }
       await outbox.load()
-      if (await hydrateSnapshot()) {
+      if (await hydrateSnapshot(preferredConversationId)) {
         await poll()
         if (
           state.activeConversationId
           && state.messages.length === 0
         ) {
           await loadLatestHistory(state.activeConversationId)
+        }
+        if (state.activeConversationId) {
+          await selectConversation(state.activeConversationId, targetMessageId)
         }
         if (state.activeConversationId) await refreshConversationCrypto(state.activeConversationId)
         return
@@ -579,9 +608,16 @@ export function useMessenger(
       state.conversations = conversations
       state.readStates = readStates
       state.deliveryStates = deliveryStates
-      state.activeConversationId = conversations[0]?.conversationId ?? null
+      state.activeConversationId = conversations.some(item => (
+        item.conversationId === preferredConversationId
+      ))
+        ? preferredConversationId
+        : conversations[0]?.conversationId ?? null
       resetHistoryWindow()
       if (state.activeConversationId) await loadLatestHistory(state.activeConversationId)
+      if (state.activeConversationId && targetMessageId) {
+        await selectConversation(state.activeConversationId, targetMessageId)
+      }
       if (state.activeConversationId) await refreshConversationCrypto(state.activeConversationId)
       state.syncCursor = syncBaseline.streamCursor
       state.phase = 'ready'
@@ -592,29 +628,63 @@ export function useMessenger(
     }
   }
 
-  async function selectConversation(conversationId: string): Promise<void> {
-    if (conversationId === state.activeConversationId) {
-      await refreshConversationCrypto(conversationId)
-      return
+  async function selectConversation(
+    conversationId: string,
+    targetMessageId: string | null = null,
+  ): Promise<void> {
+    const changed = conversationId !== state.activeConversationId
+    if (changed) {
+      state.activeConversationId = conversationId
+      resetHistoryWindow()
     }
-    state.activeConversationId = conversationId
-    resetHistoryWindow()
     state.message = null
     try {
-      const cached = await history.loadCachedLatest(conversationId)
-      syncArchiveStatus()
-      if (cached) {
-        applyHistoryWindow(cached)
-        state.phase = 'ready'
-        await loadForwardMessages(conversationId)
+      const targetLoaded = targetMessageId !== null
+        && state.messages.some(message => message.messageId === targetMessageId)
+      const anchor = state.viewportAnchors.find(item => item.conversationId === conversationId)
+      const anchorLoaded = anchor !== undefined
+        && state.messages.some(message => message.messageId === anchor.messageId)
+      if (targetMessageId && !targetLoaded) {
+        applyHistoryWindow(await history.loadMessageWindow(conversationId, targetMessageId))
+      } else if (!targetMessageId && anchor && !anchor.atLatest && !anchorLoaded) {
+        applyHistoryWindow(await history.loadEndingAtSequence(conversationId, anchor.sequence))
+      } else if (changed) {
+        const cached = await history.loadCachedLatest(conversationId)
+        syncArchiveStatus()
+        if (cached) {
+          applyHistoryWindow(cached)
+          state.phase = 'ready'
+          await loadForwardMessages(conversationId)
+        } else {
+          await loadLatestHistory(conversationId)
+        }
       } else {
-        await loadLatestHistory(conversationId)
+        await refreshConversationCrypto(conversationId)
+        return
       }
+      syncArchiveStatus()
       await refreshConversationCrypto(conversationId)
       state.phase = 'ready'
     } catch (error) {
       fail(error)
     }
+  }
+
+  async function rememberViewport(anchor: ConversationViewportAnchor): Promise<void> {
+    if (anchor.conversationId !== state.activeConversationId) return
+    const message = state.messages.find(item => item.messageId === anchor.messageId)
+    if (
+      !message
+      || message.sequence !== anchor.sequence
+      || !Number.isFinite(anchor.offset)
+      || Math.abs(anchor.offset) > 100_000
+      || Number.isNaN(Date.parse(anchor.savedAt))
+    ) return
+    state.viewportAnchors = [
+      ...state.viewportAnchors.filter(item => item.conversationId !== anchor.conversationId),
+      anchor,
+    ].slice(-1_000)
+    await persistSnapshot()
   }
 
   async function createDirect(otherUserId: string): Promise<void> {
@@ -961,6 +1031,7 @@ export function useMessenger(
     outbox,
     activeConversation,
     activeOutgoingMessages,
+    activeViewportAnchor,
     actorUserId,
     protection: {
       secure: conversationProtectionSecure,
@@ -981,6 +1052,7 @@ export function useMessenger(
     deleteMessage,
     loadOlder,
     returnToLatest,
+    rememberViewport,
     markActiveRead,
   }
 }

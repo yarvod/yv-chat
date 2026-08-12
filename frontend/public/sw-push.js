@@ -31,7 +31,10 @@ self.addEventListener('push', event => {
       icon: '/icons/icon-v3-any-192.png',
       tag,
       renotify: false,
-      data: { conversationId: payload.conversation_id },
+      data: {
+        conversationId: payload.conversation_id,
+        messageId: payload.message_id,
+      },
     })
   })())
 })
@@ -40,14 +43,26 @@ self.addEventListener('notificationclick', event => {
   event.notification.close()
   event.waitUntil((async () => {
     const conversationId = event.notification.data?.conversationId
-    if (typeof conversationId !== 'string' || !YV_PUSH_UUID.test(conversationId)) return
-    const target = `/chat?conversation=${encodeURIComponent(conversationId)}`
+    const messageId = event.notification.data?.messageId
+    if (
+      typeof conversationId !== 'string'
+      || typeof messageId !== 'string'
+      || !YV_PUSH_UUID.test(conversationId)
+      || !YV_PUSH_UUID.test(messageId)
+    ) return
+    const target = `/chat?conversation=${encodeURIComponent(conversationId)}&message=${encodeURIComponent(messageId)}`
     const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
     const existing = windows[0]
     if (existing) {
-      if ('navigate' in existing) await existing.navigate(target)
-      await existing.focus()
-      return
+      try {
+        const navigated = 'navigate' in existing ? await existing.navigate(target) : null
+        if (navigated === null) throw new Error('window client navigation was rejected')
+        await existing.focus()
+        return
+      } catch {
+        // A discarded/frozen Android task can still be returned by matchAll().
+        // Opening a fresh scoped client is the reliable fallback.
+      }
     }
     await self.clients.openWindow(target)
   })())

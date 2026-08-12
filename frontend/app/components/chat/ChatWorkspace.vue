@@ -1,12 +1,15 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { useMessenger } from '../../composables/useMessenger'
 import type { CurrentAccount } from '../../domain/accounts/account'
 import type { TypingIndicator } from '../../application/messaging/typing-indicator-service'
 import type { PresenceIndicator } from '../../application/messaging/presence-indicator-service'
 import type { RealtimeConnectionState } from '../../application/messaging/realtime-sync-service'
-import { selectedConversationId } from '../../presentation/chat/conversation-route'
+import {
+  selectedConversationId,
+  selectedMessageId,
+} from '../../presentation/chat/conversation-route'
 import ConversationSidebar from './ConversationSidebar.vue'
 import MessagePanel from './MessagePanel.vue'
 import GroupDetailsPanel from './GroupDetailsPanel.vue'
@@ -33,6 +36,7 @@ const mobilePane = computed<'list' | 'conversation'>(() => (
 let unsubscribeVisibility: (() => void) | null = null
 let unsubscribeTyping: (() => void) | null = null
 let unsubscribePresence: (() => void) | null = null
+let routeSelectionReady = false
 
 const activeTypingActorIds = computed(() => typingIndicators.value
   .filter(item => item.conversationId === messenger.state.activeConversationId)
@@ -41,6 +45,25 @@ const activeOnlineActorIds = computed(() => presenceIndicators.value
   .filter(item => item.conversationId === messenger.state.activeConversationId)
   .map(item => item.userId))
 const workspaceNotice = computed(() => messenger.state.message ?? messenger.outbox.state.notice)
+const targetMessageId = computed(() => (
+  selectedConversationId(route.query.conversation) === messenger.state.activeConversationId
+    ? selectedMessageId(route.query.message)
+    : null
+))
+
+async function applyRouteSelection(): Promise<void> {
+  const requestedConversation = selectedConversationId(route.query.conversation)
+  const requestedMessage = selectedMessageId(route.query.message)
+  if (!requestedConversation) {
+    if (requestedMessage) await navigateTo('/chat', { replace: true })
+    return
+  }
+  if (!messenger.state.conversations.some(item => item.conversationId === requestedConversation)) {
+    await navigateTo('/chat', { replace: true })
+    return
+  }
+  await messenger.selectConversation(requestedConversation, requestedMessage)
+}
 
 async function selectConversation(conversationId: string): Promise<void> {
   groupDetailsOpen.value = false
@@ -76,16 +99,11 @@ async function closeConversation(): Promise<void> {
 }
 
 onMounted(async () => {
-  await messenger.load()
   const requestedConversation = selectedConversationId(route.query.conversation)
-  if (
-    requestedConversation
-    && messenger.state.conversations.some(item => item.conversationId === requestedConversation)
-  ) {
-    await messenger.selectConversation(requestedConversation)
-  } else if (requestedConversation) {
-    await navigateTo('/chat', { replace: true })
-  }
+  const requestedMessage = selectedMessageId(route.query.message)
+  await messenger.load(requestedConversation, requestedMessage)
+  await applyRouteSelection()
+  routeSelectionReady = true
   unsubscribeTyping = typing.subscribe(indicators => {
     typingIndicators.value = indicators
   })
@@ -111,6 +129,13 @@ onMounted(async () => {
     },
   )
 })
+
+watch(
+  () => [route.query.conversation, route.query.message] as const,
+  () => {
+    if (routeSelectionReady) void applyRouteSelection()
+  },
+)
 
 onBeforeUnmount(() => {
   typing.clear()
@@ -175,6 +200,9 @@ onBeforeUnmount(() => {
         :delivery-states="messenger.state.deliveryStates"
         :connection-state="connectionState"
         :set-typing="typing.setLocal.bind(typing)"
+        :viewport-anchor="messenger.activeViewportAnchor.value"
+        :target-message-id="targetMessageId"
+        :save-viewport="messenger.rememberViewport"
         @back="closeConversation"
         @group-details="groupDetailsOpen = true"
       />

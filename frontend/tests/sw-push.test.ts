@@ -15,7 +15,7 @@ interface PushEventLike extends ExtendableEventLike {
 
 interface NotificationClickEventLike extends ExtendableEventLike {
   notification: {
-    data: { conversationId?: string }
+    data: { conversationId?: string, messageId?: string }
     close(): void
   }
 }
@@ -104,14 +104,19 @@ describe('privacy-safe push service worker', () => {
     let pending = Promise.resolve()
     const event: NotificationClickEventLike = {
       notification: {
-        data: { conversationId: PAYLOAD.conversation_id },
+        data: {
+          conversationId: PAYLOAD.conversation_id,
+          messageId: PAYLOAD.message_id,
+        },
         close() {},
       },
       waitUntil(promise) { pending = promise },
     }
     target.listeners.get('notificationclick')?.(event)
     await pending
-    expect(target.navigations).toEqual([`/chat?conversation=${PAYLOAD.conversation_id}`])
+    expect(target.navigations).toEqual([
+      `/chat?conversation=${PAYLOAD.conversation_id}&message=${PAYLOAD.message_id}`,
+    ])
     expect(target.focused()).toBe(1)
   })
 })

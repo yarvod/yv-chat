@@ -10,6 +10,7 @@ import {
 } from '../../application/messaging/group-attachment-policy'
 import type { OutgoingMessageView } from '../../application/messaging/outgoing-message-view'
 import type { RealtimeConnectionState } from '../../application/messaging/realtime-sync-service'
+import type { ConversationViewportAnchor } from '../../application/ports/messenger-snapshot-store'
 import type {
   Conversation,
   MessageAttachment,
@@ -48,6 +49,9 @@ const props = withDefaults(defineProps<{
   deliveryStates: readonly ParticipantDeliveryState[]
   connectionState: RealtimeConnectionState
   setTyping: (conversationId: string, active: boolean) => void
+  viewportAnchor?: ConversationViewportAnchor | null
+  targetMessageId?: string | null
+  saveViewport?: (anchor: ConversationViewportAnchor) => Promise<void>
 }>(), {
   historyHasMore: false,
   historyHasNewer: false,
@@ -63,6 +67,9 @@ const props = withDefaults(defineProps<{
   loadOlder: async () => undefined,
   returnToLatest: async () => undefined,
   loadAttachment: async () => { throw new TypeError('attachment download unavailable') },
+  viewportAnchor: null,
+  targetMessageId: null,
+  saveViewport: async () => undefined,
 })
 const emit = defineEmits<{ back: []; groupDetails: [] }>()
 
@@ -81,6 +88,16 @@ const selectedAttachments = ref<SelectedAttachment[]>([])
 const attachmentError = ref<string | null>(null)
 const attachmentMenuOpen = ref(false)
 const showScrollToLatest = ref(false)
+const restorationPending = ref(true)
+const highlightedMessageId = ref<string | null>(null)
+let viewportSaveTimer: ReturnType<typeof setTimeout> | null = null
+let highlightTimer: ReturnType<typeof setTimeout> | null = null
+let resizeObserver: ResizeObserver | null = null
+let adjustingViewport = false
+let composerFocused = false
+let followComposerResize = false
+let layoutAnchor: { messageId: string, offset: number } | null = null
+let layoutAnchorExpiresAt = 0
 
 function boundedPercent(completed: number, total: number): number {
   if (total <= 0) return 0
@@ -287,7 +304,8 @@ function isNearLatest(): boolean {
 }
 
 function handleTimelineScroll(): void {
-  if (isNearLatest()) showScrollToLatest.value = false
+  showScrollToLatest.value = !isNearLatest() || props.historyHasNewer
+  if (!adjustingViewport && !restorationPending.value) scheduleViewportSave()
 }
 
 function scrollToLatest(behavior: ScrollBehavior = 'smooth'): void {
@@ -295,6 +313,136 @@ function scrollToLatest(behavior: ScrollBehavior = 'smooth'): void {
   if (!element) return
   element.scrollTo({ top: element.scrollHeight, behavior })
   showScrollToLatest.value = false
+  restorationPending.value = false
+  scheduleViewportSave()
+}
+
+function messageElements(): HTMLElement[] {
+  return Array.from(timeline.value?.querySelectorAll<HTMLElement>('[data-message-id]') ?? [])
+}
+
+function messageElement(messageId: string): HTMLElement | null {
+  return messageElements().find(element => element.dataset.messageId === messageId) ?? null
+}
+
+function currentViewportAnchor(): ConversationViewportAnchor | null {
+  const element = timeline.value
+  const conversation = props.conversation
+  if (!element || !conversation) return null
+  const candidates = messageElements()
+  if (candidates.length === 0) return null
+  const containerRect = element.getBoundingClientRect()
+  const atLatest = isNearLatest() && !props.historyHasNewer
+  const anchorElement = atLatest
+    ? candidates.at(-1)
+    : candidates.find(candidate => candidate.getBoundingClientRect().bottom > containerRect.top + 1)
+      ?? candidates[0]
+  const messageId = anchorElement?.dataset.messageId
+  const sequence = Number(anchorElement?.dataset.sequence)
+  if (!anchorElement || !messageId || !Number.isSafeInteger(sequence) || sequence <= 0) return null
+  return {
+    conversationId: conversation.conversationId,
+    messageId,
+    sequence,
+    offset: anchorElement.getBoundingClientRect().top - containerRect.top,
+    atLatest,
+    savedAt: new Date().toISOString(),
+  }
+}
+
+function persistViewport(): void {
+  if (viewportSaveTimer) {
+    clearTimeout(viewportSaveTimer)
+    viewportSaveTimer = null
+  }
+  const anchor = currentViewportAnchor()
+  if (anchor) void props.saveViewport(anchor)
+}
+
+function scheduleViewportSave(): void {
+  if (viewportSaveTimer) clearTimeout(viewportSaveTimer)
+  viewportSaveTimer = setTimeout(persistViewport, 220)
+}
+
+function alignMessage(messageId: string, offset: number): boolean {
+  const container = timeline.value
+  const target = messageElement(messageId)
+  if (!container || !target) return false
+  const delta = target.getBoundingClientRect().top
+    - container.getBoundingClientRect().top
+    - offset
+  adjustingViewport = true
+  container.scrollTop += delta
+  requestAnimationFrame(() => {
+    adjustingViewport = false
+  })
+  return true
+}
+
+function observeTimelineLayout(): void {
+  if (!resizeObserver || !timeline.value) return
+  resizeObserver.disconnect()
+  resizeObserver.observe(timeline.value)
+  for (const element of messageElements()) resizeObserver.observe(element)
+}
+
+function lockLayoutAnchor(messageId: string, offset: number): void {
+  layoutAnchor = { messageId, offset }
+  layoutAnchorExpiresAt = Date.now() + 1_800
+  observeTimelineLayout()
+}
+
+function releaseLayoutAnchor(): void {
+  layoutAnchor = null
+  layoutAnchorExpiresAt = 0
+}
+
+async function restoreViewport(waitForRender = true): Promise<void> {
+  if (!restorationPending.value) return
+  if (waitForRender) await nextTick()
+  const container = timeline.value
+  if (!container || props.messages.length === 0) return
+  const targetMessageId = props.targetMessageId
+  if (targetMessageId) {
+    const target = messageElement(targetMessageId)
+    if (target) {
+      const centeredOffset = Math.max(12, (container.clientHeight - target.getBoundingClientRect().height) / 2)
+      alignMessage(targetMessageId, centeredOffset)
+      lockLayoutAnchor(targetMessageId, centeredOffset)
+      highlightedMessageId.value = targetMessageId
+      if (highlightTimer) clearTimeout(highlightTimer)
+      highlightTimer = setTimeout(() => {
+        highlightedMessageId.value = null
+      }, 1_800)
+      restorationPending.value = false
+      scheduleViewportSave()
+      return
+    }
+  }
+  const anchor = props.viewportAnchor
+  if (anchor && alignMessage(anchor.messageId, anchor.offset)) {
+    lockLayoutAnchor(anchor.messageId, anchor.offset)
+    restorationPending.value = false
+    showScrollToLatest.value = !anchor.atLatest || props.historyHasNewer
+    scheduleViewportSave()
+    return
+  }
+  scrollToLatest('auto')
+}
+
+function handleComposerFocus(): void {
+  composerFocused = true
+  followComposerResize = isNearLatest()
+}
+
+function handleComposerBlur(): void {
+  composerFocused = false
+  followComposerResize = false
+}
+
+function handleVisualViewportResize(): void {
+  if (!composerFocused || !followComposerResize) return
+  requestAnimationFrame(() => scrollToLatest('auto'))
 }
 
 async function loadOlderPreservingAnchor(): Promise<void> {
@@ -349,6 +497,11 @@ watch(
       || props.messages.at(-1)?.senderUserId === props.actorUserId
       || current.outgoingLength > (previous?.outgoingLength ?? 0)
     await nextTick()
+    if (restorationPending.value) {
+      await restoreViewport()
+      return
+    }
+    observeTimelineLayout()
     if (shouldFollow) scrollToLatest(previousLength === 0 ? 'auto' : 'smooth')
     else if (current.length > previousLength) showScrollToLatest.value = true
   },
@@ -367,19 +520,42 @@ watch(
       clearAttachments()
       deleteCandidateId.value = null
       showScrollToLatest.value = false
+      restorationPending.value = true
       await nextTick()
       resizeComposer()
-      scrollToLatest('auto')
+      await restoreViewport()
     }
+  },
+)
+
+watch(
+  () => props.targetMessageId,
+  async () => {
+    restorationPending.value = true
+    await restoreViewport()
   },
 )
 
 onMounted(() => {
   resizeComposer()
-  scrollToLatest('auto')
+  void restoreViewport(false)
+  if (typeof ResizeObserver !== 'undefined' && timeline.value) {
+    resizeObserver = new ResizeObserver(() => {
+      if (restorationPending.value) void restoreViewport()
+      else if (layoutAnchor && Date.now() < layoutAnchorExpiresAt) {
+        alignMessage(layoutAnchor.messageId, layoutAnchor.offset)
+      }
+    })
+    observeTimelineLayout()
+  }
+  window.visualViewport?.addEventListener('resize', handleVisualViewportResize)
 })
 
 onBeforeUnmount(() => {
+  persistViewport()
+  if (highlightTimer) clearTimeout(highlightTimer)
+  resizeObserver?.disconnect()
+  window.visualViewport?.removeEventListener('resize', handleVisualViewportResize)
   clearAttachments()
   if (props.conversation) props.setTyping(props.conversation.conversationId, false)
 })
@@ -430,7 +606,15 @@ onBeforeUnmount(() => {
       </p>
     </div>
 
-    <div ref="timeline" class="message-timeline" aria-live="polite" @scroll.passive="handleTimelineScroll">
+    <div
+      ref="timeline"
+      class="message-timeline"
+      aria-live="polite"
+      @scroll.passive="handleTimelineScroll"
+      @pointerdown.passive="releaseLayoutAnchor"
+      @touchstart.passive="releaseLayoutAnchor"
+      @wheel.passive="releaseLayoutAnchor"
+    >
       <button
         v-if="historyHasMore && messages.length > 0"
         class="load-older"
@@ -455,7 +639,10 @@ onBeforeUnmount(() => {
           :class="{
             own: item.message.senderUserId === actorUserId,
             joined: item.joinedToPrevious,
+            targeted: item.message.messageId === highlightedMessageId,
           }"
+          :data-message-id="item.message.messageId"
+          :data-sequence="item.message.sequence"
         >
           <strong v-if="item.showSender">{{ senderName(item.message) }}</strong>
           <MessageAttachments
@@ -670,6 +857,8 @@ onBeforeUnmount(() => {
         placeholder="Напишите сообщение…"
         @input="resizeComposer"
         @keydown="handleComposerKeydown"
+        @focus="handleComposerFocus"
+        @blur="handleComposerBlur"
       />
       <button class="send-button" type="submit" :disabled="sending || (draft.trim().length === 0 && selectedAttachments.length === 0)" aria-label="Отправить">
         <span v-if="sending" aria-hidden="true">…</span>

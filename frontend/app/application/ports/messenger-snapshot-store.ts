@@ -11,7 +11,17 @@ export interface MessengerSnapshot {
   conversations: readonly Conversation[]
   readStates: readonly ConversationReadState[]
   deliveryStates: readonly ParticipantDeliveryState[]
+  viewportAnchors?: readonly ConversationViewportAnchor[]
   syncCursor: number
+  savedAt: string
+}
+
+export interface ConversationViewportAnchor {
+  conversationId: string
+  messageId: string
+  sequence: number
+  offset: number
+  atLatest: boolean
   savedAt: string
 }
 

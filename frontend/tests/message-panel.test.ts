@@ -652,4 +652,73 @@ describe('message panel', () => {
     await vi.waitFor(() => expect(timeline.scrollTop).toBe(400))
     expect(wrapper.text()).toContain('older')
   })
+
+  it('restores an exact message target and persists a message-relative viewport anchor', async () => {
+    const saveViewport = vi.fn().mockResolvedValue(undefined)
+    const message = {
+      messageId: 'message-target',
+      clientMessageId: 'client-target',
+      conversationId: 'conversation-1',
+      senderUserId: 'bob-id',
+      senderDeviceId: 'bob-device',
+      protocolVersion: 1,
+      sequence: 7,
+      createdAt: '2026-08-11T12:07:00Z',
+      expiresAt: '2026-09-10T12:07:00Z',
+      ciphertextBase64: 'aGVsbG8=',
+      deletionReason: null,
+      deletedAt: null,
+      contentState: 'available' as const,
+      displayBody: 'target',
+      contentSecure: false,
+    }
+    const wrapper = mount(MessagePanel, {
+      props: {
+        conversation,
+        messages: [message],
+        actorUserId: 'alice-id',
+        sending: false,
+        protectionSecure: false,
+        protectionLabel: 'Тестовый режим без E2EE',
+        sendMessage: vi.fn(),
+        deleteMessage: vi.fn(),
+        deletingMessageId: null,
+        typingActorIds: [],
+        onlineActorIds: [],
+        deliveryStates: [],
+        connectionState: 'connected',
+        setTyping: vi.fn(),
+        saveViewport,
+      },
+    })
+    const timeline = wrapper.get('.message-timeline').element as HTMLElement
+    const bubble = wrapper.get('[data-message-id="message-target"]').element as HTMLElement
+    Object.defineProperties(timeline, {
+      scrollHeight: { configurable: true, value: 1_200 },
+      clientHeight: { configurable: true, value: 400 },
+      scrollTop: { configurable: true, value: 600, writable: true },
+      scrollTo: { configurable: true, value: vi.fn() },
+      getBoundingClientRect: {
+        configurable: true,
+        value: () => ({ top: 100, bottom: 500, height: 400, left: 0, right: 300, width: 300, x: 0, y: 100, toJSON() {} }),
+      },
+    })
+    Object.defineProperty(bubble, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({ top: 310, bottom: 350, height: 40, left: 0, right: 200, width: 200, x: 0, y: 310, toJSON() {} }),
+    })
+
+    await wrapper.setProps({ targetMessageId: 'message-target' })
+    await vi.waitFor(() => expect(timeline.scrollTop).toBe(630))
+    expect(wrapper.get('[data-message-id="message-target"]').classes()).toContain('targeted')
+
+    wrapper.unmount()
+    expect(saveViewport).toHaveBeenCalledWith(expect.objectContaining({
+      conversationId: 'conversation-1',
+      messageId: 'message-target',
+      sequence: 7,
+      offset: 210,
+      atLatest: false,
+    }))
+  })
 })

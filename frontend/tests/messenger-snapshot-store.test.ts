@@ -39,6 +39,14 @@ const snapshot: MessengerSnapshot = {
     userId: 'user-2',
     deliveredSequence: 3,
   }],
+  viewportAnchors: [{
+    conversationId: 'conversation-1',
+    messageId: 'message-4',
+    sequence: 4,
+    offset: 18.5,
+    atLatest: false,
+    savedAt: '2026-08-11T12:01:30Z',
+  }],
   syncCursor: 17,
   savedAt: '2026-08-11T12:02:00Z',
 }

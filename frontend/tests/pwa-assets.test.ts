@@ -49,6 +49,7 @@ describe('PWA install assets', () => {
     const config = readFileSync(resolve(process.cwd(), 'nuxt.config.ts'), 'utf8')
     expect(config).toContain("id: '/'")
     expect(config).toContain("start_url: '/'")
+    expect(config).toContain("theme_color: '#151721'")
     expect(config).toContain("{ rel: 'manifest', href: '/manifest.webmanifest' }")
     expect(config).toContain("purpose: 'maskable'")
     expect(config).toContain('/icons/icon-v3-maskable-512.png')

@@ -500,6 +500,8 @@ upgrade migration gate и offline outbox остаются).
 
 ### BL-044 — Per-conversation viewport restoration
 
+Статус: **in progress через `WP-064`**.
+
 Результат: каждый чат открывается на последней осмысленной позиции этого device,
 а не всегда внизу и не на случайном DOM offset.
 

@@ -1,4 +1,5 @@
 import {
+  type ConversationViewportAnchor,
   MessengerSnapshotStoreError,
   type MessengerSnapshot,
 } from '../../application/ports/messenger-snapshot-store'
@@ -18,6 +19,8 @@ const MAX_DIRECTORY_USERS = 1_000
 const MAX_CONVERSATIONS = 1_000
 const MAX_MEMBERS_PER_CONVERSATION = 100
 const MAX_RECEIPTS = 5_000
+const MAX_VIEWPORT_ANCHORS = 1_000
+const MAX_VIEWPORT_OFFSET = 100_000
 
 export interface SnapshotKeyRecord {
   ownerUserId: string
@@ -130,17 +133,42 @@ function parseDeliveryState(value: unknown): ParticipantDeliveryState {
   }
 }
 
+function parseViewportAnchor(value: unknown): ConversationViewportAnchor {
+  const item = record(value)
+  const offset = item.offset
+  if (typeof offset !== 'number' || !Number.isFinite(offset) || Math.abs(offset) > MAX_VIEWPORT_OFFSET) {
+    throw new MessengerSnapshotStoreError('corrupt')
+  }
+  if (typeof item.atLatest !== 'boolean') throw new MessengerSnapshotStoreError('corrupt')
+  const anchor = {
+    conversationId: requiredString(item, 'conversationId'),
+    messageId: requiredString(item, 'messageId'),
+    sequence: safeSequence(item, 'sequence'),
+    offset,
+    atLatest: item.atLatest,
+    savedAt: requiredString(item, 'savedAt'),
+  }
+  if (anchor.sequence <= 0 || Number.isNaN(Date.parse(anchor.savedAt))) {
+    throw new MessengerSnapshotStoreError('corrupt')
+  }
+  return anchor
+}
+
 function parseSnapshot(value: unknown, ownerUserId: string): MessengerSnapshot {
   const item = record(value)
   if (requiredString(item, 'ownerUserId') !== ownerUserId) {
     throw new MessengerSnapshotStoreError('corrupt')
   }
-  const snapshot = {
+  const viewportAnchors = item.viewportAnchors === undefined
+    ? undefined
+    : array(item.viewportAnchors, MAX_VIEWPORT_ANCHORS).map(parseViewportAnchor)
+  const snapshot: MessengerSnapshot = {
     ownerUserId,
     directory: array(item.directory, MAX_DIRECTORY_USERS).map(parseDirectoryUser),
     conversations: array(item.conversations, MAX_CONVERSATIONS).map(parseConversation),
     readStates: array(item.readStates, MAX_RECEIPTS).map(parseReadState),
     deliveryStates: array(item.deliveryStates, MAX_RECEIPTS).map(parseDeliveryState),
+    ...(viewportAnchors ? { viewportAnchors } : {}),
     syncCursor: safeSequence(item, 'syncCursor'),
     savedAt: requiredString(item, 'savedAt'),
   }

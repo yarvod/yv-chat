@@ -4,7 +4,11 @@ import { BrowserThemePreferences } from '../app/infrastructure/browser/theme-pre
 
 describe('browser theme integration', () => {
   beforeEach(() => {
-    document.head.innerHTML = '<meta id="yv-theme-color" name="theme-color" content="#000000">'
+    document.head.innerHTML = `
+      <meta id="yv-theme-color" name="theme-color" content="#000000">
+      <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000000">
+      <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+    `
     document.documentElement.removeAttribute('data-theme')
     localStorage.clear()
   })
@@ -18,8 +22,12 @@ describe('browser theme integration', () => {
     const preferences = new BrowserThemePreferences(document, localStorage, media)
 
     expect(preferences.apply('light')).toBe('light')
-    expect(document.getElementById('yv-theme-color')?.getAttribute('content')).toBe('#f4f2fb')
+    expect(Array.from(document.querySelectorAll('meta[name="theme-color"]')).map(
+      meta => meta.getAttribute('content'),
+    )).toEqual(['#ffffff', '#ffffff', '#ffffff'])
     expect(preferences.apply('dark')).toBe('dark')
-    expect(document.getElementById('yv-theme-color')?.getAttribute('content')).toBe('#0a0b10')
+    expect(Array.from(document.querySelectorAll('meta[name="theme-color"]')).map(
+      meta => meta.getAttribute('content'),
+    )).toEqual(['#151721', '#151721', '#151721'])
   })
 })
