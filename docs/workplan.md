@@ -6,7 +6,7 @@
 
 ## WP-058 — Group video playback and intentional media/file picker
 
-Статус: **implementation/browser acceptance complete; production rollout pending**
+Статус: **completed** (`0bc2424`; CI `31575085202`; production run `31575085192`)
 Backlog: следующий group-first slice `BL-043`
 
 Цель: довести group v1 attachments до понятного mobile/desktop flow: пользователь
@@ -72,7 +72,7 @@ Backlog: следующий group-first slice `BL-043`
   crypto/Compose/deploy/docs checks зелёные;
 - [x] isolated Compose + real browser: group sends image + playable video + arbitrary
   file, second session can view/download after reload without 401/500;
-- [ ] после deploy проверены migration/health/logs, host Nginx и домены.
+- [x] после deploy проверены migration/health/logs, host Nginx и домены.
 
 ### Exclusions
 
@@ -95,6 +95,18 @@ Backlog: следующий group-first slice `BL-043`
   error отсутствует; image/video/file GET вернули `200`, browser console без errors;
 - frontend regression запрещает whole-Blob `arrayBuffer()` и проверяет exact
   incremental SHA-256 receipt для attachment transport.
+
+### Production evidence
+
+- GitHub CI `31575085202` завершил backend, Rust/OpenMLS, frontend и Compose jobs;
+- deploy run `31575085192` собрал immutable images `sha-0bc2424...`, применил
+  миграции и штатно развернул изолированный yv-chat stack;
+- на `ru1` system Nginx `active`, отдельного yv-chat Nginx container нет, API,
+  frontend и cleanup работают на новых images, PostgreSQL остаётся healthy;
+- production Alembic сообщает `0020_video_attachments (head)`, loopback и public
+  API health возвращают `{"status":"ok"}`, свежие API/cleanup logs без ошибок;
+- соседние `yoowee.ru` и приватный `s3.yoowee.ru` сохранили штатные HTTP ответы
+  (`302` и `403` соответственно).
 
 ### Definition of Done
 
