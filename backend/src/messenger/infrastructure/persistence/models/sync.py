@@ -27,7 +27,7 @@ class SyncEventModel(Base):
         CheckConstraint("cursor > 0", name="cursor_positive"),
         CheckConstraint(
             "event_type IN ('conversation_updated', 'message_created', 'message_deleted', "
-            "'read_receipt', 'delivery_receipt')",
+            "'message_reaction_updated', 'read_receipt', 'delivery_receipt')",
             name="event_type_allowed",
         ),
         CheckConstraint(
@@ -35,6 +35,9 @@ class SyncEventModel(Base):
             "AND actor_user_id IS NULL AND read_sequence IS NULL AND delivery_sequence IS NULL) OR "
             "(event_type IN ('message_created', 'message_deleted') AND message_id IS NOT NULL "
             "AND actor_user_id IS NULL AND read_sequence IS NULL AND delivery_sequence IS NULL) OR "
+            "(event_type = 'message_reaction_updated' AND message_id IS NOT NULL "
+            "AND actor_user_id IS NOT NULL AND read_sequence IS NULL "
+            "AND delivery_sequence IS NULL) OR "
             "(event_type = 'read_receipt' AND message_id IS NULL AND actor_user_id IS NOT NULL "
             "AND read_sequence > 0 AND delivery_sequence IS NULL) OR "
             "(event_type = 'delivery_receipt' AND message_id IS NULL "

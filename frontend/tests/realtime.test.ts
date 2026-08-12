@@ -139,6 +139,21 @@ describe('realtime sync', () => {
       readSequence: null,
       deliverySequence: 9,
     })
+    expect(parseRealtimeFrame({
+      type: 'message_reaction_updated',
+      event_id: 'reaction-event',
+      conversation_id: 'conversation',
+      message_id: 'message',
+      actor_user_id: 'bob',
+    })).toEqual({
+      type: 'message_reaction_updated',
+      eventId: 'reaction-event',
+      conversationId: 'conversation',
+      messageId: 'message',
+      actorUserId: 'bob',
+      readSequence: null,
+      deliverySequence: null,
+    })
     expect(() => parseRealtimeFrame({
       type: 'read_receipt',
       event_id: 'event',

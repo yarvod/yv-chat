@@ -12,6 +12,7 @@ class RealtimeEventType(StrEnum):
     NEW_MESSAGE = "new_message"
     CONVERSATION_UPDATED = "conversation_updated"
     MESSAGE_DELETED = "message_deleted"
+    MESSAGE_REACTION_UPDATED = "message_reaction_updated"
     READ_RECEIPT = "read_receipt"
     DELIVERY_RECEIPT = "delivery_receipt"
     TYPING = "typing"
@@ -53,6 +54,16 @@ class RealtimeNotification:
                 and self.typing_active is None
                 and self.expires_at is None
                 and self.presence_online is not None
+                and self.delivery_sequence is None
+            )
+        elif self.event_type is RealtimeEventType.MESSAGE_REACTION_UPDATED:
+            valid = (
+                self.message_id is not None
+                and self.actor_user_id is not None
+                and self.read_sequence is None
+                and self.typing_active is None
+                and self.expires_at is None
+                and self.presence_online is None
                 and self.delivery_sequence is None
             )
         elif self.event_type is RealtimeEventType.READ_RECEIPT:
@@ -105,6 +116,7 @@ _SYNC_EVENT_TYPES = {
     SyncEventType.MESSAGE_CREATED: RealtimeEventType.NEW_MESSAGE,
     SyncEventType.CONVERSATION_UPDATED: RealtimeEventType.CONVERSATION_UPDATED,
     SyncEventType.MESSAGE_DELETED: RealtimeEventType.MESSAGE_DELETED,
+    SyncEventType.MESSAGE_REACTION_UPDATED: RealtimeEventType.MESSAGE_REACTION_UPDATED,
     SyncEventType.READ_RECEIPT: RealtimeEventType.READ_RECEIPT,
     SyncEventType.DELIVERY_RECEIPT: RealtimeEventType.DELIVERY_RECEIPT,
 }

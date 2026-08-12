@@ -20,10 +20,19 @@ const mediaStates = ref(new Map<string, MediaState>())
 const playbackFailures = ref(new Set<string>())
 const galleryRoot = ref<HTMLElement | null>(null)
 const viewerRoot = ref<HTMLElement | null>(null)
+const viewerImage = ref<HTMLImageElement | null>(null)
 const activeMediaIndex = ref<number | null>(null)
+const imageZoom = ref(1)
+const imagePanX = ref(0)
+const imagePanY = ref(0)
 const pending = new Map<string, Promise<MediaState>>()
 let mediaObserver: IntersectionObserver | null = null
 let touchStartX: number | null = null
+let touchStartY: number | null = null
+let pinchStartDistance: number | null = null
+let pinchStartZoom = 1
+let panStartX = 0
+let panStartY = 0
 let disposed = false
 
 const mediaAttachments = computed(() => (
@@ -93,12 +102,41 @@ async function openMedia(attachment: MessageAttachment): Promise<void> {
 
 function closeViewer(): void {
   pauseViewerVideo()
+  resetImageTransform()
   activeMediaIndex.value = null
+}
+
+function resetImageTransform(): void {
+  imageZoom.value = 1
+  imagePanX.value = 0
+  imagePanY.value = 0
+  touchStartX = null
+  touchStartY = null
+  pinchStartDistance = null
+}
+
+function setImageZoom(value: number): void {
+  imageZoom.value = Math.max(1, Math.min(5, value))
+  if (imageZoom.value === 1) {
+    imagePanX.value = 0
+    imagePanY.value = 0
+  }
+}
+
+function toggleImageZoom(): void {
+  setImageZoom(imageZoom.value > 1 ? 1 : 2.5)
+}
+
+function imageTransformStyle(): Record<string, string> {
+  return {
+    transform: `translate3d(${imagePanX.value}px, ${imagePanY.value}px, 0) scale(${imageZoom.value})`,
+  }
 }
 
 async function moveViewer(direction: -1 | 1): Promise<void> {
   if (activeMediaIndex.value === null || mediaAttachments.value.length < 2) return
   pauseViewerVideo()
+  resetImageTransform()
   const nextIndex = (
     activeMediaIndex.value + direction + mediaAttachments.value.length
   ) % mediaAttachments.value.length
@@ -119,12 +157,69 @@ function handleViewerTouchStart(event: TouchEvent): void {
 }
 
 function handleViewerTouchEnd(event: TouchEvent): void {
+  if (imageZoom.value > 1) return
   const endX = event.changedTouches[0]?.clientX
   if (touchStartX === null || endX === undefined) return
   const distance = endX - touchStartX
   touchStartX = null
   if (Math.abs(distance) < 50) return
   void moveViewer(distance > 0 ? -1 : 1)
+}
+
+function touchDistance(first: Touch, second: Touch): number {
+  return Math.hypot(second.clientX - first.clientX, second.clientY - first.clientY)
+}
+
+function handleImageTouchStart(event: TouchEvent): void {
+  if (event.touches.length === 2) {
+    const first = event.touches[0]
+    const second = event.touches[1]
+    if (!first || !second) return
+    pinchStartDistance = touchDistance(first, second)
+    pinchStartZoom = imageZoom.value
+    return
+  }
+  const touch = event.touches[0]
+  if (!touch) return
+  touchStartX = touch.clientX
+  touchStartY = touch.clientY
+  panStartX = imagePanX.value
+  panStartY = imagePanY.value
+}
+
+function handleImageTouchMove(event: TouchEvent): void {
+  if (event.touches.length === 2 && pinchStartDistance !== null) {
+    const first = event.touches[0]
+    const second = event.touches[1]
+    if (!first || !second) return
+    setImageZoom(pinchStartZoom * touchDistance(first, second) / pinchStartDistance)
+    return
+  }
+  const touch = event.touches[0]
+  if (!touch || touchStartX === null || touchStartY === null || imageZoom.value <= 1) return
+  imagePanX.value = panStartX + touch.clientX - touchStartX
+  imagePanY.value = panStartY + touch.clientY - touchStartY
+}
+
+function handleImageTouchEnd(event: TouchEvent): void {
+  if (event.touches.length > 0) return
+  const end = event.changedTouches[0]
+  const startX = touchStartX
+  const startY = touchStartY
+  pinchStartDistance = null
+  touchStartX = null
+  touchStartY = null
+  if (!end || startX === null || startY === null || imageZoom.value > 1) return
+  const horizontal = end.clientX - startX
+  const vertical = end.clientY - startY
+  if (Math.abs(horizontal) >= 50 && Math.abs(horizontal) > Math.abs(vertical)) {
+    void moveViewer(horizontal > 0 ? -1 : 1)
+  }
+}
+
+function handleImageWheel(event: WheelEvent): void {
+  const direction = event.deltaY < 0 ? 0.25 : -0.25
+  setImageZoom(imageZoom.value + direction)
 }
 
 async function downloadFile(attachment: MessageAttachment): Promise<void> {
@@ -193,6 +288,7 @@ onMounted(() => {
 })
 
 watch(activeMediaIndex, (current, previous) => {
+  if (current !== previous) resetImageTransform()
   if (previous === null && current !== null) window.addEventListener('keydown', handleViewerKeydown)
   if (previous !== null && current === null) window.removeEventListener('keydown', handleViewerKeydown)
 })
@@ -338,9 +434,17 @@ onBeforeUnmount(() => {
         </button>
         <img
           v-if="activeMedia.kind === 'image'"
+          ref="viewerImage"
+          class="media-viewer__image"
           :src="stateFor(activeMedia.attachmentId)?.url"
           :alt="activeMedia.name"
+          :style="imageTransformStyle()"
           @click.stop
+          @dblclick.stop="toggleImageZoom"
+          @wheel.stop.prevent="handleImageWheel"
+          @touchstart.stop="handleImageTouchStart"
+          @touchmove.stop.prevent="handleImageTouchMove"
+          @touchend.stop="handleImageTouchEnd"
         >
         <div v-else-if="playbackFailed(activeMedia.attachmentId)" class="media-viewer__unsupported">
           <AppIcon name="file" />
@@ -371,6 +475,11 @@ onBeforeUnmount(() => {
         >
           ›
         </button>
+        <div v-if="activeMedia.kind === 'image'" class="media-viewer__zoom" aria-label="Масштаб изображения">
+          <button type="button" aria-label="Уменьшить" :disabled="imageZoom <= 1" @click="setImageZoom(imageZoom - 0.5)">−</button>
+          <span>{{ Math.round(imageZoom * 100) }}%</span>
+          <button type="button" aria-label="Увеличить" :disabled="imageZoom >= 5" @click="setImageZoom(imageZoom + 0.5)">+</button>
+        </div>
         <p>{{ activeMediaIndex + 1 }} / {{ mediaAttachments.length }} · {{ activeMedia.name }}</p>
       </div>
     </Transition>

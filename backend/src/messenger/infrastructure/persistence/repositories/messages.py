@@ -66,11 +66,14 @@ class SqlAlchemyMessageRepository:
         model = await self._session.scalar(statement)
         return map_message(model) if model is not None else None
 
-    async def next_sequence(self, conversation_id: UUID) -> int:
+    async def next_sequence(self, conversation_id: UUID, *, activity_at: datetime) -> int:
         sequence = await self._session.scalar(
             update(ConversationModel)
             .where(ConversationModel.id == conversation_id)
-            .values(last_message_sequence=ConversationModel.last_message_sequence + 1)
+            .values(
+                last_message_sequence=ConversationModel.last_message_sequence + 1,
+                updated_at=activity_at,
+            )
             .returning(ConversationModel.last_message_sequence)
         )
         if sequence is None:

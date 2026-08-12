@@ -11,6 +11,10 @@ from messenger.application.messaging.list_messages import ListMessages
 from messenger.application.messaging.list_read_states import ListConversationReadStates
 from messenger.application.messaging.mark_delivered import MarkConversationDelivered
 from messenger.application.messaging.mark_read import MarkConversationRead
+from messenger.application.messaging.message_reactions import (
+    ListMessageReactions,
+    SetMessageReaction,
+)
 from messenger.application.messaging.policy import MessageEnvelopePolicy
 from messenger.application.messaging.retention import MessageRetentionPolicy
 from messenger.application.messaging.send_message import SendOpaqueMessage
@@ -52,3 +56,5 @@ class MessagingUseCaseProvider(Provider):
     publish_typing = provide(PublishTyping, scope=Scope.REQUEST)
     list_presence_snapshot = provide(ListPresenceSnapshot, scope=Scope.REQUEST)
     publish_presence = provide(PublishPresence, scope=Scope.REQUEST)
+    list_message_reactions = provide(ListMessageReactions, scope=Scope.REQUEST)
+    set_message_reaction = provide(SetMessageReaction, scope=Scope.REQUEST)

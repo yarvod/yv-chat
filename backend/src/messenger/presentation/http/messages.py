@@ -3,10 +3,11 @@
 import base64
 import binascii
 from datetime import datetime
+from typing import Annotated
 from uuid import UUID
 
 from dishka.integrations.fastapi import DishkaRoute, FromDishka
-from fastapi import APIRouter, HTTPException, Request, Response, status
+from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
 
 from messenger.application.errors import (
@@ -29,6 +30,13 @@ from messenger.application.messaging.list_message_history import (
     ListMessageHistoryQuery,
 )
 from messenger.application.messaging.list_messages import ListMessages, ListMessagesQuery
+from messenger.application.messaging.message_reactions import (
+    ListMessageReactions,
+    ListMessageReactionsQuery,
+    MessageReactionSummary,
+    SetMessageReaction,
+    SetMessageReactionCommand,
+)
 from messenger.application.messaging.send_message import (
     SendOpaqueMessage,
     SendOpaqueMessageCommand,
@@ -89,6 +97,17 @@ class MessageHistoryPageResponse(BaseModel):
     has_more: bool
     oldest_sequence: int | None
     newest_sequence: int | None
+
+
+class MessageReactionResponse(BaseModel):
+    message_id: UUID
+    reaction: str
+    count: int
+    reacted_by_actor: bool
+
+
+def serialize_reactions(items: list[MessageReactionSummary]) -> list[MessageReactionResponse]:
+    return [MessageReactionResponse.model_validate(item, from_attributes=True) for item in items]
 
 
 def decode_ciphertext(encoded: str) -> bytes:
@@ -207,10 +226,10 @@ async def delete_message_for_everyone(
         )
     except ConversationNotFoundError as error:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "conversation not found") from error
-    except MessageNotFoundError as error:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "message not found") from error
     except AuthorizationDeniedError as error:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "forbidden") from error
+    except MessageNotFoundError as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "message not found") from error
     return DeleteMessageResponse.model_validate(result, from_attributes=True)
 
 
@@ -250,6 +269,123 @@ async def list_message_history(
         has_more=page.has_more,
         oldest_sequence=page.oldest_sequence,
         newest_sequence=page.newest_sequence,
+    )
+
+
+@router.get("/reactions", response_model=list[MessageReactionResponse])
+async def list_message_reactions(
+    conversation_id: UUID,
+    request: Request,
+    response: Response,
+    settings: FromDishka[AppSettings],
+    authenticate_session: FromDishka[AuthenticateSession],
+    use_case: FromDishka[ListMessageReactions],
+    message_ids: Annotated[list[UUID], Query(min_length=1, max_length=100)],
+) -> list[MessageReactionResponse]:
+    principal = await authenticate_request(request, response, settings, authenticate_session)
+    try:
+        items = await use_case.execute(
+            ListMessageReactionsQuery(
+                actor_user_id=principal.user_id,
+                conversation_id=conversation_id,
+                message_ids=tuple(message_ids),
+            )
+        )
+    except ConversationNotFoundError as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "conversation not found") from error
+    except AuthorizationDeniedError as error:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "forbidden") from error
+    except ValueError as error:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "invalid reaction query",
+        ) from error
+    return serialize_reactions(items)
+
+
+async def change_message_reaction(
+    *,
+    conversation_id: UUID,
+    message_id: UUID,
+    reaction: str,
+    active: bool,
+    request: Request,
+    response: Response,
+    settings: AppSettings,
+    authenticate_session: AuthenticateSession,
+    use_case: SetMessageReaction,
+) -> list[MessageReactionResponse]:
+    require_csrf(request, settings)
+    principal = await authenticate_request(request, response, settings, authenticate_session)
+    try:
+        items = await use_case.execute(
+            SetMessageReactionCommand(
+                actor_user_id=principal.user_id,
+                conversation_id=conversation_id,
+                message_id=message_id,
+                reaction=reaction,
+                active=active,
+            )
+        )
+    except ConversationNotFoundError as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "conversation not found") from error
+    except AuthorizationDeniedError as error:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "forbidden") from error
+    except MessageNotFoundError as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "message not found") from error
+    except ValueError as error:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "unsupported reaction",
+        ) from error
+    return serialize_reactions(items)
+
+
+@router.put("/{message_id}/reactions/{reaction}", response_model=list[MessageReactionResponse])
+async def add_message_reaction(
+    conversation_id: UUID,
+    message_id: UUID,
+    reaction: str,
+    request: Request,
+    response: Response,
+    settings: FromDishka[AppSettings],
+    authenticate_session: FromDishka[AuthenticateSession],
+    use_case: FromDishka[SetMessageReaction],
+) -> list[MessageReactionResponse]:
+    return await change_message_reaction(
+        conversation_id=conversation_id,
+        message_id=message_id,
+        reaction=reaction,
+        active=True,
+        request=request,
+        response=response,
+        settings=settings,
+        authenticate_session=authenticate_session,
+        use_case=use_case,
+    )
+
+
+@router.delete("/{message_id}/reactions/{reaction}", response_model=list[MessageReactionResponse])
+async def remove_message_reaction(
+    conversation_id: UUID,
+    message_id: UUID,
+    reaction: str,
+    request: Request,
+    response: Response,
+    settings: FromDishka[AppSettings],
+    authenticate_session: FromDishka[AuthenticateSession],
+    use_case: FromDishka[SetMessageReaction],
+) -> list[MessageReactionResponse]:
+    return await change_message_reaction(
+        conversation_id=conversation_id,
+        message_id=message_id,
+        reaction=reaction,
+        active=False,
+        request=request,
+        response=response,
+        settings=settings,
+        authenticate_session=authenticate_session,
+        use_case=use_case,
     )
 
 

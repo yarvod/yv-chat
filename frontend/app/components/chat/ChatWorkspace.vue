@@ -74,6 +74,16 @@ async function selectConversation(conversationId: string): Promise<void> {
   )
 }
 
+async function openMessage(messageId: string): Promise<void> {
+  const conversationId = messenger.state.activeConversationId
+  if (!conversationId) return
+  await messenger.selectConversation(conversationId, messageId)
+  await navigateTo(
+    { path: '/chat', query: { conversation: conversationId, message: messageId } },
+    { replace: true },
+  )
+}
+
 async function leaveGroup(): Promise<boolean> {
   const left = await messenger.leaveActiveGroup()
   if (left) await navigateTo('/chat', { replace: true })
@@ -189,6 +199,8 @@ onBeforeUnmount(() => {
         :protection-secure="messenger.protection.secure.value"
         :protection-label="messenger.protection.label.value"
         :send-message="messenger.send"
+        :search-messages="messenger.searchActiveConversation"
+        :open-message="openMessage"
         :load-attachment="messenger.loadAttachment"
         :retry-outgoing="messenger.retryOutgoing"
         :load-older="messenger.loadOlder"
@@ -198,6 +210,8 @@ onBeforeUnmount(() => {
         :typing-actor-ids="activeTypingActorIds"
         :online-actor-ids="activeOnlineActorIds"
         :delivery-states="messenger.state.deliveryStates"
+        :reaction-summaries="messenger.state.reactionSummaries"
+        :toggle-reaction="messenger.toggleReaction"
         :connection-state="connectionState"
         :set-typing="typing.setLocal.bind(typing)"
         :viewport-anchor="messenger.activeViewportAnchor.value"

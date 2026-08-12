@@ -8,6 +8,7 @@ const DURABLE_TYPES = new Set<DurableRealtimeEventType>([
   'new_message',
   'conversation_updated',
   'message_deleted',
+  'message_reaction_updated',
   'read_receipt',
   'delivery_receipt',
 ])
@@ -119,8 +120,12 @@ export function parseRealtimeFrame(value: unknown): RealtimeFrame {
       })()
   const isReadReceipt = type === 'read_receipt'
   const isDeliveryReceipt = type === 'delivery_receipt'
+  const isReactionUpdate = type === 'message_reaction_updated'
   if (
-    isReadReceipt
+    isReactionUpdate
+      ? messageId === null || actorUserId === null || readSequence !== null
+        || deliverySequence !== null
+      : isReadReceipt
       ? messageId !== null || actorUserId === null || readSequence === null
         || deliverySequence !== null
       : isDeliveryReceipt

@@ -16,6 +16,7 @@ import {
   parseConversation,
   parseMessageHistoryPage,
   parseOpaqueMessage,
+  parseMessageReactions,
   parseSyncPage,
 } from '../app/infrastructure/http/messaging-parsers'
 import { parseConversationReadStates } from '../app/infrastructure/http/conversation-read-state-parsers'
@@ -256,6 +257,26 @@ describe('messaging boundaries', () => {
       conversation_id: 'conversation-1',
       user_id: 'bob-id',
       delivered_sequence: 0,
+    }])).toThrow(ApplicationError)
+  })
+
+  it('parses bounded reaction aggregates', () => {
+    expect(parseMessageReactions([{
+      message_id: 'message-1',
+      reaction: '👍',
+      count: 2,
+      reacted_by_actor: true,
+    }])).toEqual([{
+      messageId: 'message-1',
+      reaction: '👍',
+      count: 2,
+      reactedByActor: true,
+    }])
+    expect(() => parseMessageReactions([{
+      message_id: 'message-1',
+      reaction: '👍',
+      count: 0,
+      reacted_by_actor: false,
     }])).toThrow(ApplicationError)
   })
 })

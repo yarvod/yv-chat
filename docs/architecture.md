@@ -1139,7 +1139,7 @@ revocation.
 Committed group media наследует server-side `Message.expires_at` (default 30 days),
 uncommitted upload живёт не больше 24 часов. Bounded cleanup блокирует expiry batch
 через persistence adapter, терпит already-missing blob и удаляет metadata. Default
-limits: 12 MiB image, 100 MiB video, 25 MiB generic file, 150 MiB active media per
+limits: 12 MiB image, 100 MiB video, 25 MiB generic file, 5 GiB active media per
 uploader и 10 attachment IDs на message; UI отправляет ordered batch до 10 элементов
 одним сообщением и повторяет partial failure с теми же client attachment IDs.
 

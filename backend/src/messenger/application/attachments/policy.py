@@ -19,7 +19,7 @@ class AttachmentPolicy:
     image_max_bytes: int = 12 * 1024 * 1024
     video_max_bytes: int = 100 * 1024 * 1024
     file_max_bytes: int = 25 * 1024 * 1024
-    user_quota_bytes: int = 150 * 1024 * 1024
+    user_quota_bytes: int = 5 * 1024 * 1024 * 1024
     pending_retention: timedelta = timedelta(hours=24)
     cleanup_batch_size: int = 100
     max_attachments_per_message: int = 10

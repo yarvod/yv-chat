@@ -7,6 +7,7 @@ import type {
   DeleteMessageResult,
   DirectoryUser,
   MessageHistoryPage,
+  MessageReactionSummary,
   OpaqueMessage,
   SendMessageReceipt,
   MessageDeletionReason,
@@ -180,12 +181,33 @@ export function parseMessageHistoryPage(value: unknown): MessageHistoryPage {
   }
 }
 
+export function parseMessageReactions(value: unknown): MessageReactionSummary[] {
+  if (!Array.isArray(value)) {
+    throw new ApplicationError(200, 'invalid-response', 'invalid message reactions')
+  }
+  return value.map(raw => {
+    const item = record(raw)
+    const count = integerField(item, 'count')
+    const reaction = stringField(item, 'reaction')
+    if (count <= 0 || reaction.length === 0 || reaction.length > 8) {
+      throw new ApplicationError(200, 'invalid-response', 'invalid message reaction')
+    }
+    return {
+      messageId: stringField(item, 'message_id'),
+      reaction,
+      count,
+      reactedByActor: booleanField(item, 'reacted_by_actor'),
+    }
+  })
+}
+
 function parseSyncEvent(value: unknown): SyncEvent {
   const item = record(value)
   const eventType = enumField<SyncEventType>(item, 'event_type', [
     'conversation_updated',
     'message_created',
     'message_deleted',
+    'message_reaction_updated',
     'read_receipt',
     'delivery_receipt',
   ])
@@ -197,7 +219,10 @@ function parseSyncEvent(value: unknown): SyncEvent {
     : integerField(item, 'delivery_sequence')
   const valid = eventType === 'conversation_updated'
     ? messageId === null && actorUserId === null && readSequence === null && deliverySequence === null
-    : eventType === 'read_receipt'
+      : eventType === 'message_reaction_updated'
+        ? messageId !== null && actorUserId !== null && readSequence === null
+          && deliverySequence === null
+      : eventType === 'read_receipt'
       ? messageId === null && actorUserId !== null && readSequence !== null
         && readSequence > 0 && deliverySequence === null
       : eventType === 'delivery_receipt'

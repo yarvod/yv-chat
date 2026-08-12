@@ -70,7 +70,11 @@ class AppSettings(BaseSettings):
     media_image_max_bytes: int = Field(default=12 * 1024 * 1024, gt=0, le=209_715_200)
     media_video_max_bytes: int = Field(default=100 * 1024 * 1024, gt=0, le=209_715_200)
     media_file_max_bytes: int = Field(default=25 * 1024 * 1024, gt=0, le=209_715_200)
-    media_user_quota_bytes: int = Field(default=150 * 1024 * 1024, gt=0, le=10_737_418_240)
+    media_user_quota_bytes: int = Field(
+        default=5 * 1024 * 1024 * 1024,
+        gt=0,
+        le=10_737_418_240,
+    )
     media_pending_retention_seconds: int = Field(default=86_400, ge=600, le=604_800)
     media_cleanup_batch_size: int = Field(default=100, ge=1, le=1_000)
     realtime_queue_size: int = Field(default=64, ge=1, le=1_024)

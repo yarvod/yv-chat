@@ -8,6 +8,8 @@ const HISTORY_PAGE_SIZE = 100
 const MAX_TIMELINE_MESSAGES = 300
 const ANCHOR_BEFORE_LIMIT = 50
 const ANCHOR_AFTER_LIMIT = 50
+const MAX_SEARCH_MESSAGES = 2_000
+const MAX_SEARCH_RESULTS = 100
 
 export interface ConversationHistoryWindow {
   messages: TimelineMessage[]
@@ -254,6 +256,31 @@ export class ConversationHistory {
     const tombstone = await this.gateway.getMessage(conversationId, messageId)
     await this.persist(conversationId, [tombstone])
     return prepareTimelineMessage(tombstone, this.protection)
+  }
+
+  async search(conversationId: string, query: string): Promise<TimelineMessage[]> {
+    const normalized = query.trim().toLocaleLowerCase('ru-RU')
+    if (!normalized || normalized.length > 100) return []
+    const opaque = new Map<string, OpaqueMessage>()
+    let beforeSequence: number | undefined
+    for (let pageNumber = 0; pageNumber < MAX_SEARCH_MESSAGES / HISTORY_PAGE_SIZE; pageNumber += 1) {
+      const page = await this.gateway.listMessageHistory(
+        conversationId,
+        beforeSequence,
+        HISTORY_PAGE_SIZE,
+      )
+      for (const message of page.messages) opaque.set(message.messageId, message)
+      await this.persist(conversationId, page.messages)
+      if (!page.hasMore || page.oldestSequence === null) break
+      beforeSequence = page.oldestSequence
+    }
+    const prepared = await this.prepare(
+      [...opaque.values()].sort((left, right) => left.sequence - right.sequence),
+    )
+    return prepared.filter(message => (
+      message.contentState === 'available'
+      && message.displayBody?.toLocaleLowerCase('ru-RU').includes(normalized)
+    )).slice(-MAX_SEARCH_RESULTS)
   }
 
   async acceptAuthoritativeOutgoing(

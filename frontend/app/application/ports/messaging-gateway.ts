@@ -3,6 +3,7 @@ import type {
   DeleteMessageResult,
   DirectoryUser,
   MessageHistoryPage,
+  MessageReactionSummary,
   OpaqueMessage,
   SendMessageReceipt,
   SyncPage,
@@ -34,5 +35,15 @@ export interface MessagingGateway {
     attachmentIds?: readonly string[],
   ): Promise<SendMessageReceipt>
   deleteMessage(conversationId: string, messageId: string): Promise<DeleteMessageResult>
+  listMessageReactions?(
+    conversationId: string,
+    messageIds: readonly string[],
+  ): Promise<MessageReactionSummary[]>
+  setMessageReaction?(
+    conversationId: string,
+    messageId: string,
+    reaction: string,
+    active: boolean,
+  ): Promise<MessageReactionSummary[]>
   listSync(after: number): Promise<SyncPage>
 }

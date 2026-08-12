@@ -10,6 +10,7 @@ class SyncEventType(StrEnum):
     CONVERSATION_UPDATED = "conversation_updated"
     MESSAGE_CREATED = "message_created"
     MESSAGE_DELETED = "message_deleted"
+    MESSAGE_REACTION_UPDATED = "message_reaction_updated"
     READ_RECEIPT = "read_receipt"
     DELIVERY_RECEIPT = "delivery_receipt"
 
@@ -32,6 +33,13 @@ def _validate_shape(
         valid = (
             message_id is not None
             and actor_user_id is None
+            and read_sequence is None
+            and delivery_sequence is None
+        )
+    elif event_type is SyncEventType.MESSAGE_REACTION_UPDATED:
+        valid = (
+            message_id is not None
+            and actor_user_id is not None
             and read_sequence is None
             and delivery_sequence is None
         )

@@ -233,4 +233,10 @@ async def test_cleanup_expires_ciphertext_purges_old_tombstone_and_preserves_seq
     assert summary.latest_sequence == 3
     assert summary.unread_count == 1
     async with FakeMessagingUnitOfWork(state) as unit_of_work:
-        assert await unit_of_work.messages.next_sequence(conversation.id) == 4
+        assert (
+            await unit_of_work.messages.next_sequence(
+                conversation.id,
+                activity_at=NOW,
+            )
+            == 4
+        )

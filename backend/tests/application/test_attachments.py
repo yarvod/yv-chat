@@ -46,6 +46,10 @@ from tests.application.fakes import (
 NOW = datetime(2026, 8, 12, 12, 0, tzinfo=UTC)
 
 
+def test_default_user_media_quota_is_five_gibibytes() -> None:
+    assert AttachmentPolicy().user_quota_bytes == 5 * 1024 * 1024 * 1024
+
+
 async def chunks(body: bytes) -> AsyncIterator[bytes]:
     midpoint = max(1, len(body) // 2)
     yield body[:midpoint]

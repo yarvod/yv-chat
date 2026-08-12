@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import type { TimelineMessage } from '../../application/messaging/timeline-message'
+import type { MessageInteractionContext } from '../../application/messaging/text-message-content'
 import type { GroupAttachmentSource } from '../../application/messaging/upload-group-attachment'
 import {
   attachmentKindFor,
@@ -14,6 +15,7 @@ import type { ConversationViewportAnchor } from '../../application/ports/messeng
 import type {
   Conversation,
   MessageAttachment,
+  MessageReactionSummary,
   ParticipantDeliveryState,
 } from '../../domain/messaging/models'
 import { buildTimelineLayout } from '../../presentation/chat/timeline-layout'
@@ -37,7 +39,13 @@ const props = withDefaults(defineProps<{
   attachmentUploadBytesTotal?: number
   protectionSecure: boolean
   protectionLabel: string
-  sendMessage: (plaintext: string, attachments?: readonly GroupAttachmentSource[]) => Promise<boolean>
+  sendMessage: (
+    plaintext: string,
+    attachments?: readonly GroupAttachmentSource[],
+    interaction?: MessageInteractionContext,
+  ) => Promise<boolean>
+  searchMessages?: (query: string) => Promise<readonly TimelineMessage[]>
+  openMessage?: (messageId: string) => Promise<void>
   loadAttachment?: (conversationId: string, attachment: MessageAttachment) => Promise<Blob>
   retryOutgoing?: (clientMessageId: string) => Promise<boolean>
   loadOlder?: () => Promise<void>
@@ -47,6 +55,8 @@ const props = withDefaults(defineProps<{
   typingActorIds: readonly string[]
   onlineActorIds: readonly string[]
   deliveryStates: readonly ParticipantDeliveryState[]
+  reactionSummaries?: readonly MessageReactionSummary[]
+  toggleReaction?: (messageId: string, reaction: string, active: boolean) => Promise<boolean>
   connectionState: RealtimeConnectionState
   setTyping: (conversationId: string, active: boolean) => void
   viewportAnchor?: ConversationViewportAnchor | null
@@ -67,6 +77,10 @@ const props = withDefaults(defineProps<{
   loadOlder: async () => undefined,
   returnToLatest: async () => undefined,
   loadAttachment: async () => { throw new TypeError('attachment download unavailable') },
+  searchMessages: async () => [],
+  openMessage: async () => undefined,
+  reactionSummaries: () => [],
+  toggleReaction: async () => false,
   viewportAnchor: null,
   targetMessageId: null,
   saveViewport: async () => undefined,
@@ -74,7 +88,14 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{ back: []; groupDetails: [] }>()
 
 const draft = ref('')
+const replyingTo = ref<TimelineMessage | null>(null)
+const searchOpen = ref(false)
+const searchQuery = ref('')
+const searchResults = ref<readonly TimelineMessage[]>([])
+const searchResultIndex = ref(0)
+const searching = ref(false)
 const deleteCandidateId = ref<string | null>(null)
+const reactionPickerMessageId = ref<string | null>(null)
 const timeline = ref<HTMLElement | null>(null)
 const composerInput = ref<HTMLTextAreaElement | null>(null)
 const mediaInput = ref<HTMLInputElement | null>(null)
@@ -101,6 +122,23 @@ let followComposerResize = false
 let layoutAnchor: { messageId: string, offset: number } | null = null
 let layoutAnchorExpiresAt = 0
 let attachmentDragDepth = 0
+const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '👎', '🔥', '🎉'] as const
+
+const mentionMatch = computed(() => draft.value.match(/(?:^|\s)@([\p{L}\p{N}_.-]*)$/u))
+const mentionSuggestions = computed(() => {
+  const conversation = props.conversation
+  const match = mentionMatch.value
+  if (!conversation || !match) return []
+  const query = (match[1] ?? '').toLocaleLowerCase('ru-RU')
+  return conversation.members.filter(member => (
+    member.leftAt === null
+    && member.userId !== props.actorUserId
+    && (
+      member.username.toLocaleLowerCase('ru-RU').startsWith(query)
+      || member.displayName.toLocaleLowerCase('ru-RU').startsWith(query)
+    )
+  )).slice(0, 8)
+})
 
 function boundedPercent(completed: number, total: number): number {
   if (total <= 0) return 0
@@ -185,6 +223,88 @@ function senderName(message: TimelineMessage): string {
     ?? 'Участник'
 }
 
+function replyPreview(message: TimelineMessage | null): string {
+  if (!message) return 'Сообщение'
+  if (message.contentState === 'deleted') return 'Удалённое сообщение'
+  return message.displayBody?.trim().slice(0, 120)
+    || message.displayAttachments?.[0]?.name
+    || `Сообщение #${message.sequence}`
+}
+
+function repliedMessage(message: TimelineMessage): TimelineMessage | null {
+  if (!message.replyToMessageId) return null
+  return props.messages.find(item => item.messageId === message.replyToMessageId) ?? null
+}
+
+function mentionedUserIds(): string[] {
+  const text = draft.value.toLocaleLowerCase('ru-RU')
+  return props.conversation?.members.filter(member => (
+    member.leftAt === null
+    && text.includes(`@${member.username.toLocaleLowerCase('ru-RU')}`)
+  )).map(member => member.userId) ?? []
+}
+
+function messageSegments(message: TimelineMessage): Array<{ text: string, mention: boolean, own: boolean }> {
+  const body = message.displayBody ?? ''
+  const intended = new Set(message.mentionedUserIds ?? [])
+  if (intended.size === 0) return [{ text: body, mention: false, own: false }]
+  const members = new Map(
+    (props.conversation?.members ?? []).map(member => [member.username.toLocaleLowerCase('ru-RU'), member]),
+  )
+  const segments: Array<{ text: string, mention: boolean, own: boolean }> = []
+  let cursor = 0
+  for (const match of body.matchAll(/@[\p{L}\p{N}_.-]+/gu)) {
+    const index = match.index ?? 0
+    if (index > cursor) segments.push({ text: body.slice(cursor, index), mention: false, own: false })
+    const member = members.get(match[0].slice(1).toLocaleLowerCase('ru-RU'))
+    const mention = member !== undefined && intended.has(member.userId)
+    segments.push({ text: match[0], mention, own: mention && member.userId === props.actorUserId })
+    cursor = index + match[0].length
+  }
+  if (cursor < body.length) segments.push({ text: body.slice(cursor), mention: false, own: false })
+  return segments
+}
+
+async function chooseMention(username: string): Promise<void> {
+  const match = mentionMatch.value
+  if (!match || match.index === undefined) return
+  const atIndex = match.index + match[0].lastIndexOf('@')
+  draft.value = `${draft.value.slice(0, atIndex)}@${username} ${draft.value.slice(atIndex + match[0].slice(match[0].lastIndexOf('@')).length)}`
+  await nextTick()
+  composerInput.value?.focus()
+  resizeComposer()
+}
+
+async function runSearch(): Promise<void> {
+  const query = searchQuery.value.trim()
+  if (!query || searching.value) return
+  searching.value = true
+  try {
+    searchResults.value = await props.searchMessages(query)
+    searchResultIndex.value = Math.max(0, searchResults.value.length - 1)
+    const result = searchResults.value[searchResultIndex.value]
+    if (result) await props.openMessage(result.messageId)
+  } finally {
+    searching.value = false
+  }
+}
+
+async function moveSearch(direction: -1 | 1): Promise<void> {
+  if (searchResults.value.length === 0) return
+  searchResultIndex.value = (
+    searchResultIndex.value + direction + searchResults.value.length
+  ) % searchResults.value.length
+  const result = searchResults.value[searchResultIndex.value]
+  if (result) await props.openMessage(result.messageId)
+}
+
+function closeSearch(): void {
+  searchOpen.value = false
+  searchQuery.value = ''
+  searchResults.value = []
+  searchResultIndex.value = 0
+}
+
 function deliveryLabel(message: TimelineMessage): string | null {
   if (
     message.senderUserId !== props.actorUserId
@@ -205,6 +325,20 @@ function deliveryLabel(message: TimelineMessage): string | null {
     return delivered > 0 ? 'Доставлено' : 'Отправлено'
   }
   return delivered > 0 ? `Доставлено: ${delivered}/${recipients.length}` : 'Отправлено'
+}
+
+function reactionsFor(messageId: string): readonly MessageReactionSummary[] {
+  return props.reactionSummaries.filter(item => item.messageId === messageId)
+}
+
+async function changeReaction(
+  messageId: string,
+  reaction: string,
+  active: boolean,
+): Promise<void> {
+  if (await props.toggleReaction(messageId, reaction, active)) {
+    reactionPickerMessageId.value = null
+  }
 }
 
 function canDelete(message: TimelineMessage): boolean {
@@ -230,11 +364,21 @@ async function submit(): Promise<void> {
     size: file.size,
     body: file,
   }))
+  const interaction = {
+    ...(replyingTo.value ? { replyToMessageId: replyingTo.value.messageId } : {}),
+    ...(mentionedUserIds().length > 0 ? { mentionedUserIds: mentionedUserIds() } : {}),
+  }
+  const hasInteraction = Object.keys(interaction).length > 0
   const sent = attachments.length === 0
-    ? await props.sendMessage(value)
-    : await props.sendMessage(value, attachments)
+    ? hasInteraction
+      ? await props.sendMessage(value, undefined, interaction)
+      : await props.sendMessage(value)
+    : hasInteraction
+      ? await props.sendMessage(value, attachments, interaction)
+      : await props.sendMessage(value, attachments)
   if (sent) {
     draft.value = ''
+    replyingTo.value = null
     clearAttachments()
     await nextTick()
     resizeComposer()
@@ -607,8 +751,11 @@ watch(
     if (previousConversationId) props.setTyping(previousConversationId, false)
     if (conversationId !== previousConversationId) {
       draft.value = ''
+      replyingTo.value = null
+      closeSearch()
       clearAttachments()
       deleteCandidateId.value = null
+      reactionPickerMessageId.value = null
       showScrollToLatest.value = false
       restorationPending.value = true
       await nextTick()
@@ -694,6 +841,15 @@ onBeforeUnmount(() => {
         :aria-label="connectionLabel"
       />
       <button
+        class="chat-search-button"
+        type="button"
+        aria-label="Поиск по чату"
+        :aria-expanded="searchOpen"
+        @click="searchOpen ? closeSearch() : searchOpen = true"
+      >
+        <AppIcon name="search" />
+      </button>
+      <button
         v-if="conversation.conversationType === 'group'"
         class="group-info-button"
         type="button"
@@ -703,6 +859,29 @@ onBeforeUnmount(() => {
         <AppIcon name="users" />
       </button>
     </header>
+
+    <form v-if="searchOpen" class="chat-search" role="search" @submit.prevent="runSearch">
+      <AppIcon name="search" />
+      <label class="sr-only" for="chat-search-input">Поиск по сообщениям</label>
+      <input
+        id="chat-search-input"
+        v-model="searchQuery"
+        type="search"
+        maxlength="100"
+        autocomplete="off"
+        placeholder="Поиск по этому чату"
+      >
+      <span v-if="searchResults.length > 0">
+        {{ searchResultIndex + 1 }} / {{ searchResults.length }}
+      </span>
+      <span v-else-if="searchQuery && !searching">Нет результатов</span>
+      <button type="submit" :disabled="searching || !searchQuery.trim()">
+        {{ searching ? 'Ищем…' : 'Найти' }}
+      </button>
+      <button type="button" :disabled="searchResults.length < 2" aria-label="Предыдущий результат" @click="moveSearch(-1)">↑</button>
+      <button type="button" :disabled="searchResults.length < 2" aria-label="Следующий результат" @click="moveSearch(1)">↓</button>
+      <button type="button" aria-label="Закрыть поиск" @click="closeSearch"><AppIcon name="close" /></button>
+    </form>
 
     <div v-if="!protectionSecure || archiveStatus === 'unavailable' || outboxStatus === 'unavailable'" class="timeline-notices">
       <p v-if="!protectionSecure" class="security-warning" role="status">
@@ -763,8 +942,21 @@ onBeforeUnmount(() => {
             :attachments="item.message.displayAttachments ?? []"
             :load-attachment="loadAttachment"
           />
+          <button
+            v-if="item.message.replyToMessageId"
+            class="message-reply-preview"
+            type="button"
+            @click="openMessage(item.message.replyToMessageId)"
+          >
+            <strong>{{ repliedMessage(item.message) ? senderName(repliedMessage(item.message)!) : 'Ответ' }}</strong>
+            <span>{{ replyPreview(repliedMessage(item.message)) }}</span>
+          </button>
           <p v-if="item.message.contentState === 'available' && item.message.displayBody">
-            {{ item.message.displayBody }}
+            <span
+              v-for="(segment, segmentIndex) in messageSegments(item.message)"
+              :key="segmentIndex"
+              :class="{ mention: segment.mention, 'mention--own': segment.own }"
+            >{{ segment.text }}</span>
           </p>
           <p v-else-if="item.message.contentState === 'deleted'" class="message-tombstone">
             {{ item.message.deletionReason === 'expired' ? 'Срок хранения сообщения истёк' : 'Сообщение удалено для всех' }}
@@ -772,7 +964,19 @@ onBeforeUnmount(() => {
           <p v-else class="message-unavailable" role="status">
             {{ item.message.displayBody }}
           </p>
-          <div v-if="canDelete(item.message)" class="message-actions">
+          <div v-if="reactionsFor(item.message.messageId).length > 0" class="message-reactions">
+            <button
+              v-for="summary in reactionsFor(item.message.messageId)"
+              :key="summary.reaction"
+              type="button"
+              :class="{ active: summary.reactedByActor }"
+              :aria-label="`${summary.reaction}: ${summary.count}`"
+              @click="changeReaction(item.message.messageId, summary.reaction, !summary.reactedByActor)"
+            >
+              <span>{{ summary.reaction }}</span><small>{{ summary.count }}</small>
+            </button>
+          </div>
+          <div v-if="item.message.contentState === 'available'" class="message-actions">
             <template v-if="deleteCandidateId === item.message.messageId">
               <span>Удалить без возможности восстановления?</span>
               <button
@@ -785,13 +989,40 @@ onBeforeUnmount(() => {
               <button type="button" @click="deleteCandidateId = null">Отмена</button>
             </template>
             <button
-              v-else
+              v-else-if="canDelete(item.message)"
               type="button"
               :aria-label="`Удалить сообщение #${item.message.sequence} у всех`"
               @click="deleteCandidateId = item.message.messageId"
             >
               Удалить у всех
             </button>
+            <button
+              type="button"
+              :aria-label="`Ответить на сообщение #${item.message.sequence}`"
+              @click="replyingTo = item.message"
+            >
+              Ответить
+            </button>
+            <button
+              type="button"
+              :aria-expanded="reactionPickerMessageId === item.message.messageId"
+              :aria-label="`Добавить реакцию к сообщению #${item.message.sequence}`"
+              @click="reactionPickerMessageId = reactionPickerMessageId === item.message.messageId ? null : item.message.messageId"
+            >
+              Реакция
+            </button>
+            <div
+              v-if="reactionPickerMessageId === item.message.messageId"
+              class="reaction-picker"
+              aria-label="Выберите реакцию"
+            >
+              <button
+                v-for="reaction in QUICK_REACTIONS"
+                :key="reaction"
+                type="button"
+                @click="changeReaction(item.message.messageId, reaction, true)"
+              >{{ reaction }}</button>
+            </div>
           </div>
           <small class="message-meta">
             <time :datetime="item.message.createdAt">
@@ -849,6 +1080,13 @@ onBeforeUnmount(() => {
     </button>
 
     <form class="composer" @submit.prevent="submit">
+      <div v-if="replyingTo" class="composer-reply">
+        <span>
+          <strong>Ответ {{ senderName(replyingTo) }}</strong>
+          <small>{{ replyPreview(replyingTo) }}</small>
+        </span>
+        <button type="button" aria-label="Отменить ответ" @click="replyingTo = null"><AppIcon name="close" /></button>
+      </div>
       <div v-if="selectedAttachments.length > 0" class="composer-attachments">
         <div class="composer-attachments__heading">
           <span v-if="sending && attachmentUploadBytesTotal > 0" aria-live="polite">
@@ -960,6 +1198,18 @@ onBeforeUnmount(() => {
         </Transition>
       </div>
       <label class="sr-only" for="message-draft">Сообщение</label>
+      <div v-if="mentionSuggestions.length > 0" class="mention-suggestions" role="listbox" aria-label="Участники для упоминания">
+        <button
+          v-for="member in mentionSuggestions"
+          :key="member.userId"
+          type="button"
+          role="option"
+          @click="chooseMention(member.username)"
+        >
+          <strong>{{ member.displayName }}</strong>
+          <small>@{{ member.username }}</small>
+        </button>
+      </div>
       <textarea
         id="message-draft"
         ref="composerInput"

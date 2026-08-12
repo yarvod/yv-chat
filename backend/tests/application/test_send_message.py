@@ -7,6 +7,10 @@ from uuid import uuid4
 import pytest
 
 from messenger.application.attachments.policy import AttachmentPolicy
+from messenger.application.conversations.list_conversations import (
+    ListConversations,
+    ListConversationsQuery,
+)
 from messenger.application.errors import (
     AuthorizationDeniedError,
     ConversationCryptoNotReadyError,
@@ -81,6 +85,12 @@ def messaging_state() -> tuple[IdentityState, User, User, User, Device, Conversa
 
 async def test_send_persists_only_opaque_envelope_metadata() -> None:
     state, alice, _, charlie, device, conversation = messaging_state()
+    newer_empty_conversation = Conversation.create_direct(
+        created_by=alice.id,
+        other_user_id=charlie.id,
+        now=NOW + timedelta(milliseconds=500),
+    )
+    state.conversations[newer_empty_conversation.id] = newer_empty_conversation
     use_case = SendOpaqueMessage(
         unit_of_work=FakeMessagingUnitOfWorkFactory(state),
         clock=FixedClock(NOW + timedelta(seconds=1)),
@@ -133,6 +143,14 @@ async def test_send_persists_only_opaque_envelope_metadata() -> None:
     assert stored.created_at == NOW + timedelta(seconds=1)
     assert "ciphertext" not in result.__dataclass_fields__
     assert second.sequence == 2
+    assert state.conversations[conversation.id].updated_at == NOW + timedelta(seconds=1)
+    listed = await ListConversations(unit_of_work=FakeMessagingUnitOfWorkFactory(state)).execute(
+        ListConversationsQuery(alice.id)
+    )
+    assert [item.conversation_id for item in listed[:2]] == [
+        conversation.id,
+        newer_empty_conversation.id,
+    ]
     assert state.read_states[(alice.id, conversation.id)].last_read_sequence == 2
     assert state.delivery_states[(device.id, conversation.id)].last_delivered_sequence == 2
     assert [event.event_type for event in state.sync_events] == [

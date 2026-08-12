@@ -4,69 +4,58 @@
 завершённая работа фиксируется отдельным коммитом, а новый пункт переносится
 сюда из `backlog.md`.
 
-## WP-069 — Automatic MLS roster reconciliation
+## WP-070 — Telegram-like chat interactions
 
-Статус: **implemented and full-CI verified locally**
+Статус: **implemented and locally verified**
 
-Цель: уже подключённый MLS device автоматически подтверждает добавление нового
-device во всех затронутых личных чатах, даже если эти чаты не открыты и собеседники
-offline.
-
-### Production reproduction
-
-- новый Mac PWA публикует identity/KeyPackages и открывает существующий direct chat;
-- backend корректно создаёт `blocked/device_roster_changed` и durable
-  `conversation_updated` для всех участников;
-- старый leaf остаётся online, но frontend запускает reconciliation только для
-  активного conversation;
-- новый PWA не получает Commit/Welcome, пока кто-либо со старым leaf — часто сам
-  собеседник — вручную не откроет тот же чат;
-- history decrypt дополнительно вызывает `/crypto/bootstrap` для каждого envelope,
-  создавая десятки повторных HTTP/KeyPackage checks на одной READY generation.
+Цель: сделать повседневную работу с перепиской привычной: свежие диалоги всегда
+сверху, внутри чата доступны локальный поиск, reply, mentions и reactions, а фото
+и видео удобно смотреть inline и в полноэкранном viewer.
 
 ### Scope
 
-- [x] cold startup последовательно reconciles все direct conversations;
-- [x] durable `conversation_updated` reconciles именно изменившийся direct, даже если
-  он неактивен;
-- [x] sync reset reconciles authoritative direct roster после reload;
-- [x] ошибка неактивного direct остаётся fail-closed локально и не ломает активный чат;
-- [x] stable READY generation кэшируется до явного sync invalidation, а не сбрасывается
-  перед каждым message protect/unprotect;
-- [x] тест воспроизводит inactive direct + roster-change event и доказывает background
-  reconciliation без выбора этого чата.
+- [x] атомарно обновлять activity time при создании сообщения и сортировать список
+  по последней message activity;
+- [x] выполнять bounded поиск по расшифрованной client-side истории без server
+  plaintext index;
+- [x] хранить reply target и intended mention IDs внутри versioned protected content;
+- [x] добавить mention autocomplete/highlight и reply composer/jump UX;
+- [x] добавить авторизованные idempotent reactions, агрегаты и durable sync event;
+- [x] добавить pinch/double-click zoom, bounded pan/reset и swipe navigation фото;
+- [x] сохранить inline/fullscreen playback поддерживаемого browser video и честный
+  download fallback для неподдерживаемого codec;
+- [x] документировать действующие per-item limits и per-user active-media quota.
 
 ### Security invariants
 
-- новый device не назначает себя coordinator старой READY group;
-- Commit всё ещё создаёт только сохранившийся previous leaf;
-- server остаётся authoritative: message POST принимает только exact current READY
-  generation/epoch и active required-device roster;
-- потерянное local MLS state, отсутствие всех previous leaves и v1 fallback не
-  маскируются автоматическим downgrade;
-- никакие message payload, private keys или Welcome bytes не логируются.
+- server не получает plaintext direct message, search query, reply preview или
+  intended mentions;
+- search работает только с доступным этому device decrypted content;
+- reaction API проверяет active conversation membership и не принимает client user ID;
+- media остаётся streamed и bounded; user-provided filename не становится storage path;
+- group v1 media по-прежнему явно не называется E2EE.
 
 ### Exclusions
 
-- recovery, если offline или потеряны все прежние leaves — `BL-064`/`BL-015`;
-- перенос pre-enrollment history на новый device;
-- изменение MLS framing, server schema или cryptographic primitives.
+- direct encrypted attachment flow (`BL-017`);
+- server-side plaintext full-text index или server-generated thumbnails/transcoding;
+- unlimited uploads/quota и remote guarantee для expired media;
+- edit/forward/pin сообщений.
 
 ### Definition of Done
 
-- inactive direct reconciles после durable roster event;
-- startup reconciles все direct chats bounded sequentially;
-- два protect/unprotect на stable generation не инвалидируют её дважды и не создают
-  повторный bootstrap storm;
-- frontend lint/typecheck/tests/build, Rust/OpenMLS regression и полный `make ci`
-  проходят;
-- production metadata подтверждает READY generation и offline send без входа peer.
+- два чата меняют порядок после сообщения без ручного membership update;
+- поиск находит доступные historical messages и открывает найденное сообщение;
+- reply/mention round-trip совместим с legacy raw text и group attachment envelopes;
+- reactions idempotent, агрегируются, синхронизируются и закрыты negative auth tests;
+- mouse/touch/keyboard media interaction и inline video покрыты frontend tests;
+- backend lint/type/tests, frontend lint/typecheck/tests/build и migration upgrade
+  проходят.
 
 ### Verification evidence
 
-- production цепочка `Julproh`: новый Mac announcement → Android previous leaf Commit
-  → READY Welcome/ack → Mac v2 send, пока peer не участвовал в coordination;
-- regression: active direct A + inactive direct B + durable roster event B вызывает
-  reconcile B без reconcile A;
-- frontend `42 files / 232 tests`, backend `238 passed, 9 skipped`, OpenMLS `21 tests`;
-- полный `make ci`: green.
+- backend: Ruff check/format, mypy, `240 passed, 9 skipped`;
+- frontend: ESLint, Nuxt typecheck, `43 files / 237 tests`, production build;
+- fresh PostgreSQL: Alembic `base -> 0022_message_reactions` прошёл в отдельной
+  временной БД, после проверки БД удалена;
+- Compose development config валиден; `git diff --check` проходит.

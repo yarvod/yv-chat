@@ -2,7 +2,7 @@
 
 import hashlib
 from collections.abc import AsyncIterable, AsyncIterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from types import TracebackType
 from typing import Self
@@ -52,6 +52,7 @@ from messenger.application.ports.messages import (
     ConversationDeliveryStateRepository,
     ConversationReadStateRepository,
     ConversationReadSummary,
+    MessageReactionRepository,
     MessageRepository,
     MessagingUnitOfWork,
     ParticipantDeliverySummary,
@@ -77,6 +78,7 @@ from messenger.domain.entities import (
     DeviceCryptoIdentity,
     DeviceKeyPackage,
     Message,
+    MessageReaction,
     PasswordResetToken,
     SecurityEvent,
     Session,
@@ -108,6 +110,7 @@ class IdentityState:
     security_events: dict[UUID, SecurityEvent] = field(default_factory=dict)
     conversations: dict[UUID, Conversation] = field(default_factory=dict)
     messages: dict[UUID, Message] = field(default_factory=dict)
+    message_reactions: dict[tuple[UUID, UUID, str], MessageReaction] = field(default_factory=dict)
     attachments: dict[UUID, Attachment] = field(default_factory=dict)
     message_sequences: dict[UUID, int] = field(default_factory=dict)
     delivery_states: dict[tuple[UUID, UUID], ConversationDeliveryState] = field(
@@ -1024,7 +1027,7 @@ class FakeMessageRepository:
         del for_update
         return self._state.messages.get(message_id)
 
-    async def next_sequence(self, conversation_id: UUID) -> int:
+    async def next_sequence(self, conversation_id: UUID, *, activity_at: datetime) -> int:
         current = self._state.message_sequences.get(
             conversation_id,
             max(
@@ -1038,6 +1041,12 @@ class FakeMessageRepository:
         )
         sequence = current + 1
         self._state.message_sequences[conversation_id] = sequence
+        conversation = self._state.conversations.get(conversation_id)
+        if conversation is not None:
+            self._state.conversations[conversation_id] = replace(
+                conversation,
+                updated_at=activity_at,
+            )
         return sequence
 
     async def exists_at_sequence(
@@ -1292,6 +1301,50 @@ class FakeConversationDeliveryStateRepository:
         ]
 
 
+class FakeMessageReactionRepository:
+    def __init__(self, state: IdentityState) -> None:
+        self._state = state
+
+    async def list_for_messages(
+        self,
+        *,
+        conversation_id: UUID,
+        message_ids: set[UUID],
+    ) -> list[MessageReaction]:
+        return sorted(
+            (
+                item
+                for item in self._state.message_reactions.values()
+                if item.message_id in message_ids
+                and self._state.messages.get(item.message_id) is not None
+                and self._state.messages[item.message_id].conversation_id == conversation_id
+            ),
+            key=lambda item: (item.message_id.int, item.created_at, item.user_id.int),
+        )
+
+    async def add(
+        self,
+        *,
+        message_id: UUID,
+        user_id: UUID,
+        reaction: str,
+        created_at: datetime,
+    ) -> bool:
+        key = (message_id, user_id, reaction)
+        if key in self._state.message_reactions:
+            return False
+        self._state.message_reactions[key] = MessageReaction(
+            message_id,
+            user_id,
+            reaction,
+            created_at,
+        )
+        return True
+
+    async def remove(self, *, message_id: UUID, user_id: UUID, reaction: str) -> bool:
+        return self._state.message_reactions.pop((message_id, user_id, reaction), None) is not None
+
+
 class FakeSyncRepository:
     def __init__(self, state: IdentityState) -> None:
         self._state = state
@@ -1354,6 +1407,7 @@ class FakeMessagingUnitOfWork:
     def __init__(self, state: IdentityState) -> None:
         self._state = state
         self.messages: MessageRepository = FakeMessageRepository(state)
+        self.reactions: MessageReactionRepository = FakeMessageReactionRepository(state)
         self.attachments: AttachmentRepository = FakeAttachmentRepository(state)
         self.delivery_states: ConversationDeliveryStateRepository = (
             FakeConversationDeliveryStateRepository(state)

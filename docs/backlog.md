@@ -549,6 +549,18 @@ generic background notification, focus/navigation и invalid-subscription cleanu
 
 ## Completed
 
+### BL-070 — Telegram-like chat interactions
+
+Статус: **implemented and locally verified** (`WP-070`).
+
+- message activity атомарно поднимает свежие диалоги вверх;
+- bounded client-side search не передаёт query/plaintext server-у;
+- reply target и mention IDs живут внутри protected versioned content;
+- reactions авторизованы, idempotent, агрегированы и синхронизируются durable event;
+- photo viewer поддерживает swipe/keyboard, pinch/double-click/wheel zoom и pan;
+- поддерживаемое video играет inline/fullscreen, codec failure остаётся download fallback;
+- лимиты media сохранены как конфигурируемая защита небольшого VPS.
+
 ### BL-069 — Automatic MLS roster reconciliation
 
 Статус: **implemented and full-CI verified locally** (`WP-069`).

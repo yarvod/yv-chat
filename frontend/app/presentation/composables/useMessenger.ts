@@ -26,6 +26,10 @@ import type { TimelineMessage } from '../../application/messaging/timeline-messa
 import {
   encodeGroupMessageContent,
 } from '../../application/messaging/group-message-content'
+import {
+  encodeTextMessageContent,
+  type MessageInteractionContext,
+} from '../../application/messaging/text-message-content'
 import type {
   GroupAttachmentSource,
   UploadGroupAttachment,
@@ -45,6 +49,7 @@ import type {
   ConversationReadState,
   DirectoryUser,
   MessageAttachment,
+  MessageReactionSummary,
   OpaqueMessage,
   ParticipantDeliveryState,
   SendMessageReceipt,
@@ -82,6 +87,7 @@ interface MessengerState {
   attachmentUploadTotal: number
   attachmentUploadBytesSent: number
   attachmentUploadBytesTotal: number
+  reactionSummaries: MessageReactionSummary[]
   conversationCryptoPhase: ConversationCryptoPhase
   conversationCryptoBlockReason: string | null
   message: string | null
@@ -197,6 +203,7 @@ export function useMessenger(
     attachmentUploadTotal: 0,
     attachmentUploadBytesSent: 0,
     attachmentUploadBytesTotal: 0,
+    reactionSummaries: [],
     conversationCryptoPhase: 'checking',
     conversationCryptoBlockReason: null,
     message: null,
@@ -456,6 +463,57 @@ export function useMessenger(
     state.messages = remembered.messages
     state.historyHasMore = remembered.hasMore
     state.historyHasNewer = remembered.hasNewer
+    void reloadActiveReactions()
+  }
+
+  async function reloadActiveReactions(): Promise<void> {
+    const conversationId = state.activeConversationId
+    const listReactions = gateway.listMessageReactions
+    if (!conversationId || !listReactions) {
+      state.reactionSummaries = []
+      return
+    }
+    const messageIds = state.messages
+      .filter(message => message.deletedAt === null)
+      .slice(-100)
+      .map(message => message.messageId)
+    if (messageIds.length === 0) {
+      state.reactionSummaries = []
+      return
+    }
+    try {
+      const summaries = await listReactions.call(gateway, conversationId, messageIds)
+      if (state.activeConversationId === conversationId) state.reactionSummaries = summaries
+    } catch (error) {
+      if (error instanceof ApplicationError && error.status === 401) onUnauthorized()
+    }
+  }
+
+  async function toggleReaction(
+    messageId: string,
+    reaction: string,
+    active: boolean,
+  ): Promise<boolean> {
+    const conversationId = state.activeConversationId
+    const setReaction = gateway.setMessageReaction
+    if (!conversationId || !setReaction) return false
+    try {
+      const updated = await setReaction.call(
+        gateway,
+        conversationId,
+        messageId,
+        reaction,
+        active,
+      )
+      state.reactionSummaries = [
+        ...state.reactionSummaries.filter(item => item.messageId !== messageId),
+        ...updated,
+      ]
+      return true
+    } catch (error) {
+      fail(error)
+      return false
+    }
   }
 
   function syncArchiveStatus(): void {
@@ -464,10 +522,25 @@ export function useMessenger(
       : 'unavailable'
   }
 
+  function bumpConversationActivity(conversationId: string, activityAt: string): void {
+    const activityTime = Date.parse(activityAt)
+    if (Number.isNaN(activityTime)) return
+    state.conversations = state.conversations.map(conversation => (
+      conversation.conversationId === conversationId
+      && activityTime > Date.parse(conversation.updatedAt)
+        ? { ...conversation, updatedAt: activityAt }
+        : conversation
+    )).sort((left, right) => (
+      Date.parse(right.updatedAt) - Date.parse(left.updatedAt)
+      || left.conversationId.localeCompare(right.conversationId)
+    ))
+  }
+
   async function reconcileSent(
     message: OutboxMessage,
     receipt: SendMessageReceipt,
   ): Promise<void> {
+    bumpConversationActivity(message.conversationId, receipt.createdAt)
     if (message.conversationId === state.activeConversationId) {
       const authoritative: OpaqueMessage = {
         ...receipt,
@@ -900,6 +973,7 @@ export function useMessenger(
   async function send(
     plaintext: string,
     attachments: readonly GroupAttachmentSource[] = [],
+    interaction: MessageInteractionContext = {},
   ): Promise<boolean> {
     const conversationId = state.activeConversationId
     const conversation = activeConversation.value
@@ -958,9 +1032,17 @@ export function useMessenger(
         state.attachmentUploadBytesSent = completedBytes
         state.attachmentUploadCompleted = uploaded.length
       }
-      const content = uploaded.length === 0
-        ? normalized
-        : encodeGroupMessageContent({ text: normalized, attachments: uploaded })
+      const interactionContent = {
+        replyToMessageId: interaction.replyToMessageId ?? null,
+        mentionedUserIds: interaction.mentionedUserIds ?? [],
+      }
+      const content = conversation.conversationType === 'group'
+        ? encodeGroupMessageContent({
+            text: normalized,
+            attachments: uploaded,
+            ...interactionContent,
+          })
+        : encodeTextMessageContent({ text: normalized, ...interactionContent })
       return await outbox.enqueue(
         conversationId,
         conversation.conversationType,
@@ -1004,6 +1086,19 @@ export function useMessenger(
     } catch (error) {
       fail(error)
       return false
+    }
+  }
+
+  async function searchActiveConversation(query: string): Promise<readonly TimelineMessage[]> {
+    const conversationId = state.activeConversationId
+    if (!conversationId) return []
+    try {
+      const results = await history.search(conversationId, query)
+      syncArchiveStatus()
+      return results
+    } catch (error) {
+      fail(error)
+      return []
     }
   }
 
@@ -1059,6 +1154,7 @@ export function useMessenger(
       >()
       let readStatesChanged = false
       let deliveryStatesChanged = false
+      let reactionsChanged = false
       while (hasMore && pages < 10) {
         const page = await gateway.listSync(state.syncCursor)
         if (page.resetRequired) {
@@ -1075,6 +1171,9 @@ export function useMessenger(
           return
         }
         for (const event of page.events) {
+          if (event.eventType === 'message_created') {
+            bumpConversationActivity(event.conversationId, event.createdAt)
+          }
           if (event.eventType === 'conversation_updated') {
             dependencies.invalidateConversationCrypto?.(event.conversationId)
             cryptoChangedConversationIds.add(event.conversationId)
@@ -1095,6 +1194,8 @@ export function useMessenger(
             || event.eventType === 'read_receipt'
           deliveryStatesChanged ||= event.eventType === 'message_created'
             || event.eventType === 'delivery_receipt'
+          reactionsChanged ||= event.eventType === 'message_reaction_updated'
+            && event.conversationId === state.activeConversationId
         }
         state.syncCursor = page.nextCursor
         hasMore = page.hasMore
@@ -1137,6 +1238,7 @@ export function useMessenger(
       }
       if (readStatesChanged) await reloadReadStates()
       if (deliveryStatesChanged) await reloadDeliveryStates()
+      if (reactionsChanged) await reloadActiveReactions()
       await persistSnapshot()
       state.phase = 'ready'
       state.message = null
@@ -1178,6 +1280,8 @@ export function useMessenger(
     send,
     loadAttachment,
     retryOutgoing,
+    searchActiveConversation,
+    toggleReaction,
     deleteMessage,
     loadOlder,
     returnToLatest,

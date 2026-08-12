@@ -4,6 +4,7 @@ import type {
   DeleteMessageResult,
   DirectoryUser,
   MessageHistoryPage,
+  MessageReactionSummary,
   OpaqueMessage,
   SendMessageReceipt,
   SyncPage,
@@ -16,6 +17,7 @@ import {
   parseDirectory,
   parseMessages,
   parseMessageHistoryPage,
+  parseMessageReactions,
   parseOpaqueMessage,
   parseSendMessageReceipt,
   parseSyncPage,
@@ -129,6 +131,31 @@ export class HttpMessagingGateway implements MessagingGateway {
         { method: 'DELETE' },
       ),
     )
+  }
+
+  async listMessageReactions(
+    conversationId: string,
+    messageIds: readonly string[],
+  ): Promise<MessageReactionSummary[]> {
+    if (messageIds.length === 0) return []
+    const query = new URLSearchParams()
+    for (const messageId of messageIds.slice(0, 100)) query.append('message_ids', messageId)
+    return parseMessageReactions(await this.apiClient.request(
+      `/api/v1/conversations/${encodeURIComponent(conversationId)}/messages/reactions?${query}`,
+    ))
+  }
+
+  async setMessageReaction(
+    conversationId: string,
+    messageId: string,
+    reaction: string,
+    active: boolean,
+  ): Promise<MessageReactionSummary[]> {
+    return parseMessageReactions(await this.apiClient.request(
+      `/api/v1/conversations/${encodeURIComponent(conversationId)}`
+      + `/messages/${encodeURIComponent(messageId)}/reactions/${encodeURIComponent(reaction)}`,
+      { method: active ? 'PUT' : 'DELETE' },
+    ))
   }
 
   async listSync(after: number): Promise<SyncPage> {

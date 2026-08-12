@@ -23,6 +23,10 @@ from messenger.domain.entities.device_crypto_identity import (
     DeviceKeyPackage,
 )
 from messenger.domain.entities.message import Message, MessageDeletionReason
+from messenger.domain.entities.message_reaction import (
+    ALLOWED_MESSAGE_REACTIONS,
+    MessageReaction,
+)
 from messenger.domain.entities.password_reset_token import PasswordResetToken
 from messenger.domain.entities.push_subscription import PushSubscription
 from messenger.domain.entities.security_event import SecurityEvent, SecurityEventType
@@ -46,6 +50,8 @@ __all__ = [
     "ConversationDeliveryState",
     "Message",
     "MessageDeletionReason",
+    "MessageReaction",
+    "ALLOWED_MESSAGE_REACTIONS",
     "PasswordResetToken",
     "PushSubscription",
     "Device",

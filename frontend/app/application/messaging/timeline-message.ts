@@ -1,5 +1,6 @@
 import type { MessageAttachment, OpaqueMessage } from '../../domain/messaging/models'
 import { decodeGroupMessageContent } from './group-message-content'
+import { decodeTextMessageContent } from './text-message-content'
 import {
   MessageProtectionError,
   type ProtocolMessageProtection,
@@ -11,6 +12,8 @@ export interface TimelineMessage extends OpaqueMessage {
   contentState: MessageContentState
   displayBody: string | null
   displayAttachments?: readonly MessageAttachment[]
+  replyToMessageId?: string
+  mentionedUserIds?: readonly string[]
   contentSecure: boolean
 }
 
@@ -46,12 +49,16 @@ export async function prepareTimelineMessage(
     })
     const decoded = message.protocolVersion === 1
       ? decodeGroupMessageContent(content.plaintext)
-      : { text: content.plaintext, attachments: [] }
+      : { ...decodeTextMessageContent(content.plaintext), attachments: [] }
     return {
       ...message,
       contentState: 'available',
       displayBody: decoded.text,
       ...(decoded.attachments.length > 0 ? { displayAttachments: decoded.attachments } : {}),
+      ...(decoded.replyToMessageId ? { replyToMessageId: decoded.replyToMessageId } : {}),
+      ...((decoded.mentionedUserIds?.length ?? 0) > 0
+        ? { mentionedUserIds: decoded.mentionedUserIds }
+        : {}),
       contentSecure: content.secure,
     }
   } catch (error) {

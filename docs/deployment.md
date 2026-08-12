@@ -114,7 +114,7 @@ docker compose -p yv-chat \
 
 Message retention settings and constraints are documented in `.env.example`.
 Media defaults are 12 MiB per image, 100 MiB per video, 25 MiB per generic file and
-150 MiB active uploader quota; host Nginx keeps `client_max_body_size 150m` above the
+5 GiB active uploader quota; host Nginx keeps `client_max_body_size 150m` above the
 largest admitted request. Cleanup uses the same immutable backend image but a
 separate bounded process; it has no public port and mounts the media volume only to
 delete expired opaque storage keys.

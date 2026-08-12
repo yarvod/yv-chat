@@ -1055,4 +1055,79 @@ describe('message panel', () => {
     }))
     wrapper.unmount()
   })
+  it('searches, replies, mentions and toggles reactions without exposing message text to search API', async () => {
+    const message = {
+      messageId: 'message-1',
+      clientMessageId: 'client-1',
+      conversationId: 'conversation-1',
+      senderUserId: 'bob-id',
+      senderDeviceId: 'bob-device',
+      protocolVersion: 1,
+      cryptoGenerationId: null,
+      cryptoEpoch: null,
+      sequence: 1,
+      createdAt: '2026-08-11T12:00:00Z',
+      expiresAt: '2026-09-10T12:00:00Z',
+      ciphertextBase64: 'b3BhcXVl',
+      deletionReason: null,
+      deletedAt: null,
+      contentState: 'available' as const,
+      displayBody: 'Нужное сообщение',
+      contentSecure: true,
+    }
+    const sendMessage = vi.fn().mockResolvedValue(true)
+    const searchMessages = vi.fn().mockResolvedValue([message])
+    const openMessage = vi.fn().mockResolvedValue(undefined)
+    const toggleReaction = vi.fn().mockResolvedValue(true)
+    const wrapper = mount(MessagePanel, {
+      props: {
+        conversation,
+        messages: [message],
+        actorUserId: 'alice-id',
+        sending: false,
+        protectionSecure: true,
+        protectionLabel: 'MLS E2EE',
+        sendMessage,
+        searchMessages,
+        openMessage,
+        reactionSummaries: [{
+          messageId: 'message-1',
+          reaction: '❤️',
+          count: 2,
+          reactedByActor: true,
+        }],
+        toggleReaction,
+        deleteMessage: vi.fn(),
+        deletingMessageId: null,
+        typingActorIds: [],
+        onlineActorIds: [],
+        deliveryStates: [],
+        connectionState: 'connected',
+        setTyping: vi.fn(),
+      },
+    })
+
+    await wrapper.get('button[aria-label="Поиск по чату"]').trigger('click')
+    await wrapper.get('#chat-search-input').setValue('нужное')
+    await wrapper.get('.chat-search').trigger('submit')
+    expect(searchMessages).toHaveBeenCalledWith('нужное')
+    expect(openMessage).toHaveBeenCalledWith('message-1')
+
+    await wrapper.get('button[aria-label="Ответить на сообщение #1"]').trigger('click')
+    expect(wrapper.text()).toContain('Ответ Bob')
+    await wrapper.get('textarea').setValue('Привет @b')
+    expect(wrapper.text()).toContain('@bob')
+    await wrapper.get('.mention-suggestions button').trigger('click')
+    await wrapper.get('form.composer').trigger('submit')
+    expect(sendMessage).toHaveBeenCalledWith('Привет @bob ', undefined, {
+      replyToMessageId: 'message-1',
+      mentionedUserIds: ['bob-id'],
+    })
+
+    await wrapper.get('.message-reactions button').trigger('click')
+    expect(toggleReaction).toHaveBeenCalledWith('message-1', '❤️', false)
+    await wrapper.get('button[aria-label="Добавить реакцию к сообщению #1"]').trigger('click')
+    await wrapper.get('.reaction-picker button').trigger('click')
+    expect(toggleReaction).toHaveBeenCalledWith('message-1', '👍', true)
+  })
 })

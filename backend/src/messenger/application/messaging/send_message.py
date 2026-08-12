@@ -187,7 +187,10 @@ class SendOpaqueMessage:
                 for item in attachments
             ):
                 raise AttachmentConflictError("attachment cannot be committed to message")
-            sequence = await unit_of_work.messages.next_sequence(conversation.id)
+            sequence = await unit_of_work.messages.next_sequence(
+                conversation.id,
+                activity_at=now,
+            )
             message = Message.create(
                 conversation_id=conversation.id,
                 client_message_id=command.client_message_id,

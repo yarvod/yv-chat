@@ -71,6 +71,13 @@ export interface MessageHistoryPage {
   newestSequence: number | null
 }
 
+export interface MessageReactionSummary {
+  messageId: string
+  reaction: string
+  count: number
+  reactedByActor: boolean
+}
+
 export type MessageDeletionReason = 'manual' | 'expired'
 
 export interface DeleteMessageResult {
@@ -99,6 +106,7 @@ export type SyncEventType =
   | 'conversation_updated'
   | 'message_created'
   | 'message_deleted'
+  | 'message_reaction_updated'
   | 'read_receipt'
   | 'delivery_receipt'
 
