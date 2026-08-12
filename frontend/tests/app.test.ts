@@ -5,6 +5,7 @@ import { Login } from '../app/application/auth/login'
 import type { AuthGateway, LoginCredentials } from '../app/application/ports/auth-gateway'
 import type { DeviceInfoPort } from '../app/application/ports/device-info'
 import type { HapticsPort } from '../app/application/ports/haptics'
+import DeviceReenrollmentForm from '../app/components/auth/DeviceReenrollmentForm.vue'
 import LoginForm from '../app/components/auth/LoginForm.vue'
 
 const account = {
@@ -91,5 +92,21 @@ describe('login application flow', () => {
     expect(wrapper.text()).toContain('Повторить подключение')
     expect(wrapper.find('input[name="username"]').exists()).toBe(false)
     expect(wrapper.find('input[name="password"]').exists()).toBe(false)
+  })
+
+  it('clears the iOS PWA re-enrollment password immediately after submit', async () => {
+    const wrapper = mount(DeviceReenrollmentForm, {
+      props: { busy: false, message: null },
+    })
+    const password = 'correct horse battery staple'
+    await wrapper.get('input[name="device-reenrollment-password"]').setValue(password)
+    await wrapper.get('form').trigger('submit')
+
+    expect(wrapper.emitted('submit')?.[0]).toEqual([password])
+    expect(
+      (wrapper.get('input[name="device-reenrollment-password"]').element as HTMLInputElement).value,
+    ).toBe('')
+    expect(wrapper.html()).not.toContain(password)
+    expect(wrapper.text()).toContain('не отключая Safari')
   })
 })

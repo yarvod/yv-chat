@@ -11,10 +11,10 @@
 
 ### Release gate — сначала закрыть уже реализованное
 
-1. Завершить текущий `WP-066`: diff review и отдельный commit для instant cached
-   conversation return; automated и real-browser local acceptance уже green.
-2. Развернуть current head и production-проверить `BUG-063`: serial history
-   decrypt должен сохранить MLS ratchet и позволить reply после reload.
+1. Завершить и развернуть текущий `WP-067`: iOS Home Screen PWA должна безопасно
+   получить отдельный device через password-confirmed re-enrollment без logout Safari.
+2. Production-проверить `BUG-063`: serial history decrypt должен сохранить MLS
+   ratchet и позволить reply после reload.
 3. Исправить `BUG-059`: cache-first startup обязан reconciled-ить directory после
    активации нового пользователя. Это bounded correctness fix, а не новая platform-фича.
 
@@ -350,9 +350,22 @@ generic background notification, focus/navigation и invalid-subscription cleanu
 
 ## Completed
 
+### BL-067 — Safe iOS PWA crypto re-enrollment
+
+Статус: **implemented and full-CI verified; production iPhone acceptance pending**
+(`WP-067`).
+
+- Home Screen PWA с copied Safari cookie и отсутствующим local MLS vault предлагает
+  отдельный password-confirmed enrollment вместо logout;
+- новый login выдаёт отдельные device/session и cookie текущему PWA container, не
+  отзывая здоровую Safari session;
+- обычный device crypto watcher provision-ит identity/KeyPackages для нового ID;
+- password очищается до network await, silent identity replacement не появился;
+- origin storage persistence запрашивается best-effort без очистки IndexedDB.
+
 ### BL-066 — Instant cached conversation return
 
-Статус: **implemented and real-browser verified locally** (`WP-066`; commit pending).
+Статус: **implemented and real-browser verified locally** (`WP-066`, `21ec11f`).
 
 - bounded LRU держит reactive windows 12 недавно открытых conversations только в RAM;
 - A → B → A рисует hot window до network catch-up без пустого timeline;

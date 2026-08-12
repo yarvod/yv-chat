@@ -558,8 +558,38 @@ legend { padding: 0 6px; color: var(--muted); font-size: .8rem; }
   font-size: 0.82rem;
 }
 
+.device-crypto-warning > p {
+  margin: 0;
+}
+
 .device-crypto-warning button {
   margin-inline-start: 0.5rem;
+}
+
+.device-reenrollment {
+  display: grid;
+  gap: 0.7rem;
+  margin-block-start: 0.75rem;
+}
+
+.device-reenrollment > p {
+  margin: 0;
+  color: var(--text-soft);
+}
+
+.device-reenrollment .field {
+  gap: 0.3rem;
+}
+
+.device-reenrollment__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.device-reenrollment__actions button,
+.device-crypto-warning .device-reenrollment__actions button {
+  margin: 0;
 }
 
 .app-root {

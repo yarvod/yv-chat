@@ -4,6 +4,26 @@
 
 ## Active
 
+### BUG-065 — iOS PWA наследовала Safari session без локальных MLS-ключей
+
+- Статус: `fixed locally; production iOS acceptance pending` (`WP-067`).
+- Severity: `critical multi-device E2EE availability`.
+- Production reproduction: Safari на iPhone расшифровывает direct chat, а
+  установленная Home Screen PWA остаётся authenticated под тем же server device и
+  показывает `not-provisioned`; обычный deploy/reload делает проблему заметной после
+  перезапуска Worker.
+- Причина: iOS 17.2+ копирует auth cookies в новый Web App container, но не копирует
+  IndexedDB. Server identity принадлежит `device_id` из cookie, тогда как отдельная
+  PWA не имеет соответствующего `yv-chat-crypto-v1` vault. Приложение верно запрещало
+  silent identity replacement, но предлагало только разрушительный logout/login.
+- Исправление: password-confirmed in-app re-enrollment вызывает существующий login
+  boundary, получает новую device/session cookie только в текущем PWA container и
+  запускает обычный MLS provision, не отзывая здоровую Safari session. Password
+  очищается до ожидания network; persistent storage запрашивается best-effort.
+- Проверка: component regression фиксирует password lifetime; browser adapter
+  покрывает persistent/denied/unsupported; существующий backend HTTP flow доказывает,
+  что повторный login создаёт второй current device, оставляя первый active.
+
 ### BUG-064 — Возврат в открытый чат очищал timeline и терял viewport
 
 - Статус: `fixed locally; automated and real-browser verified` (`WP-066`).

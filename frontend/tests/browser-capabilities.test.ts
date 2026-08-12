@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { BrowserDeviceInfo } from '../app/infrastructure/browser/device-info'
 import { BrowserHaptics } from '../app/infrastructure/browser/haptics'
 import { BrowserLocation } from '../app/infrastructure/browser/browser-location'
+import { BrowserStoragePersistence } from '../app/infrastructure/browser/storage-persistence'
 import { BrowserThemePreferences } from '../app/infrastructure/browser/theme-preferences'
 
 beforeEach(() => localStorage.clear())
@@ -62,5 +63,20 @@ describe('browser capability adapters', () => {
     expect(location.passwordResetUrl('reset secret')).toBe('https://chat.example/reset-password#token=reset+secret')
     expect(location.consumeFragmentValue('token')).toBe('one-time secret')
     expect(replaceState).toHaveBeenCalledWith(null, '', '/activate')
+  })
+
+  it('requests persistent origin storage without treating denial as an error', async () => {
+    const granted = {
+      persisted: vi.fn(async () => false),
+      persist: vi.fn(async () => true),
+    }
+    await expect(new BrowserStoragePersistence(granted).request()).resolves.toBe('persistent')
+    expect(granted.persist).toHaveBeenCalledOnce()
+
+    await expect(new BrowserStoragePersistence({
+      persisted: vi.fn(async () => false),
+      persist: vi.fn(async () => false),
+    }).request()).resolves.toBe('denied')
+    await expect(new BrowserStoragePersistence(undefined).request()).resolves.toBe('unsupported')
   })
 })

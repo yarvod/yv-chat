@@ -438,6 +438,8 @@ async def run_cookie_flow() -> None:
     async with AsyncClient(transport=transport, base_url="https://test") as client:
         login_response = await login(client)
         assert login_response.status_code == 200
+        first_session_id = UUID(login_response.json()["session_id"])
+        first_device_id = UUID(login_response.json()["device_id"])
         assert "session_credential" not in login_response.json()
         cookie_headers = login_response.headers.get_list("set-cookie")
         session_header = next(header for header in cookie_headers if "__Host-yv_session=" in header)
@@ -458,6 +460,10 @@ async def run_cookie_flow() -> None:
         assert second_login.status_code == 200
         current_session_id = UUID(second_login.json()["session_id"])
         current_device_id = UUID(second_login.json()["device_id"])
+        assert current_session_id != first_session_id
+        assert current_device_id != first_device_id
+        assert state.sessions[first_session_id].revoked_at is None
+        assert state.devices[first_device_id].revoked_at is None
         current_csrf = client.cookies["__Host-yv_csrf"]
 
         devices = await client.get("/api/v1/devices")

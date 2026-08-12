@@ -91,6 +91,17 @@ export function useAuth() {
     initialized.value = true
   }
 
+  async function enrollReplacementDevice(password: string): Promise<boolean> {
+    const current = state.value.user
+    if (!current) return false
+    const replacement = await $frontend.login.execute({
+      username: current.username,
+      password,
+    })
+    replaceCurrentUser(replacement)
+    return true
+  }
+
   function securityResetCompleted(): void {
     state.value = {
       phase: 'signed-out',
@@ -109,6 +120,7 @@ export function useAuth() {
     logout,
     sessionExpired,
     replaceCurrentUser,
+    enrollReplacementDevice,
     securityResetCompleted,
   }
 }

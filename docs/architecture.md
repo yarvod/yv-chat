@@ -350,6 +350,16 @@ UI остаётся authenticated и честно сообщает, что sessi
 Следующие conversation/sync services используют тот же transport и собственные
 typed parsers вместо raw `fetch` в components.
 
+iOS Home Screen Web App является отдельной browser installation: начиная с iOS 17.2
+она может получить копию Safari auth cookie при установке, но не Safari IndexedDB.
+Поэтому наличие valid session и server crypto identity не доказывает наличие
+device-local MLS vault в текущем storage container. При registered identity + missing
+vault client fail-closed предлагает password-confirmed re-enrollment: обычный login
+создаёт новую device/session и заменяет cookie только текущего Web App container,
+не вызывая logout/revoke старой Safari session. Silent regeneration public identity
+под прежним `device_id` запрещена. Origin storage запрашивает persistence
+best-effort, но correctness не полагается на предоставление этой platform guarantee.
+
 Foreground realtime также отделён от Vue components. `BrowserRealtimeGateway`
 создаёт только same-origin `/api/v1/realtime` URL без query credential, строго
 разбирает закрытый набор frames и отвечает на application-level ping. Application

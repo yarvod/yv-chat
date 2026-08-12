@@ -4,60 +4,67 @@
 завершённая работа фиксируется отдельным коммитом, а новый пункт переносится
 сюда из `backlog.md`.
 
-## WP-066 — Instant cached conversation return
+## WP-067 — Safe iOS PWA crypto re-enrollment
 
 Статус: **implemented and verified locally**
 
-Цель: уже открытый conversation при переключении A → B → A появляется немедленно из
-bounded app-memory cache, сохраняет точный viewport anchor и только затем незаметно
-догоняет server; cold anchor сначала рисуется из encrypted IndexedDB.
+Цель: Home Screen PWA, получившая скопированную Safari auth-cookie без Safari
+IndexedDB/MLS state, безопасно становится отдельным device без logout/revoke
+здоровой Safari-сессии.
 
 ### Reproduction
 
-- `selectConversation()` очищал reactive timeline перед каждым чтением IndexedDB и
-  server catch-up, поэтому возврат в уже открытый чат показывал пустой UI;
-- anchor-window загружался network-first, хотя нужные ciphertext уже лежали локально;
-- debounced scroll save вычислял anchor после смены active conversation и терял
-  позицию предыдущего чата при быстром переключении.
+- iOS 17.2+ при Add to Home Screen копирует first-party auth cookies, но не
+  IndexedDB;
+- PWA обращается к server под существующим `device_id`, получает уже
+  зарегистрированную crypto identity и обязана выполнить local restore;
+- отдельный PWA storage не содержит `yv-chat-crypto-v1`, поэтому restore
+  fail-closed возвращает `not-provisioned`, хотя Safari под той же исходной
+  session продолжает расшифровывать сообщения;
+- обычный logout отзовёт shared server session и ухудшит recovery.
 
 ### Scope
 
-- [x] хранить последние reactive history windows для 12 conversations в bounded LRU;
-- [x] рисовать hot window синхронно и выполнять forward catch-up в фоне;
-- [x] для cold saved anchor сначала отдавать encrypted IndexedDB page, затем server;
-- [x] не применять поздний результат к уже неактивному conversation;
-- [x] захватывать viewport anchor в момент scroll и flush-ить его до смены chat;
-- [x] обновлять inactive hot window при tombstone и очищать удалённые conversations;
-- [x] покрыть delayed network, повторный switch и debounce race regressions.
+- [x] явный password-confirmed re-enrollment создаёт новую device/session через
+  существующий login boundary и заменяет cookie только текущего Web App container;
+- [x] старый server device/session не отзывается автоматически;
+- [x] пароль очищается из component state сразу после submit и никогда не
+  сохраняется/логируется;
+- [x] новый `device_id` автоматически запускает обычный provision/KeyPackage flow;
+- [x] browser best-effort запрашивает persistent origin storage без удаления или
+  миграции существующих IndexedDB;
+- [x] UI объясняет, что Safari и PWA являются разными E2EE devices.
 
 ### Security invariants
 
-- decrypted `TimelineMessage` живёт только в bounded RAM текущего app instance;
-- IndexedDB по-прежнему хранит только encrypted transport envelopes;
-- cache не подменяет cursor sync и не становится источником authoritative ordering;
-- stale async result не может перерисовать другой активный conversation.
+- silent identity replacement под прежним `device_id` запрещён;
+- re-enrollment требует действующий account password;
+- Safari private MLS state не копируется через server;
+- ошибочный пароль не завершает действующую session и не скрывает authenticated UI;
+- никакого v1 fallback для direct conversation нет.
 
 ### Exclusions
 
-- persistent decrypted archive или `localStorage` message cache;
-- OPFS media cache, draft persistence и attachment eviction/pinning;
-- изменение server history/cursor/retention protocol;
-- сохранение component instance для каждого когда-либо открытого chat.
+- перенос старой истории/MLS epochs между devices — `BL-015`/`BL-064`;
+- автоматический server-side backup private keys;
+- изменение MLS protocol framing или crypto vault schema;
+- гарантия platform storage persistence, которую браузер может отклонить.
 
 ### Definition of Done
 
-- A → B → A возвращает все уже отрисованные сообщения без blank/loading flash;
-- сохранённый message-relative anchor восстанавливает то же сообщение и offset;
-- IndexedDB anchor page появляется до задержанного network reconciliation;
-- frontend lint, typecheck, tests и production build проходят;
-- реальный локальный browser acceptance подтверждает hot paint и stable viewport.
+- registered identity + missing local vault открывает password re-enrollment UI;
+- successful confirmation возвращает другой `device_id`, сохраняет старую session
+  active и запускает crypto initialization нового device;
+- failed confirmation оставляет current account/session неизменными;
+- component test доказывает немедленную очистку password;
+- persistence adapter корректно обрабатывает granted/denied/unsupported;
+- frontend lint/typecheck/tests/build и полный `make ci` проходят.
 
 ### Verification evidence
 
-- frontend `42` files / `224` tests, ESLint, Nuxt typecheck и production PWA build: green;
-- isolated Docker stack `localhost:18091`, fresh PostgreSQL migrations и два browser
-  origins/devices: 45-message history + 5-message switch target;
-- hot return painted all 45 messages in `47 ms`; anchor sequence `16` restored in
-  `625 ms`, сохранил тот же message ID и offset в пределах `14 px`;
-- после `800 ms` background reconciliation count/anchor не изменились; browser
-  console warnings/errors: `0`.
+- frontend ESLint, Nuxt typecheck, production PWA build и `42` files / `226` tests:
+  green;
+- backend `238 passed, 9 skipped`; повторный HTTP login явно создаёт другой
+  session/device и оставляет первый device/session non-revoked;
+- Rust/OpenMLS `21` tests, native/wasm clippy и repository `make ci`: green;
+- production iPhone Safari/PWA acceptance выполняется после rollout.
