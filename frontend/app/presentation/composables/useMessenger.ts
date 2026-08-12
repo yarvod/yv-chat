@@ -58,6 +58,7 @@ import {
 type MessengerPhase = 'loading' | 'ready' | 'offline' | 'error'
 type ConversationCryptoPhase = 'checking' | 'ready' | 'pending' | 'blocked' | 'unavailable'
 const MAX_HOT_CONVERSATION_WINDOWS = 12
+const TARGET_CONTEXT_MESSAGES = 8
 
 interface MessengerState {
   phase: MessengerPhase
@@ -501,7 +502,12 @@ export function useMessenger(
       : state.conversations[0]?.conversationId ?? null
     resetHistoryWindow()
     if (state.activeConversationId) {
-      const cached = await history.loadCachedLatest(state.activeConversationId)
+      const anchor = state.viewportAnchors.find(item => (
+        item.conversationId === state.activeConversationId
+      ))
+      const cached = anchor && !anchor.atLatest
+        ? await history.loadCachedEndingAtSequence(state.activeConversationId, anchor.sequence)
+        : await history.loadCachedLatest(state.activeConversationId)
       syncArchiveStatus()
       if (cached) applyHistoryWindow(cached)
     }
@@ -690,8 +696,16 @@ export function useMessenger(
     }
     state.message = null
     try {
-      const targetLoaded = targetMessageId !== null
-        && state.messages.some(message => message.messageId === targetMessageId)
+      const targetIndex = targetMessageId === null
+        ? -1
+        : state.messages.findIndex(message => message.messageId === targetMessageId)
+      const target = targetIndex < 0 ? null : state.messages[targetIndex] ?? null
+      const targetLoaded = target !== null
+        && targetIndex >= Math.min(TARGET_CONTEXT_MESSAGES, target.sequence - 1)
+        && (
+          state.messages.length - targetIndex - 1 >= TARGET_CONTEXT_MESSAGES
+          || !state.historyHasNewer
+        )
       const anchor = state.viewportAnchors.find(item => item.conversationId === conversationId)
       const anchorLoaded = anchor !== undefined
         && state.messages.some(message => message.messageId === anchor.messageId)

@@ -221,7 +221,9 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .security-warning, .storage-warning { margin: 0; padding: 8px 18px; text-align: center; font-size: .73rem; }
 .security-warning { color: var(--warning); background: color-mix(in srgb, var(--warning) 9%, var(--surface-solid)); }
 .storage-warning { color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, var(--surface-solid)); }
-.message-timeline { grid-row: 3; display: flex; min-height: 0; flex-direction: column; gap: 3px; overflow-y: auto; overflow-anchor: none; overscroll-behavior: contain; scroll-behavior: smooth; scrollbar-gutter: stable; padding: 18px clamp(16px, 5vw, 72px) 20px; }
+.message-timeline { grid-row: 3; display: flex; min-height: 0; flex-direction: column; gap: 3px; overflow-y: auto; overflow-anchor: none; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 18px clamp(16px, 5vw, 72px) 20px; }
+.message-timeline--restoring { visibility: hidden; scroll-behavior: auto; }
+.message-timeline--restoring .message-bubble { animation: none; }
 .load-older { align-self: center; min-height: 40px; margin: 2px 0 12px; padding: 0 14px; border: 1px solid var(--border); border-radius: 999px; color: var(--primary); background: var(--surface-solid); font-size: .76rem; font-weight: 750; }
 .load-older:disabled { cursor: wait; opacity: .65; }
 .timeline-day { position: sticky; z-index: 1; top: 8px; display: grid; place-items: center; margin: 8px 0 12px; pointer-events: none; }

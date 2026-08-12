@@ -6,6 +6,8 @@ import { prepareTimelineMessage, type TimelineMessage } from './timeline-message
 
 const HISTORY_PAGE_SIZE = 100
 const MAX_TIMELINE_MESSAGES = 300
+const ANCHOR_BEFORE_LIMIT = 50
+const ANCHOR_AFTER_LIMIT = 50
 
 export interface ConversationHistoryWindow {
   messages: TimelineMessage[]
@@ -49,6 +51,27 @@ export class ConversationHistory {
       messages: this.latestWindow(await this.prepare(cached)),
       hasMore: cached.length === HISTORY_PAGE_SIZE,
       hasNewer: false,
+    }
+  }
+
+  async loadCachedEndingAtSequence(
+    conversationId: string,
+    sequence: number,
+  ): Promise<ConversationHistoryWindow | null> {
+    if (!Number.isSafeInteger(sequence) || sequence <= 0) return null
+    const beforeSequence = sequence === Number.MAX_SAFE_INTEGER ? sequence : sequence + 1
+    const [cachedBefore, cachedAfter] = await Promise.all([
+      this.readBefore(conversationId, beforeSequence, ANCHOR_BEFORE_LIMIT),
+      this.readAfter(conversationId, sequence, ANCHOR_AFTER_LIMIT + 1),
+    ])
+    if (!cachedBefore.some(message => message.sequence === sequence)) return null
+    return {
+      messages: this.latestWindow(await this.prepare([
+        ...cachedBefore,
+        ...cachedAfter.slice(0, ANCHOR_AFTER_LIMIT),
+      ])),
+      hasMore: cachedBefore.length === ANCHOR_BEFORE_LIMIT,
+      hasNewer: cachedAfter.length > ANCHOR_AFTER_LIMIT,
     }
   }
 
@@ -149,27 +172,41 @@ export class ConversationHistory {
   ): Promise<ConversationHistoryWindow> {
     if (!Number.isSafeInteger(sequence) || sequence <= 0) return this.loadLatest(conversationId)
     const beforeSequence = sequence === Number.MAX_SAFE_INTEGER ? sequence : sequence + 1
-    const cached = await this.readBefore(conversationId, beforeSequence)
-    const cachedWindow = cached.some(message => message.sequence === sequence)
+    const [cachedBefore, cachedAfter] = await Promise.all([
+      this.readBefore(conversationId, beforeSequence, ANCHOR_BEFORE_LIMIT),
+      this.readAfter(conversationId, sequence, ANCHOR_AFTER_LIMIT + 1),
+    ])
+    const cachedOpaque = [
+      ...cachedBefore,
+      ...cachedAfter.slice(0, ANCHOR_AFTER_LIMIT),
+    ]
+    const cachedPrepared = cachedBefore.some(message => message.sequence === sequence)
+      ? await this.prepare(cachedOpaque)
+      : []
+    const cachedWindow = cachedPrepared.length > 0
       ? {
-          messages: this.latestWindow(await this.prepare(cached)),
-          hasMore: cached.length === HISTORY_PAGE_SIZE,
-          hasNewer: true,
+          messages: this.latestWindow(cachedPrepared),
+          hasMore: cachedBefore.length === ANCHOR_BEFORE_LIMIT,
+          hasNewer: cachedAfter.length > ANCHOR_AFTER_LIMIT,
         }
       : null
     if (cachedWindow) onCached?.(cachedWindow)
     try {
-      const page = await this.gateway.listMessageHistory(
-        conversationId,
-        beforeSequence,
-        HISTORY_PAGE_SIZE,
-      )
-      await this.persist(conversationId, page.messages)
+      const [page, newer] = await Promise.all([
+        this.gateway.listMessageHistory(
+          conversationId,
+          beforeSequence,
+          ANCHOR_BEFORE_LIMIT,
+        ),
+        this.gateway.listMessages(conversationId, sequence),
+      ])
+      const opaque = [...page.messages, ...newer.slice(0, ANCHOR_AFTER_LIMIT)]
+      await this.persist(conversationId, opaque)
       if (page.messages.some(message => message.sequence === sequence)) {
         return {
-          messages: this.latestWindow(await this.prepare(page.messages)),
+          messages: this.latestWindow(await this.prepare(opaque, cachedPrepared)),
           hasMore: page.hasMore,
-          hasNewer: true,
+          hasNewer: newer.length > ANCHOR_AFTER_LIMIT,
         }
       }
     } catch {
@@ -192,17 +229,24 @@ export class ConversationHistory {
     messageId: string,
   ): Promise<ConversationHistoryWindow> {
     const target = await this.gateway.getMessage(conversationId, messageId)
-    const before = await this.gateway.listMessageHistory(
-      conversationId,
-      target.sequence,
-      HISTORY_PAGE_SIZE - 1,
-    )
-    const opaque = [...before.messages, target]
+    const [before, newer] = await Promise.all([
+      this.gateway.listMessageHistory(
+        conversationId,
+        target.sequence,
+        ANCHOR_BEFORE_LIMIT - 1,
+      ),
+      this.gateway.listMessages(conversationId, target.sequence),
+    ])
+    const opaque = [
+      ...before.messages,
+      target,
+      ...newer.slice(0, ANCHOR_AFTER_LIMIT),
+    ]
     await this.persist(conversationId, opaque)
     return {
       messages: this.latestWindow(await this.prepare(opaque)),
       hasMore: before.hasMore,
-      hasNewer: true,
+      hasNewer: newer.length > ANCHOR_AFTER_LIMIT,
     }
   }
 
@@ -254,6 +298,7 @@ export class ConversationHistory {
   private async readBefore(
     conversationId: string,
     beforeSequence: number,
+    limit: number = HISTORY_PAGE_SIZE,
   ): Promise<OpaqueMessage[]> {
     if (!this.archiveAvailable) return []
     try {
@@ -261,7 +306,7 @@ export class ConversationHistory {
         this.ownerUserId,
         conversationId,
         beforeSequence,
-        HISTORY_PAGE_SIZE,
+        limit,
       )
     } catch {
       this.archiveAvailable = false
@@ -269,9 +314,47 @@ export class ConversationHistory {
     }
   }
 
-  private async prepare(messages: readonly OpaqueMessage[]): Promise<TimelineMessage[]> {
+  private async readAfter(
+    conversationId: string,
+    afterSequence: number,
+    limit: number,
+  ): Promise<OpaqueMessage[]> {
+    if (!this.archiveAvailable) return []
+    try {
+      return await this.archive.loadAfter(
+        this.ownerUserId,
+        conversationId,
+        afterSequence,
+        limit,
+      )
+    } catch {
+      this.archiveAvailable = false
+      return []
+    }
+  }
+
+  private async prepare(
+    messages: readonly OpaqueMessage[],
+    reusable: readonly TimelineMessage[] = [],
+  ): Promise<TimelineMessage[]> {
+    const reusableById = new Map(reusable.map(message => [message.messageId, message]))
     const prepared: TimelineMessage[] = []
     for (const message of messages) {
+      const existing = reusableById.get(message.messageId)
+      if (
+        existing
+        && existing.sequence === message.sequence
+        && existing.protocolVersion === message.protocolVersion
+        && existing.cryptoGenerationId === message.cryptoGenerationId
+        && existing.cryptoEpoch === message.cryptoEpoch
+        && existing.ciphertextBase64 === message.ciphertextBase64
+        && existing.expiresAt === message.expiresAt
+        && existing.deletedAt === message.deletedAt
+        && existing.deletionReason === message.deletionReason
+      ) {
+        prepared.push(existing)
+        continue
+      }
       prepared.push(await prepareTimelineMessage(message, this.protection))
     }
     return prepared

@@ -4,6 +4,13 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 describe('mobile application shell', () => {
+  it('positions restored history instantly before revealing the timeline', () => {
+    const css = readFileSync(resolve(process.cwd(), 'app/assets/main.css'), 'utf8')
+    expect(css).not.toMatch(/\.message-timeline \{[^}]*scroll-behavior:\s*smooth/)
+    expect(css).toMatch(/\.message-timeline--restoring \{[^}]*visibility:\s*hidden/)
+    expect(css).toMatch(/\.message-timeline--restoring \{[^}]*scroll-behavior:\s*auto/)
+  })
+
   it('pins navigation to the visual viewport and reserves its safe-area slot', () => {
     const cssPath = resolve(process.cwd(), 'app/assets/main.css')
     const css = readFileSync(cssPath, 'utf8')

@@ -838,6 +838,139 @@ describe('message panel', () => {
     }))
   })
 
+  it('waits for a deep-linked message instead of falling back to the end of stale history', async () => {
+    const staleMessage = {
+      messageId: 'message-stale',
+      clientMessageId: 'client-stale',
+      conversationId: 'conversation-1',
+      senderUserId: 'bob-id',
+      senderDeviceId: 'bob-device',
+      protocolVersion: 1,
+      sequence: 1_000,
+      createdAt: '2026-08-11T12:00:00Z',
+      expiresAt: '2026-09-10T12:00:00Z',
+      ciphertextBase64: 'c3RhbGU=',
+      deletionReason: null,
+      deletedAt: null,
+      contentState: 'available' as const,
+      displayBody: 'stale',
+      contentSecure: false,
+    }
+    const targetMessage = {
+      ...staleMessage,
+      messageId: 'message-target-later',
+      clientMessageId: 'client-target-later',
+      sequence: 500,
+      displayBody: 'target',
+    }
+    const wrapper = mount(MessagePanel, {
+      props: {
+        conversation,
+        messages: [staleMessage],
+        targetMessageId: 'message-target-later',
+        actorUserId: 'alice-id',
+        sending: false,
+        protectionSecure: false,
+        protectionLabel: 'Тестовый режим без E2EE',
+        sendMessage: vi.fn(),
+        deleteMessage: vi.fn(),
+        deletingMessageId: null,
+        typingActorIds: [],
+        onlineActorIds: [],
+        deliveryStates: [],
+        connectionState: 'connected',
+        setTyping: vi.fn(),
+      },
+    })
+    const timeline = wrapper.get('.message-timeline').element as HTMLElement
+    const scrollTo = vi.fn()
+    Object.defineProperties(timeline, {
+      clientHeight: { configurable: true, value: 400 },
+      scrollHeight: { configurable: true, value: 1_200 },
+      scrollTop: { configurable: true, value: 0, writable: true },
+      scrollTo: { configurable: true, value: scrollTo },
+      getBoundingClientRect: {
+        configurable: true,
+        value: () => ({ top: 100, bottom: 500, height: 400, left: 0, right: 300, width: 300, x: 0, y: 100, toJSON() {} }),
+      },
+    })
+
+    await wrapper.setProps({ targetMessageId: 'message-target-later' })
+    expect(wrapper.get('.message-timeline').classes()).toContain('message-timeline--restoring')
+    expect(scrollTo).not.toHaveBeenCalled()
+
+    await wrapper.setProps({ messages: [targetMessage] })
+    const target = wrapper.get('[data-message-id="message-target-later"]').element as HTMLElement
+    Object.defineProperty(target, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({ top: 310, bottom: 350, height: 40, left: 0, right: 200, width: 200, x: 0, y: 310, toJSON() {} }),
+    })
+    await wrapper.setProps({ messages: [{ ...targetMessage }] })
+    await vi.waitFor(() => expect(timeline.scrollTop).toBe(30))
+    expect(wrapper.get('.message-timeline').classes()).not.toContain('message-timeline--restoring')
+    expect(scrollTo).not.toHaveBeenCalled()
+  })
+
+  it('does not overwrite a saved anchor while the mobile conversation pane is hidden', async () => {
+    const saveViewport = vi.fn().mockResolvedValue(undefined)
+    const hiddenMessage = {
+      messageId: 'message-hidden',
+      clientMessageId: 'client-hidden',
+      conversationId: 'conversation-1',
+      senderUserId: 'bob-id',
+      senderDeviceId: 'bob-device',
+      protocolVersion: 1,
+      sequence: 945,
+      createdAt: '2026-08-11T12:45:00Z',
+      expiresAt: '2026-09-10T12:45:00Z',
+      ciphertextBase64: 'aGVsbG8=',
+      deletionReason: null,
+      deletedAt: null,
+      contentState: 'available' as const,
+      displayBody: 'hidden pane anchor',
+      contentSecure: false,
+    }
+    const wrapper = mount(MessagePanel, {
+      props: {
+        conversation,
+        messages: [hiddenMessage],
+        actorUserId: 'alice-id',
+        sending: false,
+        protectionSecure: false,
+        protectionLabel: 'Тестовый режим без E2EE',
+        sendMessage: vi.fn(),
+        deleteMessage: vi.fn(),
+        deletingMessageId: null,
+        typingActorIds: [],
+        onlineActorIds: [],
+        deliveryStates: [],
+        connectionState: 'connected',
+        setTyping: vi.fn(),
+        viewportAnchor: {
+          conversationId: 'conversation-1',
+          messageId: 'message-hidden',
+          sequence: 945,
+          offset: -18,
+          atLatest: false,
+          savedAt: '2026-08-11T12:45:30Z',
+        },
+        saveViewport,
+      },
+    })
+    const timeline = wrapper.get('.message-timeline').element as HTMLElement
+    Object.defineProperties(timeline, {
+      clientHeight: { configurable: true, value: 0 },
+      scrollHeight: { configurable: true, value: 9_000 },
+      scrollTop: { configurable: true, value: 0, writable: true },
+      scrollTo: { configurable: true, value: vi.fn() },
+    })
+
+    await wrapper.vm.$nextTick()
+    expect(wrapper.get('.message-timeline').classes()).toContain('message-timeline--restoring')
+    wrapper.unmount()
+    expect(saveViewport).not.toHaveBeenCalled()
+  })
+
   it('captures the previous chat viewport before a debounced save can be lost on switch', async () => {
     const saveViewport = vi.fn().mockResolvedValue(undefined)
     const firstMessage = {

@@ -37,6 +37,19 @@ function messageKeyRange(ownerUserId: string, conversationId: string, upper: num
   )
 }
 
+function messageKeyRangeAfter(
+  ownerUserId: string,
+  conversationId: string,
+  afterSequence: number,
+): IDBKeyRange {
+  return IDBKeyRange.bound(
+    [ownerUserId, conversationId, afterSequence],
+    [ownerUserId, conversationId, MAX_SEQUENCE],
+    true,
+    false,
+  )
+}
+
 export class IndexedDbMessageArchive implements MessageArchive {
   private database: Promise<IDBDatabase> | null = null
   private readonly codec: MessageArchiveCodec
@@ -78,6 +91,28 @@ export class IndexedDbMessageArchive implements MessageArchive {
     }
     if (beforeSequence === 1) return []
     return this.load(ownerUserId, conversationId, beforeSequence - 1, limit)
+  }
+
+  async loadAfter(
+    ownerUserId: string,
+    conversationId: string,
+    afterSequence: number,
+    limit: number,
+  ): Promise<OpaqueMessage[]> {
+    if (!Number.isSafeInteger(afterSequence) || afterSequence < 0) {
+      throw new MessageArchiveError('corrupt')
+    }
+    if (!validScope(ownerUserId, conversationId) || !validPage(limit)) {
+      throw new MessageArchiveError('corrupt')
+    }
+    if (afterSequence === MAX_SEQUENCE) return []
+    return this.loadRange(
+      ownerUserId,
+      conversationId,
+      messageKeyRangeAfter(ownerUserId, conversationId, afterSequence),
+      limit,
+      'next',
+    )
   }
 
   async put(
@@ -126,6 +161,22 @@ export class IndexedDbMessageArchive implements MessageArchive {
     upperSequence: number,
     limit: number,
   ): Promise<OpaqueMessage[]> {
+    return this.loadRange(
+      ownerUserId,
+      conversationId,
+      messageKeyRange(ownerUserId, conversationId, upperSequence),
+      limit,
+      'prev',
+    )
+  }
+
+  private async loadRange(
+    ownerUserId: string,
+    conversationId: string,
+    range: IDBKeyRange,
+    limit: number,
+    direction: IDBCursorDirection,
+  ): Promise<OpaqueMessage[]> {
     if (!validScope(ownerUserId, conversationId) || !validPage(limit)) {
       throw new MessageArchiveError('corrupt')
     }
@@ -135,8 +186,9 @@ export class IndexedDbMessageArchive implements MessageArchive {
       if (!key) return []
       const records = await this.readRecords(
         database,
-        messageKeyRange(ownerUserId, conversationId, upperSequence),
+        range,
         limit,
+        direction,
       )
       const messages = await Promise.all(records.map(record => this.codec.open(
         key,
@@ -144,7 +196,7 @@ export class IndexedDbMessageArchive implements MessageArchive {
         ownerUserId,
         conversationId,
       )))
-      return messages.reverse()
+      return direction === 'prev' ? messages.reverse() : messages
     } catch (error) {
       if (error instanceof MessageArchiveError) throw error
       if (error instanceof Error && error.name === 'OperationError') {
@@ -194,11 +246,12 @@ export class IndexedDbMessageArchive implements MessageArchive {
     database: IDBDatabase,
     range: IDBKeyRange,
     limit: number,
+    direction: IDBCursorDirection,
   ): Promise<EncryptedMessageRecord[]> {
     return new Promise((resolve, reject) => {
       const transaction = database.transaction(MESSAGES_STORE, 'readonly')
       const records: EncryptedMessageRecord[] = []
-      const request = transaction.objectStore(MESSAGES_STORE).openCursor(range, 'prev')
+      const request = transaction.objectStore(MESSAGES_STORE).openCursor(range, direction)
       request.addEventListener('error', () => reject(request.error), { once: true })
       request.addEventListener('success', () => {
         const cursor = request.result

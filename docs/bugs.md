@@ -4,6 +4,23 @@
 
 ## Active
 
+### BUG-066 — Reload длинного диалога показывал неверное окно и прокручивал к anchor
+
+- Статус: `fixed locally; automated and real-browser verified` (`WP-068`).
+- Severity: `high core chat UX/performance`.
+- Reproduction: остановиться в середине длинного conversation и перезагрузить PWA либо
+  открыть push/deep-link; timeline сначала показывает latest/начало и затем заметно
+  прокручивается, а hidden mobile pane иногда окончательно сбрасывает позицию в конец.
+- Причина: cold hydrate предпочитал cached latest anchored window; archive умел читать
+  только записи перед sequence; CSS включал smooth programmatic scroll; нулевая высота
+  скрытой pane интерпретировалась как `atLatest`; route target мог опередить DOM.
+- Исправление: bounded window читается до и после anchor, timeline показывается после
+  exact restore без smooth animation, zero-height viewport не сохраняется, deep-link
+  остаётся pending до target с достаточным контекстом.
+- Проверка: 51 focused tests; production Docker build; real browser с 1000 fake rows —
+  target `#500` сразу внутри `451..550`, reload сохраняет visible `#512..#517` с
+  offset delta 6 px, 100 DOM rows и нулём browser errors.
+
 ### BUG-065 — iOS PWA наследовала Safari session без локальных MLS-ключей
 
 - Статус: `fixed locally; production iOS acceptance pending` (`WP-067`).

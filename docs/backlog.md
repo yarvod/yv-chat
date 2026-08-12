@@ -11,8 +11,8 @@
 
 ### Release gate — сначала закрыть уже реализованное
 
-1. Завершить и развернуть текущий `WP-067`: iOS Home Screen PWA должна безопасно
-   получить отдельный device через password-confirmed re-enrollment без logout Safari.
+1. Завершить и развернуть текущий `WP-068`: reload/deep-link длинного chat должен
+   сразу восстановить bounded anchored window; rollout также включает готовый `WP-067`.
 2. Production-проверить `BUG-063`: serial history decrypt должен сохранить MLS
    ratchet и позволить reply после reload.
 3. Исправить `BUG-059`: cache-first startup обязан reconciled-ить directory после
@@ -349,6 +349,17 @@ generic background notification, focus/navigation и invalid-subscription cleanu
 - решение о native wrapper только при подтверждённой необходимости.
 
 ## Completed
+
+### BL-068 — Instant anchored chat open and reload
+
+Статус: **implemented and real-browser verified locally** (`WP-068`).
+
+- encrypted IndexedDB и server history читают bounded окно `49 before + target + 50 after`;
+- cached latest больше не рисуется перед saved mid-history anchor;
+- hidden mobile pane не перезаписывает anchor, а deep-link ждёт target DOM;
+- programmatic restore выполняется без smooth animation и до показа timeline;
+- browser test с 1000 сообщениями восстановил `#512..#517` после reload с delta `6 px`,
+  а deep-link `#500` загрузил contiguous `451..550` при 100 DOM rows.
 
 ### BL-067 — Safe iOS PWA crypto re-enrollment
 

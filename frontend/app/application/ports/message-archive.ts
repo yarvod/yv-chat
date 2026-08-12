@@ -21,6 +21,12 @@ export interface MessageArchive {
     beforeSequence: number,
     limit: number,
   ): Promise<OpaqueMessage[]>
+  loadAfter(
+    ownerUserId: string,
+    conversationId: string,
+    afterSequence: number,
+    limit: number,
+  ): Promise<OpaqueMessage[]>
   put(
     ownerUserId: string,
     conversationId: string,

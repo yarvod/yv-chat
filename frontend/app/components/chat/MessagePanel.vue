@@ -367,18 +367,20 @@ function removeAttachment(index: number): void {
 
 function isNearLatest(): boolean {
   const element = timeline.value
-  if (!element) return true
+  if (!element || element.clientHeight <= 0) return false
   return element.scrollHeight - element.scrollTop - element.clientHeight < 120
 }
 
 function handleTimelineScroll(): void {
+  if (restorationPending.value) void restoreViewport(false)
+  if (restorationPending.value) return
   showScrollToLatest.value = !isNearLatest() || props.historyHasNewer
-  if (!adjustingViewport && !restorationPending.value) scheduleViewportSave()
+  if (!adjustingViewport) scheduleViewportSave()
 }
 
 function scrollToLatest(behavior: ScrollBehavior = 'smooth'): void {
   const element = timeline.value
-  if (!element) return
+  if (!element || element.clientHeight <= 0) return
   element.scrollTo({ top: element.scrollHeight, behavior })
   showScrollToLatest.value = false
   restorationPending.value = false
@@ -396,7 +398,7 @@ function messageElement(messageId: string): HTMLElement | null {
 function currentViewportAnchor(): ConversationViewportAnchor | null {
   const element = timeline.value
   const conversation = props.conversation
-  if (!element || !conversation) return null
+  if (!element || !conversation || element.clientHeight <= 0) return null
   const candidates = messageElements()
   if (candidates.length === 0) return null
   const containerRect = element.getBoundingClientRect()
@@ -477,7 +479,11 @@ async function restoreViewport(waitForRender = true): Promise<void> {
   if (!restorationPending.value) return
   if (waitForRender) await nextTick()
   const container = timeline.value
-  if (!container || props.messages.length === 0) return
+  if (!container || container.clientHeight <= 0) return
+  if (props.messages.length === 0) {
+    if (!props.targetMessageId && !props.viewportAnchor) restorationPending.value = false
+    return
+  }
   const targetMessageId = props.targetMessageId
   if (targetMessageId) {
     const target = messageElement(targetMessageId)
@@ -494,12 +500,19 @@ async function restoreViewport(waitForRender = true): Promise<void> {
       scheduleViewportSave()
       return
     }
+    return
   }
   const anchor = props.viewportAnchor
   if (anchor && alignMessage(anchor.messageId, anchor.offset)) {
     lockLayoutAnchor(anchor.messageId, anchor.offset)
     restorationPending.value = false
     showScrollToLatest.value = !anchor.atLatest || props.historyHasNewer
+    scheduleViewportSave()
+    return
+  }
+  if (container.scrollTop > 0) {
+    restorationPending.value = false
+    showScrollToLatest.value = true
     scheduleViewportSave()
     return
   }
@@ -706,6 +719,8 @@ onBeforeUnmount(() => {
     <div
       ref="timeline"
       class="message-timeline"
+      :class="{ 'message-timeline--restoring': restorationPending }"
+      :aria-busy="restorationPending"
       aria-live="polite"
       @scroll.passive="handleTimelineScroll"
       @pointerdown.passive="releaseLayoutAnchor"

@@ -138,9 +138,18 @@ describe('encrypted IndexedDB message archive', () => {
 
     const latest = await archive.loadLatest(ownerUserId, conversationId, 100)
     const older = await archive.loadBefore(ownerUserId, conversationId, 6, 100)
+    const newer = await archive.loadAfter(ownerUserId, conversationId, 100, 100)
+    const afterLastPossible = await archive.loadAfter(
+      ownerUserId,
+      conversationId,
+      Number.MAX_SAFE_INTEGER,
+      100,
+    )
     const beforeFirst = await archive.loadBefore(ownerUserId, conversationId, 1, 100)
     expect(latest.map(item => item.sequence)).toEqual(Array.from({ length: 100 }, (_, index) => index + 6))
     expect(older).toEqual([])
+    expect(newer.map(item => item.sequence)).toEqual([101, 102, 103, 104, 105])
+    expect(afterLastPossible).toEqual([])
     expect(beforeFirst).toEqual([])
     await expect(archive.loadLatest('other-user', conversationId, 100)).resolves.toEqual([])
   })

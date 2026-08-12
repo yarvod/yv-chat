@@ -283,6 +283,20 @@ Scroll coordinator проверяет позицию до DOM update: initial lo
 Enter отправляет, Shift+Enter добавляет строку, IME composition никогда не вызывает
 преждевременную отправку.
 
+Message-relative viewport является durable local intent, а не абсолютным `scrollTop`.
+Cold reload читает из encrypted IndexedDB bounded окно `49 before + target + 50 after`;
+при archive miss тот же window запрашивается у server. Timeline скрыт до первой exact
+расстановки и programmatic restore всегда использует instant scroll. Hidden mobile
+pane с нулевой высотой не имеет права вычислять или сохранять anchor. Push/deep-link
+остаётся pending, пока target row не появился в DOM с небольшим контекстом с обеих
+сторон, поэтому sparse latest cache не считается готовым target window.
+
+History size не определяет стоимость initial render: latest/anchored fetch содержит не
+более 100 rows, reactive timeline ограничен 300 rows, encrypted archive — 2000 rows.
+Pagination расширяет окно по требованию; Vue никогда не монтирует lifetime history
+целиком. Уже подготовленные неизменившиеся envelopes переиспользуются, чтобы merge
+local/server window не запускал повторную дешифровку тех же ciphertext.
+
 Reusable typed SVG icons, local conversation search, circular avatars, time/unread/
 presence metadata и compact grouped bubbles являются presentation деталями. Они не
 добавляют network state или crypto logic в Vue components. Physical acceptance для
