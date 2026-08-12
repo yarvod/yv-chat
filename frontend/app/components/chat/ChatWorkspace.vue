@@ -218,6 +218,7 @@ onBeforeUnmount(() => {
         :viewport-anchor="messenger.activeViewportAnchor.value"
         :target-message-id="targetMessageId"
         :save-viewport="messenger.rememberViewport"
+        :video-note-recorder="$frontend.videoNoteRecorder"
         @back="closeConversation"
         @group-details="groupDetailsOpen = true"
       />

@@ -1129,6 +1129,19 @@ Blob скачивается без выхода из приложения. Compo
 `accept="image/*,video/*"` и unrestricted file picker: конкретный системный UI
 галереи остаётся ответственностью OS/browser.
 
+`WP-073` добавляет `video_note` как presentation metadata поверх того же group v1
+`video` attachment, не как новый storage/media kind. Старый клиент игнорирует
+необязательные metadata и показывает обычное видео. Browser adapter после user
+gesture запрашивает camera/microphone, runtime-negotiates MP4/WebM, записывает
+квадратный 480×480 поток с bounded 20 fps / 420 Kbit video / 48 Kbit mono audio и
+останавливает все tracks при stop/cancel/error/background/unmount. Client maximum —
+60 секунд и 8 MiB; обычный group video сохраняет общий 100 MiB limit. Camera switch
+меняет только client capture source; crop/composition выполняется локально там, где
+доступен `canvas.captureStream`, с direct MediaRecorder fallback. Server не получает
+отдельный camera signal и не делает thumbnail, crop или transcoding. Hold/release,
+swipe-left cancel и swipe-up lock являются presentation interaction; authorized
+upload, message idempotency, TTL, cleanup и download/cache correctness не меняются.
+
 После `WP-071` group v1 download проходит через отдельный encrypted device cache.
 `yv-chat-media-cache-v1` хранит только non-extractable per-user-device AES-256-GCM
 key и bounded operational index; bytes пишутся 1 MiB authenticated chunks в opaque

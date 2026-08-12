@@ -331,6 +331,15 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .message-video-fallback .app-icon { width: 30px; height: 30px; color: var(--primary); }
 .message-video-fallback small { color: rgb(255 255 255 / 68%); }
 .message-video-fallback button, .media-viewer__unsupported button { min-height: 34px; padding: 5px 12px; border: 1px solid currentcolor; border-radius: 999px; color: var(--primary); background: transparent; }
+.message-video-note-shell { display: grid; width: min(224px, 64vw); min-height: min(224px, 64vw); place-items: center; overflow: visible; background: transparent; }
+.message-video-note { --video-note-progress: 0deg; position: relative; display: grid; width: min(220px, 62vw); aspect-ratio: 1; place-items: center; padding: 4px; border: 0; border-radius: 50%; color: white; background: conic-gradient(var(--primary) var(--video-note-progress), color-mix(in srgb, var(--primary) 18%, var(--border)) 0); box-shadow: 0 8px 24px rgb(0 0 0 / 18%); cursor: pointer; }
+.message-video-note__inner { position: relative; display: block; width: 100%; height: 100%; overflow: hidden; border: 3px solid var(--surface); border-radius: 50%; background: #090b12; }
+.message-video-note video { display: block; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+.message-video-note__play { position: absolute; inset: 50% auto auto 50%; display: grid; width: 48px; height: 48px; place-items: center; padding-left: 4px; transform: translate(-50%, -50%); border-radius: 50%; background: rgb(3 5 10 / 58%); box-shadow: 0 4px 18px rgb(0 0 0 / 24%); font-size: 1.1rem; backdrop-filter: blur(6px); }
+.message-video-note small { position: absolute; right: 18px; bottom: 13px; padding: 2px 6px; border-radius: 999px; color: white; background: rgb(3 5 10 / 62%); font-size: .67rem; font-variant-numeric: tabular-nums; }
+.message-video-note-loading, .message-video-note-unavailable { display: grid; width: min(220px, 62vw); aspect-ratio: 1; place-items: center; align-content: center; gap: 8px; padding: 16px; border-radius: 50%; color: var(--muted); background: color-mix(in srgb, var(--primary) 7%, var(--field)); text-align: center; font-size: .75rem; }
+.message-video-note-unavailable { color: var(--danger); }
+.message-video-note-unavailable button { min-height: 30px; padding: 3px 10px; border: 1px solid currentcolor; border-radius: 999px; color: inherit; background: transparent; }
 .message-attachments--gallery .message-video-shell { border-radius: 5px; }
 .message-attachments--gallery .message-video { width: 100%; height: clamp(120px, 24vw, 230px); object-fit: cover; }
 .message-file { display: grid; min-width: min(310px, 65vw); grid-column: 1 / -1; grid-template-columns: 42px minmax(0, 1fr); align-items: center; gap: 9px; padding: 8px; border: 0; border-radius: 12px; color: inherit; background: color-mix(in srgb, var(--primary) 8%, transparent); text-align: left; cursor: pointer; }
@@ -363,6 +372,30 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .send-button { display: grid; width: 46px; height: 46px; place-items: center; padding: 0; border: 0; border-radius: 50%; color: var(--primary-ink); background: var(--primary); font-size: 1.05rem; font-weight: 850; transition: transform .15s ease; }
 .send-button:active { transform: scale(.93); }
 .send-button:disabled { cursor: default; opacity: .45; transform: none; }
+.video-note-capture { display: grid; width: 46px; height: 46px; place-items: center; }
+.video-note-button { position: relative; display: grid; width: 46px; height: 46px; place-items: center; padding: 0; border: 0; border-radius: 50%; color: var(--primary-ink); background: var(--primary); cursor: pointer; touch-action: none; user-select: none; -webkit-user-select: none; transition: transform .15s ease, box-shadow .15s ease; }
+.video-note-button:active { transform: scale(.92); box-shadow: 0 0 0 7px color-mix(in srgb, var(--primary) 18%, transparent); }
+.video-note-button:disabled { cursor: default; opacity: .45; transform: none; }
+.video-note-button > span { position: relative; width: 23px; height: 18px; border: 2px solid currentcolor; border-radius: 6px; }
+.video-note-button > span::before { content: ''; position: absolute; inset: 50% auto auto 50%; width: 7px; height: 7px; transform: translate(-50%, -50%); border: 2px solid currentcolor; border-radius: 50%; }
+.video-note-button > span::after { content: ''; position: absolute; top: 2px; right: -6px; width: 6px; height: 10px; border-radius: 0 4px 4px 0; background: currentcolor; clip-path: polygon(0 25%, 100% 0, 100% 100%, 0 75%); }
+.video-note-overlay { position: fixed; z-index: 150; inset: 0; display: grid; place-items: end center; padding: max(20px, env(safe-area-inset-top)) 16px max(90px, calc(env(safe-area-inset-bottom) + 76px)); background: linear-gradient(180deg, rgb(3 5 10 / 25%), rgb(3 5 10 / 82%)); backdrop-filter: blur(6px); }
+.video-note-recorder { display: grid; width: min(360px, calc(100vw - 32px)); place-items: center; gap: 14px; color: white; text-align: center; pointer-events: none; }
+.video-note-recorder__preview { position: relative; display: grid; width: min(310px, 78vw); aspect-ratio: 1; place-items: center; overflow: hidden; border: 4px solid var(--primary); border-radius: 50%; background: #090b12; box-shadow: 0 18px 64px rgb(0 0 0 / 42%); transition: transform .15s ease, border-color .15s ease; }
+.video-note-recorder.is-cancel-armed .video-note-recorder__preview { transform: scale(.93); border-color: var(--danger); }
+.video-note-recorder__preview video { display: block; width: 100%; height: 100%; object-fit: cover; }
+.video-note-recorder__preview video.mirrored { transform: scaleX(-1); }
+.video-note-recorder__preview .loading-orbit { position: absolute; width: 34px; height: 34px; }
+.video-note-recorder__time { position: absolute; bottom: 18px; left: 50%; min-width: 54px; padding: 5px 10px; transform: translateX(-50%); border-radius: 999px; background: rgb(3 5 10 / 68%); font-size: .78rem; font-variant-numeric: tabular-nums; backdrop-filter: blur(8px); }
+.video-note-recorder p { min-height: 22px; margin: 0; color: rgb(255 255 255 / 82%); font-size: .8rem; font-weight: 700; }
+.video-note-recorder .video-note-recorder__cancel-hint { color: #ff9da9; }
+.video-note-recorder__actions { display: flex; align-items: center; gap: 12px; pointer-events: auto; }
+.video-note-recorder__actions button { min-width: 54px; min-height: 46px; padding: 0 14px; border: 1px solid rgb(255 255 255 / 28%); border-radius: 999px; color: white; background: rgb(255 255 255 / 12%); font-weight: 800; backdrop-filter: blur(10px); }
+.video-note-recorder__actions button[aria-label='Переключить камеру'] { min-width: 46px; padding: 0; font-size: 1.45rem; }
+.video-note-recorder__actions button.primary { border-color: var(--primary); color: var(--primary-ink); background: var(--primary); }
+.video-note-recorder__actions button.danger { border-color: color-mix(in srgb, var(--danger) 65%, transparent); color: #ffb7bf; }
+.video-note-overlay-enter-active, .video-note-overlay-leave-active { transition: opacity .15s ease; }
+.video-note-overlay-enter-from, .video-note-overlay-leave-to { opacity: 0; }
 .new-conversation { padding: 14px; border-bottom: 1px solid var(--border); }
 .segmented { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-bottom: 14px; padding: 4px; border-radius: 12px; background: var(--field); }
 .segmented button { min-height: 36px; border: 0; border-radius: 9px; color: var(--muted); background: transparent; }

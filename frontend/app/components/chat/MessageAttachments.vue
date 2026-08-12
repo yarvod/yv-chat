@@ -23,6 +23,8 @@ const props = defineProps<{
 
 const mediaStates = ref(new Map<string, MediaState>())
 const playbackFailures = ref(new Set<string>())
+const playingVideoNotes = ref(new Set<string>())
+const videoNoteProgress = ref(new Map<string, number>())
 const galleryRoot = ref<HTMLElement | null>(null)
 const viewerRoot = ref<HTMLElement | null>(null)
 const viewerImage = ref<HTMLImageElement | null>(null)
@@ -61,6 +63,50 @@ function playbackFailed(attachmentId: string): boolean {
 
 function markPlaybackFailure(attachmentId: string): void {
   playbackFailures.value = new Set(playbackFailures.value).add(attachmentId)
+}
+
+function videoNoteStyle(attachmentId: string): Record<string, string> {
+  const progress = videoNoteProgress.value.get(attachmentId) ?? 0
+  return { '--video-note-progress': `${Math.round(progress * 360)}deg` }
+}
+
+function videoNoteDuration(attachment: MessageAttachment): string {
+  const duration = Math.max(1, Math.min(60, attachment.durationSeconds ?? 1))
+  return `0:${String(duration).padStart(2, '0')}`
+}
+
+async function toggleVideoNote(attachmentId: string, event: MouseEvent): Promise<void> {
+  const button = event.currentTarget as HTMLButtonElement
+  const video = button.querySelector('video')
+  if (!video) return
+  if (!video.paused) {
+    video.pause()
+    return
+  }
+  for (const candidate of galleryRoot.value?.querySelectorAll('video') ?? []) {
+    if (candidate !== video && !candidate.paused) candidate.pause()
+  }
+  try {
+    await video.play()
+  } catch {
+    markPlaybackFailure(attachmentId)
+  }
+}
+
+function updateVideoNotePlayback(attachmentId: string, event: Event): void {
+  const video = event.currentTarget as HTMLVideoElement
+  const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 1
+  videoNoteProgress.value = new Map(videoNoteProgress.value).set(
+    attachmentId,
+    Math.max(0, Math.min(1, video.currentTime / duration)),
+  )
+}
+
+function setVideoNotePlaying(attachmentId: string, playing: boolean): void {
+  const next = new Set(playingVideoNotes.value)
+  if (playing) next.add(attachmentId)
+  else next.delete(attachmentId)
+  playingVideoNotes.value = next
 }
 
 async function load(attachment: MessageAttachment): Promise<MediaState> {
@@ -279,6 +325,12 @@ watch(
       nextStates.delete(attachmentId)
     }
     mediaStates.value = nextStates
+    playingVideoNotes.value = new Set(
+      [...playingVideoNotes.value].filter(attachmentId => currentIds.has(attachmentId)),
+    )
+    videoNoteProgress.value = new Map(
+      [...videoNoteProgress.value].filter(([attachmentId]) => currentIds.has(attachmentId)),
+    )
     if (
       activeMediaIndex.value !== null
       && activeMediaIndex.value >= mediaAttachments.value.length
@@ -303,6 +355,7 @@ onBeforeUnmount(() => {
   mediaObserver?.disconnect()
   window.removeEventListener('keydown', handleViewerKeydown)
   pauseViewerVideo()
+  for (const video of galleryRoot.value?.querySelectorAll('video') ?? []) video.pause()
   for (const state of mediaStates.value.values()) {
     if (state.url) URL.revokeObjectURL(state.url)
   }
@@ -340,6 +393,56 @@ onBeforeUnmount(() => {
         </div>
         <div v-else class="attachment-unavailable" role="status">
           <span>Медиа недоступно или срок хранения истёк.</span>
+          <button type="button" @click="load(attachment)">Повторить</button>
+        </div>
+      </div>
+
+      <div
+        v-else-if="attachment.kind === 'video' && attachment.presentation === 'video_note'"
+        class="message-video-note-shell"
+        :data-attachment-id="attachment.attachmentId"
+      >
+        <template v-if="stateFor(attachment.attachmentId)?.phase === 'ready'">
+          <div v-if="playbackFailed(attachment.attachmentId)" class="message-video-note-unavailable">
+            <span>Видео не поддерживается.</span>
+            <button type="button" @click="downloadFile(attachment)">Скачать</button>
+          </div>
+          <button
+            v-else
+            class="message-video-note"
+            type="button"
+            :style="videoNoteStyle(attachment.attachmentId)"
+            :aria-label="playingVideoNotes.has(attachment.attachmentId)
+              ? `Пауза видеокружка ${attachment.name}`
+              : `Воспроизвести видеокружок ${attachment.name}`"
+            @click="toggleVideoNote(attachment.attachmentId, $event)"
+          >
+            <span class="message-video-note__inner">
+              <video
+                :src="stateFor(attachment.attachmentId)?.url"
+                playsinline
+                preload="metadata"
+                @play="setVideoNotePlaying(attachment.attachmentId, true)"
+                @pause="setVideoNotePlaying(attachment.attachmentId, false)"
+                @ended="setVideoNotePlaying(attachment.attachmentId, false)"
+                @timeupdate="updateVideoNotePlayback(attachment.attachmentId, $event)"
+                @error="markPlaybackFailure(attachment.attachmentId)"
+              />
+              <span v-if="!playingVideoNotes.has(attachment.attachmentId)" class="message-video-note__play" aria-hidden="true">▶</span>
+              <small>{{ videoNoteDuration(attachment) }}</small>
+            </span>
+          </button>
+        </template>
+        <div
+          v-else-if="stateFor(attachment.attachmentId)?.phase !== 'unavailable'"
+          class="message-video-note-loading"
+          role="status"
+          aria-label="Загружаем видеокружок"
+        >
+          <span class="loading-orbit" aria-hidden="true" />
+        </div>
+        <div v-else class="message-video-note-unavailable" role="status">
+          <span>Видеокружок недоступен или срок хранения истёк.</span>
           <button type="button" @click="load(attachment)">Повторить</button>
         </div>
       </div>

@@ -4,61 +4,60 @@
 завершённая работа фиксируется отдельным коммитом, а новый пункт переносится
 сюда из `backlog.md`.
 
-## WP-072 — Device data controls and safe message links
+## WP-073 — Telegram-style group video notes
 
-Статус: **complete; local browser acceptance and full CI green**
+Статус: **implementation complete; full CI green; physical-camera acceptance pending**
 
-Цель: пользователь видит объём локального media cache и может безопасно очистить
-его в Settings, не затрагивая переписки/session/device identity/MLS; `http(s)` URL
-в сообщениях открываются обычной ссылкой через browser/OS устройства.
+Цель: участник server-readable group v1 записывает компактное круглое видео прямо
+из composer, управляет записью привычными мобильными жестами и получает устойчивое
+воспроизведение через уже существующие media TTL/cache/sync boundaries.
 
 ### Scope
 
-- [x] account+device-scoped media cache statistics: bytes, entries, 2 GiB ceiling;
-- [x] explicit confirm перед очисткой и понятное описание точной области удаления;
-- [x] persistent OPFS/IDB media entries, отдельный media key и hot decrypted RAM
-  очищаются как одна user action;
-- [x] concurrent in-flight download после clear не может снова записать старый cache;
-- [x] message renderer linkify-ит только valid `http:`, `https:` и `www.` URL;
-- [x] normal `<a target="_blank">` делегирует открытие default browser/OS без
-  privileged API и сохраняет `noopener noreferrer external`;
-- [x] входной message text остаётся escaped Vue text, без `v-html`.
+- browser camera/microphone capture только после user gesture и только в group;
+- удержание кнопки начинает запись, swipe-left отменяет, swipe-up фиксирует запись;
+- locked mode предоставляет явные stop/send, cancel и front/back camera controls;
+- квадратный 480×480 capture, максимум 60 секунд и bounded low-bitrate encoding;
+- runtime MIME negotiation для MP4/WebM без предположения одного browser codec;
+- `video_note` presentation metadata внутри version-tolerant group content;
+- круглый player с play/pause, progress и duration без server thumbnail/transcoding;
+- существующие authorized upload, quota, TTL, cleanup и encrypted device cache
+  переиспользуются без нового media backend или schema migration.
 
 ### Security and data invariants
 
-- clear не открывает и не меняет `yv-chat-messages-v1`, snapshot, outbox,
-  conversation crypto или `yv-chat-crypto-v1`;
-- clear не удаляет session credential, device identity, MLS wrapping key или archive;
-- операция ограничена exact authenticated `user_id + device_id`; media другого
-  аккаунта/device в том же browser origin остаются;
-- unsafe schemes (`javascript:`, `data:`, `file:`) никогда не становятся ссылками;
-- link click не выполняет содержимое сообщения и не получает `window.opener`.
+- video note доступен только в явно non-E2EE group v1 и сохраняет warning в UI;
+- direct MLS composer не получает camera control и не обходит `BL-017`;
+- camera/microphone tracks останавливаются при cancel, error, unmount, conversation
+  switch и background visibility transition;
+- backend получает group plaintext media как и для существующего group video, но
+  никогда не получает browser path или произвольный filesystem key;
+- запись не логируется, не сохраняется в `localStorage` и не добавляет plaintext push;
+- server не декодирует, не crop-ит и не транскодирует media.
 
 ### Exclusions
 
-- destructive clear всей encrypted переписки или crypto identity;
-- pinned media, per-chat cache controls и configurable cache ceiling;
-- composer draft storage и local message retention controls;
-- URL preview fetching, unfurl metadata и server-side URL inspection.
+- direct MLS/E2EE video notes и attachment keys;
+- persisted offline video-note draft/background upload;
+- filters, beauty effects, server thumbnails и server transcoding;
+- unbounded recording, HD/4K capture и calls/WebRTC signaling.
 
 ### Definition of Done
 
-- Settings показывает текущий media usage и entry count;
-- confirm clear освобождает только media cache и сразу показывает zero state;
-- reopen доступного media после clear выполняет обычный authenticated download;
-- сообщения, MLS keys/checkpoints и данные другого device переживают clear;
-- URL с punctuation и mention рядом отображается корректно; unsafe scheme inert;
-- frontend tests/lint/typecheck/build и полный repository CI проходят;
-- local Docker/browser проверяет settings clear и real external-link element.
+- hold/release отправляет один `video_note`; swipe-left не отправляет байты;
+- swipe-up сохраняет запись после release и позволяет переключить camera;
+- 60-second boundary автоматически завершает запись;
+- permission denial, unsupported recorder, capture error и too-large output имеют
+  понятный recoverable UI, а active tracks всегда остановлены;
+- старый metadata consumer безопасно воспринимает video note как обычное video;
+- получатель видит круглый player, а generic video rendering не меняется;
+- frontend tests/lint/typecheck/build и полный repository CI проходят.
 
 ### Verification evidence
 
-- targeted storage/link tests: `21 passed`;
-- full frontend: `46 files / 250 tests`, lint/typecheck/build green;
-- local Docker/browser: real group message produced one safe external anchor with
-  exact `href`, `_blank`, `noopener noreferrer external`; `javascript:` stayed text;
-  Settings reported `836 B / 1 file`, required confirm, then reported `0 B / 0 files`;
-  reopening the chat preserved message/link, re-downloaded PNG and returned cache to
-  `836 B / 1 file` without console errors;
+- targeted recorder/gesture/metadata/rendering/message-panel suite: `41 passed`;
+- full frontend: `48 files / 260 tests`, lint/typecheck/production build green;
 - full `make ci`: backend `241 passed / 9 skipped`, Rust `21 passed`, frontend
-  `46 files / 250 tests`, lint/typecheck/build/docs/config checks green.
+  `48 files / 260 tests`, lint/typecheck/build/docs/config checks green;
+- physical Android/iOS installed-PWA camera, permission and codec acceptance не
+  запускались в текущем environment и остаются обязательным pre-deploy smoke.

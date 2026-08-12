@@ -19,7 +19,7 @@ function validInteractionId(value: unknown): value is string {
 function validAttachment(value: unknown): value is MessageAttachment {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
   const item = value as Record<string, unknown>
-  return typeof item.attachmentId === 'string'
+  const baseValid = typeof item.attachmentId === 'string'
     && item.attachmentId.length > 0
     && item.attachmentId.length <= 64
     && (item.kind === 'image' || item.kind === 'video' || item.kind === 'file')
@@ -32,6 +32,13 @@ function validAttachment(value: unknown): value is MessageAttachment {
     && Number.isSafeInteger(item.byteSize)
     && Number(item.byteSize) > 0
     && Number(item.byteSize) <= maximumAttachmentBytes(item.kind)
+  if (!baseValid) return false
+  if (item.presentation === undefined && item.durationSeconds === undefined) return true
+  return item.presentation === 'video_note'
+    && item.kind === 'video'
+    && Number.isInteger(item.durationSeconds)
+    && Number(item.durationSeconds) >= 1
+    && Number(item.durationSeconds) <= 60
 }
 
 export function encodeGroupMessageContent(content: GroupMessageContent): string {

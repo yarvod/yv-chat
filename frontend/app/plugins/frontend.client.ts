@@ -59,6 +59,7 @@ import { BrowserNetworkStatus } from '../infrastructure/browser/browser-network-
 import { BrowserPageVisibility } from '../infrastructure/browser/page-visibility'
 import { BrowserScheduler } from '../infrastructure/browser/scheduler'
 import { BrowserThemePreferences } from '../infrastructure/browser/theme-preferences'
+import { BrowserVideoNoteRecorder } from '../infrastructure/browser/video-note-recorder'
 import { IndexedDbMessageArchive } from '../infrastructure/storage/indexeddb-message-archive'
 import { IndexedDbMessengerSnapshotStore } from '../infrastructure/storage/indexeddb-messenger-snapshot-store'
 import { IndexedDbMessageOutbox } from '../infrastructure/storage/indexeddb-message-outbox'
@@ -202,6 +203,7 @@ export default defineNuxtPlugin(() => {
           new BrowserPushAdapter(),
           pushRegistrationGateway,
         ),
+        videoNoteRecorder: new BrowserVideoNoteRecorder(),
         deviceCryptoSession,
         getDeviceCryptoRegistration: new GetDeviceCryptoRegistration(deviceCryptoRegistryGateway),
         registerDeviceCrypto: new RegisterDeviceCrypto(deviceCryptoRegistryGateway),

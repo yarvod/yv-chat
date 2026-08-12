@@ -80,6 +80,28 @@ describe('group message attachment content', () => {
   it('rejects an empty content envelope', () => {
     expect(() => encodeGroupMessageContent({ text: ' ', attachments: [] })).toThrow(TypeError)
   })
+
+  it('round-trips video-note presentation while rejecting malformed note metadata', () => {
+    const videoNote = {
+      attachmentId: 'video-note-1',
+      kind: 'video' as const,
+      name: 'video-note.webm',
+      contentType: 'video/webm',
+      byteSize: 2_100_000,
+      presentation: 'video_note' as const,
+      durationSeconds: 42,
+    }
+    const encoded = encodeGroupMessageContent({ text: '', attachments: [videoNote] })
+    expect(decodeGroupMessageContent(encoded)).toEqual({ text: '', attachments: [videoNote] })
+    expect(() => encodeGroupMessageContent({
+      text: '',
+      attachments: [{ ...videoNote, durationSeconds: 61 }],
+    })).toThrow('invalid group attachment metadata')
+    expect(() => encodeGroupMessageContent({
+      text: '',
+      attachments: [{ ...attachment, presentation: 'video_note', durationSeconds: 10 }],
+    })).toThrow('invalid group attachment metadata')
+  })
 })
 
 describe('group attachment upload use case', () => {
@@ -130,6 +152,28 @@ describe('group attachment upload use case', () => {
       size: video.size,
       body: video,
     })).resolves.toMatchObject({ kind: 'video', contentType: 'video/mp4' })
+    await expect(useCase.execute('group-1', 'group', {
+      name: 'video-note.mp4',
+      type: 'video/mp4',
+      size: video.size,
+      body: video,
+      presentation: 'video_note',
+      durationSeconds: 12,
+    })).resolves.toMatchObject({
+      kind: 'video',
+      presentation: 'video_note',
+      durationSeconds: 12,
+    })
+    const oversizedNote = new Blob(['bounded'], { type: 'video/mp4' })
+    Object.defineProperty(oversizedNote, 'size', { value: 8 * 1024 * 1024 + 1 })
+    await expect(useCase.execute('group-1', 'group', {
+      name: 'oversized-note.mp4',
+      type: 'video/mp4',
+      size: oversizedNote.size,
+      body: oversizedNote,
+      presentation: 'video_note',
+      durationSeconds: 60,
+    })).rejects.toThrow('invalid attachment source')
     const arbitrary = new Blob(['custom'])
     await expect(useCase.execute('group-1', 'group', {
       name: 'archive.unknown',
@@ -340,6 +384,38 @@ describe('message attachment rendering', () => {
     await wrapper.get('.message-video-fallback button').trigger('click')
     expect(click).toHaveBeenCalledOnce()
     click.mockRestore()
+  })
+
+  it('renders a video note as a circular custom player without changing generic video', async () => {
+    const videoNote = {
+      attachmentId: 'video-note-1',
+      kind: 'video' as const,
+      name: 'video-note.webm',
+      contentType: 'video/webm',
+      byteSize: 420,
+      presentation: 'video_note' as const,
+      durationSeconds: 9,
+    }
+    const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined)
+    const wrapper = mount(MessageAttachments, {
+      props: {
+        conversationId: 'conversation-1',
+        expiresAt,
+        attachments: [videoNote],
+        loadAttachment: vi.fn().mockResolvedValue(
+          new Blob(['x'.repeat(videoNote.byteSize)], { type: videoNote.contentType }),
+        ),
+      },
+      global: { stubs: { Teleport: true } },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('.message-video').exists()).toBe(false)
+    expect(wrapper.get('.message-video-note').text()).toContain('0:09')
+    expect(wrapper.get('.message-video-note video').attributes('controls')).toBeUndefined()
+    await wrapper.get('.message-video-note').trigger('click')
+    expect(play).toHaveBeenCalledOnce()
+    play.mockRestore()
   })
 
   it('downloads a file through the authenticated gateway without endpoint navigation', async () => {

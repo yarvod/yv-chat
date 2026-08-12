@@ -193,6 +193,57 @@ describe('message panel', () => {
     ])
   })
 
+  it('sends captured group video-note metadata and never exposes the camera in direct chat', async () => {
+    const body = new Blob(['compact'], { type: 'video/webm' })
+    const sendMessage = vi.fn().mockResolvedValue(true)
+    const videoNoteRecorder = {
+      isSupported: () => true,
+      open: vi.fn(),
+    }
+    const wrapper = mount(MessagePanel, {
+      props: {
+        conversation: { ...conversation, conversationType: 'group', title: 'Team' },
+        messages: [],
+        actorUserId: 'alice-id',
+        sending: false,
+        protectionSecure: false,
+        protectionLabel: 'Группа без E2EE',
+        videoNoteRecorder,
+        sendMessage,
+        deleteMessage: vi.fn(),
+        deletingMessageId: null,
+        typingActorIds: [],
+        onlineActorIds: [],
+        deliveryStates: [],
+        connectionState: 'connected',
+        setTyping: vi.fn(),
+      },
+      global: {
+        stubs: {
+          VideoNoteCapture: {
+            template: '<button class="fake-video-note" type="button" @click="$emit(\'recorded\', recording)">record</button>',
+            props: ['recorder', 'disabled'],
+            emits: ['recorded', 'error'],
+            data: () => ({
+              recording: { body, contentType: 'video/webm', durationSeconds: 8 },
+            }),
+          },
+        },
+      },
+    })
+
+    await wrapper.get('.fake-video-note').trigger('click')
+    expect(sendMessage).toHaveBeenCalledWith('', [expect.objectContaining({
+      type: 'video/webm',
+      size: body.size,
+      body,
+      presentation: 'video_note',
+      durationSeconds: 8,
+    })])
+    await wrapper.setProps({ conversation })
+    expect(wrapper.find('.fake-video-note').exists()).toBe(false)
+  })
+
   it('does not bypass the direct-chat E2EE media boundary for pasted files', async () => {
     const wrapper = mount(MessagePanel, {
       props: {

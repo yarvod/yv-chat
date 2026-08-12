@@ -48,6 +48,8 @@ export interface MessageAttachment {
   name: string
   contentType: string
   byteSize: number
+  presentation?: 'video_note'
+  durationSeconds?: number
 }
 
 export interface SendMessageReceipt {

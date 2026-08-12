@@ -4,6 +4,10 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { TimelineMessage } from '../../application/messaging/timeline-message'
 import type { MessageInteractionContext } from '../../application/messaging/text-message-content'
 import type { GroupAttachmentSource } from '../../application/messaging/upload-group-attachment'
+import type {
+  RecordedVideoNote,
+  VideoNoteRecorder,
+} from '../../application/ports/video-note-recorder'
 import {
   attachmentKindFor,
   GROUP_ATTACHMENT_LIMIT,
@@ -22,6 +26,7 @@ import { buildTimelineLayout } from '../../presentation/chat/timeline-layout'
 import AppIcon from '../ui/AppIcon.vue'
 import MessageAttachments from './MessageAttachments.vue'
 import MessageText from './MessageText.vue'
+import VideoNoteCapture from './VideoNoteCapture.vue'
 
 const props = withDefaults(defineProps<{
   conversation: Conversation | null
@@ -67,6 +72,7 @@ const props = withDefaults(defineProps<{
   viewportAnchor?: ConversationViewportAnchor | null
   targetMessageId?: string | null
   saveViewport?: (anchor: ConversationViewportAnchor) => Promise<void>
+  videoNoteRecorder?: VideoNoteRecorder
 }>(), {
   historyHasMore: false,
   historyHasNewer: false,
@@ -89,6 +95,7 @@ const props = withDefaults(defineProps<{
   viewportAnchor: null,
   targetMessageId: null,
   saveViewport: async () => undefined,
+  videoNoteRecorder: undefined,
 })
 const emit = defineEmits<{ back: []; groupDetails: [] }>()
 
@@ -368,6 +375,25 @@ async function submit(): Promise<void> {
     resizeComposer()
     scrollToLatest('smooth')
   }
+}
+
+async function sendVideoNote(recording: RecordedVideoNote): Promise<void> {
+  if (props.sending || props.conversation?.conversationType !== 'group') return
+  attachmentError.value = null
+  const extension = recording.contentType === 'video/mp4' ? 'mp4' : 'webm'
+  const sent = await props.sendMessage('', [{
+    name: `video-note-${Date.now()}.${extension}`,
+    type: recording.contentType,
+    size: recording.body.size,
+    body: recording.body,
+    presentation: 'video_note',
+    durationSeconds: recording.durationSeconds,
+  }])
+  if (!sent) attachmentError.value = 'Не удалось отправить видеокружок. Запишите его ещё раз.'
+}
+
+function showVideoNoteError(message: string): void {
+  attachmentError.value = message
 }
 
 function clearAttachments(): void {
@@ -1207,7 +1233,17 @@ onBeforeUnmount(() => {
         @focus="handleComposerFocus"
         @blur="handleComposerBlur"
       />
-      <button class="send-button" type="submit" :disabled="sending || (draft.trim().length === 0 && selectedAttachments.length === 0)" aria-label="Отправить">
+      <VideoNoteCapture
+        v-if="conversation.conversationType === 'group'
+          && videoNoteRecorder
+          && draft.trim().length === 0
+          && selectedAttachments.length === 0"
+        :recorder="videoNoteRecorder"
+        :disabled="sending"
+        @recorded="sendVideoNote"
+        @error="showVideoNoteError"
+      />
+      <button v-else class="send-button" type="submit" :disabled="sending || (draft.trim().length === 0 && selectedAttachments.length === 0)" aria-label="Отправить">
         <span v-if="sending" aria-hidden="true">…</span>
         <AppIcon v-else name="send" />
       </button>
