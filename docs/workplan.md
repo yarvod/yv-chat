@@ -6,7 +6,7 @@
 
 ## WP-057 — Session-safe Telegram-like group media gallery
 
-Статус: **implementation/browser acceptance complete; production rollout pending**
+Статус: **completed** (`09177e7`; production run `31556674459`)
 Backlog: следующий group-first slice `BL-043`; defects `BUG-057`, `BUG-058`
 
 Цель: сделать отправку и просмотр group v1 фото/файлов предсказуемыми в обычном
@@ -67,7 +67,7 @@ browser и установленной PWA: media никогда не откры�
 - [x] backend ruff/format/mypy/pytest и frontend lint/typecheck/Vitest/build зелёные;
 - [x] isolated Compose stack: admin + второй пользователь, group, single photo,
   batch photos, mixed file, receive/open/download/reload в реальном browser;
-- [ ] после merge/deploy проверены migration/health/logs и отсутствие влияния на
+- [x] после merge/deploy проверены migration/health/logs и отсутствие влияния на
   host Nginx, `yoowee.ru` и `s3.yoowee.ru`.
 
 ### Ограничения
@@ -90,6 +90,16 @@ browser и установленной PWA: media никогда не откры�
   нет `401/403/409/422/500` или traceback;
 - acceptance отдельно выявил stale directory snapshot (`BUG-059`), не связанный с
   media transport; чистый origin получил authoritative directory и завершил flow.
+
+### Production evidence
+
+- independent CI run `31556674451` и deploy run `31556674459` завершились успешно;
+- production API/frontend используют immutable `sha-09177e7...`, migration —
+  `0019_group_attachments (head)`, API/frontend/PostgreSQL healthy;
+- production API logs после rollout не содержат HTTP 401/500, traceback или error;
+- public `chat` app/health отвечают `200`, anonymous attachment — ожидаемым `401`;
+  host Nginx `active`, `yoowee.ru` отвечает `200`, anonymous root `s3.yoowee.ru` —
+  ожидаемым `403` без TLS/connection failure.
 
 ### Definition of Done
 

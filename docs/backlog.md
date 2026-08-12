@@ -299,10 +299,10 @@ port. В текущем group v1 slice bytes server-readable; будущий dir
 
 ### BL-043 — Telegram-like photo/file experience поверх encrypted attachments
 
-Статус: **частично выполнено, WP-057 rollout pending** (`WP-056` развернул
-group-first single-file flow; `WP-057` завершил session-safe download и ordered batch
-до 10 файлов с in-app gallery; direct E2EE media, offline draft, drag/drop и
-расширенный cache остаются queued).
+Статус: **частично выполнено** (`WP-056` развернул group-first single-file flow;
+`WP-057`, `09177e7`, production run `31556674459` добавил session-safe download и
+ordered batch до 10 файлов с in-app gallery; direct E2EE media, offline draft,
+drag/drop и расширенный cache остаются queued).
 
 Результат: пользователь удобно отправляет изображения и произвольные файлы. В
 текущем group v1 slice backend видит исходные bytes и bounded metadata; direct MLS

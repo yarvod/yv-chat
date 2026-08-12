@@ -20,7 +20,8 @@
 
 ### BUG-058 — Attachment StreamingResponse терял rotated session cookie
 
-- Статус: `fixed, automated and two-user browser verified` (`WP-057`).
+- Статус: `fixed, automated/browser/production verified` (`WP-057`, `09177e7`,
+  production run `31556674459`).
 - Severity: `critical authentication availability`.
 - Reproduction: attachment GET попадает в окно credential rotation;
   `authenticate_request` выставляет новый cookie на injected `Response`, после чего
@@ -32,7 +33,8 @@
 
 ### BUG-057 — Фото открывалось вне PWA и получало unauthorized
 
-- Статус: `fixed, automated and two-user browser verified` (`WP-057`).
+- Статус: `fixed, automated/browser/production verified` (`WP-057`, `09177e7`,
+  production run `31556674459`).
 - Severity: `high group-media usability`.
 - Reproduction: нажать group photo в установленной standalone PWA; обычный
   `<a target="_blank">` может открыть внешний browser context/cookie partition без
