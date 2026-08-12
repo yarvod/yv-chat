@@ -4,6 +4,23 @@
 
 ## Active
 
+### BUG-060 — Pixel показывал квадратную PWA icon внутри белого круга и серый splash
+
+- Статус: `fixed locally, production rollout pending in WP-059`.
+- Severity: `high install/brand UX`.
+- Reproduction: установить production PWA из Chrome на Pixel; launcher показывает
+  белую системную окружность, внутри которой остаётся отдельный midnight square с
+  уменьшенным line mark; generated splash использует серое полотно и ту же квадратную
+  картинку вместо цельного brand surface.
+- Причина: production HTML не содержит `<link rel="manifest">`, хотя сам файл
+  доступен по URL. Chrome поэтому создаёт fallback home-screen surface вместо
+  manifest-aware install и не применяет объявленные `maskable`/`background_color`.
+  Старые `icon-v2-*` URL и radial maskable canvas дополнительно мешают обновлению и
+  делают квадрат видимым на fallback splash.
+- Ожидаемое исправление: explicit manifest link, новые versioned URLs, отдельные
+  transparent `any` и opaque solid full-bleed `maskable`, exact match maskable
+  canvas/manifest background, safe-zone regression и проверенный reinstall flow.
+
 ### BUG-059 — Cached directory не видел только что активированного пользователя
 
 - Статус: `open, captured during WP-057 browser acceptance`.

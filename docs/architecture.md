@@ -1155,14 +1155,20 @@ Group attachment cleanup реализован тем же low-memory process: pe
 
 ## 13. PWA, realtime и Web Push
 
-Install surface является частью versioned frontend: manifest имеет стабильные
+Install surface является частью versioned frontend: HTML явно подключает
+`/manifest.webmanifest` (не полагается на implicit module injection), manifest имеет стабильные
 `id=/`, `scope=/`, `start_url=/`, отдельные прозрачные `any` и full-bleed opaque
 `maskable` PNG 192/512, а Apple получает 152/167/180 touch icons и media-matched
 portrait startup images. Канонический знак хранится как SVG без baked platform
 shape; deterministic `sharp` script генерирует все raster derivatives. Критическое
 содержимое maskable icon находится в центральной W3C safe-zone radius 40%, поэтому
-circle/squircle применяет сама ОС. Имена install icons versioned (`icon-v2-*`), но
-Android launcher может удерживать icon уже установленной PWA до uninstall/reinstall.
+circle/squircle применяет сама ОС. Android-generated splash не использует Apple
+startup PNG: Chrome/ОС строят его из manifest `background_color` и install icon.
+Поэтому `icon-v3-maskable-*` имеет однотонный full-bleed canvas, пиксельно совпадающий
+с `#07111f`, а прозрачный `icon-v3-any-*` остаётся отдельным ресурсом. Install
+candidates только 192/512; favicon 32 не участвует в WebAPK. Новое поколение меняет
+URL, но Android launcher всё равно может удерживать icon уже установленной PWA до
+uninstall/reinstall.
 Большие startup PNG не precache-ятся все вместе: браузер выбирает только подходящий
 media resource, тогда как app shell, standard icons и crypto WASM остаются в
 согласованном Workbox release.

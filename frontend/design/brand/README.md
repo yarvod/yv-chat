@@ -12,6 +12,13 @@ standard transparent, full-bleed maskable and Apple icons from the SVG using the
 pinned direct `sharp` dev dependency. Splash images remain based on the launch
 master; do not repeatedly resize a smaller derivative.
 
+Android install assets use versioned `icon-v3-*` URLs. Their `maskable` canvas is
+the exact solid manifest `background_color` (`#07111f`), so an Android-generated
+splash cannot reveal a square tile around the mark. `any` remains transparent and
+must not be reused as `maskable`. Keep install candidates at 192px and 512px; the
+32px derivative is a favicon, not a WebAPK launcher candidate. Existing installed
+WebAPKs may require removal/reinstallation after an icon URL generation change.
+
 Prompt direction: a quiet midnight-indigo private-messenger identity made from a
 few intertwined blue, violet, and muted-pink gradient lines, centered, minimal,
 readable at small sizes, with calm full-bleed background edges and no lettering.

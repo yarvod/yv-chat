@@ -39,6 +39,7 @@ export default defineNuxtConfig({
         { name: 'theme-color', content: '#f5f7fb', media: '(prefers-color-scheme: light)' },
       ],
       link: [
+        { rel: 'manifest', href: '/manifest.webmanifest' },
         { rel: 'icon', type: 'image/png', sizes: '32x32', href: '/icons/favicon-32.png' },
         { rel: 'apple-touch-icon', sizes: '152x152', href: '/icons/apple-touch-icon-152.png' },
         { rel: 'apple-touch-icon', sizes: '167x167', href: '/icons/apple-touch-icon-167.png' },
@@ -72,11 +73,10 @@ export default defineNuxtConfig({
       orientation: 'any',
       categories: ['social', 'communication'],
       icons: [
-        { src: '/icons/icon-v2-64.png', sizes: '64x64', type: 'image/png', purpose: 'any' },
-        { src: '/icons/icon-v2-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
-        { src: '/icons/icon-v2-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
-        { src: '/icons/icon-v2-maskable-192.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
-        { src: '/icons/icon-v2-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+        { src: '/icons/icon-v3-any-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+        { src: '/icons/icon-v3-any-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+        { src: '/icons/icon-v3-maskable-192.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
+        { src: '/icons/icon-v3-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
       ],
     },
     workbox: {
@@ -85,6 +85,7 @@ export default defineNuxtConfig({
       globPatterns: ['**/*.{css,html,ico,js,png,svg,wasm,webmanifest}'],
       globIgnores: [
         'splash/**/*.png',
+        'icons/icon-v2-*.png',
         'crypto/v1/**/*',
         'crypto/v2/**/*',
         'crypto/v3/**/*',

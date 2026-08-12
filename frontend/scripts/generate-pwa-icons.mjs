@@ -11,7 +11,7 @@ const midnight = '#07111f'
 
 await mkdir(icons, { recursive: true })
 
-function backgroundSvg(size) {
+function radialBackgroundSvg(size) {
   return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
     <defs>
       <radialGradient id="halo" cx="50%" cy="45%" r="70%">
@@ -21,6 +21,12 @@ function backgroundSvg(size) {
       </radialGradient>
     </defs>
     <rect width="${size}" height="${size}" fill="url(#halo)" />
+  </svg>`)
+}
+
+function solidBackgroundSvg(size) {
+  return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+    <rect width="${size}" height="${size}" fill="${midnight}" />
   </svg>`)
 }
 
@@ -37,8 +43,8 @@ async function transparent(size, path) {
     .toFile(path)
 }
 
-async function opaque(size, path) {
-  await sharp(backgroundSvg(size))
+async function opaque(size, path, background) {
+  await sharp(background(size))
     .composite([{ input: await symbol(size) }])
     .png({ compressionLevel: 9, adaptiveFiltering: true })
     .toFile(path)
@@ -46,12 +52,11 @@ async function opaque(size, path) {
 
 await Promise.all([
   transparent(32, resolve(icons, 'favicon-32.png')),
-  transparent(64, resolve(icons, 'icon-v2-64.png')),
-  transparent(192, resolve(icons, 'icon-v2-192.png')),
-  transparent(512, resolve(icons, 'icon-v2-512.png')),
-  opaque(192, resolve(icons, 'icon-v2-maskable-192.png')),
-  opaque(512, resolve(icons, 'icon-v2-maskable-512.png')),
-  opaque(152, resolve(icons, 'apple-touch-icon-152.png')),
-  opaque(167, resolve(icons, 'apple-touch-icon-167.png')),
-  opaque(180, resolve(projectRoot, 'public/apple-touch-icon.png')),
+  transparent(192, resolve(icons, 'icon-v3-any-192.png')),
+  transparent(512, resolve(icons, 'icon-v3-any-512.png')),
+  opaque(192, resolve(icons, 'icon-v3-maskable-192.png'), solidBackgroundSvg),
+  opaque(512, resolve(icons, 'icon-v3-maskable-512.png'), solidBackgroundSvg),
+  opaque(152, resolve(icons, 'apple-touch-icon-152.png'), radialBackgroundSvg),
+  opaque(167, resolve(icons, 'apple-touch-icon-167.png'), radialBackgroundSvg),
+  opaque(180, resolve(projectRoot, 'public/apple-touch-icon.png'), radialBackgroundSvg),
 ])

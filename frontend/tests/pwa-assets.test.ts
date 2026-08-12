@@ -16,11 +16,10 @@ function pngDimensions(relativePath: string): { width: number, height: number } 
 describe('PWA install assets', () => {
   it.each([
     ['icons/favicon-32.png', 32, 32],
-    ['icons/icon-v2-64.png', 64, 64],
-    ['icons/icon-v2-192.png', 192, 192],
-    ['icons/icon-v2-512.png', 512, 512],
-    ['icons/icon-v2-maskable-192.png', 192, 192],
-    ['icons/icon-v2-maskable-512.png', 512, 512],
+    ['icons/icon-v3-any-192.png', 192, 192],
+    ['icons/icon-v3-any-512.png', 512, 512],
+    ['icons/icon-v3-maskable-192.png', 192, 192],
+    ['icons/icon-v3-maskable-512.png', 512, 512],
     ['icons/apple-touch-icon-152.png', 152, 152],
     ['icons/apple-touch-icon-167.png', 167, 167],
     ['apple-touch-icon.png', 180, 180],
@@ -50,11 +49,15 @@ describe('PWA install assets', () => {
     const config = readFileSync(resolve(process.cwd(), 'nuxt.config.ts'), 'utf8')
     expect(config).toContain("id: '/'")
     expect(config).toContain("start_url: '/'")
+    expect(config).toContain("{ rel: 'manifest', href: '/manifest.webmanifest' }")
     expect(config).toContain("purpose: 'maskable'")
-    expect(config).toContain('/icons/icon-v2-maskable-512.png')
+    expect(config).toContain('/icons/icon-v3-maskable-512.png')
+    expect(config).not.toContain('/icons/icon-v2-')
+    expect(config).not.toContain('icon-v3-any-64')
     expect(config).toContain("rel: 'apple-touch-startup-image'")
     expect(config).toContain('viewport-fit=cover')
     expect(config).toContain("'splash/**/*.png'")
+    expect(config).toContain("'icons/icon-v2-*.png'")
     expect(config).toContain("'crypto/v1/**/*'")
     expect(config).toContain("'crypto/v2/**/*'")
     expect(config).toContain("'crypto/v3/**/*'")
@@ -72,11 +75,11 @@ describe('PWA install assets', () => {
   })
 
   it('keeps standard artwork transparent and the maskable canvas fully opaque', async () => {
-    const transparent = await sharp(resolve(process.cwd(), 'public/icons/icon-v2-512.png'))
+    const transparent = await sharp(resolve(process.cwd(), 'public/icons/icon-v3-any-512.png'))
       .ensureAlpha()
       .raw()
       .toBuffer({ resolveWithObject: true })
-    const maskable = await sharp(resolve(process.cwd(), 'public/icons/icon-v2-maskable-512.png'))
+    const maskable = await sharp(resolve(process.cwd(), 'public/icons/icon-v3-maskable-512.png'))
       .ensureAlpha()
       .raw()
       .toBuffer({ resolveWithObject: true })
@@ -95,6 +98,47 @@ describe('PWA install assets', () => {
       minimumAlpha = Math.min(minimumAlpha, maskable.data[index] ?? 0)
     }
     expect(minimumAlpha).toBe(255)
+  })
+
+  it('matches every maskable canvas edge to the Android splash background', async () => {
+    const transparent = await sharp(resolve(
+      process.cwd(),
+      'public/icons/icon-v3-any-512.png',
+    )).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
+    const image = await sharp(resolve(
+      process.cwd(),
+      'public/icons/icon-v3-maskable-512.png',
+    )).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
+    const rgbaAt = (x: number, y: number) => {
+      const offset = (y * image.info.width + x) * image.info.channels
+      return Array.from(image.data.subarray(offset, offset + 4))
+    }
+    const midnight = [7, 17, 31, 255]
+    for (const [x, y] of [
+      [0, 0], [256, 0], [511, 0],
+      [0, 256], [511, 256],
+      [0, 511], [256, 511], [511, 511],
+    ]) expect(rgbaAt(x, y)).toEqual(midnight)
+
+    let uncoveredBackgroundMismatches = 0
+    let maximumCoreRadius = 0
+    for (let y = 0; y < image.info.height; y += 1) {
+      for (let x = 0; x < image.info.width; x += 1) {
+        const offset = (y * image.info.width + x) * image.info.channels
+        const alpha = transparent.data[offset + 3] ?? 0
+        if (alpha === 0 && rgbaAt(x, y).some((channel, index) => channel !== midnight[index])) {
+          uncoveredBackgroundMismatches += 1
+        }
+        if (alpha >= 17) {
+          maximumCoreRadius = Math.max(maximumCoreRadius, Math.hypot(x - 255.5, y - 255.5))
+        }
+      }
+    }
+    expect(uncoveredBackgroundMismatches).toBe(0)
+    expect(maximumCoreRadius).toBeLessThanOrEqual(512 * 0.4)
+
+    const config = readFileSync(resolve(process.cwd(), 'nuxt.config.ts'), 'utf8')
+    expect(config).toContain("background_color: '#07111f'")
   })
 
   it('uses a vector mark without a baked platform shape inside the safe zone', () => {
