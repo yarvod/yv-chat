@@ -38,7 +38,8 @@
    encryption/upload/download без server plaintext или file keys.
 4. `BL-043` — оставшийся offline draft, cancel/retry и polished
    attachment UX поверх уже готовых secure storage boundaries.
-5. `BL-015` — authenticated device-to-device history transfer после `BL-064`.
+5. `BL-015` — QR linking, trusted-device MLS enrollment и двусторонний
+   device-to-device history transfer после `BL-064`/`BL-025`.
 6. `BL-051` — возврат group MLS только после multi-epoch и multi-device acceptance.
 
 ### P2 — assurance, product controls и эксплуатация
@@ -136,31 +137,229 @@ cross-browser/security assurance gates.
 - отсутствие silent fallback: blocked MLS означает blocked send;
 - отдельный security review и production rollout gate.
 
-### BL-015 — Secure bidirectional QR device-to-device history synchronization
+### BL-015 — Secure QR device linking, MLS enrollment и двусторонняя history sync
 
-Статус: **queued after multi-epoch recovery (`BL-064`)**.
+Статус: **detailed design queued after `BL-064` and `BL-025`**. Реализовывать
+итерациями с отдельным security/ADR review до изменения MLS membership semantics;
+это не UI-задача «нарисовать QR». `BL-064` сначала закрепляет multi-epoch recovery,
+а `BL-025` — совместимость persistent browser storage между PWA releases.
 
-Результат: два уже авторизованных устройства одного аккаунта после QR pairing
-обмениваются недостающей локальной E2EE-историей в обе стороны. Роли «показал QR» и
-«отсканировал QR» используются только для rendezvous: ни одна из сторон не является
-навсегда только sender или только receiver.
+Результат: пользователь связывает компьютер и телефон без камеры на компьютере,
+подтверждает новое crypto-device уже доверенным устройством, автоматически получает
+доступ к будущим сообщениям во всех MLS direct и двусторонне объединяет доступную
+локальную историю. Компьютер всегда **показывает** QR, телефон всегда **сканирует**;
+после pairing устройства равноправны, permanent primary phone/device не появляется.
+Открытие конкретного чата, одновременный online собеседника, logout/login и ручной
+crypto reset не являются частью нормального flow.
 
-- QR содержит только short-lived one-time pairing material и binding к ожидаемому
-  account/device/session; archive keys, MLS signer и plaintext в QR не попадают;
-- mutual authentication и explicit confirmation на обоих устройствах до передачи;
-- после pairing обе стороны обмениваются bounded manifests и передают друг другу
-  недостающие message ranges/tombstones/attachment ciphertext с deduplication;
-- каждая сторона импортирует union истории и re-encrypt-ит записи своим независимым
-  device-local storage key; общий MLS state blob и private device identity не копируются;
-- enrollment нового leaf в current epoch остаётся отдельным MLS Commit/Welcome;
-  archive sync не даёт права отправки и не обходит roster/revocation policy;
-- transfer resumable, cancellable и resource-bounded, не требует бессрочно загружать
-  историю или ключи на VPS; relay при необходимости видит только opaque ciphertext;
-- conflict resolution основан на authenticated server message IDs/sequences и
-  tombstones, а несовместимые записи останавливают import fail-closed;
-- tests: scanner→display и display→scanner данные в одной сессии, mutually missing
-  ranges, duplicate/resume, expired/replayed/screenshot QR, wrong account/device,
-  MITM/substitution, revoke во время transfer и partial/corrupt archive.
+#### Два обязательных пользовательских flow
+
+**A. Доверенный телефон подключает или восстанавливает компьютер.**
+
+1. Новый компьютер на login page выбирает `Войти с помощью телефона` и показывает
+   `enrollment_request` QR. Уже авторизованный компьютер с отсутствующей/повреждённой
+   локальной crypto identity показывает тот же тип request через
+   `Настройки → Устройства → Восстановить E2EE`, без обязательного logout.
+2. Уже доверенная телефонная PWA открывает
+   `Настройки → Устройства → Сканировать QR`, сканирует request и показывает origin,
+   candidate device name/type, время и короткий authentication code.
+3. Пользователь явно подтверждает компьютер на телефоне; компьютер одновременно
+   показывает тот же короткий code и ожидаемый approving device. Несовпадение
+   останавливает pairing.
+4. Компьютер доказывает владение ephemeral private key из pairing request, получает
+   собственную opaque HttpOnly session без передачи пароля и регистрирует **новую**
+   independent device crypto identity/KeyPackages. Телефон не передаёт свой signer,
+   session credential или device-local storage key.
+5. Доверенное устройство авторизует новый device, запускает enrollment во все
+   доступные direct и затем двустороннюю archive sync. Если компьютер уже был
+   HTTP-авторизован, pairing восстанавливает только trust/crypto/history boundary;
+   потерянная immutable identity не перезаписывается: создаётся replacement device,
+   а прежняя отзывается только после crash-safe cutover.
+
+Для этого flow основным scanner является камера **внутри уже авторизованной PWA**:
+только этот install владеет нужной session, device identity и MLS state. Сканирование
+обычной камерой iOS может открыть URL в Safari, который является отдельным storage /
+crypto-device; web landing не получает право одобрить компьютер и предлагает открыть
+телефонную PWA либо ввести там bounded one-time code.
+
+**B. Доверенный компьютер подключает новый телефон.**
+
+1. Компьютер открывает `Настройки → Устройства → Подключить телефон` и показывает
+   `enrollment_offer` QR плюс короткий ручной code и TTL.
+2. Телефон сканирует QR из pre-auth экрана установленной PWA. Обычная камера может
+   открыть onboarding URL, но пользователь явно выбирает, является ли Safari
+   самостоятельным device или pairing должен продолжиться в установленной PWA;
+   нельзя молча зарегистрировать Safari вместо Home Screen PWA.
+3. Телефон генерирует собственную identity и ephemeral proof, после чего оба экрана
+   показывают account/device details и одинаковый authentication code. Подтверждение
+   требуется на доверенном компьютере до выдачи телефонной session и crypto trust.
+4. Компьютер авторизует телефон, enroll-ит его в доступные direct и начинает
+   двустороннюю archive sync. Камера компьютеру не требуется ни на одном шаге.
+
+Оба flow используют одну versioned pairing state machine, но разные начальные роли:
+`enrollment_request` означает «QR показывает candidate computer», а
+`enrollment_offer` — «QR показывает trusted computer». После взаимной аутентификации
+роль scanner/display не определяет направление history transfer.
+
+#### Pairing и account-level device trust
+
+- Candidate device генерирует локально ephemeral key pair; QR содержит только
+  HTTPS origin, version, purpose/role, opaque one-time pairing ID, ephemeral public
+  key/fingerprint, expiry и anti-replay binding. Password, cookie/session bearer,
+  archive key, MLS signer, sealed provider, plaintext и постоянный private key в QR
+  или URL не попадают.
+- Pairing имеет короткий configurable TTL, одноразовое использование, explicit
+  cancel и durable состояния вроде `created → scanned → confirmation_pending →
+  approved → authorized → crypto_enrolling → history_syncing → ready`, а также
+  `expired/cancelled/revoked/failed`. Все переходы idempotent и monotonic.
+- До `approved` ни сканирование QR, ни знание manual code не создают session/device.
+  Approval привязан к exact account, candidate ephemeral proof, approving active
+  device, requested role и normalized origin. Cross-account approval запрещён.
+- У каждого связанного device остаётся собственная immutable device identity.
+  Доверенное устройство подписывает bounded authorization нового device; server
+  хранит проверяемый versioned linked-device roster/public attestations, но не может
+  незаметно добавить device без обнаружимого изменения trust state. Exact account
+  trust model, verification code/key-transparency semantics и credential format
+  фиксируются отдельным ADR до реализации, без самодельных crypto primitives.
+- Settings показывают все linked/pending devices, кто и когда одобрил pairing,
+  последний activity и состояние `auth / crypto enrollment / history sync`. Можно
+  отозвать candidate во время pairing и любое linked device после него. Revocation
+  прекращает transfer, отзывает server session и исключает leaf из будущих epochs.
+- Если доступного trusted device/recovery secret нет, password login может создать
+  обычную account session, но сам по себе не раскрывает прежнюю E2EE-историю и не
+  считается скрытым подтверждением новой identity. Нужен explicit secure-identity
+  reset с изменением verification state либо отдельный recovery design.
+- Endpoints остаются `/api/v1`, state-changing операции требуют обычные
+  cookie/CSRF/strict-Origin проверки, rate limits и authorization. Pairing IDs,
+  codes и ephemeral material не логируются целиком.
+
+#### MLS enrollment без остановки существующих устройств
+
+- Связанный account device и активный MLS leaf — разные состояния. Новый login /
+  pending crypto-device **не должен немедленно менять roster каждого direct и
+  переводить все текущие conversations в `blocked/device_roster_changed`**.
+- Новая identity сначала публикует bounded validated KeyPackages как pending. Для
+  каждого conversation enrollment становится видимым в authoritative roster только
+  атомарно вместе с валидным Commit/Welcome и готовностью новой generation. Пока
+  конкретный direct ещё не enroll-нут, прежняя READY generation продолжает принимать
+  сообщения от прежних leaves; новый device честно показывает per-chat progress и
+  не делает insecure fallback.
+- Доверенное approving device в фоне, независимо от active route/chat, проходит все
+  direct, где оно владеет подходящим sealed MLS state, создаёт standard Commit и
+  адресный Welcome. Собеседник может быть offline: server хранит opaque Commit,
+  Welcome и sync events до catch-up/ACK; открывать чат на его device не требуется.
+- Enrollment crash-safe и resumable на уровне conversation: completed direct не
+  повторяет membership change, failed direct не откатывает уже completed, а один
+  повреждённый/утраченный local group не блокирует все остальные. UI показывает
+  точные `pending/ready/needs another trusted leaf/recovery required` состояния.
+- Отдельный ADR/security spike сравнивает два стандартизованных продолжения для
+  direct, где approving device не владеет current group: сохранённый Commit/Welcome
+  от другого previous leaf и MLS 1.0 External Commit по актуальному signed GroupInfo.
+  External Commit не включается только ради UX до проверки OpenMLS support,
+  application-level authorization, resync/remove attack surface, ordering и
+  compatibility. Переход на Signal-style pairwise sessions также возможен только
+  отдельной versioned protocol migration, не внутри QR PR.
+- Global crypto sync worker живёт вне chat component и запускается после auth/crypto
+  bootstrap, cold start, reconnect, visibility resume, push/sync hint и cursor reset.
+  WebSocket остаётся необязательным wake-up; correctness обеспечивают PostgreSQL и
+  cursor catch-up. Ни authorizer, ни candidate не обязаны оставаться online
+  одновременно после сохранённого pairing/enrollment checkpoint.
+- Старые ciphertext и epochs не перешифровываются. Новый leaf читает сообщения только
+  после своего membership epoch; доступная прежняя история приходит через отдельный
+  authenticated archive transfer. Historical v1/v2 rows не переписываются.
+
+#### Двусторонняя local-history sync
+
+- После crypto enrollment оба устройства обмениваются authenticated bounded
+  manifests: conversation IDs, server message ID/sequence ranges, protocol/epoch
+  metadata, tombstones, attachment availability и archive schema/capabilities.
+- Transfer строит union: scanner может передавать данные display-у и получать
+  отсутствующие данные обратно в той же pairing session. Уже частично заполненные
+  телефон и компьютер синхронизируют mutually missing ranges, а не выбирают один
+  authoritative archive и не затирают второй.
+- Historical message content, которое source уже может расшифровать, передаётся
+  chunks внутри mutually authenticated E2EE channel и на target заново шифруется его
+  независимым device-local storage key. Общий private MLS signer, sealed current/past
+  group state, session credential и storage key между устройствами не копируются.
+- Server-retained ciphertext догружается обычным sync; данные за retention window
+  могут дополняться device archive. Если ни server, ни одно paired device больше не
+  имеют запись, UI показывает gap, а не создаёт вымышленную полноту истории.
+- Conflict resolution основан на authenticated server message IDs/sequences,
+  immutable envelope metadata и tombstones. Duplicate chunks/imports идемпотентны;
+  incompatible payload, signature/authentication failure или contradictory immutable
+  record останавливает затронутый range fail-closed без удаления исправного архива.
+- Transfer chunked, byte/time bounded, backpressured, cancellable и resumable.
+  Checkpoint содержит manifest version, range/chunk IDs, hashes и ACK, но не plaintext.
+  Relay на VPS при необходимости хранит только TTL-bounded opaque ciphertext; прямое
+  одновременное соединение не является условием корректности.
+- Локальные attachments передаются только если source действительно хранит их
+  encrypted/plaintext-resolvable representation и действуют quota/size policies;
+  missing/expired media обозначается отдельно. Read/archive/preferences sync не
+  может отменить более новый authenticated tombstone.
+
+#### Устойчивость к restart, deploy и PWA update
+
+- Pairing/enrollment/relay metadata, idempotency bindings, TTL, Commit/Welcome,
+  durable events и ACK хранятся в PostgreSQL либо другом явно утверждённом durable
+  adapter, а не только в process memory. Backend restart теряет лишь WebSocket и
+  ephemeral caches.
+- Ephemeral/private device keys, sealed MLS state, encrypted archive и local progress
+  остаются в persistent storage конкретного browser install. Service Worker update,
+  frontend bundle activation и IndexedDB migration не меняют `device_id`, не стирают
+  keys и не создают новую identity; это обеспечивается `BL-025` compatibility gate.
+- После API/container restart клиенты reconnect-ятся, делают cursor catch-up и
+  продолжают exact durable state. Retry каждого mutation/chunk безопасен; restart в
+  любой точке не требует повторного password login, QR scan или открытия чата.
+- Protocol/capability version согласуется до pairing. Backend migrations additive;
+  feature включается флагом после compatible frontend rollout. Старые клиенты,
+  которые не знают QR flow, продолжают существующий MLS v2 messaging и не получают
+  неизвестный linked device в roster до безопасного enrollment cutover.
+- Safari tab и установленная iOS/macOS PWA считаются разными device/storage
+  containers, пока реальная platform-проверка не докажет обратное. Никакой deploy не
+  пытается автоматически объединить или переиспользовать их private state.
+
+#### Реализационные slices и acceptance gate
+
+1. ADR/threat model: trust root/attestation, two-role handshake, External Commit
+   decision, durable state machine, browser/PWA handoff и downgrade compatibility.
+2. Pairing transport + UI: computer display, phone in-app scanner, passwordless
+   session bootstrap, manual-code fallback, device list/revoke; без history transfer.
+3. Pending-device model и atomic background MLS enrollment без глобального direct
+   outage; per-conversation status/retry и no-active-chat dependency.
+4. Bidirectional manifests/chunk transfer для text/tombstones, затем bounded media и
+   secondary app state. Каждый slice имеет отдельный rollout flag и rollback plan,
+   который не отзывает уже здоровые devices и не удаляет archive.
+5. Production-like acceptance минимум на Safari tab, installed iOS PWA, installed
+   macOS PWA, Android PWA и desktop Chrome/Firefox; camera всегда только на телефоне.
+
+Обязательная тестовая матрица:
+
+- flow A: unauthenticated computer и отдельно authenticated-but-crypto-lost computer;
+- flow B: trusted computer → new phone; in-app scanner, default iOS camera landing,
+  manual code и явное различение Safari/Home Screen PWA;
+- телефон→компьютер, компьютер→телефон и mutually missing archive ranges в одной
+  session; duplicate/out-of-order/resume, partial/corrupt chunk и quota exhaustion;
+- offline собеседник, inactive direct и сотни conversations: новое устройство пишет
+  после enrollment без входа/открытия чата собеседником;
+- approving device sleep/offline после approval, candidate sleep, network loss,
+  missed/duplicated WebSocket and Push, cursor reset и retention gap;
+- API/frontend/PostgreSQL-safe rolling restart до scan, после scan, после approval,
+  во время session issuance, MLS Commit/finalize/Welcome ACK и каждого history chunk;
+- PWA deploy/service-worker activation и IndexedDB migration на каждом durable state;
+  после reload сохраняются device identity, progress, возможность decrypt и send;
+- expired/replayed/screenshot QR, guessed/manual code, wrong account/origin/device,
+  concurrent scanners, two simultaneous candidates, MITM/substitution, stale
+  approving device, revoke во время enrollment/transfer и revoked-session retry;
+- server не получает/log-ирует message plaintext, archive/storage/MLS private keys,
+  passwords или session credentials; новый/removed device не читает epochs, в которых
+  не состоял, кроме явно переданной владельцем authenticated local-history копии.
+
+Definition of Done: оба QR-flow проходят реальную device matrix; ни один flow не
+требует камеры компьютера, online собеседника или открытия конкретного direct;
+существующие chats продолжают отправку во время pending enrollment; доступная история
+объединяется в обе стороны без silent loss; restart/deploy на каждой checkpoint-точке
+автоматически продолжается либо безопасно завершается без потери уже существующих
+keys/messages; security review, ADR, runbook и rollback проверены до production flag.
 
 ## Attachments, retention и storage
 
