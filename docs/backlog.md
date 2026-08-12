@@ -162,6 +162,31 @@ responsive group-info UI, а backend остаётся единственной �
 
 ## E2EE и multi-device history
 
+### BL-064 — Retention-aligned multi-epoch offline recovery
+
+Статус: **queued after `WP-063` rollout**.
+
+Результат: уже авторизованный MLS device с сохранённым sealed local state после
+долгого offline периода последовательно догоняет все пропущенные generations и
+расшифровывает каждый ещё хранящийся на server ciphertext, который был отправлен,
+пока device входил в соответствующий epoch/roster.
+
+- зафиксировать единый retention contract для ciphertext, sync events, READY
+  Commit/Welcome и необходимых client epoch secrets;
+- восстанавливать историю epoch-by-epoch: получить ordered Commit/message ranges,
+  расшифровать и сохранить сообщения старого epoch до необратимого продвижения;
+- выбрать и обосновать bounded OpenMLS past-epoch policy; не включать unlimited
+  `max_past_epochs` и не хранить key material на server;
+- сохранять crash-safe checkpoint после каждого применённого epoch и продолжать
+  idempotently после reload, sleep, network loss или duplicate delivery;
+- устройство, добавленное позже, revoked/removed leaf и устройство без прежнего
+  sealed state не получают pre-membership history или чужие epoch secrets;
+- если server retention gap уже наступил, показывать точную неполноту истории и
+  предлагать отдельный authenticated device-to-device transfer, а не silent loss;
+- regression matrix: несколько сообщений и rotations за offline период, более 100
+  generations, out-of-order/duplicate Commit, reload между epochs, expiry boundary,
+  removal/re-add и отсутствие downgrade или plaintext/key logging.
+
 ### BL-063 — MLS-capable send roster consistency
 
 Статус: **completed locally; production rollout pending** (`WP-063`).
@@ -295,15 +320,31 @@ foundation; текущая product policy использует его тольк
 - отсутствие silent fallback: blocked MLS означает blocked send;
 - отдельный security review и production rollout gate.
 
-### BL-015 — Secure device-to-device history transfer
+### BL-015 — Secure bidirectional QR device-to-device history synchronization
 
-Результат: новый device получает историю старше server retention только от уже авторизованного устройства.
+Статус: **queued after multi-epoch recovery (`BL-064`)**.
 
-- pairing QR/transfer request и explicit confirmation;
-- authenticated encrypted transfer session;
-- bounded/resumable archive transfer без загрузки бессрочной истории на VPS;
-- re-encryption под device-local storage key нового устройства;
-- cancellation/replay/wrong-device/partial-transfer tests.
+Результат: два уже авторизованных устройства одного аккаунта после QR pairing
+обмениваются недостающей локальной E2EE-историей в обе стороны. Роли «показал QR» и
+«отсканировал QR» используются только для rendezvous: ни одна из сторон не является
+навсегда только sender или только receiver.
+
+- QR содержит только short-lived one-time pairing material и binding к ожидаемому
+  account/device/session; archive keys, MLS signer и plaintext в QR не попадают;
+- mutual authentication и explicit confirmation на обоих устройствах до передачи;
+- после pairing обе стороны обмениваются bounded manifests и передают друг другу
+  недостающие message ranges/tombstones/attachment ciphertext с deduplication;
+- каждая сторона импортирует union истории и re-encrypt-ит записи своим независимым
+  device-local storage key; общий MLS state blob и private device identity не копируются;
+- enrollment нового leaf в current epoch остаётся отдельным MLS Commit/Welcome;
+  archive sync не даёт права отправки и не обходит roster/revocation policy;
+- transfer resumable, cancellable и resource-bounded, не требует бессрочно загружать
+  историю или ключи на VPS; relay при необходимости видит только opaque ciphertext;
+- conflict resolution основан на authenticated server message IDs/sequences и
+  tombstones, а несовместимые записи останавливают import fail-closed;
+- tests: scanner→display и display→scanner данные в одной сессии, mutually missing
+  ranges, duplicate/resume, expired/replayed/screenshot QR, wrong account/device,
+  MITM/substitution, revoke во время transfer и partial/corrupt archive.
 
 ## Attachments, retention и storage
 
