@@ -5,6 +5,7 @@ from uuid import UUID, uuid5
 
 from messenger.application.conversation_crypto.dto import ConversationCryptoResult
 from messenger.application.conversation_crypto.materialize import materialize_generation
+from messenger.application.conversation_crypto.roster import active_crypto_roster
 from messenger.application.errors import (
     ConversationCryptoConflictError,
     ConversationNotFoundError,
@@ -92,17 +93,17 @@ class BeginConversationCrypto:
                 await uow.devices.list_active_for_users(active_user_ids),
                 key=lambda item: item.id.int,
             )
-            identity_ids = {
-                identity.device_id
-                for identity in await uow.identities.get_by_device_ids(
+            roster = active_crypto_roster(
+                active_user_ids=active_user_ids,
+                active_devices=active_devices,
+                identities=await uow.identities.get_by_device_ids(
                     {item.id for item in active_devices}
-                )
-            }
-            current_device_has_identity = command.device_id in identity_ids
-            capable_user_ids = {item.user_id for item in active_devices if item.id in identity_ids}
-            member_without_capable_device = bool(active_user_ids - capable_user_ids)
+                ),
+            )
+            current_device_has_identity = command.device_id in roster.device_ids
+            member_without_capable_device = not roster.is_complete
             required_devices = (
-                [item for item in active_devices if item.id in identity_ids]
+                [item for item in active_devices if item.id in roster.device_ids]
                 if current_device_has_identity
                 else active_devices
             )

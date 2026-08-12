@@ -10,6 +10,7 @@ from messenger.application.ports.conversation_crypto import (
     ConversationCryptoRequiredDeviceRepository,
 )
 from messenger.application.ports.conversations import ConversationRepository
+from messenger.application.ports.device_crypto import DeviceCryptoIdentityRepository
 from messenger.application.ports.identity import DeviceRepository, UserRepository
 from messenger.application.ports.messages import (
     ConversationDeliveryStateRepository,
@@ -25,6 +26,7 @@ from messenger.infrastructure.persistence.repositories import (
     SqlAlchemyConversationDeliveryStateRepository,
     SqlAlchemyConversationReadStateRepository,
     SqlAlchemyConversationRepository,
+    SqlAlchemyDeviceCryptoIdentityRepository,
     SqlAlchemyDeviceRepository,
     SqlAlchemyMessageRepository,
     SqlAlchemySyncRepository,
@@ -45,6 +47,7 @@ class SqlAlchemyMessagingUnitOfWork:
         self.sync_events: SyncRepository
         self.crypto_generations: ConversationCryptoGenerationRepository
         self.crypto_required_devices: ConversationCryptoRequiredDeviceRepository
+        self.crypto_identities: DeviceCryptoIdentityRepository
         self.attachments: AttachmentRepository
 
     async def __aenter__(self) -> "SqlAlchemyMessagingUnitOfWork":
@@ -60,6 +63,7 @@ class SqlAlchemyMessagingUnitOfWork:
         self.crypto_required_devices = SqlAlchemyConversationCryptoRequiredDeviceRepository(
             self._session
         )
+        self.crypto_identities = SqlAlchemyDeviceCryptoIdentityRepository(self._session)
         self.attachments = SqlAlchemyAttachmentRepository(self._session)
         return self
 

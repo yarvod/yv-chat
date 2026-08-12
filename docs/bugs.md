@@ -4,6 +4,24 @@
 
 ## Active
 
+### BUG-062 — Legacy device без MLS identity ложно блокировал READY direct send
+
+- Статус: `fixed locally; production rollout pending` (`WP-063`).
+- Severity: `critical direct-message availability`.
+- Production reproduction: direct generation `READY` содержит все четыре active
+  crypto-capable leaves, но у одного участника остаётся второй active Safari device,
+  который никогда не регистрировал crypto identity/KeyPackage. Bootstrap считает
+  roster актуальным, а каждый message POST возвращает `409`.
+- Причина: bootstrap строил required snapshot только из MLS-capable devices и требовал
+  минимум один capable leaf на участника; send-time drift gate ошибочно сравнивал
+  snapshot со всеми active devices, включая intentional legacy non-leaf.
+- Исправление: shared application roster projection используется обеими операциями;
+  legacy device игнорируется, но participant без capable leaf блокируется, а device
+  с только что зарегистрированной identity требует rotation до следующего send.
+- Проверка: красный regression воспроизвёл exact `MLS roster does not match active
+  conversation devices`; unit и PostgreSQL tests подтверждают успешный offline send
+  до provisioning legacy device и обязательный conflict сразу после provisioning.
+
 ### BUG-061 — Restart/deploy мог отключить отправку на всех existing devices
 
 - Статус: `fixed, automated and production-like browser verified` (`WP-062`).
@@ -261,7 +279,8 @@
 - Severity: `critical`; старая generation оставалась READY в коротком окне до
   клиентского reconciliation и server проверял только наличие sender leaf.
 - Исправление: каждый новый v2 send сравнивает exact required-device snapshot с
-  фактическими non-revoked devices всех active members. Любой drift даёт conflict.
+  фактическими non-revoked MLS-capable devices всех active members. Любой capable
+  drift даёт conflict, legacy non-leaf без identity не участвует в MLS roster.
   Explicit device revoke/logout дополнительно создают durable `conversation_updated`
   для всех active участников и realtime wake-up после commit.
 - Проверка: негативный send test добавляет новое active device после READY generation

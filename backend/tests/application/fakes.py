@@ -1371,6 +1371,9 @@ class FakeMessagingUnitOfWork:
         self.crypto_required_devices: ConversationCryptoRequiredDeviceRepository = (
             FakeConversationCryptoRequiredDeviceRepository(state)
         )
+        self.crypto_identities: DeviceCryptoIdentityRepository = FakeDeviceCryptoIdentityRepository(
+            state
+        )
 
     async def __aenter__(self) -> Self:
         return self

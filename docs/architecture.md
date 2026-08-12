@@ -959,11 +959,16 @@ generation gap означает remove/re-add и вызывает отдельн
 resume идемпотентен после crash и выполняется до перехода к следующей generation.
 
 Каждый новый v2 send дополнительно сравнивает current required-device snapshot с
-фактическими non-revoked devices всех active conversation members. Поэтому READY
-generation со stale roster не создаёт окно отправки старому leaf. Explicit device
-revoke и logout в одной transaction добавляют durable `conversation_updated` для
-каждого active recipient; realtime остаётся только wake-up, cursor stream — source
-of truth. Следующий reconciliation создаёт Commit и rotation.
+фактическими non-revoked MLS-capable devices всех active conversation members.
+Capability означает наличие зарегистрированной immutable crypto identity; legacy
+device без identity не является MLS leaf и не блокирует READY roster, если у его
+владельца уже есть хотя бы один active capable device. Единая application projection
+используется bootstrap и message gate, поэтому после provisioning нового identity
+этот device немедленно создаёт roster drift и требует следующую generation. READY
+generation со stale capable roster не создаёт окно отправки старому leaf. Explicit
+device revoke и logout в одной transaction добавляют durable `conversation_updated`
+для каждого active recipient; realtime остаётся только wake-up, cursor stream —
+source of truth. Следующий reconciliation создаёт Commit и rotation.
 
 Подготовка history page параллельна, поэтому `DeviceCryptoSession` применяет
 single-flight по conversation: concurrent decrypt делят одну reconciliation, а

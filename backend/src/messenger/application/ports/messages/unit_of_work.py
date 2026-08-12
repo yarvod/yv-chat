@@ -9,6 +9,7 @@ from messenger.application.ports.conversation_crypto import (
     ConversationCryptoRequiredDeviceRepository,
 )
 from messenger.application.ports.conversations import ConversationRepository
+from messenger.application.ports.device_crypto import DeviceCryptoIdentityRepository
 from messenger.application.ports.identity import DeviceRepository, UserRepository
 from messenger.application.ports.messages.delivery_states import ConversationDeliveryStateRepository
 from messenger.application.ports.messages.read_states import ConversationReadStateRepository
@@ -26,6 +27,7 @@ class MessagingUnitOfWork(Protocol):
     sync_events: SyncRepository
     crypto_generations: ConversationCryptoGenerationRepository
     crypto_required_devices: ConversationCryptoRequiredDeviceRepository
+    crypto_identities: DeviceCryptoIdentityRepository
     attachments: AttachmentRepository
 
     async def __aenter__(self) -> Self: ...

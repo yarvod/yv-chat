@@ -5,6 +5,7 @@ from datetime import datetime
 from uuid import UUID
 
 from messenger.application.attachments.policy import AttachmentPolicy
+from messenger.application.conversation_crypto.roster import active_crypto_roster
 from messenger.application.conversations.authorization import (
     require_active_actor,
     require_active_membership,
@@ -155,13 +156,21 @@ class SendOpaqueMessage:
                 active_user_ids = {
                     member.user_id for member in conversation.members if member.is_active
                 }
-                active_device_ids = {
-                    item.id
-                    for item in await unit_of_work.devices.list_active_for_users(active_user_ids)
-                }
-                if required_device_ids != active_device_ids:
+                active_devices = await unit_of_work.devices.list_active_for_users(active_user_ids)
+                roster = active_crypto_roster(
+                    active_user_ids=active_user_ids,
+                    active_devices=active_devices,
+                    identities=await unit_of_work.crypto_identities.get_by_device_ids(
+                        {item.id for item in active_devices}
+                    ),
+                )
+                if not roster.is_complete:
                     raise ConversationCryptoNotReadyError(
-                        "MLS roster does not match active conversation devices"
+                        "active participant has no MLS-capable device"
+                    )
+                if required_device_ids != roster.device_ids:
+                    raise ConversationCryptoNotReadyError(
+                        "MLS roster does not match active capable conversation devices"
                     )
                 if command.actor_device_id not in required_device_ids:
                     raise ConversationCryptoNotReadyError(

@@ -162,6 +162,17 @@ responsive group-info UI, а backend остаётся единственной �
 
 ## E2EE и multi-device history
 
+### BL-063 — MLS-capable send roster consistency
+
+Статус: **completed locally; production rollout pending** (`WP-063`).
+
+Результат: bootstrap и v2 message gate используют одну projection активных
+MLS-capable devices. Дополнительный legacy device без crypto identity не блокирует
+READY direct conversation, если у каждого участника остаётся capable leaf. После
+регистрации identity новый device немедленно требует roster rotation; stale
+generation/epoch, revoked sender и participant без capable device остаются
+fail-closed. Exact production topology закреплена unit и PostgreSQL regressions.
+
 ### BL-062 — Deploy-safe session и self-healing MLS runtime
 
 Статус: **completed** (`WP-062`).

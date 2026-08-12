@@ -2,15 +2,16 @@
 
 import asyncio
 import os
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from messenger.application.attachments.policy import AttachmentPolicy
-from messenger.application.errors import ConversationNotFoundError
+from messenger.application.errors import ConversationCryptoNotReadyError, ConversationNotFoundError
 from messenger.application.messaging.cleanup_messages import CleanupExpiredMessages
 from messenger.application.messaging.delete_message import (
     DeleteMessageForEveryone,
@@ -47,13 +48,26 @@ from messenger.application.security_events.policy import SecurityEventPolicy
 from messenger.application.sessions.login import Login, LoginCommand
 from messenger.application.sessions.policy import SessionPolicy
 from messenger.application.sync import SyncPolicy
-from messenger.domain.entities import Conversation, User
+from messenger.domain.entities import (
+    Conversation,
+    ConversationCryptoGeneration,
+    ConversationCryptoRequiredDevice,
+    DeviceCryptoIdentity,
+    User,
+)
+from messenger.domain.entities.device_crypto_identity import expected_credential_identity
 from messenger.infrastructure.auth.passwords import Argon2PasswordHasher
 from messenger.infrastructure.auth.session_credentials import SecureSessionCredentialService
+from messenger.infrastructure.persistence.conversation_crypto_uow import (
+    SqlAlchemyConversationCryptoUnitOfWorkFactory,
+)
 from messenger.infrastructure.persistence.conversation_uow import (
     SqlAlchemyConversationUnitOfWorkFactory,
 )
 from messenger.infrastructure.persistence.database import create_engine, create_session_factory
+from messenger.infrastructure.persistence.device_crypto_uow import (
+    SqlAlchemyDeviceCryptoUnitOfWorkFactory,
+)
 from messenger.infrastructure.persistence.identity_uow import SqlAlchemyIdentityUnitOfWork
 from messenger.infrastructure.persistence.messaging_uow import SqlAlchemyMessagingUnitOfWorkFactory
 from messenger.infrastructure.persistence.models import (
@@ -82,6 +96,16 @@ SESSION_POLICY = SessionPolicy(
     touch_interval=timedelta(minutes=5),
 )
 EVENT_POLICY = SecurityEventPolicy(retention=timedelta(days=90))
+
+
+def crypto_identity(user_id: UUID, device_id: UUID, marker: int) -> DeviceCryptoIdentity:
+    return DeviceCryptoIdentity.create(
+        user_id=user_id,
+        device_id=device_id,
+        credential_identity=expected_credential_identity(user_id, device_id),
+        signature_public_key=bytes([marker]) * 32,
+        now=NOW,
+    )
 
 
 def configured_database_url() -> str:
@@ -398,3 +422,136 @@ async def run_flow(database_url: str) -> None:
 @pytest.mark.integration
 async def test_postgresql_opaque_message_envelope() -> None:
     await run_flow(configured_database_url())
+
+
+async def run_v2_legacy_device_flow(database_url: str) -> None:
+    engine = create_engine(database_url)
+    session_factory = create_session_factory(engine)
+    passwords = Argon2PasswordHasher()
+
+    def identity_uow() -> IdentityUnitOfWork:
+        return SqlAlchemyIdentityUnitOfWork(session_factory)
+
+    try:
+        await reset_tables(session_factory)
+        alice = User.create(username="alice", display_name="Alice", now=NOW)
+        bob = User.create(username="bob", display_name="Bob", now=NOW)
+        password_hash = await passwords.hash(PASSWORD)
+        async with identity_uow() as identity_transaction:
+            for user in (alice, bob):
+                await identity_transaction.users.add_active(user, password_hash)
+            await identity_transaction.commit()
+
+        login = Login(
+            unit_of_work=identity_uow,
+            clock=FixedClock(NOW),
+            passwords=passwords,
+            credentials=SecureSessionCredentialService(),
+            policy=SESSION_POLICY,
+            event_policy=EVENT_POLICY,
+        )
+        alice_device = await login.execute(
+            LoginCommand(username="alice", password=PASSWORD, device_name="Alice capable")
+        )
+        bob_capable = await login.execute(
+            LoginCommand(username="bob", password=PASSWORD, device_name="Bob capable")
+        )
+        bob_legacy = await login.execute(
+            LoginCommand(username="bob", password=PASSWORD, device_name="Bob legacy")
+        )
+        conversation = Conversation.create_direct(
+            created_by=alice.id,
+            other_user_id=bob.id,
+            now=NOW,
+        )
+        async with SqlAlchemyConversationUnitOfWorkFactory(
+            session_factory
+        )() as conversation_transaction:
+            await conversation_transaction.conversations.add(conversation)
+            await conversation_transaction.commit()
+
+        device_crypto = SqlAlchemyDeviceCryptoUnitOfWorkFactory(session_factory)
+        async with device_crypto() as device_crypto_transaction:
+            await device_crypto_transaction.identities.add(
+                crypto_identity(alice.id, alice_device.device_id, 1)
+            )
+            await device_crypto_transaction.identities.add(
+                crypto_identity(bob.id, bob_capable.device_id, 2)
+            )
+            await device_crypto_transaction.commit()
+
+        generation = ConversationCryptoGeneration.create(
+            conversation_id=conversation.id,
+            generation_number=1,
+            coordinator_user_id=alice.id,
+            coordinator_device_id=alice_device.device_id,
+            bootstrap_request_id=uuid4(),
+            now=NOW,
+        ).finalize(
+            epoch=1,
+            commit_message=b"opaque-commit",
+            ratchet_tree=b"opaque-tree",
+            now=NOW + timedelta(seconds=1),
+        )
+        required = (
+            ConversationCryptoRequiredDevice(
+                generation_id=generation.id,
+                user_id=alice.id,
+                device_id=alice_device.device_id,
+                is_coordinator=True,
+                key_package_id=None,
+                snapshot_at=NOW,
+            ),
+            ConversationCryptoRequiredDevice(
+                generation_id=generation.id,
+                user_id=bob.id,
+                device_id=bob_capable.device_id,
+                is_coordinator=False,
+                key_package_id=None,
+                snapshot_at=NOW,
+            ),
+        )
+        conversation_crypto = SqlAlchemyConversationCryptoUnitOfWorkFactory(session_factory)
+        async with conversation_crypto() as crypto_transaction:
+            await crypto_transaction.generations.add(generation)
+            await crypto_transaction.required_devices.add_many(required)
+            await crypto_transaction.commit()
+
+        send = SendOpaqueMessage(
+            unit_of_work=SqlAlchemyMessagingUnitOfWorkFactory(session_factory),
+            clock=FixedClock(NOW + timedelta(seconds=2)),
+            message_policy=MessageEnvelopePolicy(supported_protocol_versions=frozenset({2})),
+            attachment_policy=AttachmentPolicy(),
+            retention_policy=MessageRetentionPolicy(timedelta(days=30), timedelta(days=90)),
+            sync_policy=SyncPolicy(),
+            realtime_notifier=RecordingRealtimeNotifier(),
+            push_notifier=RecordingPushNotifier(),
+        )
+        command = SendOpaqueMessageCommand(
+            actor_user_id=alice.id,
+            actor_device_id=alice_device.device_id,
+            conversation_id=conversation.id,
+            client_message_id=uuid4(),
+            protocol_version=2,
+            ciphertext=b"opaque-for-offline-capable-leaf",
+            crypto_generation_id=generation.id,
+            crypto_epoch=1,
+        )
+        sent = await send.execute(command)
+        assert sent.sequence == 1
+
+        async with device_crypto() as provision_transaction:
+            await provision_transaction.identities.add(
+                crypto_identity(bob.id, bob_legacy.device_id, 3)
+            )
+            await provision_transaction.commit()
+        with pytest.raises(ConversationCryptoNotReadyError):
+            await send.execute(replace(command, client_message_id=uuid4()))
+    finally:
+        await reset_tables(session_factory)
+        await engine.dispose()
+
+
+@pytest.mark.integration
+async def test_postgresql_v2_send_ignores_active_legacy_device() -> None:
+    await run_v2_legacy_device_flow(configured_database_url())

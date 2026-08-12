@@ -33,10 +33,12 @@ from messenger.domain.entities import (
     ConversationCryptoGeneration,
     ConversationCryptoRequiredDevice,
     Device,
+    DeviceCryptoIdentity,
     Message,
     MessageDeletionReason,
     User,
 )
+from messenger.domain.entities.device_crypto_identity import expected_credential_identity
 from tests.application.fakes import (
     FakeMessagingUnitOfWorkFactory,
     FixedClock,
@@ -47,6 +49,16 @@ from tests.application.fakes import (
 
 NOW = datetime(2026, 8, 11, 12, 0, tzinfo=UTC)
 RETENTION = MessageRetentionPolicy(timedelta(days=30), timedelta(days=90))
+
+
+def crypto_identity(device: Device, marker: int) -> DeviceCryptoIdentity:
+    return DeviceCryptoIdentity.create(
+        user_id=device.user_id,
+        device_id=device.id,
+        credential_identity=expected_credential_identity(device.user_id, device.id),
+        signature_public_key=bytes([marker]) * 32,
+        now=NOW,
+    )
 
 
 def messaging_state() -> tuple[IdentityState, User, User, User, Device, Conversation]:
@@ -523,6 +535,12 @@ async def test_send_pushes_only_recipient_after_commit_and_isolates_push_failure
 
 async def test_v2_send_requires_ready_generation_and_sender_leaf() -> None:
     state, alice, bob, _, device, _ = messaging_state()
+    bob_device = Device.create(user_id=bob.id, name="Bob device", now=NOW)
+    state.devices[bob_device.id] = bob_device
+    state.device_crypto_identities = {
+        device.id: crypto_identity(device, 1),
+        bob_device.id: crypto_identity(bob_device, 2),
+    }
     conversation = Conversation.create_direct(
         created_by=alice.id,
         other_user_id=bob.id,
@@ -569,6 +587,16 @@ async def test_v2_send_requires_ready_generation_and_sender_leaf() -> None:
             snapshot_at=NOW,
         )
     )
+    state.conversation_crypto_required_devices[(pending.id, bob_device.id)] = (
+        ConversationCryptoRequiredDevice(
+            generation_id=pending.id,
+            user_id=bob.id,
+            device_id=bob_device.id,
+            is_coordinator=False,
+            key_package_id=None,
+            snapshot_at=NOW,
+        )
+    )
     with pytest.raises(ConversationCryptoNotReadyError):
         await use_case.execute(command)
 
@@ -608,17 +636,21 @@ async def test_v2_send_requires_ready_generation_and_sender_leaf() -> None:
         pending.id
     ].supersede(NOW + timedelta(seconds=3))
     state.conversation_crypto_generations[next_generation.id] = next_generation
-    state.conversation_crypto_required_devices[(next_generation.id, device.id)] = replace(
-        state.conversation_crypto_required_devices[(pending.id, device.id)],
-        generation_id=next_generation.id,
-    )
+    for required in tuple(state.conversation_crypto_required_devices.values()):
+        if required.generation_id == pending.id:
+            state.conversation_crypto_required_devices[
+                (
+                    next_generation.id,
+                    required.device_id,
+                )
+            ] = replace(required, generation_id=next_generation.id)
     assert await use_case.execute(bound_command) == sent
     with pytest.raises(ConversationCryptoNotReadyError):
         await use_case.execute(replace(bound_command, client_message_id=uuid4()))
 
-    bob = next(user for user in state.users.values() if user.username == "bob")
-    bob_device = Device.create(user_id=bob.id, name="New Bob device", now=NOW)
-    state.devices[bob_device.id] = bob_device
+    new_bob_device = Device.create(user_id=bob.id, name="New Bob device", now=NOW)
+    state.devices[new_bob_device.id] = new_bob_device
+    state.device_crypto_identities[new_bob_device.id] = crypto_identity(new_bob_device, 3)
     with pytest.raises(ConversationCryptoNotReadyError):
         await use_case.execute(
             replace(
@@ -641,3 +673,81 @@ async def test_v2_send_requires_ready_generation_and_sender_leaf() -> None:
                 b"another-opaque-message",
             )
         )
+
+
+async def test_v2_send_ignores_active_legacy_device_without_crypto_identity() -> None:
+    state, alice, bob, _, alice_device, _ = messaging_state()
+    bob_capable = Device.create(user_id=bob.id, name="Bob capable", now=NOW)
+    bob_legacy = Device.create(
+        user_id=bob.id,
+        name="Bob legacy without MLS",
+        now=NOW + timedelta(seconds=1),
+    )
+    state.devices.update({bob_capable.id: bob_capable, bob_legacy.id: bob_legacy})
+    state.device_crypto_identities = {
+        alice_device.id: crypto_identity(alice_device, 1),
+        bob_capable.id: crypto_identity(bob_capable, 2),
+    }
+    conversation = Conversation.create_direct(
+        created_by=alice.id,
+        other_user_id=bob.id,
+        now=NOW,
+    )
+    state.conversations[conversation.id] = conversation
+    generation = ConversationCryptoGeneration.create(
+        conversation_id=conversation.id,
+        generation_number=1,
+        coordinator_user_id=alice.id,
+        coordinator_device_id=alice_device.id,
+        bootstrap_request_id=uuid4(),
+        now=NOW,
+    ).finalize(
+        epoch=1,
+        commit_message=b"opaque-commit",
+        ratchet_tree=b"opaque-tree",
+        now=NOW + timedelta(seconds=1),
+    )
+    state.conversation_crypto_generations[generation.id] = generation
+    for device, is_coordinator in ((alice_device, True), (bob_capable, False)):
+        state.conversation_crypto_required_devices[(generation.id, device.id)] = (
+            ConversationCryptoRequiredDevice(
+                generation_id=generation.id,
+                user_id=device.user_id,
+                device_id=device.id,
+                is_coordinator=is_coordinator,
+                key_package_id=None,
+                snapshot_at=NOW,
+            )
+        )
+    use_case = SendOpaqueMessage(
+        unit_of_work=FakeMessagingUnitOfWorkFactory(state),
+        clock=FixedClock(NOW + timedelta(seconds=2)),
+        message_policy=MessageEnvelopePolicy(supported_protocol_versions=frozenset({2})),
+        attachment_policy=AttachmentPolicy(),
+        retention_policy=RETENTION,
+        sync_policy=SyncPolicy(),
+        realtime_notifier=RecordingRealtimeNotifier(),
+        push_notifier=RecordingPushNotifier(),
+    )
+    command = SendOpaqueMessageCommand(
+        actor_user_id=alice.id,
+        actor_device_id=alice_device.id,
+        conversation_id=conversation.id,
+        client_message_id=uuid4(),
+        protocol_version=2,
+        ciphertext=b"opaque-for-offline-capable-leaf",
+        crypto_generation_id=generation.id,
+        crypto_epoch=1,
+    )
+
+    sent = await use_case.execute(command)
+    assert sent.sequence == 1
+
+    bob_capable_identity = state.device_crypto_identities.pop(bob_capable.id)
+    with pytest.raises(ConversationCryptoNotReadyError):
+        await use_case.execute(replace(command, client_message_id=uuid4()))
+
+    state.device_crypto_identities[bob_capable.id] = bob_capable_identity
+    state.device_crypto_identities[bob_legacy.id] = crypto_identity(bob_legacy, 3)
+    with pytest.raises(ConversationCryptoNotReadyError):
+        await use_case.execute(replace(command, client_message_id=uuid4()))
