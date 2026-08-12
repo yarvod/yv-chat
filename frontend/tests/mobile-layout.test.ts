@@ -17,6 +17,7 @@ describe('mobile application shell', () => {
     const mobileBlock = css.slice(css.indexOf('@media (max-width: 840px)'))
 
     expect(mobileBlock).toContain('--mobile-tabs-slot-height: calc(62px + env(safe-area-inset-bottom, 0px))')
+    expect(mobileBlock).toContain('padding-top: env(safe-area-inset-top, 0px)')
     expect(mobileBlock).toContain('padding-bottom: var(--mobile-tabs-slot-height)')
     expect(mobileBlock).toMatch(/\.mobile-tabs \{ position: absolute;[^}]*bottom: 0;/)
     expect(mobileBlock).toContain('height: var(--mobile-tabs-outer-height)')
@@ -45,7 +46,7 @@ describe('mobile application shell', () => {
     expect(css).toContain('.product-shell--conversation .mobile-tabs { display: none; }')
   })
 
-  it('tracks visual viewport size and offset so the keyboard cannot displace the PWA shell', () => {
+  it('tracks visual viewport changes so the keyboard cannot displace the PWA shell', () => {
     const css = readFileSync(resolve(process.cwd(), 'app/assets/main.css'), 'utf8')
     const mobileBlock = css.slice(css.indexOf('@media (max-width: 840px)'))
     const plugin = readFileSync(resolve(process.cwd(), 'app/plugins/visual-viewport.client.ts'), 'utf8')
@@ -56,15 +57,33 @@ describe('mobile application shell', () => {
     expect(plugin).toContain('viewport?.offsetTop')
     expect(plugin).toContain("addEventListener('resize', apply)")
     expect(plugin).toContain("addEventListener('scroll', apply)")
+    expect(plugin).toContain("document.addEventListener('focusin', handleFocusIn)")
+    expect(plugin).toContain("document.addEventListener('focusout', handleFocusOut)")
+    expect(plugin).toContain("root.classList.add('app-keyboard-active')")
+    expect(plugin).toContain("root.classList.remove('app-keyboard-active')")
     expect(mobileBlock).toMatch(/\.product-shell \{[^}]*position: fixed;[^}]*top: var\(--app-viewport-offset-top\);/)
   })
 
-  it('keeps the conversation-list action below the iOS top safe area', () => {
+  it('owns the iOS top safe area globally and hides bottom tabs during text entry', () => {
     const css = readFileSync(resolve(process.cwd(), 'app/assets/main.css'), 'utf8')
     const mobileBlock = css.slice(css.indexOf('@media (max-width: 840px)'))
 
-    expect(mobileBlock).toMatch(/\.sidebar-actions \{[^}]*min-height: calc\(62px \+ env\(safe-area-inset-top, 0px\)\);/)
-    expect(mobileBlock).toMatch(/\.sidebar-actions \{[^}]*padding-top: calc\(10px \+ env\(safe-area-inset-top, 0px\)\);/)
+    expect(mobileBlock).toMatch(/\.product-shell \{[^}]*padding-top: env\(safe-area-inset-top, 0px\);/)
+    expect(mobileBlock).toContain('html.app-keyboard-active .product-shell { --mobile-tabs-slot-height: 0px; }')
+    expect(mobileBlock).toContain('html.app-keyboard-active .mobile-tabs { display: none; }')
+    expect(mobileBlock).not.toMatch(/\.sidebar-actions \{[^}]*safe-area-inset-top/)
+    expect(mobileBlock).toMatch(/\.conversation-header \{[^}]*padding: 7px 9px;/)
+  })
+
+  it('keeps the PWA rubber-band canvas aligned with the selected page theme', () => {
+    const css = readFileSync(resolve(process.cwd(), 'app/assets/main.css'), 'utf8')
+    const config = readFileSync(resolve(process.cwd(), 'nuxt.config.ts'), 'utf8')
+
+    expect(css).toMatch(/html, body, #__nuxt, \.app-root \{[^}]*background-color: var\(--bg\);/)
+    expect(css).toMatch(/\.product-content \{[^}]*background-color: var\(--bg\);/)
+    expect(css).toMatch(/\.page-view \{[^}]*background-color: var\(--bg\);/)
+    expect(config).toContain("content: '#f4f2fb', media: '(prefers-color-scheme: light)'")
+    expect(config).toContain("content: '#0a0b10', media: '(prefers-color-scheme: dark)'")
   })
 
   it('keeps video-note capture free of native long-press callouts and its player frameless', () => {

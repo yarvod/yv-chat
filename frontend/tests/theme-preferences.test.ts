@@ -7,7 +7,7 @@ describe('browser theme integration', () => {
     document.head.innerHTML = `
       <meta id="yv-theme-color" name="theme-color" content="#000000">
       <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000000">
-      <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+      <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f4f2fb">
     `
     document.documentElement.removeAttribute('data-theme')
     localStorage.clear()
@@ -24,10 +24,10 @@ describe('browser theme integration', () => {
     expect(preferences.apply('light')).toBe('light')
     expect(Array.from(document.querySelectorAll('meta[name="theme-color"]')).map(
       meta => meta.getAttribute('content'),
-    )).toEqual(['#ffffff', '#ffffff', '#ffffff'])
+    )).toEqual(['#f4f2fb', '#f4f2fb', '#f4f2fb'])
     expect(preferences.apply('dark')).toBe('dark')
     expect(Array.from(document.querySelectorAll('meta[name="theme-color"]')).map(
       meta => meta.getAttribute('content'),
-    )).toEqual(['#151721', '#151721', '#151721'])
+    )).toEqual(['#0a0b10', '#0a0b10', '#0a0b10'])
   })
 })

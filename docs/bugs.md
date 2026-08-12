@@ -4,6 +4,24 @@
 
 ## Active
 
+### BUG-071 — Safe area и PWA canvas применялись локально
+
+- Статус: `fixed locally; physical iOS acceptance pending` (`WP-073`).
+- Severity: `high installed-PWA navigation usability`.
+- Production reproduction: settings content при скролле и форма нового диалога
+  заходят под iPhone status bar/notch; после поиска с открытой клавиатурой bottom tabs
+  поднимаются над ней; обычный iOS rubber-band на settings открывает белый фон вместо
+  фонового цвета текущей светлой темы.
+- Причина: top inset принадлежал отдельным chat/list headers вместо общего mobile
+  shell; tabs не знали о text-entry state; светлый `theme-color` был жёстко задан как
+  белый, а внутренний scroll canvas не фиксировал общий theme background.
+- Исправление: mobile shell единолично резервирует top safe area и тем самым задаёт
+  границу всех внутренних scrollers/routes; локальные header insets удалены. Text
+  entry скрывает bottom tabs; HTML/Nuxt/app/scroll/page layers и PWA `theme-color`
+  используют тот же theme canvas (`#f4f2fb` light / `#0a0b10` dark).
+- Проверка: CSS regression фиксирует global top inset без list/header duplication и
+  keyboard tabs state; theme regression фиксирует одинаковые canvas/system colors.
+
 ### BUG-070 — Pixel long-press конфликтовал с записью и кружок наследовал рамку сообщения
 
 - Статус: `fixed locally; physical Android acceptance pending` (`WP-073`).
@@ -30,8 +48,8 @@
 - Причина: list toolbar не резервировал `safe-area-inset-top`; viewport plugin
   отслеживал только высоту `VisualViewport`, но не его `offsetTop` и `scroll` event.
 - Исправление: mobile shell фиксируется внутри текущего visual viewport по height и
-  top offset, bottom tabs привязаны к shell, а list toolbar получает отдельный
-  верхний safe-area slot.
+  top offset, bottom tabs привязаны к shell. Первичный локальный inset list toolbar
+  затем обобщён в `BUG-071`: верхний safe area теперь принадлежит общему shell.
 - Проверка: frontend regression фиксирует safe-area toolbar rules, visual viewport
   offset variable и resize/scroll listeners; повторная проверка на iPhone обязательна.
 

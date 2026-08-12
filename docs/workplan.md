@@ -71,4 +71,7 @@
   резервирует верхний safe area (`BUG-069`);
 - Pixel acceptance выявил native long-press conflict и generic square bubble вокруг
   круглого player; gesture zone теперь подавляет selection/callout только локально,
-  а standalone video note отображается без общей rectangular card (`BUG-070`).
+  а standalone video note отображается без общей rectangular card (`BUG-070`);
+- дополнительный iPhone acceptance перенёс top safe area с отдельных chat headers на
+  общий mobile shell; keyboard text-entry скрывает bottom tabs, а PWA canvas и
+  `theme-color` совпадают с фоном выбранной темы при iOS rubber-band (`BUG-071`).

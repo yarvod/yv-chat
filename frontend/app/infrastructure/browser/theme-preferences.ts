@@ -2,7 +2,7 @@ import type { ThemePreferencesPort } from '../../application/ports/theme-prefere
 import { isThemePreference, type ResolvedTheme, type ThemePreference } from '../../domain/preferences/theme'
 
 const STORAGE_KEY = 'yv-chat:theme'
-export const SYSTEM_BAR_COLORS = { dark: '#151721', light: '#ffffff' } as const
+export const SYSTEM_BAR_COLORS = { dark: '#0a0b10', light: '#f4f2fb' } as const
 
 export function applySystemBarColor(documentRef: Document, resolved: ResolvedTheme): void {
   for (const meta of documentRef.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')) {
