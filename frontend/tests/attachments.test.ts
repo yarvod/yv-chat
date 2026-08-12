@@ -53,11 +53,18 @@ afterEach(() => {
 
 describe('group message attachment content', () => {
   it('round-trips bounded metadata while preserving legacy text messages', () => {
-    const encoded = encodeGroupMessageContent({ text: 'caption', attachments: [attachment] })
+    const video = {
+      attachmentId: 'video-1',
+      kind: 'video' as const,
+      name: 'clip.mp4',
+      contentType: 'video/mp4',
+      byteSize: 30 * 1024 * 1024,
+    }
+    const encoded = encodeGroupMessageContent({ text: 'caption', attachments: [attachment, video] })
 
     expect(decodeGroupMessageContent(encoded)).toEqual({
       text: 'caption',
-      attachments: [attachment],
+      attachments: [attachment, video],
     })
     expect(decodeGroupMessageContent('legacy group text')).toEqual({
       text: 'legacy group text',
@@ -106,6 +113,20 @@ describe('group attachment upload use case', () => {
     })
     await useCase.execute('group-1', 'group', source)
     expect(upload.mock.calls[1]?.[1].clientAttachmentId).toBe('client-attachment')
+    const video = new Blob(['video'], { type: 'video/mp4' })
+    await expect(useCase.execute('group-1', 'group', {
+      name: 'clip.mp4',
+      type: 'video/mp4',
+      size: video.size,
+      body: video,
+    })).resolves.toMatchObject({ kind: 'video', contentType: 'video/mp4' })
+    const arbitrary = new Blob(['custom'])
+    await expect(useCase.execute('group-1', 'group', {
+      name: 'archive.unknown',
+      type: '',
+      size: arbitrary.size,
+      body: arbitrary,
+    })).resolves.toMatchObject({ kind: 'file', contentType: 'application/octet-stream' })
     await expect(useCase.execute('direct-1', 'direct', {
       name: 'secret.png',
       type: 'image/png',
@@ -160,6 +181,46 @@ describe('message attachment rendering', () => {
     expect(wrapper.get('[role="dialog"]').text()).toContain('2 / 2')
     await wrapper.get('.media-viewer__close').trigger('click')
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+  })
+
+  it('plays a supported video inside the timeline and fullscreen media viewer', async () => {
+    const video = {
+      attachmentId: 'video-1',
+      kind: 'video' as const,
+      name: 'clip.mp4',
+      contentType: 'video/mp4',
+      byteSize: 512,
+    }
+    const loadAttachment = vi.fn(async () => (
+      new Blob(['x'.repeat(video.byteSize)], { type: video.contentType })
+    ))
+    const wrapper = mount(MessageAttachments, {
+      props: {
+        conversationId: 'conversation-1',
+        attachments: [video],
+        loadAttachment,
+      },
+      global: { stubs: { Teleport: true } },
+    })
+    await flushPromises()
+
+    expect(wrapper.get('.message-video').attributes('src')).toBe('blob:test-512')
+    expect(wrapper.get('.message-video').attributes()).toMatchObject({
+      controls: '',
+      playsinline: '',
+    })
+    await wrapper.get('.message-video__open').trigger('click')
+    expect(wrapper.get('[role="dialog"] video').attributes('src')).toBe('blob:test-512')
+    expect(wrapper.get('[role="dialog"]').text()).toContain('1 / 1 · clip.mp4')
+    await wrapper.get('.media-viewer__close').trigger('click')
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
+    await wrapper.get('.message-video').trigger('error')
+    expect(wrapper.text()).toContain('Этот формат нельзя воспроизвести здесь')
+    await wrapper.get('.message-video-fallback button').trigger('click')
+    expect(click).toHaveBeenCalledOnce()
+    click.mockRestore()
   })
 
   it('downloads a file through the authenticated gateway without endpoint navigation', async () => {

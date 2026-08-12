@@ -4,109 +4,102 @@
 завершённая работа фиксируется отдельным коммитом, а новый пункт переносится
 сюда из `backlog.md`.
 
-## WP-057 — Session-safe Telegram-like group media gallery
+## WP-058 — Group video playback and intentional media/file picker
 
-Статус: **completed** (`09177e7`; production run `31556674459`)
-Backlog: следующий group-first slice `BL-043`; defects `BUG-057`, `BUG-058`
+Статус: **implementation/browser acceptance complete; production rollout pending**
+Backlog: следующий group-first slice `BL-043`
 
-Цель: сделать отправку и просмотр group v1 фото/файлов предсказуемыми в обычном
-browser и установленной PWA: media никогда не открывает неавторизованный внешний
-контекст, session rotation сохраняется на streaming response, а одно сообщение
-принимает до 10 ordered вложений с удобным preview/gallery UX.
+Цель: довести group v1 attachments до понятного mobile/desktop flow: пользователь
+отдельно открывает системную галерею для фото/видео либо системный файловый picker
+без ограничения по расширению, видит ordered preview до отправки и воспроизводит
+поддерживаемое браузером видео внутри PWA без перехода в новый tab.
 
 ### Product scope
 
-- [x] picker принимает до 10 фото/файлов за выбор и позволяет добавлять следующий
-  выбор до общего лимита;
-- [x] composer показывает ordered preview всех выбранных элементов, размер/type,
-  позволяет убрать один элемент или очистить набор;
-- [x] один send загружает весь валидный набор и создаёт одно сообщение с caption и
-  ordered attachment metadata/IDs;
-- [x] изображения загружаются authenticated fetch внутри PWA и показываются
-  адаптивной gallery без перехода во внешний browser/tab;
-- [x] tap/click открывает fullscreen viewer внутри приложения; keyboard navigation,
-  close и переключение между фото не ломают timeline;
-- [x] произвольный файл скачивается authenticated fetch через bounded Blob URL с
-  исходным безопасным display name;
-- [x] loading, partial upload failure, retry, expired/unavailable и offline состояния
-  видимы и не оставляют ложное «отправлено» сообщение.
+- [x] attachment action открывает компактное меню «Фото или видео» / «Файл»;
+- [x] media picker использует `accept="image/*,video/*"`, поддерживает multiple и
+  добавляет выбранное к текущему набору до общего лимита 10;
+- [x] file picker не задаёт `accept` и позволяет отправить любой тип файла в
+  пределах настроенного размера, включая неизвестный/пустой browser MIME;
+- [x] composer показывает image/video preview, имя, размер, порядковое добавление,
+  удаление одного элемента и очистку набора;
+- [x] поддерживаемые video MIME получают отдельный `video` kind и воспроизводятся
+  inline в сообщении и fullscreen viewer с native controls;
+- [x] неподдерживаемый браузером видео-кодек не ломает timeline: остаются имя,
+  размер и authenticated download;
+- [x] viewer объединяет фото и видео одного сообщения, поддерживает close,
+  previous/next, keyboard и touch navigation и останавливает видео при уходе.
 
-### Security/session invariants
+### Security, storage и compatibility
 
-- [x] каждый media fetch использует same-origin `credentials: include`, membership
-  и expiry всё равно проверяются backend;
-- [x] frontend не помещает session credential в URL/storage и не создаёт permanent
-  public/object URL; каждый Blob URL отзывается при замене/unmount;
-- [x] rotated auth/CSRF cookies, выставленные authentication boundary, копируются в
-  фактический `StreamingResponse`, чтобы media GET не рассинхронизировал session;
-- [x] direct MLS v2 attachments остаются fail-closed; group v1 media по-прежнему
-  честно отмечены как server-readable и имеют 30-day TTL;
-- [x] набор ограничен 10 вложениями, существующие per-file size/quota/content-type
-  проверки не ослабляются.
+- [x] произвольный file всегда скачивается как attachment + octet-stream; HTML/SVG
+  и другой active content не исполняются inline;
+- [x] inline response разрешён только bounded allowlist image/video MIME и имеет
+  `nosniff`, private/no-store и membership authorization;
+- [x] media bytes остаются server-readable group v1 data с 30-day TTL; direct MLS
+  attachments остаются fail-closed;
+- [x] per-file limits: image 12 MiB, generic file 25 MiB, video 100 MiB; общий
+  quota остаётся bounded и не меньше максимального одиночного вложения;
+- [x] новая DB constraint добавляется только новой Alembic migration; `0019` не
+  переписывается, старые image/file сообщения продолжают декодироваться;
+- [x] object URLs bounded жизненным циклом component и отзываются при cleanup.
 
 ### Architecture и implementation
 
-- [x] `AttachmentGateway` получает typed download operation; `ApiClient` отвечает
-  только за credentialed binary transport;
-- [x] отдельный application use case валидирует conversation/attachment scope и
-  bounded downloaded Blob;
-- [x] `useMessenger` оркестрирует batch upload и передаёт ordered metadata/IDs в
-  существующий outbox/message flow;
-- [x] visual components владеют picker/viewer interaction и ephemeral Blob URL, но
-  не делают raw fetch;
-- [x] backend streaming route сохраняет response cookies без изменения storage/use
-  case boundary.
+- [x] domain/application/transport DTO расширяются typed `video` kind без raw
+  fetch или crypto/storage logic во Vue component;
+- [x] backend `AttachmentPolicy` централизует video allowlist и отдельный limit;
+- [x] streaming presentation выбирает safe response media/disposition из kind,
+  сохраняя session-rotation `Set-Cookie` на фактическом response;
+- [x] frontend upload/download use cases валидируют type/kind/size одинаково с
+  серверным контрактом;
+- [x] picker/menu/viewer остаются presentation interaction, transport идёт через
+  существующий `AttachmentGateway`;
+- [x] SHA-256 вычисляется инкрементально по Blob stream без полного 100 MiB
+  `arrayBuffer` в памяти мобильного устройства;
+- [x] Compose/env/README/deployment/architecture отражают новый limit и поведение.
 
 ### Tests и acceptance
 
-- [x] backend regression: rotation на attachment GET возвращает новый Set-Cookie и
-  следующий authenticated request остаётся valid;
-- [x] frontend unit/component: single image, 10-item batch, add/remove, 11th reject,
-  ordered upload/message, partial failure/retry, file download, viewer close/nav,
-  unavailable response и отсутствие `_blank` media navigation;
-- [x] backend ruff/format/mypy/pytest и frontend lint/typecheck/Vitest/build зелёные;
-- [x] isolated Compose stack: admin + второй пользователь, group, single photo,
-  batch photos, mixed file, receive/open/download/reload в реальном browser;
-- [x] после merge/deploy проверены migration/health/logs и отсутствие влияния на
-  host Nginx, `yoowee.ru` и `s3.yoowee.ru`.
+- [x] backend policy/API tests: allowed video, forged video MIME reject, generic
+  arbitrary MIME, oversize, auth/non-member, inline/attachment headers и cookie
+  rotation regression;
+- [x] migration: fresh PostgreSQL upgrade to head и upgrade `0019 -> 0020`;
+- [x] frontend unit/component tests: media/file picker split, 10-item accumulation,
+  video upload metadata, composer preview, inline player/viewer, download fallback,
+  close/navigation cleanup и old image/file envelope compatibility;
+- [x] backend ruff/format/mypy/pytest, frontend lint/typecheck/Vitest/build,
+  crypto/Compose/deploy/docs checks зелёные;
+- [x] isolated Compose + real browser: group sends image + playable video + arbitrary
+  file, second session can view/download after reload without 401/500;
+- [ ] после deploy проверены migration/health/logs, host Nginx и домены.
 
-### Ограничения
+### Exclusions
 
-- текущий slice не добавляет direct E2EE attachments, resumable/chunk upload,
-  offline media draft persistence, OPFS cache, drag/drop/paste или image editor;
-- server-side thumbnailing/transcoding и новый storage service не добавляются;
-- batch upload может быть ограниченно последовательным: корректность, quota и
-  повторяемый UX важнее параллельной нагрузки на малый VPS.
+- direct E2EE attachments, encrypted thumbnails, resumable/chunk upload, server
+  transcoding, codec conversion и streaming range requests не входят в этот slice;
+- «любой файл» означает любой тип/расширение внутри size/quota/security policy, а
+  не неограниченный размер;
+- browser/OS определяет конкретный вид системной галереи; PWA задаёт корректный
+  media intent, но не рисует собственный доступ к системной фототеке.
 
 ### Local acceptance evidence
 
-- полный `make ci`: backend `223 passed, 8 skipped`, crypto `21 passed`, frontend
-  `195 passed`, production Nuxt/PWA build и Compose/deploy/docs checks зелёные;
-- isolated project `yv-chat-wp057` на `127.0.0.1:18100`: fresh migration `base →
-  0019`, admin + activated receiver, group message с 10 PNG и caption, отдельный
-  Markdown file;
-- sender/receiver открыли fullscreen viewer, keyboard next, file Blob download без
-  URL navigation и reload с 10 доступными фото; media GET вернули `200`, в API logs
-  нет `401/403/409/422/500` или traceback;
-- acceptance отдельно выявил stale directory snapshot (`BUG-059`), не связанный с
-  media transport; чистый origin получил authoritative directory и завершил flow.
-
-### Production evidence
-
-- independent CI run `31556674451` и deploy run `31556674459` завершились успешно;
-- production API/frontend используют immutable `sha-09177e7...`, migration —
-  `0019_group_attachments (head)`, API/frontend/PostgreSQL healthy;
-- production API logs после rollout не содержат HTTP 401/500, traceback или error;
-- public `chat` app/health отвечают `200`, anonymous attachment — ожидаемым `401`;
-  host Nginx `active`, `yoowee.ru` отвечает `200`, anonymous root `s3.yoowee.ru` —
-  ожидаемым `403` без TLS/connection failure.
+- полный `make ci`: backend `224 passed, 8 skipped`, crypto `21 passed`, frontend
+  `197 passed`, production Nuxt/PWA build, Compose/deploy/docs checks зелёные;
+- PostgreSQL isolated project `yv-chat-wp058` прошёл fresh `base -> 0019`, затем
+  upgrade `0019 -> 0020_video_attachments (head)`;
+- real browser с двумя независимыми origins/users отправил одним group message PNG,
+  `video/quicktime` MOV и Markdown file; receiver после reload увидел весь набор;
+- inline и fullscreen video player имеют native controls, `readyState=4`, media
+  error отсутствует; image/video/file GET вернули `200`, browser console без errors;
+- frontend regression запрещает whole-Blob `arrayBuffer()` и проверяет exact
+  incremental SHA-256 receipt для attachment transport.
 
 ### Definition of Done
 
-- пользователь отправляет одним group message до 10 фото/файлов и управляет набором
-  до send;
-- получатель без 401 открывает фото во встроенной gallery и скачивает файл;
-- attachment GET не теряет session credential rotation;
-- ошибки не ломают session/timeline и дают безопасный повтор;
-- automated checks, реальный browser acceptance, docs, focused commit и production
-  verification завершены.
+- пользователь осознанно выбирает gallery либо files и отправляет до 10 элементов;
+- поддерживаемое видео смотрится внутри PWA, остальные файлы безопасно скачиваются;
+- произвольный active content не становится inline-origin document;
+- старые вложения совместимы, миграции и все проверки зелёные;
+- browser acceptance, focused commit, push и production verification завершены.

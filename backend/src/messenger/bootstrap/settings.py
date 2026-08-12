@@ -67,6 +67,7 @@ class AppSettings(BaseSettings):
     message_cleanup_interval_seconds: int = Field(default=300, ge=10, le=86_400)
     media_root: Path = Path("/data/media")
     media_image_max_bytes: int = Field(default=12 * 1024 * 1024, gt=0, le=209_715_200)
+    media_video_max_bytes: int = Field(default=100 * 1024 * 1024, gt=0, le=209_715_200)
     media_file_max_bytes: int = Field(default=25 * 1024 * 1024, gt=0, le=209_715_200)
     media_user_quota_bytes: int = Field(default=150 * 1024 * 1024, gt=0, le=10_737_418_240)
     media_pending_retention_seconds: int = Field(default=86_400, ge=600, le=604_800)
@@ -116,10 +117,12 @@ class AppSettings(BaseSettings):
             raise ValueError(
                 "message tombstone retention must exceed ciphertext and sync retention"
             )
-        if self.media_image_max_bytes > self.media_file_max_bytes:
-            raise ValueError("image media limit cannot exceed general media limit")
-        if self.media_user_quota_bytes < self.media_file_max_bytes:
-            raise ValueError("media user quota must fit one maximum file")
+        if self.media_user_quota_bytes < max(
+            self.media_image_max_bytes,
+            self.media_video_max_bytes,
+            self.media_file_max_bytes,
+        ):
+            raise ValueError("media user quota must fit one maximum attachment")
         return self
 
     @property
@@ -171,6 +174,7 @@ class AppSettings(BaseSettings):
     def attachment_policy(self) -> AttachmentPolicy:
         return AttachmentPolicy(
             image_max_bytes=self.media_image_max_bytes,
+            video_max_bytes=self.media_video_max_bytes,
             file_max_bytes=self.media_file_max_bytes,
             user_quota_bytes=self.media_user_quota_bytes,
             pending_retention=timedelta(seconds=self.media_pending_retention_seconds),

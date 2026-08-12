@@ -37,6 +37,8 @@ router = APIRouter(
     route_class=DishkaRoute,
 )
 
+INLINE_MEDIA_KINDS = frozenset({AttachmentMediaKind.IMAGE, AttachmentMediaKind.VIDEO})
+
 
 class UploadGroupAttachmentResponse(BaseModel):
     attachment_id: UUID
@@ -132,13 +134,13 @@ async def download_group_attachment(
         result.chunks,
         media_type=(
             result.content_type
-            if result.media_kind is AttachmentMediaKind.IMAGE
+            if result.media_kind in INLINE_MEDIA_KINDS
             else "application/octet-stream"
         ),
         headers={
             "Cache-Control": "private, no-store",
             "Content-Disposition": (
-                "inline" if result.media_kind is AttachmentMediaKind.IMAGE else "attachment"
+                "inline" if result.media_kind in INLINE_MEDIA_KINDS else "attachment"
             ),
             "Content-Length": str(result.byte_size),
             "X-Content-Type-Options": "nosniff",

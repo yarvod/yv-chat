@@ -248,17 +248,27 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .scroll-to-latest .app-icon { width: 15px; height: 15px; transform: rotate(-90deg); }
 .composer { grid-row: 4; display: grid; grid-template-columns: 42px minmax(0, 1fr) 46px; align-items: end; gap: 7px; padding: 10px clamp(12px, 4vw, 44px) max(12px, env(safe-area-inset-bottom)); border-top: 1px solid var(--border); background: var(--surface); backdrop-filter: blur(18px); }
 .composer textarea { min-height: 46px; height: 46px; max-height: 128px; padding: 12px 15px; resize: none; border-radius: 22px; line-height: 1.35; }
-.attach-button { display: grid; width: 42px; height: 46px; place-items: center; border-radius: 50%; color: var(--primary); cursor: pointer; transition: background .18s ease, transform .15s ease; }
+.attachment-picker { position: relative; display: grid; width: 42px; height: 46px; place-items: center; }
+.attach-button { display: grid; width: 42px; height: 46px; place-items: center; padding: 0; border: 0; border-radius: 50%; color: var(--primary); background: transparent; cursor: pointer; transition: background .18s ease, transform .15s ease; }
 .attach-button:hover { background: color-mix(in srgb, var(--primary) 10%, transparent); }
 .attach-button:active { transform: scale(.93); }
-.attach-button.disabled { color: var(--muted); cursor: not-allowed; opacity: .5; }
-.attach-button input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.attach-button.disabled, .attach-button:disabled { color: var(--muted); cursor: not-allowed; opacity: .5; }
+.attachment-picker > input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.attachment-picker-menu { position: absolute; z-index: 12; bottom: calc(100% + 10px); left: 0; display: grid; width: min(280px, calc(100vw - 28px)); gap: 3px; padding: 7px; border: 1px solid var(--border); border-radius: 17px; background: var(--surface-solid); box-shadow: 0 16px 48px rgb(0 0 0 / 24%); }
+.attachment-picker-menu > button { display: grid; grid-template-columns: 42px minmax(0, 1fr); align-items: center; gap: 10px; min-height: 56px; padding: 7px 9px; border: 0; border-radius: 12px; color: var(--text); background: transparent; text-align: left; }
+.attachment-picker-menu > button:hover { background: var(--surface-hover); }
+.attachment-picker-menu .app-icon { width: 24px; height: 24px; color: var(--primary); }
+.attachment-picker-menu span { display: grid; gap: 2px; }
+.attachment-picker-menu strong { margin: 0; font-size: .85rem; }
+.attachment-picker-menu small { color: var(--muted); font-size: .7rem; }
+.attachment-menu-enter-active, .attachment-menu-leave-active { transition: opacity .14s ease, transform .14s ease; transform-origin: bottom left; }
+.attachment-menu-enter-from, .attachment-menu-leave-to { opacity: 0; transform: translateY(6px) scale(.98); }
 .composer-attachments { grid-column: 1 / -1; display: grid; min-width: 0; gap: 6px; }
 .composer-attachments__heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 4px; color: var(--muted); font-size: .68rem; }
 .composer-attachments__heading button { padding: 2px 5px; border: 0; color: var(--primary); background: transparent; font-size: inherit; }
 .composer-attachments__strip { display: flex; gap: 7px; overflow-x: auto; overscroll-behavior-inline: contain; scrollbar-width: thin; padding-bottom: 2px; }
 .composer-attachment { display: grid; min-width: min(230px, 72vw); max-width: 230px; grid-template-columns: 48px minmax(0, 1fr) 34px; align-items: center; gap: 8px; min-height: 58px; padding: 6px; border: 1px solid color-mix(in srgb, var(--primary) 25%, var(--border)); border-radius: 14px; background: var(--surface-raised); }
-.composer-attachment > img { width: 48px; height: 48px; border-radius: 10px; object-fit: cover; }
+.composer-attachment > img, .composer-attachment > video { width: 48px; height: 48px; border-radius: 10px; object-fit: cover; background: #090b12; }
 .composer-attachment__icon { display: grid; width: 44px; height: 44px; place-items: center; border-radius: 12px; color: var(--primary); background: color-mix(in srgb, var(--primary) 11%, transparent); }
 .composer-attachment__copy { display: grid; min-width: 0; gap: 2px; }
 .composer-attachment__copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -275,6 +285,16 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .message-photo-loading { display: grid; width: min(420px, 68vw); min-height: 170px; place-items: center; background: color-mix(in srgb, var(--primary) 5%, var(--field)); }
 .message-attachments--gallery .message-photo-loading { width: 100%; min-height: clamp(120px, 24vw, 230px); }
 .message-photo-loading .loading-orbit { width: 24px; height: 24px; }
+.message-video-shell { position: relative; display: grid; min-width: 0; overflow: hidden; border-radius: 12px; background: #090b12; }
+.message-video { display: block; width: min(480px, 72vw); max-width: 100%; max-height: 58dvh; background: #090b12; object-fit: contain; }
+.message-video__open { position: absolute; top: 8px; right: 8px; display: grid; width: 34px; height: 34px; place-items: center; padding: 0; border: 1px solid rgb(255 255 255 / 28%); border-radius: 50%; color: white; background: rgb(5 7 13 / 70%); backdrop-filter: blur(8px); }
+.message-video__open .app-icon { width: 17px; height: 17px; }
+.message-video-fallback { display: grid; min-height: 150px; place-items: center; align-content: center; gap: 6px; padding: 18px; color: white; text-align: center; }
+.message-video-fallback .app-icon { width: 30px; height: 30px; color: var(--primary); }
+.message-video-fallback small { color: rgb(255 255 255 / 68%); }
+.message-video-fallback button, .media-viewer__unsupported button { min-height: 34px; padding: 5px 12px; border: 1px solid currentcolor; border-radius: 999px; color: var(--primary); background: transparent; }
+.message-attachments--gallery .message-video-shell { border-radius: 5px; }
+.message-attachments--gallery .message-video { width: 100%; height: clamp(120px, 24vw, 230px); object-fit: cover; }
 .message-file { display: grid; min-width: min(310px, 65vw); grid-column: 1 / -1; grid-template-columns: 42px minmax(0, 1fr); align-items: center; gap: 9px; padding: 8px; border: 0; border-radius: 12px; color: inherit; background: color-mix(in srgb, var(--primary) 8%, transparent); text-align: left; cursor: pointer; }
 .message-file:disabled { cursor: wait; opacity: .7; }
 .message-file__icon { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 12px; color: var(--primary); background: var(--surface-solid); }
@@ -284,8 +304,12 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .attachment-unavailable { display: grid; min-height: 90px; place-items: center; gap: 7px; padding: 10px; border-radius: 10px; color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, transparent); text-align: center; font-size: .78rem; }
 .attachment-unavailable button { min-height: 30px; padding: 3px 10px; border: 1px solid currentcolor; border-radius: 999px; color: inherit; background: transparent; }
 .media-viewer { position: fixed; z-index: 120; inset: 0; display: grid; grid-template-columns: minmax(44px, 1fr) minmax(0, 12fr) minmax(44px, 1fr); grid-template-rows: minmax(52px, auto) minmax(0, 1fr) minmax(48px, auto); align-items: center; gap: 10px; padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)); touch-action: pan-y; background: rgb(5 7 13 / 94%); backdrop-filter: blur(18px); }
-.media-viewer img { grid-column: 2; grid-row: 2; width: 100%; height: 100%; min-height: 0; object-fit: contain; user-select: none; }
+.media-viewer img, .media-viewer > video { grid-column: 2; grid-row: 2; width: 100%; height: 100%; min-height: 0; object-fit: contain; user-select: none; }
+.media-viewer > video { max-width: 100%; max-height: 100%; background: #000; }
+.media-viewer__unsupported { grid-column: 2; grid-row: 2; display: grid; place-items: center; align-content: center; gap: 10px; color: white; text-align: center; }
+.media-viewer__unsupported .app-icon { width: 42px; height: 42px; color: var(--primary); }
 .media-viewer button { display: grid; width: 44px; height: 44px; place-items: center; padding: 0; border: 1px solid rgb(255 255 255 / 16%); border-radius: 50%; color: white; background: rgb(255 255 255 / 10%); font-size: 2rem; }
+.media-viewer .media-viewer__unsupported button { width: auto; height: auto; min-height: 36px; padding: 6px 14px; border-color: currentcolor; border-radius: 999px; color: var(--primary); background: transparent; font-size: .82rem; }
 .media-viewer__close { grid-column: 3; grid-row: 1; justify-self: end; font-size: 1rem !important; }
 .media-viewer__previous { grid-column: 1; grid-row: 2; }
 .media-viewer__next { grid-column: 3; grid-row: 2; justify-self: end; }

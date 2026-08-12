@@ -74,16 +74,18 @@ def upload_command(
     conversation: Conversation,
     body: bytes,
     client_attachment_id: UUID | None = None,
+    media_kind: AttachmentMediaKind = AttachmentMediaKind.IMAGE,
+    content_type: str = "image/png",
 ) -> UploadGroupAttachmentCommand:
     return UploadGroupAttachmentCommand(
         actor_user_id=alice.id,
         actor_device_id=device.id,
         conversation_id=conversation.id,
         client_attachment_id=client_attachment_id or uuid4(),
-        media_kind=AttachmentMediaKind.IMAGE,
+        media_kind=media_kind,
         byte_size=len(body),
         sha256_digest=hashlib.sha256(body).hexdigest(),
-        content_type="image/png",
+        content_type=content_type,
         chunks=chunks(body),
     )
 
@@ -128,7 +130,12 @@ async def test_group_upload_is_idempotent_and_direct_upload_is_rejected() -> Non
 async def test_quota_integrity_and_client_id_conflicts_remove_partial_objects() -> None:
     state, alice, _, _, device, group = attachment_state()
     storage = FakeMediaStorage()
-    policy = AttachmentPolicy(image_max_bytes=32, file_max_bytes=32, user_quota_bytes=32)
+    policy = AttachmentPolicy(
+        image_max_bytes=32,
+        video_max_bytes=32,
+        file_max_bytes=32,
+        user_quota_bytes=32,
+    )
     use_case = UploadGroupAttachment(
         unit_of_work=FakeAttachmentUnitOfWorkFactory(state),
         media_storage=storage,
@@ -169,7 +176,12 @@ async def test_quota_integrity_and_client_id_conflicts_remove_partial_objects() 
         unit_of_work=FakeAttachmentUnitOfWorkFactory(state),
         media_storage=storage,
         clock=FixedClock(NOW),
-        policy=AttachmentPolicy(image_max_bytes=4, file_max_bytes=8, user_quota_bytes=8),
+        policy=AttachmentPolicy(
+            image_max_bytes=4,
+            video_max_bytes=8,
+            file_max_bytes=8,
+            user_quota_bytes=8,
+        ),
     )
     with pytest.raises(AttachmentTooLargeError):
         await strict.execute(
@@ -300,3 +312,54 @@ async def test_message_binding_rejects_another_uploaders_attachment() -> None:
                 attachment_ids=(uploaded.attachment_id,),
             )
         )
+
+
+async def test_video_policy_accepts_only_bounded_inline_content_types() -> None:
+    state, alice, _, _, device, group = attachment_state()
+    policy = AttachmentPolicy(
+        image_max_bytes=8,
+        video_max_bytes=32,
+        file_max_bytes=16,
+        user_quota_bytes=64,
+    )
+    upload = UploadGroupAttachment(
+        unit_of_work=FakeAttachmentUnitOfWorkFactory(state),
+        media_storage=FakeMediaStorage(),
+        clock=FixedClock(NOW),
+        policy=policy,
+    )
+
+    result = await upload.execute(
+        upload_command(
+            alice=alice,
+            device=device,
+            conversation=group,
+            body=b"bounded-mp4",
+            media_kind=AttachmentMediaKind.VIDEO,
+            content_type="video/mp4",
+        )
+    )
+
+    assert result.media_kind is AttachmentMediaKind.VIDEO
+    with pytest.raises(InvalidAttachmentError):
+        await upload.execute(
+            upload_command(
+                alice=alice,
+                device=device,
+                conversation=group,
+                body=b"not-inline",
+                media_kind=AttachmentMediaKind.VIDEO,
+                content_type="video/x-unknown",
+            )
+        )
+    generic = await upload.execute(
+        upload_command(
+            alice=alice,
+            device=device,
+            conversation=group,
+            body=b"arbitrary",
+            media_kind=AttachmentMediaKind.FILE,
+            content_type="application/x-custom-yv-chat",
+        )
+    )
+    assert generic.media_kind is AttachmentMediaKind.FILE

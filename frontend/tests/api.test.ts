@@ -2,12 +2,48 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { ApplicationError } from '../app/application/errors'
 import { ApiClient } from '../app/infrastructure/http/api-client'
+import { HttpAttachmentGateway } from '../app/infrastructure/http/attachment-gateway'
 import { HttpMessagingGateway } from '../app/infrastructure/http/messaging-gateway'
 import { parseCurrentAccount } from '../app/infrastructure/http/runtime-parsers'
 
 afterEach(() => vi.restoreAllMocks())
 
 describe('api boundary', () => {
+  it('hashes attachment bodies incrementally without materializing the whole Blob', async () => {
+    const body = new Blob(['hello'], { type: 'video/mp4' })
+    const wholeBlobRead = vi.spyOn(body, 'arrayBuffer').mockRejectedValue(
+      new Error('whole blob read is forbidden'),
+    )
+    const apiClient = new ApiClient()
+    const upload = vi.spyOn(apiClient, 'upload').mockImplementation(async path => {
+      const query = new URL(path, 'http://localhost').searchParams
+      return {
+        attachment_id: 'attachment-1',
+        client_attachment_id: 'client-1',
+        conversation_id: 'conversation-1',
+        media_kind: 'video',
+        content_type: 'video/mp4',
+        byte_size: body.size,
+        sha256_digest: query.get('sha256'),
+        created_at: '2026-08-12T12:00:00Z',
+        expires_at: '2026-09-11T12:00:00Z',
+      }
+    })
+
+    await new HttpAttachmentGateway(apiClient).upload('conversation-1', {
+      clientAttachmentId: 'client-1',
+      kind: 'video',
+      contentType: 'video/mp4',
+      byteSize: body.size,
+      body,
+    })
+
+    expect(wholeBlobRead).not.toHaveBeenCalled()
+    expect(upload.mock.calls[0]?.[0]).toContain(
+      'sha256=2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824',
+    )
+  })
+
   it('sends group management mutations through encoded CSRF-protected routes', async () => {
     vi.spyOn(document, 'cookie', 'get').mockReturnValue('__Host-yv_csrf=csrf-test')
     const response = {

@@ -20,7 +20,7 @@ Internet
 
 api ───────────────┐
 cleanup ───────────┼→ PostgreSQL on internal private network
-                   └→ encrypted media volume (API only)
+                   └→ private media volume (API writes/reads, cleanup deletes)
 ```
 
 Production has no Nginx container. The Nginx service in root `compose.yml` is only
@@ -104,8 +104,11 @@ docker compose -p yv-chat \
 ```
 
 Message retention settings and constraints are documented in `.env.example`.
-Cleanup uses the same immutable backend image but a separate bounded process; it has
-neither a public port nor the media volume.
+Media defaults are 12 MiB per image, 100 MiB per video, 25 MiB per generic file and
+150 MiB active uploader quota; host Nginx keeps `client_max_body_size 150m` above the
+largest admitted request. Cleanup uses the same immutable backend image but a
+separate bounded process; it has no public port and mounts the media volume only to
+delete expired opaque storage keys.
 
 ## Host Nginx ownership
 

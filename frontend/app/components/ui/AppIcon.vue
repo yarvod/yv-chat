@@ -38,6 +38,15 @@ defineProps<{ name: AppIconName }>()
     <template v-else-if="name === 'attachment'">
       <path d="m20.5 11.5-8.9 8.9a6 6 0 0 1-8.5-8.5l9.6-9.6a4 4 0 0 1 5.7 5.7l-9.6 9.6a2 2 0 0 1-2.8-2.8l8.9-8.9" />
     </template>
+    <template v-else-if="name === 'media'">
+      <rect x="3" y="4" width="18" height="16" rx="3" />
+      <circle cx="8.5" cy="9" r="1.5" />
+      <path d="m4.5 17 4.7-4.8 3.3 3.1 2.2-2.2 4.8 4.9" />
+    </template>
+    <template v-else-if="name === 'file'">
+      <path d="M6 2h8l4 4v16H6Z" />
+      <path d="M14 2v5h5M9 12h6M9 16h6" />
+    </template>
     <template v-else-if="name === 'back'">
       <path d="m15 18-6-6 6-6" />
     </template>

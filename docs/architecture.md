@@ -1065,19 +1065,26 @@ client validates type/size
 никогда не используется как filesystem path и сейчас хранится только внутри
 versioned group message envelope. Application зависит от `MediaStorage`, default
 adapter — `LocalMediaStorage(/data/media)`. Upload/download streaming и bounded;
-server-side thumbnail/transcoding отсутствуют. Безопасные image MIME могут
-возвращаться inline с `nosniff`, остальные файлы — только как
-`application/octet-stream` attachment.
+server-side thumbnail/transcoding отсутствуют. Typed `image` и `video` принимаются
+только по bounded allowlist browser-safe MIME и могут возвращаться inline с
+`nosniff`; generic `file` принимает любое bounded MIME/расширение, но всегда
+возвращается как `application/octet-stream` attachment. Это не позволяет HTML, SVG
+или другому active content исполняться как документ внутри application origin.
+Frontend считает upload SHA-256 инкрементально по `Blob.stream()` через небольшой
+audited hash adapter, не материализуя видео целиком вторым `ArrayBuffer` в памяти.
 
 Frontend никогда не навигирует browser/PWA напрямую на protected media URL и не
 открывает его через `_blank`: standalone PWA и внешний browser могут иметь разный
 cookie context. Infrastructure gateway выполняет same-origin binary `fetch` с
 `credentials: include`, application сверяет conversation/attachment metadata и
-bounded byte size, а presentation создаёт только краткоживущий Blob URL. Image URL
-лениво создаётся около viewport, отзывается при удалении/unmount и открывается во
-встроенном fullscreen viewer с keyboard/swipe navigation; file Blob скачивается без
-выхода из приложения. Это пока не durable OPFS cache: reload повторно получает media
-с сервера в пределах TTL.
+bounded byte size, а presentation создаёт только краткоживущий Blob URL. Image/video
+URL лениво создаётся около viewport, отзывается при удалении/unmount и открывается во
+встроенном fullscreen viewer с keyboard/swipe navigation; видео использует native
+browser controls, а unsupported codec получает безопасный download fallback. File
+Blob скачивается без выхода из приложения. Composer разделяет media picker с
+`accept="image/*,video/*"` и unrestricted file picker: конкретный системный UI
+галереи остаётся ответственностью OS/browser. Это пока не durable OPFS cache: reload
+повторно получает media с сервера в пределах TTL.
 
 Authentication может ротировать opaque credential на любом authenticated GET.
 Поэтому attachment route обязан перенести каждый `Set-Cookie` из injected auth
@@ -1088,9 +1095,9 @@ revocation.
 Committed group media наследует server-side `Message.expires_at` (default 30 days),
 uncommitted upload живёт не больше 24 часов. Bounded cleanup блокирует expiry batch
 через persistence adapter, терпит already-missing blob и удаляет metadata. Default
-limits: 12 MiB image, 25 MiB file, 150 MiB active media per uploader и 10 attachment
-IDs на message; UI отправляет ordered batch до 10 элементов одним сообщением и
-повторяет partial failure с теми же client attachment IDs.
+limits: 12 MiB image, 100 MiB video, 25 MiB generic file, 150 MiB active media per
+uploader и 10 attachment IDs на message; UI отправляет ordered batch до 10 элементов
+одним сообщением и повторяет partial failure с теми же client attachment IDs.
 
 Production использует persistent Compose volume, общий для API и cleanup, с
 one-shot permission init; он не публикует port и не добавляет container nginx.

@@ -22,7 +22,7 @@ from messenger.infrastructure.persistence.models.base import Base
 class AttachmentModel(Base):
     __tablename__ = "attachments"
     __table_args__ = (
-        CheckConstraint("media_kind IN ('image', 'file')", name="media_kind_allowed"),
+        CheckConstraint("media_kind IN ('image', 'video', 'file')", name="media_kind_allowed"),
         CheckConstraint("byte_size > 0", name="byte_size_positive"),
         CheckConstraint(
             "sha256_digest ~ '^[0-9a-f]{64}$'",

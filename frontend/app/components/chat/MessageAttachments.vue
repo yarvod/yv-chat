@@ -17,22 +17,36 @@ const props = defineProps<{
 }>()
 
 const mediaStates = ref(new Map<string, MediaState>())
+const playbackFailures = ref(new Set<string>())
 const galleryRoot = ref<HTMLElement | null>(null)
-const activeImageIndex = ref<number | null>(null)
+const viewerRoot = ref<HTMLElement | null>(null)
+const activeMediaIndex = ref<number | null>(null)
 const pending = new Map<string, Promise<MediaState>>()
-let imageObserver: IntersectionObserver | null = null
+let mediaObserver: IntersectionObserver | null = null
 let touchStartX: number | null = null
-const imageAttachments = computed(() => props.attachments.filter(item => item.kind === 'image'))
-const activeImage = computed(() => activeImageIndex.value === null
+let disposed = false
+
+const mediaAttachments = computed(() => (
+  props.attachments.filter(item => item.kind === 'image' || item.kind === 'video')
+))
+const activeMedia = computed(() => activeMediaIndex.value === null
   ? null
-  : imageAttachments.value[activeImageIndex.value] ?? null)
+  : mediaAttachments.value[activeMediaIndex.value] ?? null)
 
 function stateFor(attachmentId: string): MediaState | undefined {
   return mediaStates.value.get(attachmentId)
 }
 
 function setState(attachmentId: string, state: MediaState): void {
-  mediaStates.value = new Map(mediaStates.value).set(attachmentId, state)
+  if (!disposed) mediaStates.value = new Map(mediaStates.value).set(attachmentId, state)
+}
+
+function playbackFailed(attachmentId: string): boolean {
+  return playbackFailures.value.has(attachmentId)
+}
+
+function markPlaybackFailure(attachmentId: string): void {
+  playbackFailures.value = new Set(playbackFailures.value).add(attachmentId)
 }
 
 async function load(attachment: MessageAttachment): Promise<MediaState> {
@@ -43,7 +57,12 @@ async function load(attachment: MessageAttachment): Promise<MediaState> {
   setState(attachment.attachmentId, { phase: 'loading' })
   const request = props.loadAttachment(props.conversationId, attachment)
     .then(blob => {
-      const state = { phase: 'ready' as const, blob, url: URL.createObjectURL(blob) }
+      const url = URL.createObjectURL(blob)
+      if (disposed) {
+        URL.revokeObjectURL(url)
+        return { phase: 'unavailable' as const }
+      }
+      const state = { phase: 'ready' as const, blob, url }
       setState(attachment.attachmentId, state)
       return state
     })
@@ -57,28 +76,36 @@ async function load(attachment: MessageAttachment): Promise<MediaState> {
   return await request
 }
 
-async function openImage(attachment: MessageAttachment): Promise<void> {
+function pauseViewerVideo(): void {
+  for (const video of viewerRoot.value?.querySelectorAll('video') ?? []) {
+    if (!video.paused) video.pause()
+  }
+}
+
+async function openMedia(attachment: MessageAttachment): Promise<void> {
   const state = await load(attachment)
   if (state.phase !== 'ready') return
-  const index = imageAttachments.value.findIndex(item => (
+  const index = mediaAttachments.value.findIndex(item => (
     item.attachmentId === attachment.attachmentId
   ))
-  if (index >= 0) activeImageIndex.value = index
+  if (index >= 0) activeMediaIndex.value = index
 }
 
 function closeViewer(): void {
-  activeImageIndex.value = null
+  pauseViewerVideo()
+  activeMediaIndex.value = null
 }
 
 async function moveViewer(direction: -1 | 1): Promise<void> {
-  if (activeImageIndex.value === null || imageAttachments.value.length < 2) return
+  if (activeMediaIndex.value === null || mediaAttachments.value.length < 2) return
+  pauseViewerVideo()
   const nextIndex = (
-    activeImageIndex.value + direction + imageAttachments.value.length
-  ) % imageAttachments.value.length
-  const attachment = imageAttachments.value[nextIndex]
+    activeMediaIndex.value + direction + mediaAttachments.value.length
+  ) % mediaAttachments.value.length
+  const attachment = mediaAttachments.value[nextIndex]
   if (!attachment) return
   const state = await load(attachment)
-  if (state.phase === 'ready') activeImageIndex.value = nextIndex
+  if (state.phase === 'ready') activeMediaIndex.value = nextIndex
 }
 
 function handleViewerKeydown(event: KeyboardEvent): void {
@@ -118,26 +145,26 @@ function formatBytes(value: number): string {
   return `${(value / 1024 / 1024).toFixed(value < 10 * 1024 * 1024 ? 1 : 0)} МБ`
 }
 
-function observeVisibleImages(): void {
-  imageObserver?.disconnect()
-  imageObserver = null
+function observeVisibleMedia(): void {
+  mediaObserver?.disconnect()
+  mediaObserver = null
   const root = galleryRoot.value
   if (!root) return
   if (!('IntersectionObserver' in window)) {
-    for (const attachment of imageAttachments.value) void load(attachment)
+    for (const attachment of mediaAttachments.value) void load(attachment)
     return
   }
-  imageObserver = new IntersectionObserver(entries => {
+  mediaObserver = new IntersectionObserver(entries => {
     for (const entry of entries) {
       if (!entry.isIntersecting) continue
       const attachmentId = (entry.target as HTMLElement).dataset.attachmentId
-      const attachment = imageAttachments.value.find(item => item.attachmentId === attachmentId)
+      const attachment = mediaAttachments.value.find(item => item.attachmentId === attachmentId)
       if (attachment) void load(attachment)
-      imageObserver?.unobserve(entry.target)
+      mediaObserver?.unobserve(entry.target)
     }
   }, { rootMargin: '500px 0px' })
   for (const element of root.querySelectorAll<HTMLElement>('[data-attachment-id]')) {
-    imageObserver.observe(element)
+    mediaObserver.observe(element)
   }
 }
 
@@ -145,28 +172,36 @@ watch(
   () => props.attachments,
   async attachments => {
     const currentIds = new Set(attachments.map(item => item.attachmentId))
-    for (const [attachmentId, state] of mediaStates.value) {
+    const nextStates = new Map(mediaStates.value)
+    for (const [attachmentId, state] of nextStates) {
       if (currentIds.has(attachmentId)) continue
       if (state.url) URL.revokeObjectURL(state.url)
-      mediaStates.value.delete(attachmentId)
+      nextStates.delete(attachmentId)
     }
+    mediaStates.value = nextStates
+    if (
+      activeMediaIndex.value !== null
+      && activeMediaIndex.value >= mediaAttachments.value.length
+    ) closeViewer()
     await nextTick()
-    observeVisibleImages()
+    observeVisibleMedia()
   },
 )
 
 onMounted(() => {
-  observeVisibleImages()
+  observeVisibleMedia()
 })
 
-watch(activeImageIndex, (current, previous) => {
+watch(activeMediaIndex, (current, previous) => {
   if (previous === null && current !== null) window.addEventListener('keydown', handleViewerKeydown)
   if (previous !== null && current === null) window.removeEventListener('keydown', handleViewerKeydown)
 })
 
 onBeforeUnmount(() => {
-  imageObserver?.disconnect()
+  disposed = true
+  mediaObserver?.disconnect()
   window.removeEventListener('keydown', handleViewerKeydown)
+  pauseViewerVideo()
   for (const state of mediaStates.value.values()) {
     if (state.url) URL.revokeObjectURL(state.url)
   }
@@ -177,7 +212,7 @@ onBeforeUnmount(() => {
   <div
     ref="galleryRoot"
     class="message-attachments"
-    :class="{ 'message-attachments--gallery': imageAttachments.length > 1 }"
+    :class="{ 'message-attachments--gallery': mediaAttachments.length > 1 }"
   >
     <template v-for="attachment in attachments" :key="attachment.attachmentId">
       <div
@@ -190,7 +225,7 @@ onBeforeUnmount(() => {
           class="message-photo"
           type="button"
           :aria-label="`Открыть изображение ${attachment.name}`"
-          @click="openImage(attachment)"
+          @click="openMedia(attachment)"
         >
           <img :src="stateFor(attachment.attachmentId)?.url" :alt="attachment.name">
         </button>
@@ -208,6 +243,52 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
+      <div
+        v-else-if="attachment.kind === 'video'"
+        class="message-video-shell"
+        :data-attachment-id="attachment.attachmentId"
+      >
+        <template v-if="stateFor(attachment.attachmentId)?.phase === 'ready'">
+          <div v-if="playbackFailed(attachment.attachmentId)" class="message-video-fallback">
+            <AppIcon name="file" />
+            <strong>{{ attachment.name }}</strong>
+            <small>Этот формат нельзя воспроизвести здесь.</small>
+            <button type="button" @click="downloadFile(attachment)">Скачать файл</button>
+          </div>
+          <template v-else>
+            <video
+              class="message-video"
+              :src="stateFor(attachment.attachmentId)?.url"
+              controls
+              playsinline
+              preload="metadata"
+              :aria-label="attachment.name"
+              @error="markPlaybackFailure(attachment.attachmentId)"
+            />
+            <button
+              class="message-video__open"
+              type="button"
+              :aria-label="`Открыть видео ${attachment.name} на весь экран`"
+              @click="openMedia(attachment)"
+            >
+              <AppIcon name="media" />
+            </button>
+          </template>
+        </template>
+        <div
+          v-else-if="stateFor(attachment.attachmentId)?.phase !== 'unavailable'"
+          class="message-photo-loading"
+          role="status"
+          aria-label="Загружаем видео"
+        >
+          <span class="loading-orbit" aria-hidden="true" />
+        </div>
+        <div v-else class="attachment-unavailable" role="status">
+          <span>Видео недоступно, не поддерживается или срок хранения истёк.</span>
+          <button type="button" @click="load(attachment)">Повторить</button>
+        </div>
+      </div>
+
       <button
         v-else
         class="message-file"
@@ -215,7 +296,7 @@ onBeforeUnmount(() => {
         :disabled="stateFor(attachment.attachmentId)?.phase === 'loading'"
         @click="downloadFile(attachment)"
       >
-        <span class="message-file__icon"><AppIcon name="attachment" /></span>
+        <span class="message-file__icon"><AppIcon name="file" /></span>
         <span>
           <strong>{{ attachment.name }}</strong>
           <small v-if="stateFor(attachment.attachmentId)?.phase === 'unavailable'">
@@ -224,7 +305,7 @@ onBeforeUnmount(() => {
           <small v-else-if="stateFor(attachment.attachmentId)?.phase === 'loading'">
             Загружаем…
           </small>
-          <small v-else>{{ formatBytes(attachment.byteSize) }}</small>
+          <small v-else>{{ formatBytes(attachment.byteSize) }} · скачать</small>
         </span>
       </button>
     </template>
@@ -233,11 +314,12 @@ onBeforeUnmount(() => {
   <Teleport to="body">
     <Transition name="media-viewer">
       <div
-        v-if="activeImage && activeImageIndex !== null"
+        v-if="activeMedia && activeMediaIndex !== null"
+        ref="viewerRoot"
         class="media-viewer"
         role="dialog"
         aria-modal="true"
-        :aria-label="`Просмотр ${activeImage.name}`"
+        :aria-label="`Просмотр ${activeMedia.name}`"
         @click.self="closeViewer"
         @touchstart.passive="handleViewerTouchStart"
         @touchend.passive="handleViewerTouchEnd"
@@ -246,29 +328,50 @@ onBeforeUnmount(() => {
           <AppIcon name="close" />
         </button>
         <button
-          v-if="imageAttachments.length > 1"
+          v-if="mediaAttachments.length > 1"
           class="media-viewer__previous"
           type="button"
-          aria-label="Предыдущее фото"
+          aria-label="Предыдущее медиа"
           @click="moveViewer(-1)"
         >
           ‹
         </button>
         <img
-          :src="stateFor(activeImage.attachmentId)?.url"
-          :alt="activeImage.name"
+          v-if="activeMedia.kind === 'image'"
+          :src="stateFor(activeMedia.attachmentId)?.url"
+          :alt="activeMedia.name"
           @click.stop
         >
+        <div v-else-if="playbackFailed(activeMedia.attachmentId)" class="media-viewer__unsupported">
+          <AppIcon name="file" />
+          <strong>{{ activeMedia.name }}</strong>
+          <span>Браузер не поддерживает кодек этого видео.</span>
+          <button type="button" @click="downloadFile(activeMedia)">Скачать файл</button>
+        </div>
+        <video
+          v-else
+          :key="activeMedia.attachmentId"
+          :src="stateFor(activeMedia.attachmentId)?.url"
+          controls
+          autoplay
+          playsinline
+          preload="metadata"
+          :aria-label="activeMedia.name"
+          @click.stop
+          @touchstart.stop
+          @touchend.stop
+          @error="markPlaybackFailure(activeMedia.attachmentId)"
+        />
         <button
-          v-if="imageAttachments.length > 1"
+          v-if="mediaAttachments.length > 1"
           class="media-viewer__next"
           type="button"
-          aria-label="Следующее фото"
+          aria-label="Следующее медиа"
           @click="moveViewer(1)"
         >
           ›
         </button>
-        <p>{{ activeImageIndex + 1 }} / {{ imageAttachments.length }} · {{ activeImage.name }}</p>
+        <p>{{ activeMediaIndex + 1 }} / {{ mediaAttachments.length }} · {{ activeMedia.name }}</p>
       </div>
     </Transition>
   </Teleport>

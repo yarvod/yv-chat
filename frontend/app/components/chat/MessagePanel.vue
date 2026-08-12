@@ -3,6 +3,11 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import type { TimelineMessage } from '../../application/messaging/timeline-message'
 import type { GroupAttachmentSource } from '../../application/messaging/upload-group-attachment'
+import {
+  attachmentKindFor,
+  GROUP_ATTACHMENT_LIMIT,
+  maximumAttachmentBytes,
+} from '../../application/messaging/group-attachment-policy'
 import type { OutgoingMessageView } from '../../application/messaging/outgoing-message-view'
 import type { RealtimeConnectionState } from '../../application/messaging/realtime-sync-service'
 import type {
@@ -13,10 +18,6 @@ import type {
 import { buildTimelineLayout } from '../../presentation/chat/timeline-layout'
 import AppIcon from '../ui/AppIcon.vue'
 import MessageAttachments from './MessageAttachments.vue'
-
-const PREVIEWABLE_IMAGE_TYPES = new Set([
-  'image/avif', 'image/gif', 'image/jpeg', 'image/png', 'image/webp',
-])
 
 const props = withDefaults(defineProps<{
   conversation: Conversation | null
@@ -65,13 +66,16 @@ const draft = ref('')
 const deleteCandidateId = ref<string | null>(null)
 const timeline = ref<HTMLElement | null>(null)
 const composerInput = ref<HTMLTextAreaElement | null>(null)
-const attachmentInput = ref<HTMLInputElement | null>(null)
+const mediaInput = ref<HTMLInputElement | null>(null)
+const fileInput = ref<HTMLInputElement | null>(null)
 interface SelectedAttachment {
   file: File
+  kind: 'image' | 'video' | 'file'
   previewUrl: string | null
 }
 const selectedAttachments = ref<SelectedAttachment[]>([])
 const attachmentError = ref<string | null>(null)
+const attachmentMenuOpen = ref(false)
 const showScrollToLatest = ref(false)
 
 const timelineItems = computed(() => props.conversation
@@ -194,7 +198,9 @@ function clearAttachments(): void {
   }
   selectedAttachments.value = []
   attachmentError.value = null
-  if (attachmentInput.value) attachmentInput.value.value = ''
+  attachmentMenuOpen.value = false
+  if (mediaInput.value) mediaInput.value.value = ''
+  if (fileInput.value) fileInput.value.value = ''
 }
 
 function chooseAttachment(event: Event): void {
@@ -202,28 +208,39 @@ function chooseAttachment(event: Event): void {
   const files = Array.from(input.files ?? [])
   input.value = ''
   attachmentError.value = null
+  attachmentMenuOpen.value = false
   if (files.length === 0) return
-  if (selectedAttachments.value.length + files.length > 10) {
+  if (selectedAttachments.value.length + files.length > GROUP_ATTACHMENT_LIMIT) {
     attachmentError.value = 'В одном сообщении можно отправить не больше 10 файлов.'
     return
   }
   for (const file of files) {
-    const isImage = PREVIEWABLE_IMAGE_TYPES.has(file.type)
-    const maximum = isImage ? 12 * 1024 * 1024 : 25 * 1024 * 1024
+    const kind = attachmentKindFor(file.type)
+    const maximum = maximumAttachmentBytes(kind)
     if (file.size <= 0 || file.size > maximum) {
-      attachmentError.value = isImage
-        ? `«${file.name}»: изображение должно быть не больше 12 МБ.`
-        : `«${file.name}»: файл должен быть не больше 25 МБ.`
+      const limitLabel = kind === 'image' ? '12 МБ' : kind === 'video' ? '100 МБ' : '25 МБ'
+      const kindLabel = kind === 'image' ? 'изображение' : kind === 'video' ? 'видео' : 'файл'
+      attachmentError.value = `«${file.name}»: ${kindLabel} должно быть не больше ${limitLabel}.`
       return
     }
   }
   selectedAttachments.value = [
     ...selectedAttachments.value,
-    ...files.map(file => ({
-      file,
-      previewUrl: PREVIEWABLE_IMAGE_TYPES.has(file.type) ? URL.createObjectURL(file) : null,
-    })),
+    ...files.map(file => {
+      const kind = attachmentKindFor(file.type)
+      return {
+        file,
+        kind,
+        previewUrl: kind === 'file' ? null : URL.createObjectURL(file),
+      }
+    }),
   ]
+}
+
+function openAttachmentPicker(kind: 'media' | 'file'): void {
+  attachmentMenuOpen.value = false
+  if (kind === 'media') mediaInput.value?.click()
+  else fileInput.value?.click()
 }
 
 function removeAttachment(index: number): void {
@@ -519,7 +536,19 @@ onBeforeUnmount(() => {
             :key="`${item.file.name}-${item.file.lastModified}-${index}`"
             class="composer-attachment"
           >
-            <img v-if="item.previewUrl" :src="item.previewUrl" :alt="`Предпросмотр ${item.file.name}`">
+            <img
+              v-if="item.previewUrl && item.kind === 'image'"
+              :src="item.previewUrl"
+              :alt="`Предпросмотр ${item.file.name}`"
+            >
+            <video
+              v-else-if="item.previewUrl && item.kind === 'video'"
+              :src="item.previewUrl"
+              muted
+              playsinline
+              preload="metadata"
+              :aria-label="`Предпросмотр ${item.file.name}`"
+            />
             <span v-else class="composer-attachment__icon"><AppIcon name="attachment" /></span>
             <span class="composer-attachment__copy">
               <strong>{{ item.file.name }}</strong>
@@ -534,23 +563,52 @@ onBeforeUnmount(() => {
       <p v-if="attachmentError" class="composer-attachment-error" role="alert">
         {{ attachmentError }}
       </p>
-      <label
-        class="attach-button"
-        :class="{ disabled: conversation.conversationType !== 'group' || sending }"
-        :title="conversation.conversationType === 'group'
-          ? 'Прикрепить фото или файл'
-          : 'Вложения в личных чатах появятся после E2EE media flow'"
-      >
+      <div class="attachment-picker" @keydown.esc="attachmentMenuOpen = false">
+        <button
+          class="attach-button"
+          :class="{ disabled: conversation.conversationType !== 'group' || sending }"
+          type="button"
+          :disabled="conversation.conversationType !== 'group' || sending"
+          :aria-expanded="attachmentMenuOpen"
+          aria-controls="attachment-picker-menu"
+          :title="conversation.conversationType === 'group'
+            ? 'Прикрепить медиа или файл'
+            : 'Вложения в личных чатах появятся после E2EE media flow'"
+          @click="attachmentMenuOpen = !attachmentMenuOpen"
+        >
+          <AppIcon name="attachment" />
+          <span class="sr-only">Прикрепить медиа или файл</span>
+        </button>
         <input
-          ref="attachmentInput"
+          ref="mediaInput"
+          data-picker="media"
+          type="file"
+          multiple
+          accept="image/*,video/*"
+          :disabled="conversation.conversationType !== 'group' || sending"
+          @change="chooseAttachment"
+        >
+        <input
+          ref="fileInput"
+          data-picker="file"
           type="file"
           multiple
           :disabled="conversation.conversationType !== 'group' || sending"
           @change="chooseAttachment"
         >
-        <AppIcon name="attachment" />
-        <span class="sr-only">Прикрепить фото или файл</span>
-      </label>
+        <Transition name="attachment-menu">
+          <div v-if="attachmentMenuOpen" id="attachment-picker-menu" class="attachment-picker-menu">
+            <button type="button" @click="openAttachmentPicker('media')">
+              <AppIcon name="media" />
+              <span><strong>Фото или видео</strong><small>Открыть системную галерею</small></span>
+            </button>
+            <button type="button" @click="openAttachmentPicker('file')">
+              <AppIcon name="file" />
+              <span><strong>Файл</strong><small>Выбрать любой тип до 25 МБ</small></span>
+            </button>
+          </div>
+        </Transition>
+      </div>
       <label class="sr-only" for="message-draft">Сообщение</label>
       <textarea
         id="message-draft"

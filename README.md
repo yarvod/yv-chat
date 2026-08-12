@@ -19,9 +19,11 @@ server generation/Welcome coordination, Rust/OpenMLS lifecycle и v2 protect/unp
 v2 без fallback, group — только synthetic v1. Synthetic v1 — UTF-8/base64 transport,
 он **не шифрует сообщения и не является E2EE**, поэтому содержимое групп доступно
 серверу. Исторические v1/v2 записи не переписываются и читаются своей exact version.
-Групповые чаты поддерживают один photo/file attachment на сообщение: этот поток
-server-readable, не является E2EE и хранит media не дольше server TTL. Вложения в
-личных MLS-чатах пока запрещены до отдельного client-side encrypted flow.
+Групповые чаты поддерживают до 10 ordered фото, видео или произвольных файлов на
+сообщение: этот поток server-readable, не является E2EE и хранит media не дольше
+server TTL. Поддерживаемые видео воспроизводятся внутри PWA, остальные форматы
+безопасно скачиваются. Вложения в личных MLS-чатах пока запрещены до отдельного
+client-side encrypted flow.
 
 Runtime v7 восстанавливает утраченный conversation control-checkpoint по exact
 совпадению public local MLS epoch/roster с server generation без logout/login.

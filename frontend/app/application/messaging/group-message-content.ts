@@ -1,4 +1,5 @@
 import type { MessageAttachment } from '../../domain/messaging/models'
+import { maximumAttachmentBytes } from './group-attachment-policy'
 
 const PREFIX = 'yv-chat/group-content/v1:'
 const MAX_ATTACHMENTS = 10
@@ -15,7 +16,7 @@ function validAttachment(value: unknown): value is MessageAttachment {
   return typeof item.attachmentId === 'string'
     && item.attachmentId.length > 0
     && item.attachmentId.length <= 64
-    && (item.kind === 'image' || item.kind === 'file')
+    && (item.kind === 'image' || item.kind === 'video' || item.kind === 'file')
     && typeof item.name === 'string'
     && item.name.length > 0
     && item.name.length <= MAX_NAME_LENGTH
@@ -24,7 +25,7 @@ function validAttachment(value: unknown): value is MessageAttachment {
     && item.contentType.length <= 100
     && Number.isSafeInteger(item.byteSize)
     && Number(item.byteSize) > 0
-    && Number(item.byteSize) <= 25 * 1024 * 1024
+    && Number(item.byteSize) <= maximumAttachmentBytes(item.kind)
 }
 
 export function encodeGroupMessageContent(content: GroupMessageContent): string {

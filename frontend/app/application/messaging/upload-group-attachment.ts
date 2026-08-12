@@ -5,10 +5,11 @@ import type {
   MessageAttachment,
   MessageAttachmentKind,
 } from '../../domain/messaging/models'
-
-const IMAGE_TYPES = new Set(['image/avif', 'image/gif', 'image/jpeg', 'image/png', 'image/webp'])
-const IMAGE_MAX_BYTES = 12 * 1024 * 1024
-const FILE_MAX_BYTES = 25 * 1024 * 1024
+import {
+  attachmentKindFor,
+  maximumAttachmentBytes,
+  normalizeAttachmentContentType,
+} from './group-attachment-policy'
 
 export interface GroupAttachmentSource {
   name: string
@@ -39,9 +40,9 @@ export class UploadGroupAttachment {
     source: GroupAttachmentSource,
   ): Promise<MessageAttachment> {
     if (conversationType !== 'group') throw new TypeError('direct attachments require E2EE')
-    const contentType = source.type || 'application/octet-stream'
-    const kind: MessageAttachmentKind = IMAGE_TYPES.has(contentType) ? 'image' : 'file'
-    const maximum = kind === 'image' ? IMAGE_MAX_BYTES : FILE_MAX_BYTES
+    const contentType = normalizeAttachmentContentType(source.type)
+    const kind: MessageAttachmentKind = attachmentKindFor(contentType)
+    const maximum = maximumAttachmentBytes(kind)
     if (
       !conversationId
       || source.size <= 0

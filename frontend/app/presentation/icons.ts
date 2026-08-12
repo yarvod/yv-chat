@@ -4,6 +4,8 @@ export type AppIconName =
   | 'back'
   | 'chat'
   | 'close'
+  | 'file'
+  | 'media'
   | 'search'
   | 'send'
   | 'settings'

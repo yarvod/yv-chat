@@ -63,6 +63,38 @@ async def test_group_attachment_upload_binding_download_and_direct_rejection() -
         attachment_id = uploaded.json()["attachment_id"]
         assert uploaded.json()["byte_size"] == len(body)
 
+        video_body = b"fake-mp4-body"
+        video_client_id = uuid4()
+        video_query = (
+            "media_kind=video"
+            f"&byte_size={len(video_body)}"
+            f"&sha256={hashlib.sha256(video_body).hexdigest()}"
+            "&content_type=video%2Fmp4"
+        )
+        video_uploaded = await alice_client.put(
+            f"/api/v1/conversations/{group_id}/attachments/{video_client_id}?{video_query}",
+            headers={**alice_headers, "Content-Type": "application/octet-stream"},
+            content=video_body,
+        )
+        assert video_uploaded.status_code == 201
+        video_attachment_id = video_uploaded.json()["attachment_id"]
+
+        file_body = b"arbitrary-file-body"
+        file_client_id = uuid4()
+        file_query = (
+            "media_kind=file"
+            f"&byte_size={len(file_body)}"
+            f"&sha256={hashlib.sha256(file_body).hexdigest()}"
+            "&content_type=application%2Fx-custom-yv-chat"
+        )
+        file_uploaded = await alice_client.put(
+            f"/api/v1/conversations/{group_id}/attachments/{file_client_id}?{file_query}",
+            headers={**alice_headers, "Content-Type": "application/octet-stream"},
+            content=file_body,
+        )
+        assert file_uploaded.status_code == 201
+        file_attachment_id = file_uploaded.json()["attachment_id"]
+
         sent = await alice_client.post(
             f"/api/v1/conversations/{group_id}/messages",
             headers=alice_headers,
@@ -70,7 +102,7 @@ async def test_group_attachment_upload_binding_download_and_direct_rejection() -
                 "client_message_id": str(uuid4()),
                 "protocol_version": 1,
                 "ciphertext_base64": base64.b64encode(b"group media envelope").decode(),
-                "attachment_ids": [attachment_id],
+                "attachment_ids": [attachment_id, video_attachment_id, file_attachment_id],
             },
         )
         assert sent.status_code == 201
@@ -84,7 +116,20 @@ async def test_group_attachment_upload_binding_download_and_direct_rejection() -
         assert downloaded.status_code == 200
         assert downloaded.content == body
         assert downloaded.headers["content-type"] == "image/png"
+        assert downloaded.headers["content-disposition"] == "inline"
         assert downloaded.cookies.get("__Host-yv_session") is not None
+        video_downloaded = await alice_client.get(
+            f"/api/v1/conversations/{group_id}/attachments/{video_attachment_id}"
+        )
+        assert video_downloaded.content == video_body
+        assert video_downloaded.headers["content-type"] == "video/mp4"
+        assert video_downloaded.headers["content-disposition"] == "inline"
+        file_downloaded = await alice_client.get(
+            f"/api/v1/conversations/{group_id}/attachments/{file_attachment_id}"
+        )
+        assert file_downloaded.content == file_body
+        assert file_downloaded.headers["content-type"] == "application/octet-stream"
+        assert file_downloaded.headers["content-disposition"] == "attachment"
         clock.instant += timedelta(seconds=61)
         still_authenticated = await alice_client.get("/api/v1/auth/session")
         assert still_authenticated.status_code == 200
@@ -102,7 +147,7 @@ async def test_group_attachment_upload_binding_download_and_direct_rejection() -
             content=body,
         )
         assert rejected.status_code == 422
-        assert len(state.attachments) == 1
+        assert len(state.attachments) == 3
 
 
 async def test_send_opaque_message_and_reject_invalid_or_non_member_envelopes() -> None:

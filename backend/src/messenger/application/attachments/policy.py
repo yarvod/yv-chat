@@ -6,10 +6,18 @@ from datetime import timedelta
 from messenger.application.errors import AttachmentTooLargeError, InvalidAttachmentError
 from messenger.domain.entities import AttachmentMediaKind
 
+SAFE_IMAGE_CONTENT_TYPES = frozenset(
+    {"image/avif", "image/gif", "image/jpeg", "image/png", "image/webp"}
+)
+SAFE_VIDEO_CONTENT_TYPES = frozenset(
+    {"video/mp4", "video/ogg", "video/quicktime", "video/webm", "video/x-m4v"}
+)
+
 
 @dataclass(frozen=True, slots=True)
 class AttachmentPolicy:
     image_max_bytes: int = 12 * 1024 * 1024
+    video_max_bytes: int = 100 * 1024 * 1024
     file_max_bytes: int = 25 * 1024 * 1024
     user_quota_bytes: int = 150 * 1024 * 1024
     pending_retention: timedelta = timedelta(hours=24)
@@ -19,10 +27,16 @@ class AttachmentPolicy:
     def __post_init__(self) -> None:
         if self.image_max_bytes <= 0:
             raise ValueError("image attachment limit must be positive")
-        if self.file_max_bytes < self.image_max_bytes:
-            raise ValueError("file attachment limit must not be smaller than image limit")
-        if self.user_quota_bytes < self.file_max_bytes:
-            raise ValueError("user media quota must fit one maximum file")
+        if self.video_max_bytes <= 0:
+            raise ValueError("video attachment limit must be positive")
+        if self.file_max_bytes <= 0:
+            raise ValueError("file attachment limit must be positive")
+        if self.user_quota_bytes < max(
+            self.image_max_bytes,
+            self.video_max_bytes,
+            self.file_max_bytes,
+        ):
+            raise ValueError("user media quota must fit one maximum attachment")
         if self.pending_retention <= timedelta(0):
             raise ValueError("pending attachment retention must be positive")
         if not 1 <= self.cleanup_batch_size <= 1_000:
@@ -31,9 +45,11 @@ class AttachmentPolicy:
             raise ValueError("attachment count limit is out of range")
 
     def maximum_bytes(self, media_kind: AttachmentMediaKind) -> int:
-        return (
-            self.image_max_bytes if media_kind is AttachmentMediaKind.IMAGE else self.file_max_bytes
-        )
+        if media_kind is AttachmentMediaKind.IMAGE:
+            return self.image_max_bytes
+        if media_kind is AttachmentMediaKind.VIDEO:
+            return self.video_max_bytes
+        return self.file_max_bytes
 
     def validate_upload(
         self,
@@ -61,9 +77,10 @@ class AttachmentPolicy:
             for character in content_type
         ):
             raise InvalidAttachmentError("invalid attachment content type")
-        safe_images = {"image/avif", "image/gif", "image/jpeg", "image/png", "image/webp"}
-        if media_kind is AttachmentMediaKind.IMAGE and content_type not in safe_images:
+        if media_kind is AttachmentMediaKind.IMAGE and content_type not in SAFE_IMAGE_CONTENT_TYPES:
             raise InvalidAttachmentError("image content type is not supported")
+        if media_kind is AttachmentMediaKind.VIDEO and content_type not in SAFE_VIDEO_CONTENT_TYPES:
+            raise InvalidAttachmentError("video content type is not supported")
         return maximum
 
     def validate_quota(self, *, current_bytes: int, incoming_bytes: int) -> None:

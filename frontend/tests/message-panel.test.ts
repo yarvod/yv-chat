@@ -31,7 +31,7 @@ const conversation = {
 }
 
 describe('message panel', () => {
-  it('selects, edits and sends an ordered batch of 10 group files', async () => {
+  it('opens intentional pickers and sends an ordered photo/video/arbitrary-file batch', async () => {
     Object.defineProperty(URL, 'createObjectURL', {
       configurable: true,
       value: vi.fn((file: File) => `blob:${file.name}`),
@@ -59,34 +59,54 @@ describe('message panel', () => {
         setTyping: vi.fn(),
       },
     })
-    const input = wrapper.get<HTMLInputElement>('input[type="file"]')
-    const files = Array.from({ length: 10 }, (_, index) => (
+    const mediaInput = wrapper.get<HTMLInputElement>('input[data-picker="media"]')
+    const fileInput = wrapper.get<HTMLInputElement>('input[data-picker="file"]')
+    expect(mediaInput.attributes('accept')).toBe('image/*,video/*')
+    expect(fileInput.attributes('accept')).toBeUndefined()
+    await wrapper.get('.attach-button').trigger('click')
+    expect(wrapper.text()).toContain('Открыть системную галерею')
+    expect(wrapper.text()).toContain('Выбрать любой тип')
+
+    const photos = Array.from({ length: 8 }, (_, index) => (
       new File([`photo-${index}`], `photo-${index}.png`, { type: 'image/png' })
     ))
-    Object.defineProperty(input.element, 'files', { configurable: true, value: files })
-    await input.trigger('change')
+    const video = new File(['video'], 'clip.mp4', { type: 'video/mp4' })
+    Object.defineProperty(mediaInput.element, 'files', {
+      configurable: true,
+      value: [...photos, video],
+    })
+    await mediaInput.trigger('change')
+    const arbitrary = new File(['custom'], 'archive.yvwhatever', { type: '' })
+    Object.defineProperty(fileInput.element, 'files', { configurable: true, value: [arbitrary] })
+    await fileInput.trigger('change')
 
     expect(wrapper.text()).toContain('10 из 10')
     expect(wrapper.text()).toContain('photo-0.png')
+    expect(wrapper.text()).toContain('clip.mp4')
+    expect(wrapper.text()).toContain('archive.yvwhatever')
+    expect(wrapper.find('.composer-attachment video').exists()).toBe(true)
     expect(wrapper.text()).toContain('не E2EE')
     const overflow = new File(['overflow'], 'overflow.png', { type: 'image/png' })
-    Object.defineProperty(input.element, 'files', { configurable: true, value: [overflow] })
-    await input.trigger('change')
+    Object.defineProperty(mediaInput.element, 'files', { configurable: true, value: [overflow] })
+    await mediaInput.trigger('change')
     expect(wrapper.text()).toContain('не больше 10 файлов')
     await wrapper.get('button[aria-label="Убрать photo-0.png"]').trigger('click')
-    Object.defineProperty(input.element, 'files', { configurable: true, value: [overflow] })
-    await input.trigger('change')
+    Object.defineProperty(mediaInput.element, 'files', { configurable: true, value: [overflow] })
+    await mediaInput.trigger('change')
     expect(wrapper.text()).toContain('10 из 10')
     await wrapper.get('form').trigger('submit')
     expect(sendMessage).toHaveBeenCalledWith('', expect.arrayContaining([
-      expect.objectContaining({ name: 'photo-1.png', body: files[1] }),
+      expect.objectContaining({ name: 'photo-1.png', body: photos[1] }),
+      expect.objectContaining({ name: 'clip.mp4', body: video }),
+      expect.objectContaining({ name: 'archive.yvwhatever', body: arbitrary }),
       expect.objectContaining({ name: 'overflow.png', body: overflow }),
     ]))
     expect(sendMessage.mock.calls[0]?.[1]).toHaveLength(10)
     expect(wrapper.text()).not.toContain('photo-1.png')
 
     await wrapper.setProps({ conversation })
-    expect(wrapper.get<HTMLInputElement>('input[type="file"]').element.disabled).toBe(true)
+    expect(wrapper.get<HTMLInputElement>('input[data-picker="media"]').element.disabled).toBe(true)
+    expect(wrapper.get<HTMLInputElement>('input[data-picker="file"]').element.disabled).toBe(true)
   })
 
   it('renders optimistic outbox states and exposes retry only for failed messages', async () => {

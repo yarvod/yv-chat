@@ -12,6 +12,7 @@ from messenger.domain.exceptions import DomainValidationError
 
 class AttachmentMediaKind(StrEnum):
     IMAGE = "image"
+    VIDEO = "video"
     FILE = "file"
 
 

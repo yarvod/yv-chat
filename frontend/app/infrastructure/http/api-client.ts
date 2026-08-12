@@ -76,7 +76,7 @@ export class ApiClient {
     try {
       response = await fetch(path, {
         method: 'GET',
-        headers: new Headers({ Accept: 'application/octet-stream,image/*' }),
+        headers: new Headers({ Accept: 'application/octet-stream,image/*,video/*' }),
         credentials: 'include',
       })
     } catch {
