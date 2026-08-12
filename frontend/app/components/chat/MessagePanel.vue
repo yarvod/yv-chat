@@ -32,6 +32,8 @@ const props = withDefaults(defineProps<{
   sending: boolean
   attachmentUploadCompleted?: number
   attachmentUploadTotal?: number
+  attachmentUploadBytesSent?: number
+  attachmentUploadBytesTotal?: number
   protectionSecure: boolean
   protectionLabel: string
   sendMessage: (plaintext: string, attachments?: readonly GroupAttachmentSource[]) => Promise<boolean>
@@ -55,6 +57,8 @@ const props = withDefaults(defineProps<{
   outgoingMessages: () => [],
   attachmentUploadCompleted: 0,
   attachmentUploadTotal: 0,
+  attachmentUploadBytesSent: 0,
+  attachmentUploadBytesTotal: 0,
   retryOutgoing: async () => false,
   loadOlder: async () => undefined,
   returnToLatest: async () => undefined,
@@ -77,6 +81,32 @@ const selectedAttachments = ref<SelectedAttachment[]>([])
 const attachmentError = ref<string | null>(null)
 const attachmentMenuOpen = ref(false)
 const showScrollToLatest = ref(false)
+
+function boundedPercent(completed: number, total: number): number {
+  if (total <= 0) return 0
+  return Math.round(Math.max(0, Math.min(1, completed / total)) * 100)
+}
+
+const overallAttachmentUploadPercent = computed(() => boundedPercent(
+  props.attachmentUploadBytesSent,
+  props.attachmentUploadBytesTotal,
+))
+
+function attachmentUploadPercent(index: number): number | null {
+  if (!props.sending || props.attachmentUploadTotal <= 0) return null
+  if (index < props.attachmentUploadCompleted) return 100
+  if (index > props.attachmentUploadCompleted) return 0
+  if (props.attachmentUploadCompleted >= props.attachmentUploadTotal) return 100
+  const item = selectedAttachments.value[index]
+  if (!item) return 0
+  const completedBytes = selectedAttachments.value
+    .slice(0, index)
+    .reduce((total, attachment) => total + attachment.file.size, 0)
+  return boundedPercent(
+    Math.max(0, props.attachmentUploadBytesSent - completedBytes),
+    item.file.size,
+  )
+}
 
 const timelineItems = computed(() => props.conversation
   ? buildTimelineLayout(
@@ -522,13 +552,13 @@ onBeforeUnmount(() => {
     <form class="composer" @submit.prevent="submit">
       <div v-if="selectedAttachments.length > 0" class="composer-attachments">
         <div class="composer-attachments__heading">
-          <span v-if="sending && attachmentUploadTotal > 0">
+          <span v-if="sending && attachmentUploadBytesTotal > 0" aria-live="polite">
             {{ attachmentUploadCompleted < attachmentUploadTotal
-              ? `Загружаем ${attachmentUploadCompleted + 1} из ${attachmentUploadTotal}…`
-              : 'Сохраняем сообщение…' }}
+              ? `Загрузка ${overallAttachmentUploadPercent}% · ${attachmentUploadCompleted + 1} из ${attachmentUploadTotal}`
+              : 'Сохраняем сообщение… 100%' }}
           </span>
           <span v-else>{{ selectedAttachments.length }} из 10 · хранение до 30 дней · не E2EE</span>
-          <button type="button" @click="clearAttachments">Убрать все</button>
+          <button type="button" :disabled="sending" @click="clearAttachments">Убрать все</button>
         </div>
         <div class="composer-attachments__strip">
           <div
@@ -552,11 +582,32 @@ onBeforeUnmount(() => {
             <span v-else class="composer-attachment__icon"><AppIcon name="attachment" /></span>
             <span class="composer-attachment__copy">
               <strong>{{ item.file.name }}</strong>
-              <small>{{ Math.max(1, Math.ceil(item.file.size / 1024)) }} КБ</small>
+              <small>
+                {{ Math.max(1, Math.ceil(item.file.size / 1024)) }} КБ
+                <template v-if="attachmentUploadPercent(index) !== null">
+                  · {{ attachmentUploadPercent(index) }}%
+                </template>
+              </small>
             </span>
-            <button type="button" :aria-label="`Убрать ${item.file.name}`" @click="removeAttachment(index)">
+            <button
+              type="button"
+              :disabled="sending"
+              :aria-label="`Убрать ${item.file.name}`"
+              @click="removeAttachment(index)"
+            >
               <AppIcon name="close" />
             </button>
+            <div
+              v-if="attachmentUploadPercent(index) !== null"
+              class="composer-attachment__progress"
+              role="progressbar"
+              :aria-label="`Загрузка ${item.file.name}`"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              :aria-valuenow="attachmentUploadPercent(index) ?? 0"
+            >
+              <span :style="{ width: `${attachmentUploadPercent(index) ?? 0}%` }" />
+            </div>
           </div>
         </div>
       </div>

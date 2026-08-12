@@ -6,9 +6,112 @@ import { HttpAttachmentGateway } from '../app/infrastructure/http/attachment-gat
 import { HttpMessagingGateway } from '../app/infrastructure/http/messaging-gateway'
 import { parseCurrentAccount } from '../app/infrastructure/http/runtime-parsers'
 
-afterEach(() => vi.restoreAllMocks())
+class FakeXMLHttpRequest {
+  static readonly instances: FakeXMLHttpRequest[] = []
+  static nextStatus = 201
+  static nextResponseText = JSON.stringify({ accepted: true })
+  static failNetwork = false
+
+  readonly upload: {
+    onprogress: ((event: ProgressEvent) => void) | null
+  } = { onprogress: null }
+
+  readonly headers = new Map<string, string>()
+  method = ''
+  path = ''
+  withCredentials = false
+  status = FakeXMLHttpRequest.nextStatus
+  responseText = FakeXMLHttpRequest.nextResponseText
+  sentBody: Document | XMLHttpRequestBodyInit | null = null
+  onerror: (() => void) | null = null
+  onabort: (() => void) | null = null
+  ontimeout: (() => void) | null = null
+  onload: (() => void) | null = null
+
+  constructor() {
+    FakeXMLHttpRequest.instances.push(this)
+  }
+
+  open(method: string, path: string): void {
+    this.method = method
+    this.path = path
+  }
+
+  setRequestHeader(name: string, value: string): void {
+    this.headers.set(name.toLowerCase(), value)
+  }
+
+  send(body: Document | XMLHttpRequestBodyInit | null): void {
+    this.sentBody = body
+    this.upload.onprogress?.({ loaded: 2 } as ProgressEvent)
+    if (FakeXMLHttpRequest.failNetwork) this.onerror?.()
+    else this.onload?.()
+  }
+
+  static reset(): void {
+    this.instances.length = 0
+    this.nextStatus = 201
+    this.nextResponseText = JSON.stringify({ accepted: true })
+    this.failNetwork = false
+  }
+}
+
+afterEach(() => {
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+  FakeXMLHttpRequest.reset()
+})
 
 describe('api boundary', () => {
+  it('reports actual binary upload bytes while preserving cookie and CSRF semantics', async () => {
+    vi.stubGlobal('XMLHttpRequest', FakeXMLHttpRequest)
+    vi.spyOn(document, 'cookie', 'get').mockReturnValue('__Host-yv_csrf=csrf-upload')
+    const body = new Blob(['hello'])
+    const onProgress = vi.fn()
+
+    await expect(new ApiClient().upload('/binary', body, onProgress)).resolves.toEqual({
+      accepted: true,
+    })
+
+    const request = FakeXMLHttpRequest.instances[0]
+    expect(request).toMatchObject({
+      method: 'PUT',
+      path: '/binary',
+      withCredentials: true,
+      sentBody: body,
+    })
+    expect(request?.headers.get('x-csrf-token')).toBe('csrf-upload')
+    expect(request?.headers.get('content-type')).toBe('application/octet-stream')
+    expect(onProgress.mock.calls.map(([progress]) => progress.uploadedBytes)).toEqual([0, 2, 5])
+    expect(onProgress).toHaveBeenLastCalledWith({ uploadedBytes: 5, totalBytes: 5 })
+  })
+
+  it('preserves typed HTTP, network and invalid-response failures for binary uploads', async () => {
+    vi.stubGlobal('XMLHttpRequest', FakeXMLHttpRequest)
+    const apiClient = new ApiClient()
+    const body = new Blob(['hello'])
+
+    FakeXMLHttpRequest.nextStatus = 413
+    await expect(apiClient.upload('/too-large', body)).rejects.toMatchObject({
+      status: 413,
+      kind: 'http',
+    })
+
+    FakeXMLHttpRequest.nextStatus = 201
+    FakeXMLHttpRequest.failNetwork = true
+    await expect(apiClient.upload('/offline', body)).rejects.toMatchObject({
+      status: null,
+      kind: 'network',
+    })
+
+    FakeXMLHttpRequest.failNetwork = false
+    FakeXMLHttpRequest.nextResponseText = '{broken'
+    await expect(apiClient.upload('/invalid', body)).rejects.toMatchObject({
+      status: 201,
+      kind: 'invalid-response',
+    })
+  })
+
   it('hashes attachment bodies incrementally without materializing the whole Blob', async () => {
     const body = new Blob(['hello'], { type: 'video/mp4' })
     const wholeBlobRead = vi.spyOn(body, 'arrayBuffer').mockRejectedValue(

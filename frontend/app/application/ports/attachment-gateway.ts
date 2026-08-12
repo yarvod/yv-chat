@@ -20,7 +20,18 @@ export interface UploadedGroupAttachment {
   expiresAt: string
 }
 
+export interface AttachmentUploadProgress {
+  uploadedBytes: number
+  totalBytes: number
+}
+
+export type AttachmentUploadProgressHandler = (progress: AttachmentUploadProgress) => void
+
 export interface AttachmentGateway {
-  upload(conversationId: string, upload: GroupAttachmentUpload): Promise<UploadedGroupAttachment>
+  upload(
+    conversationId: string,
+    upload: GroupAttachmentUpload,
+    onProgress?: AttachmentUploadProgressHandler,
+  ): Promise<UploadedGroupAttachment>
   download(conversationId: string, attachmentId: string): Promise<Blob>
 }

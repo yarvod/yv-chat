@@ -6,6 +6,7 @@ import { LeaveGroup } from '../app/application/conversations/leave-group'
 import { RemoveGroupMember } from '../app/application/conversations/remove-group-member'
 import { RenameGroup } from '../app/application/conversations/rename-group'
 import type { MessagingGateway } from '../app/application/ports/messaging-gateway'
+import type { AttachmentGateway } from '../app/application/ports/attachment-gateway'
 import type { MessageArchive } from '../app/application/ports/message-archive'
 import type { MessengerSnapshotStore } from '../app/application/ports/messenger-snapshot-store'
 import {
@@ -315,6 +316,64 @@ describe('messenger orchestration', () => {
     expect(decodeGroupMessageContent(plaintext).attachments.map(item => item.name)).toEqual(
       sources.map(item => item.name),
     )
+  })
+
+  it('aggregates monotonic byte progress across sequential attachment uploads', async () => {
+    const snapshots: Array<{ sent: number; total: number; completed: number }> = []
+    const upload = vi.fn<AttachmentGateway['upload']>(async (
+      conversationId,
+      source,
+      onProgress,
+    ) => {
+      onProgress?.({
+        uploadedBytes: Math.floor(source.byteSize / 2),
+        totalBytes: source.byteSize,
+      })
+      snapshots.push({
+        sent: messenger.state.attachmentUploadBytesSent,
+        total: messenger.state.attachmentUploadBytesTotal,
+        completed: messenger.state.attachmentUploadCompleted,
+      })
+      return {
+        attachmentId: `server-${source.clientAttachmentId}`,
+        clientAttachmentId: source.clientAttachmentId,
+        conversationId,
+        kind: source.kind,
+        contentType: source.contentType,
+        byteSize: source.byteSize,
+        sha256Digest: 'a'.repeat(64),
+        createdAt: '2026-08-11T12:00:00Z',
+        expiresAt: '2026-09-10T12:00:00Z',
+      }
+    })
+    let clientIndex = 0
+    const messenger = useMessenger('alice-id', 'device-alice', vi.fn(), {
+      ...messengerDependencies(),
+      uploadGroupAttachment: new UploadGroupAttachment(
+        { upload, download: vi.fn() },
+        { create: () => `progress-${clientIndex++}` },
+      ),
+    })
+    const first = new Blob(['1234'], { type: 'application/octet-stream' })
+    const second = new Blob(['123456'], { type: 'application/octet-stream' })
+
+    await messenger.load()
+    await expect(messenger.send('', [
+      { name: 'first.bin', type: first.type, size: first.size, body: first },
+      { name: 'second.bin', type: second.type, size: second.size, body: second },
+    ])).resolves.toBe(true)
+
+    expect(snapshots).toEqual([
+      { sent: 2, total: 10, completed: 0 },
+      { sent: 7, total: 10, completed: 1 },
+    ])
+    expect(messenger.state).toMatchObject({
+      uploadingAttachment: false,
+      attachmentUploadCompleted: 0,
+      attachmentUploadTotal: 0,
+      attachmentUploadBytesSent: 0,
+      attachmentUploadBytesTotal: 0,
+    })
   })
 
   it('keeps a failed batch retryable with stable upload idempotency IDs', async () => {

@@ -4,6 +4,7 @@ import { bytesToHex } from '@noble/hashes/utils.js'
 import { ApplicationError } from '../../application/errors'
 import type {
   AttachmentGateway,
+  AttachmentUploadProgressHandler,
   GroupAttachmentUpload,
   UploadedGroupAttachment,
 } from '../../application/ports/attachment-gateway'
@@ -50,6 +51,7 @@ export class HttpAttachmentGateway implements AttachmentGateway {
   async upload(
     conversationId: string,
     upload: GroupAttachmentUpload,
+    onProgress?: AttachmentUploadProgressHandler,
   ): Promise<UploadedGroupAttachment> {
     const digest = await sha256Blob(upload.body)
     const query = new URLSearchParams({
@@ -62,6 +64,7 @@ export class HttpAttachmentGateway implements AttachmentGateway {
       `/api/v1/conversations/${encodeURIComponent(conversationId)}`
       + `/attachments/${encodeURIComponent(upload.clientAttachmentId)}?${query}`,
       upload.body,
+      onProgress,
     ))
     if (
       result.clientAttachmentId !== upload.clientAttachmentId

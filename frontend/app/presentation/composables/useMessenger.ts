@@ -76,6 +76,8 @@ interface MessengerState {
   uploadingAttachment: boolean
   attachmentUploadCompleted: number
   attachmentUploadTotal: number
+  attachmentUploadBytesSent: number
+  attachmentUploadBytesTotal: number
   conversationCryptoPhase: ConversationCryptoPhase
   conversationCryptoBlockReason: string | null
   message: string | null
@@ -188,6 +190,8 @@ export function useMessenger(
     uploadingAttachment: false,
     attachmentUploadCompleted: 0,
     attachmentUploadTotal: 0,
+    attachmentUploadBytesSent: 0,
+    attachmentUploadBytesTotal: 0,
     conversationCryptoPhase: 'checking',
     conversationCryptoBlockReason: null,
     message: null,
@@ -738,18 +742,34 @@ export function useMessenger(
     state.uploadingAttachment = attachments.length > 0
     state.attachmentUploadCompleted = 0
     state.attachmentUploadTotal = attachments.length
+    state.attachmentUploadBytesSent = 0
+    state.attachmentUploadBytesTotal = attachments.reduce(
+      (total, attachment) => total + attachment.size,
+      0,
+    )
     try {
       const uploaded: MessageAttachment[] = []
       if (attachments.length > 0 && !uploadGroupAttachment) {
         state.message = 'Загрузка файлов на этом устройстве недоступна.'
         return false
       }
+      let completedBytes = 0
       for (const attachment of attachments) {
+        let currentUploadedBytes = 0
         uploaded.push(await uploadGroupAttachment!.execute(
           conversationId,
           conversation.conversationType,
           attachment,
+          progress => {
+            currentUploadedBytes = Math.max(
+              currentUploadedBytes,
+              Math.max(0, Math.min(attachment.size, progress.uploadedBytes)),
+            )
+            state.attachmentUploadBytesSent = completedBytes + currentUploadedBytes
+          },
         ))
+        completedBytes += attachment.size
+        state.attachmentUploadBytesSent = completedBytes
         state.attachmentUploadCompleted = uploaded.length
       }
       const content = uploaded.length === 0
@@ -774,6 +794,8 @@ export function useMessenger(
       state.uploadingAttachment = false
       state.attachmentUploadCompleted = 0
       state.attachmentUploadTotal = 0
+      state.attachmentUploadBytesSent = 0
+      state.attachmentUploadBytesTotal = 0
     }
   }
 

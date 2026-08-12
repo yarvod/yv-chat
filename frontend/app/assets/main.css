@@ -267,13 +267,16 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .composer-attachments__heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 4px; color: var(--muted); font-size: .68rem; }
 .composer-attachments__heading button { padding: 2px 5px; border: 0; color: var(--primary); background: transparent; font-size: inherit; }
 .composer-attachments__strip { display: flex; gap: 7px; overflow-x: auto; overscroll-behavior-inline: contain; scrollbar-width: thin; padding-bottom: 2px; }
-.composer-attachment { display: grid; min-width: min(230px, 72vw); max-width: 230px; grid-template-columns: 48px minmax(0, 1fr) 34px; align-items: center; gap: 8px; min-height: 58px; padding: 6px; border: 1px solid color-mix(in srgb, var(--primary) 25%, var(--border)); border-radius: 14px; background: var(--surface-raised); }
+.composer-attachment { position: relative; display: grid; min-width: min(230px, 72vw); max-width: 230px; grid-template-columns: 48px minmax(0, 1fr) 34px; align-items: center; gap: 8px; min-height: 58px; padding: 6px 6px 9px; overflow: hidden; border: 1px solid color-mix(in srgb, var(--primary) 25%, var(--border)); border-radius: 14px; background: var(--surface-raised); }
 .composer-attachment > img, .composer-attachment > video { width: 48px; height: 48px; border-radius: 10px; object-fit: cover; background: #090b12; }
 .composer-attachment__icon { display: grid; width: 44px; height: 44px; place-items: center; border-radius: 12px; color: var(--primary); background: color-mix(in srgb, var(--primary) 11%, transparent); }
 .composer-attachment__copy { display: grid; min-width: 0; gap: 2px; }
 .composer-attachment__copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .composer-attachment__copy small { color: var(--muted); font-size: .68rem; }
 .composer-attachment > button { display: grid; width: 32px; height: 32px; place-items: center; padding: 0; border: 0; border-radius: 50%; color: var(--muted); background: transparent; }
+.composer-attachment > button:disabled, .composer-attachments__heading button:disabled { cursor: default; opacity: .4; }
+.composer-attachment__progress { position: absolute; right: 5px; bottom: 3px; left: 5px; height: 3px; overflow: hidden; border-radius: 999px; background: color-mix(in srgb, var(--primary) 16%, var(--border)); }
+.composer-attachment__progress > span { display: block; width: 0; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--primary), var(--secondary)); transition: width .16s linear; }
 .composer-attachment-error { grid-column: 1 / -1; margin: 0; padding: 0 5px; color: var(--danger); font-size: .72rem; }
 .message-attachments { display: grid; gap: 3px; margin: -3px -6px 6px; overflow: hidden; border-radius: 12px; }
 .message-attachments--gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); }

@@ -1,5 +1,8 @@
 import type { ClientIdGenerator } from '../ports/client-id-generator'
-import type { AttachmentGateway } from '../ports/attachment-gateway'
+import type {
+  AttachmentGateway,
+  AttachmentUploadProgressHandler,
+} from '../ports/attachment-gateway'
 import type {
   ConversationType,
   MessageAttachment,
@@ -38,6 +41,7 @@ export class UploadGroupAttachment {
     conversationId: string,
     conversationType: ConversationType,
     source: GroupAttachmentSource,
+    onProgress?: AttachmentUploadProgressHandler,
   ): Promise<MessageAttachment> {
     if (conversationType !== 'group') throw new TypeError('direct attachments require E2EE')
     const contentType = normalizeAttachmentContentType(source.type)
@@ -54,13 +58,17 @@ export class UploadGroupAttachment {
       clientAttachmentId = this.clientIds.create()
       this.clientAttachmentIds.set(source.body, clientAttachmentId)
     }
-    const uploaded = await this.gateway.upload(conversationId, {
-      clientAttachmentId,
-      kind,
-      contentType,
-      byteSize: source.size,
-      body: source.body,
-    })
+    const uploaded = await this.gateway.upload(
+      conversationId,
+      {
+        clientAttachmentId,
+        kind,
+        contentType,
+        byteSize: source.size,
+        body: source.body,
+      },
+      onProgress,
+    )
     return {
       attachmentId: uploaded.attachmentId,
       kind: uploaded.kind,

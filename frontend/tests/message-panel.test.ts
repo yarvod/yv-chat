@@ -109,6 +109,69 @@ describe('message panel', () => {
     expect(wrapper.get<HTMLInputElement>('input[data-picker="file"]').element.disabled).toBe(true)
   })
 
+  it('renders aggregate and per-item byte progress for a mixed attachment batch', async () => {
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: vi.fn((file: File) => `blob:${file.name}`),
+    })
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      configurable: true,
+      value: vi.fn(),
+    })
+    const wrapper = mount(MessagePanel, {
+      props: {
+        conversation: { ...conversation, conversationType: 'group', title: 'Team' },
+        messages: [],
+        actorUserId: 'alice-id',
+        sending: false,
+        protectionSecure: false,
+        protectionLabel: 'Группа без E2EE',
+        sendMessage: vi.fn(),
+        deleteMessage: vi.fn(),
+        deletingMessageId: null,
+        typingActorIds: [],
+        onlineActorIds: [],
+        deliveryStates: [],
+        connectionState: 'connected',
+        setTyping: vi.fn(),
+      },
+    })
+    const fileInput = wrapper.get<HTMLInputElement>('input[data-picker="file"]')
+    const files = [
+      new File(['x'.repeat(100)], 'first.bin'),
+      new File(['x'.repeat(200)], 'second.bin'),
+      new File(['x'.repeat(300)], 'third.bin'),
+    ]
+    Object.defineProperty(fileInput.element, 'files', { configurable: true, value: files })
+    await fileInput.trigger('change')
+    await wrapper.setProps({
+      sending: true,
+      attachmentUploadCompleted: 1,
+      attachmentUploadTotal: 3,
+      attachmentUploadBytesSent: 150,
+      attachmentUploadBytesTotal: 600,
+    })
+
+    expect(wrapper.text()).toContain('Загрузка 25% · 2 из 3')
+    const progress = wrapper.findAll<HTMLElement>('.composer-attachment__progress')
+    expect(progress.map(item => item.attributes('aria-valuenow'))).toEqual(['100', '25', '0'])
+    expect(progress.map(item => item.attributes('aria-label'))).toEqual([
+      'Загрузка first.bin',
+      'Загрузка second.bin',
+      'Загрузка third.bin',
+    ])
+    expect(wrapper.get('button[aria-label="Убрать second.bin"]').attributes('disabled')).toBe('')
+
+    await wrapper.setProps({
+      attachmentUploadCompleted: 3,
+      attachmentUploadBytesSent: 600,
+    })
+    expect(wrapper.text()).toContain('Сохраняем сообщение… 100%')
+    expect(wrapper.findAll('.composer-attachment__progress').map(
+      item => item.attributes('aria-valuenow'),
+    )).toEqual(['100', '100', '100'])
+  })
+
   it('renders optimistic outbox states and exposes retry only for failed messages', async () => {
     const retryOutgoing = vi.fn().mockResolvedValue(true)
     const wrapper = mount(MessagePanel, {

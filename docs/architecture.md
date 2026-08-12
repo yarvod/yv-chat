@@ -1075,9 +1075,15 @@ audited hash adapter, не материализуя видео целиком в
 
 Frontend никогда не навигирует browser/PWA напрямую на protected media URL и не
 открывает его через `_blank`: standalone PWA и внешний browser могут иметь разный
-cookie context. Infrastructure gateway выполняет same-origin binary `fetch` с
-`credentials: include`, application сверяет conversation/attachment metadata и
-bounded byte size, а presentation создаёт только краткоживущий Blob URL. Image/video
+cookie context. Download infrastructure gateway выполняет same-origin binary `fetch`
+с `credentials: include`. Upload использует same-origin `XMLHttpRequest` только в
+этом binary adapter, поскольку стандартный browser `fetch` не предоставляет upload
+progress events; `withCredentials`, CSRF header, status/error mapping и strict JSON
+receipt остаются теми же. Typed application callback получает только монотонные
+bounded `uploadedBytes/totalBytes`, composable агрегирует sequential batch по сумме
+байтов, а Vue лишь отображает общий и per-item progress. Application сверяет
+conversation/attachment metadata и bounded byte size, а presentation создаёт только
+краткоживущий Blob URL. Image/video
 URL лениво создаётся около viewport, отзывается при удалении/unmount и открывается во
 встроенном fullscreen viewer с keyboard/swipe navigation; видео использует native
 browser controls, а unsupported codec получает безопасный download fallback. File
