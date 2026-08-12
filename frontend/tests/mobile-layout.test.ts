@@ -18,7 +18,7 @@ describe('mobile application shell', () => {
 
     expect(mobileBlock).toContain('--mobile-tabs-slot-height: calc(62px + env(safe-area-inset-bottom, 0px))')
     expect(mobileBlock).toContain('padding-bottom: var(--mobile-tabs-slot-height)')
-    expect(mobileBlock).toMatch(/\.mobile-tabs \{ position: fixed;[^}]*bottom: 0;/)
+    expect(mobileBlock).toMatch(/\.mobile-tabs \{ position: absolute;[^}]*bottom: 0;/)
     expect(mobileBlock).toContain('height: var(--mobile-tabs-outer-height)')
     expect(mobileBlock).toContain('padding: 7px 12px env(safe-area-inset-bottom, 0px)')
     expect(mobileBlock).toContain('background: var(--surface-solid)')
@@ -45,11 +45,26 @@ describe('mobile application shell', () => {
     expect(css).toContain('.product-shell--conversation .mobile-tabs { display: none; }')
   })
 
-  it('tracks the visual viewport so the keyboard cannot strand the composer below the PWA', () => {
+  it('tracks visual viewport size and offset so the keyboard cannot displace the PWA shell', () => {
+    const css = readFileSync(resolve(process.cwd(), 'app/assets/main.css'), 'utf8')
+    const mobileBlock = css.slice(css.indexOf('@media (max-width: 840px)'))
     const plugin = readFileSync(resolve(process.cwd(), 'app/plugins/visual-viewport.client.ts'), 'utf8')
+
     expect(plugin).toContain('window.visualViewport')
     expect(plugin).toContain("'--app-viewport-height'")
+    expect(plugin).toContain("'--app-viewport-offset-top'")
+    expect(plugin).toContain('viewport?.offsetTop')
     expect(plugin).toContain("addEventListener('resize', apply)")
+    expect(plugin).toContain("addEventListener('scroll', apply)")
+    expect(mobileBlock).toMatch(/\.product-shell \{[^}]*position: fixed;[^}]*top: var\(--app-viewport-offset-top\);/)
+  })
+
+  it('keeps the conversation-list action below the iOS top safe area', () => {
+    const css = readFileSync(resolve(process.cwd(), 'app/assets/main.css'), 'utf8')
+    const mobileBlock = css.slice(css.indexOf('@media (max-width: 840px)'))
+
+    expect(mobileBlock).toMatch(/\.sidebar-actions \{[^}]*min-height: calc\(62px \+ env\(safe-area-inset-top, 0px\)\);/)
+    expect(mobileBlock).toMatch(/\.sidebar-actions \{[^}]*padding-top: calc\(10px \+ env\(safe-area-inset-top, 0px\)\);/)
   })
 
   it('overlays transient connection state without reserving a shell row', () => {

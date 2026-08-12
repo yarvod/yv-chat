@@ -4,6 +4,21 @@
 
 ## Active
 
+### BUG-069 — iOS PWA перекрывала toolbar и переносила composer под вырез
+
+- Статус: `fixed locally; iPhone acceptance pending` (`WP-073`).
+- Severity: `high mobile chat usability`.
+- Production reproduction: на iPhone 13/iOS 18 в установленной PWA кнопка нового
+  чата пересекается со status bar; после фокуса composer и открытия клавиатуры
+  видимая часть chat shell смещается, а composer оказывается у верхнего выреза.
+- Причина: list toolbar не резервировал `safe-area-inset-top`; viewport plugin
+  отслеживал только высоту `VisualViewport`, но не его `offsetTop` и `scroll` event.
+- Исправление: mobile shell фиксируется внутри текущего visual viewport по height и
+  top offset, bottom tabs привязаны к shell, а list toolbar получает отдельный
+  верхний safe-area slot.
+- Проверка: frontend regression фиксирует safe-area toolbar rules, visual viewport
+  offset variable и resize/scroll listeners; повторная проверка на iPhone обязательна.
+
 ### BUG-068 — PWA не объясняла отсутствие повторного camera/microphone prompt
 
 - Статус: `fixed locally; installed-PWA acceptance pending` (`WP-073`).

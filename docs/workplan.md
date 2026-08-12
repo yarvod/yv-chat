@@ -6,7 +6,7 @@
 
 ## WP-073 — Telegram-style group video notes
 
-Статус: **production header blocker fixed locally; rollout pending**
+Статус: **production permission and iOS safe-area blockers fixed locally; rollout pending**
 
 Цель: участник server-readable group v1 записывает компактное круглое видео прямо
 из composer, управляет записью привычными мобильными жестами и получает устойчивое
@@ -65,4 +65,7 @@
   запускались в текущем environment и остаются обязательным pre-deploy smoke.
 - production rollout `31645619731` успешно развернул основной video-note flow;
   последующий permission-recovery и same-origin Permissions Policy fix закрывают
-  `BUG-068` локально.
+  `BUG-068` локально;
+- iPhone 13/iOS 18 acceptance выявил top safe-area overlap и keyboard viewport pan;
+  mobile shell теперь следует за размером и offset visual viewport, а list toolbar
+  резервирует верхний safe area (`BUG-069`).
