@@ -217,7 +217,7 @@ describe('device crypto runtime with the release OpenMLS WASM', () => {
     reloadedBob.dispose()
   })
 
-  it('decrypts one fetched history batch without losing receiver ratchet updates', async () => {
+  it('decrypts 100 E2EE history rows and reopens a cached anchored window after reload', async () => {
     const aliceDb = new IDBFactory()
     const bobDb = new IDBFactory()
     const alice = new DeviceCryptoRuntime(openMlsModule, vault(aliceDb))
@@ -233,14 +233,10 @@ describe('device crypto runtime with the release OpenMLS WASM', () => {
       welcome: bootstrap.welcome,
       ratchetTree: bootstrap.ratchetTree,
     })
-    const messageIds = [
-      '10000000-0000-4000-8000-000000000001',
-      '10000000-0000-4000-8000-000000000002',
-      '10000000-0000-4000-8000-000000000003',
-      '10000000-0000-4000-8000-000000000004',
-      '10000000-0000-4000-8000-000000000005',
-      '10000000-0000-4000-8000-000000000006',
-    ]
+    const messageIds = Array.from(
+      { length: 100 },
+      (_, index) => `10000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+    )
     const protectedMessages = []
     for (const [index, clientMessageId] of messageIds.entries()) {
       protectedMessages.push(await alice.protectMessage({
@@ -258,33 +254,29 @@ describe('device crypto runtime with the release OpenMLS WASM', () => {
       })
     )))
 
-    expect(decrypted.map(item => new TextDecoder().decode(item.plaintext))).toEqual([
-      'batch-1',
-      'batch-2',
-      'batch-3',
-      'batch-4',
-      'batch-5',
-      'batch-6',
-    ])
+    expect(decrypted.map(item => new TextDecoder().decode(item.plaintext))).toEqual(
+      Array.from({ length: 100 }, (_, index) => `batch-${index + 1}`),
+    )
     bob.dispose()
 
     const restoredBob = new DeviceCryptoRuntime(openMlsModule, vault(bobDb))
     await restoredBob.restore({ userId: otherUserId, deviceId: otherDeviceId })
-    const cached = await Promise.all(protectedMessages.map((message, index) => (
+    const anchoredStart = 39
+    const anchoredEnd = 90
+    const cached = await Promise.all(protectedMessages.slice(anchoredStart, anchoredEnd).map((message, index) => (
       restoredBob.unprotectMessage({
         conversationId,
-        clientMessageId: messageIds[index]!,
+        clientMessageId: messageIds[anchoredStart + index]!,
         ciphertext: message.ciphertext,
       })
     )))
-    expect(cached.map(item => new TextDecoder().decode(item.plaintext))).toEqual([
-      'batch-1',
-      'batch-2',
-      'batch-3',
-      'batch-4',
-      'batch-5',
-      'batch-6',
-    ])
+    expect(cached.map(item => new TextDecoder().decode(item.plaintext))).toEqual(
+      Array.from(
+        { length: anchoredEnd - anchoredStart },
+        (_, index) => `batch-${anchoredStart + index + 1}`,
+      ),
+    )
+    expect(new Set(cached.map(item => item.revision))).toEqual(new Set([102]))
     const replyId = '20000000-0000-4000-8000-000000000001'
     const reply = await restoredBob.protectMessage({
       conversationId,

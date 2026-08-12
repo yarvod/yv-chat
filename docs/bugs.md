@@ -39,7 +39,9 @@
   остаётся pending до target с достаточным контекстом.
 - Проверка: 51 focused tests; production Docker build; real browser с 1000 fake rows —
   target `#500` сразу внутри `451..550`, reload сохраняет visible `#512..#517` с
-  offset delta 6 px, 100 DOM rows и нулём browser errors.
+  offset delta 6 px, 100 DOM rows и нулём browser errors. Release OpenMLS/WASM test
+  дополнительно расшифровывает 100 v2 envelopes и после reload читает anchored
+  `40..90` из encrypted content cache без повторного движения receiver ratchet.
 
 ### BUG-065 — iOS PWA наследовала Safari session без локальных MLS-ключей
 

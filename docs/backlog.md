@@ -370,6 +370,9 @@ generic background notification, focus/navigation и invalid-subscription cleanu
 - programmatic restore выполняется без smooth animation и до показа timeline;
 - browser test с 1000 сообщениями восстановил `#512..#517` после reload с delta `6 px`,
   а deep-link `#500` загрузил contiguous `451..550` при 100 DOM rows.
+- release OpenMLS/WASM integration расшифровывает 100 последовательных v2 envelopes,
+  после runtime reload читает anchored rows `40..90` из encrypted content cache без
+  повторного движения receiver ratchet и сохраняет возможность отправить reply.
 
 ### BL-067 — Safe iOS PWA crypto re-enrollment
 
