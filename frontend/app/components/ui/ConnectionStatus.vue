@@ -6,7 +6,7 @@ import { useConnectionStatus } from '../../presentation/composables/useConnectio
 const connection = useConnectionStatus()
 const label = computed(() => ({
   checking: 'Проверяем соединение…',
-  connected: 'Соединено',
+  connected: null,
   updating: 'Обновляем…',
   reconnecting: 'Переподключаемся…',
   offline: 'Нет соединения',
@@ -15,6 +15,7 @@ const label = computed(() => ({
 
 <template>
   <div
+    v-if="label"
     class="global-connection"
     :class="`global-connection--${connection.state.value}`"
     role="status"

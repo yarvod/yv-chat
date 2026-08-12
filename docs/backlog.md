@@ -66,7 +66,8 @@ Implementation и desktop browser smoke завершены; physical 390px scree
 Статус: **in progress** (`WP-041` завершил core messenger viewport/interaction и
 первую install surface; `WP-043` добавил Pixel edge-to-edge/pull-to-refresh contract
 и maskable v2 assets; `WP-053` добавил branded shell, connection status и automatic
-update lifecycle; полный accessibility/visual-regression gate остаётся).
+update lifecycle; `WP-055` убирает stable connection bar из viewport и оставляет
+только transient/offline overlay; полный accessibility/visual-regression gate остаётся).
 
 Результат: приложение имеет единый визуальный язык, install/update UX и
 доступность, а messenger shell по плотности и поведению привычен пользователю

@@ -37,4 +37,12 @@ describe('mobile application shell', () => {
     expect(css).toMatch(/\.conversation-list \{[^}]*overflow-y: auto;/)
     expect(css).toContain('.product-shell--conversation .mobile-tabs { display: none; }')
   })
+
+  it('overlays transient connection state without reserving a shell row', () => {
+    const css = readFileSync(resolve(process.cwd(), 'app/assets/main.css'), 'utf8')
+
+    expect(css).toMatch(/\.product-shell \{[^}]*grid-template-rows: minmax\(0, 1fr\);/)
+    expect(css).toMatch(/\.global-connection \{[^}]*position: fixed;/)
+    expect(css).not.toContain('--connection-bar-height')
+  })
 })

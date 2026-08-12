@@ -4,6 +4,20 @@
 
 ## Active
 
+### BUG-054 — Stable connection status постоянно съедал высоту messenger shell
+
+- Статус: `fixed, frontend checks verified` (`WP-055`).
+- Severity: `medium UX`; после успешного health probe приложение постоянно
+  показывало «Соединено» и резервировало отдельную верхнюю grid-строку.
+- Reproduction: открыть authenticated shell при доступном API; после перехода
+  monitor в `connected` баннер остаётся, а chat viewport короче на status/safe-area.
+- Ожидаемое поведение: transient/offline состояния видимы поверх интерфейса,
+  подтверждённый `connected` скрыт и не влияет на геометрию shell.
+- Причина: `ConnectionStatus` безусловно рендерил все состояния, а
+  `.product-shell` всегда включал `--connection-bar-height` в rows.
+- Проверка: component regression переключает checking/connected/offline, CSS shell
+  использует один full-height row на desktop и mobile.
+
 ### BUG-053 — Потеря conversation checkpoint требовала logout/login
 
 - Статус: `fixed, full-CI and production rollout verified` (`WP-054`, `01ef0ac`).

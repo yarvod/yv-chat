@@ -4,71 +4,41 @@
 завершённая работа фиксируется отдельным коммитом, а новый пункт переносится
 сюда из `backlog.md`.
 
-## WP-054 — Self-healing MLS checkpoint для нескольких устройств
+## WP-055 — Ненавязчивый статус соединения без потери viewport
 
 Статус: **completed**
-Backlog: `BL-054`
-Bug: `BUG-053`
+Backlog: `BL-041`
+Bug: `BUG-054`
 
-Цель: убрать необходимость logout/login после deploy/reload, когда sealed OpenMLS
-state устройства сохранён, но отдельный conversation control-checkpoint в IndexedDB
-утрачен или отстал. Постоянного primary device не вводить: coordinator остаётся
-временной ролью одной server generation.
+Цель: показывать глобальный сетевой статус только во время проверки, обновления,
+переподключения или отсутствия сети. После подтверждённого восстановления статус
+исчезает и не резервирует постоянную строку в messenger viewport.
 
-### Scope и security contract
+### Scope
 
-- [x] Rust/OpenMLS adapter выдаёт только public локальный conversation summary:
-  epoch и canonical device roster; private keys, tree secrets и wire state наружу
-  не выходят.
-- [x] Worker/application boundary предоставляет typed read-only
-  `inspectConversation`; операция не мутирует ratchet и не создаёт checkpoint.
-- [x] Reconciliation при отсутствующем control-checkpoint запрашивает ordered READY
-  generations и восстанавливает checkpoint только при точном совпадении
-  conversation, epoch и полного device roster.
-- [x] После найденного checkpoint клиент применяет последующие Commit/Welcome в
-  обычном порядке и продолжает отправку без logout/login.
-- [x] Если sealed MLS group действительно отсутствует либо не соответствует ни одной
-  доступной generation, direct chat остаётся fail-closed и показывает явную потерю
-  локального E2EE state вместо generic network/server ошибки.
-- [x] Никакой synthetic-v1 fallback, копирования private keys через сервер,
-  автоматической смены device identity или permanent primary device не добавляется.
+- [x] stable `connected` не рендерит видимый баннер;
+- [x] `checking`, `updating`, `reconnecting` и `offline` остаются различимыми и
+  доступны через polite live-region;
+- [x] временный статус располагается поверх shell и не меняет высоту chat list,
+  timeline, composer или mobile navigation;
+- [x] desktop и mobile shell занимают полный `100dvh` с учётом safe area;
+- [x] regression test фиксирует скрытие stable-state и показ transient/offline states.
 
-### Tests и acceptance
+### Tests
 
-- [x] Rust tests: missing group, exact epoch/roster inspection, canonical ordering.
-- [x] Worker/runtime tests: strict request/result parsing, missing/existing group и
-  отсутствие crypto mutation/checkpoint у inspect.
-- [x] Reconciliation regression: control DB очищена, sealed OpenMLS state сохранён;
-  exact generation восстанавливается и следующие commits догоняются.
-- [x] Negative tests: epoch/roster mismatch и полная потеря group state не создают
-  ложный READY checkpoint и не разрешают send.
-- [x] Frontend lint/typecheck/Vitest, Rust fmt/clippy/tests и полный `make ci` зелёные.
-- [x] Production rollout публикует runtime v7; exact non-coordinator partial-loss
-  regression выполнен real WASM/Worker tests без logout/login, public asset/API,
-  API health/logs и отсутствие влияния на соседние host services.
+- [x] focused Vitest для connection status;
+- [x] frontend lint, typecheck, test и build;
+- [x] diff/checks документов и отсутствие новых secrets.
 
 ### Ограничения
 
-- этот slice не переносит старую локальную историю и private MLS state на физически
-  новое устройство;
-- если browser действительно удалил sealed crypto vault, безопасное re-enrollment
-  новой device identity остаётся отдельным явным flow и не может восстановить старую
-  историю без device-to-device archive transfer;
-- coordinator generation не становится account-level primary и не требует ручной
-  передачи при logout.
+- этот slice не меняет health probe, WebSocket reconnect или sync algorithms;
+- device crypto warnings остаются отдельным security signal;
+- групповые media attachments выполняются следующим отдельным workplan/commit.
 
 ### Definition of Done
 
-- deploy/reload и потеря только conversation checkpoint самовосстанавливаются;
-- полная потеря keys диагностируется отдельно и fail-closed;
-- multi-device продолжает работать без постоянного primary device;
-- tests, docs, focused commit и production verification завершены.
-
-Production verification: GitHub Actions CI `31549397608` и deploy
-`31549397629` успешно выпустили immutable release
-`sha-01ef0acf9fa548b498b7ef8c9209f85c7860f8f2`. API/frontend containers healthy,
-PostgreSQL не пересоздавался, `/api/v1/health` и `/crypto/v7/...wasm` отвечают 200
-с валидным TLS, свежие API logs не содержат `ERROR`/`Traceback`/5xx. Соседние
-`yoowee.ru`/`s3.yoowee.ru` сохранили ожидаемые ответы. Physical affected-device
-confirmation выполняется пользователем после automatic PWA update; logout для него
-не требуется.
+- устойчивое соединение не занимает место и не показывает «Соединено»;
+- процесс соединения/обновления и потеря связи остаются видимыми;
+- восстановление автоматически убирает индикатор;
+- tests, docs и focused commit завершены.
