@@ -473,6 +473,77 @@ describe('messenger orchestration', () => {
     expect(gateway.sendMessage).not.toHaveBeenCalled()
   })
 
+  it('reconciles inactive direct conversations during startup', async () => {
+    const directs = [
+      { ...conversation, conversationId: 'direct-active', conversationType: 'direct' as const, title: null },
+      { ...conversation, conversationId: 'direct-inactive', conversationType: 'direct' as const, title: null },
+    ]
+    vi.mocked(gateway.listConversations).mockResolvedValue(directs)
+    vi.mocked(gateway.listMessages).mockReset().mockResolvedValue([])
+    const reconcileConversationCrypto = vi.fn().mockResolvedValue({
+      status: 'ready' as const,
+      generationId: 'generation-ready',
+      generationNumber: 2,
+      blockReason: null,
+      epoch: 2,
+    })
+    const messenger = useMessenger('alice-id', 'device-existing-leaf', vi.fn(), {
+      ...messengerDependencies(),
+      reconcileConversationCrypto,
+    })
+
+    await messenger.load('direct-active')
+
+    expect(reconcileConversationCrypto).toHaveBeenCalledWith('direct-inactive')
+  })
+
+  it('reconciles an inactive direct after its durable roster-change event', async () => {
+    const directs = [
+      { ...conversation, conversationId: 'direct-active', conversationType: 'direct' as const, title: null },
+      { ...conversation, conversationId: 'direct-inactive', conversationType: 'direct' as const, title: null },
+    ]
+    vi.mocked(gateway.listConversations).mockResolvedValue(directs)
+    vi.mocked(gateway.listMessages).mockReset().mockResolvedValue([])
+    const reconcileConversationCrypto = vi.fn().mockResolvedValue({
+      status: 'ready' as const,
+      generationId: 'generation-ready',
+      generationNumber: 2,
+      blockReason: null,
+      epoch: 2,
+    })
+    const invalidateConversationCrypto = vi.fn()
+    const messenger = useMessenger('alice-id', 'device-existing-leaf', vi.fn(), {
+      ...messengerDependencies(),
+      reconcileConversationCrypto,
+      invalidateConversationCrypto,
+    })
+    await messenger.load('direct-active')
+    reconcileConversationCrypto.mockClear()
+    vi.mocked(gateway.listSync).mockReset().mockResolvedValue({
+      events: [{
+        eventId: 'event-roster-change',
+        cursor: 5,
+        eventType: 'conversation_updated',
+        conversationId: 'direct-inactive',
+        messageId: null,
+        actorUserId: null,
+        readSequence: null,
+        deliverySequence: null,
+        createdAt: '2026-08-12T14:33:33Z',
+      }],
+      nextCursor: 5,
+      streamCursor: 5,
+      hasMore: false,
+      resetRequired: false,
+    })
+
+    await messenger.poll()
+
+    expect(invalidateConversationCrypto).toHaveBeenCalledWith('direct-inactive')
+    expect(reconcileConversationCrypto).toHaveBeenCalledWith('direct-inactive')
+    expect(reconcileConversationCrypto).not.toHaveBeenCalledWith('direct-active')
+  })
+
   it('refreshes a direct security badge after message catch-up completes enrollment', async () => {
     const direct = { ...conversation, conversationType: 'direct' as const, title: null }
     vi.mocked(gateway.listConversations).mockResolvedValue([direct])

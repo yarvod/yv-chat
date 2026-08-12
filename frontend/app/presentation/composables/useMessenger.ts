@@ -291,6 +291,43 @@ export function useMessenger(
     }
   }
 
+  async function reconcileDirectConversations(
+    conversationIds: Iterable<string>,
+  ): Promise<void> {
+    const reconcile = dependencies.reconcileConversationCrypto
+    if (!reconcile) return
+    const requested = new Set(conversationIds)
+    const directIds = state.conversations
+      .filter(item => (
+        item.conversationType === 'direct'
+        && requested.has(item.conversationId)
+      ))
+      .map(item => item.conversationId)
+    const activeId = state.activeConversationId
+    directIds.sort((left, right) => (
+      left === activeId ? -1 : right === activeId ? 1 : left.localeCompare(right)
+    ))
+    for (const conversationId of directIds) {
+      if (conversationId === activeId) {
+        await refreshConversationCrypto(conversationId)
+        continue
+      }
+      try {
+        await reconcile(conversationId)
+      } catch {
+        // An inactive conversation remains fail-closed. Its next durable sync
+        // event or foreground selection retries reconciliation without making
+        // an unrelated chat unavailable.
+      }
+    }
+  }
+
+  async function reconcileAllDirectConversations(): Promise<void> {
+    await reconcileDirectConversations(
+      state.conversations.map(item => item.conversationId),
+    )
+  }
+
   function fail(error: unknown): void {
     if (error instanceof ApplicationError && error.status === 401) {
       onUnauthorized()
@@ -637,6 +674,7 @@ export function useMessenger(
       }
       await outbox.load()
       if (await hydrateSnapshot(preferredConversationId)) {
+        await reconcileAllDirectConversations()
         await poll()
         if (
           state.activeConversationId
@@ -647,7 +685,6 @@ export function useMessenger(
         if (state.activeConversationId) {
           await selectConversation(state.activeConversationId, targetMessageId)
         }
-        if (state.activeConversationId) await refreshConversationCrypto(state.activeConversationId)
         return
       }
       const syncBaseline = await gateway.listSync(0)
@@ -667,11 +704,11 @@ export function useMessenger(
         ? preferredConversationId
         : conversations[0]?.conversationId ?? null
       resetHistoryWindow()
+      await reconcileAllDirectConversations()
       if (state.activeConversationId) await loadLatestHistory(state.activeConversationId)
       if (state.activeConversationId && targetMessageId) {
         await selectConversation(state.activeConversationId, targetMessageId)
       }
-      if (state.activeConversationId) await refreshConversationCrypto(state.activeConversationId)
       state.syncCursor = syncBaseline.streamCursor
       state.phase = 'ready'
       await persistSnapshot()
@@ -1014,6 +1051,7 @@ export function useMessenger(
       let pages = 0
       let hasMore = true
       let conversationsChanged = false
+      const cryptoChangedConversationIds = new Set<string>()
       let activeMessagesChanged = false
       const deletedMessageEvents = new Map<
         string,
@@ -1026,6 +1064,7 @@ export function useMessenger(
         if (page.resetRequired) {
           await reloadConversations()
           await Promise.all([reloadReadStates(), reloadDeliveryStates()])
+          await reconcileAllDirectConversations()
           if (state.activeConversationId) {
             resetHistoryWindow()
             await loadLatestHistory(state.activeConversationId)
@@ -1038,6 +1077,7 @@ export function useMessenger(
         for (const event of page.events) {
           if (event.eventType === 'conversation_updated') {
             dependencies.invalidateConversationCrypto?.(event.conversationId)
+            cryptoChangedConversationIds.add(event.conversationId)
           }
           conversationsChanged ||= event.eventType === 'conversation_updated'
           activeMessagesChanged ||= (
@@ -1061,9 +1101,7 @@ export function useMessenger(
         pages += 1
       }
       if (conversationsChanged) await reloadConversations()
-      if (conversationsChanged && state.activeConversationId) {
-        await refreshConversationCrypto(state.activeConversationId)
-      }
+      await reconcileDirectConversations(cryptoChangedConversationIds)
       for (const event of deletedMessageEvents.values()) {
         let tombstone: TimelineMessage
         try {

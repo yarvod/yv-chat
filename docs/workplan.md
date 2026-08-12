@@ -4,60 +4,69 @@
 завершённая работа фиксируется отдельным коммитом, а новый пункт переносится
 сюда из `backlog.md`.
 
-## WP-068 — Instant anchored chat open and reload
+## WP-069 — Automatic MLS roster reconciliation
 
-Статус: **implemented and real-browser verified locally**
+Статус: **implemented and full-CI verified locally**
 
-Цель: длинный диалог открывается сразу около сохранённой позиции или указанного
-сообщения без показа начала/конца и последующей видимой прокрутки.
+Цель: уже подключённый MLS device автоматически подтверждает добавление нового
+device во всех затронутых личных чатах, даже если эти чаты не открыты и собеседники
+offline.
 
-### Reproduction
+### Production reproduction
 
-- открыть диалог с 1000 сообщениями, остановиться в середине и перезагрузить страницу;
-- до исправления cached latest window рисовался раньше anchored window, а
-  `scroll-behavior: smooth` показывал длинную прокрутку к сохранённой позиции;
-- скрытая mobile detail-pane имела нулевую высоту и могла перезаписать корректный
-  anchor как `atLatest`;
-- push/deep-link мог увидеть route target раньше DOM и упасть обратно на старый anchor.
+- новый Mac PWA публикует identity/KeyPackages и открывает существующий direct chat;
+- backend корректно создаёт `blocked/device_roster_changed` и durable
+  `conversation_updated` для всех участников;
+- старый leaf остаётся online, но frontend запускает reconciliation только для
+  активного conversation;
+- новый PWA не получает Commit/Welcome, пока кто-либо со старым leaf — часто сам
+  собеседник — вручную не откроет тот же чат;
+- history decrypt дополнительно вызывает `/crypto/bootstrap` для каждого envelope,
+  создавая десятки повторных HTTP/KeyPackage checks на одной READY generation.
 
 ### Scope
 
-- [x] IndexedDB и HTTP загружают bounded окно `49 before + target + 50 after`;
-- [x] cold startup выбирает сохранённый anchored window вместо cached latest;
-- [x] timeline остаётся невидимым только до первой точной расстановки и не использует
-  smooth scrolling для programmatic restore;
-- [x] скрытый/нулевой viewport не читает и не сохраняет scroll position;
-- [x] deep-link ждёт target в DOM и требует достаточный контекст вокруг sparse cache hit;
-- [x] одинаковые prepared envelopes переиспользуются без повторной дешифровки;
-- [x] пустой диалог после завершённого restore остаётся видимым.
+- [x] cold startup последовательно reconciles все direct conversations;
+- [x] durable `conversation_updated` reconciles именно изменившийся direct, даже если
+  он неактивен;
+- [x] sync reset reconciles authoritative direct roster после reload;
+- [x] ошибка неактивного direct остаётся fail-closed локально и не ломает активный чат;
+- [x] stable READY generation кэшируется до явного sync invalidation, а не сбрасывается
+  перед каждым message protect/unprotect;
+- [x] тест воспроизводит inactive direct + roster-change event и доказывает background
+  reconciliation без выбора этого чата.
 
-### Performance bounds
+### Security invariants
 
-- initial/latest и anchored window содержат не более 100 сообщений;
-- reactive timeline остаётся bounded существующим пределом 300 сообщений;
-- encrypted local archive остаётся bounded существующим пределом 2000 сообщений;
-- размер lifetime history не превращает startup в загрузку/рендер всех сообщений.
+- новый device не назначает себя coordinator старой READY group;
+- Commit всё ещё создаёт только сохранившийся previous leaf;
+- server остаётся authoritative: message POST принимает только exact current READY
+  generation/epoch и active required-device roster;
+- потерянное local MLS state, отсутствие всех previous leaves и v1 fallback не
+  маскируются автоматическим downgrade;
+- никакие message payload, private keys или Welcome bytes не логируются.
 
 ### Exclusions
 
-- virtual scrolling для десятков тысяч одновременно отрисованных rows — не нужен при
-  bounded timeline;
-- изменение server retention, pagination API или E2EE framing;
-- перенос encrypted archive между devices.
+- recovery, если offline или потеряны все прежние leaves — `BL-064`/`BL-015`;
+- перенос pre-enrollment history на новый device;
+- изменение MLS framing, server schema или cryptographic primitives.
 
 ### Definition of Done
 
-- reload в середине восстанавливает тот же message-relative viewport без видимого jump;
-- deep-link сразу показывает target с контекстом до и после;
-- тестовый conversation из 1000 сообщений держит в DOM только bounded window;
-- unit regressions покрывают IndexedDB forward range, cold anchor, hidden viewport и
-  ранний route target;
-- frontend lint/typecheck/tests/build и полный `make ci` проходят.
+- inactive direct reconciles после durable roster event;
+- startup reconciles все direct chats bounded sequentially;
+- два protect/unprotect на stable generation не инвалидируют её дважды и не создают
+  повторный bootstrap storm;
+- frontend lint/typecheck/tests/build, Rust/OpenMLS regression и полный `make ci`
+  проходят;
+- production metadata подтверждает READY generation и offline send без входа peer.
 
 ### Verification evidence
 
-- `51` focused frontend tests, ESLint и Nuxt typecheck: green;
-- Docker production build: green;
-- real browser / 1000 messages: deep-link `#500` загрузил contiguous `451..550`;
-- после scroll к `#512..#517` reload восстановил те же visible rows с offset delta
-  `6 px`; в DOM осталось `100` messages, browser errors отсутствуют.
+- production цепочка `Julproh`: новый Mac announcement → Android previous leaf Commit
+  → READY Welcome/ack → Mac v2 send, пока peer не участвовал в coordination;
+- regression: active direct A + inactive direct B + durable roster event B вызывает
+  reconcile B без reconcile A;
+- frontend `42 files / 232 tests`, backend `238 passed, 9 skipped`, OpenMLS `21 tests`;
+- полный `make ci`: green.

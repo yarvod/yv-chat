@@ -11,8 +11,8 @@
 
 ### Release gate — сначала закрыть уже реализованное
 
-1. Завершить и развернуть текущий `WP-068`: reload/deep-link длинного chat должен
-   сразу восстановить bounded anchored window; rollout также включает готовый `WP-067`.
+1. Завершить и развернуть текущий `WP-069`: existing MLS leaves должны автоматически
+   reconciled-ить inactive direct roster; rollout также включает готовые `WP-067/068`.
 2. Production-проверить `BUG-063`: serial history decrypt должен сохранить MLS
    ratchet и позволить reply после reload.
 3. Исправить `BUG-059`: cache-first startup обязан reconciled-ить directory после
@@ -349,6 +349,16 @@ generic background notification, focus/navigation и invalid-subscription cleanu
 - решение о native wrapper только при подтверждённой необходимости.
 
 ## Completed
+
+### BL-069 — Automatic MLS roster reconciliation
+
+Статус: **implemented and full-CI verified locally** (`WP-069`).
+
+- cold startup и sync reset reconciles все direct conversations;
+- durable `conversation_updated` запускает reconcile изменившегося inactive direct;
+- previous leaf создаёт Commit без входа peer и без ручного открытия того же чата;
+- READY cache инвалидируется sync-событием, а не каждым message envelope;
+- server exact current generation/epoch gate сохраняет fail-closed stale-send защиту.
 
 ### BL-068 — Instant anchored chat open and reload
 

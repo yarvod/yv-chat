@@ -940,9 +940,15 @@ message plaintext или attachment key. Frontend typed gateway и
 `ReconcileConversationCrypto` соединяют coordination с Worker. Coordinator перед
 finalize шифрованно checkpoint-ит точные Commit/Welcome/tree bytes для crash retry;
 target checkpoint-ит join/apply-commit до Welcome ack/ready. Group mutations и
-conversation sync invalidates cached reconciliation, поэтому следующий protect
-сверяется с server roster. Outgoing router использует v2, а v1 остаётся только
-read-only historical adapter.
+conversation sync invalidates cached reconciliation. Durable `conversation_updated`
+запускает reconciliation для изменившегося direct даже когда он не открыт; cold
+startup и sync reset bounded последовательно проверяют все direct conversations.
+Поэтому любой online previous leaf может автоматически стать coordinator вместо
+случайного ожидания, пока peer вручную откроет тот же чат. Stable READY result
+кэшируется до такого explicit sync invalidation: protect/unprotect одного history
+batch не выполняют bootstrap и KeyPackage inventory request для каждого envelope.
+Backend exact-current-generation gate остаётся authoritative для stale send.
+Outgoing router использует v2, а v1 остаётся только read-only historical adapter.
 
 `coordinator_device_id` — временный author одной membership generation, а не
 account-level primary device. Любой сохранившийся active leaf из предыдущей READY

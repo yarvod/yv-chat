@@ -24,7 +24,6 @@ function reconciled(status: 'blocked' | 'pending' | 'ready'): ReconcileConversat
 }
 
 class FakeSession implements MlsMessageSession {
-  readonly invalidateConversation = vi.fn()
   readonly reconcileConversation = vi.fn(async () => reconciled('ready'))
   readonly protectMessage = vi.fn(async (_command: ProtectMlsMessageCommand) => ({
     ciphertext: new Uint8Array([1, 2, 3]),
@@ -53,7 +52,6 @@ describe('MLS v2 message protocol adapter', () => {
       cryptoEpoch: 1,
     })
     expect(session.reconcileConversation).toHaveBeenCalledWith(conversationId)
-    expect(session.invalidateConversation).toHaveBeenCalledWith(conversationId)
     expect(session.protectMessage.mock.calls[0]?.[0].plaintext)
       .toEqual(new TextEncoder().encode('привет'))
 
@@ -64,7 +62,7 @@ describe('MLS v2 message protocol adapter', () => {
     })).resolves.toBe('привет')
     expect(session.unprotectMessage.mock.calls[0]?.[0].ciphertext)
       .toEqual(new Uint8Array([1, 2, 3]))
-    expect(session.invalidateConversation).toHaveBeenCalledTimes(2)
+    expect(session.reconcileConversation).toHaveBeenCalledTimes(2)
   })
 
   it('fails closed while bootstrap is pending and never falls back to v1', async () => {
