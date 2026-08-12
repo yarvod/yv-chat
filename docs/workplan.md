@@ -6,7 +6,7 @@
 
 ## WP-060 — Byte-accurate attachment upload progress
 
-Статус: **local implementation and acceptance complete; production rollout pending**
+Статус: **completed and production-verified**
 Backlog: visual/messaging polish slice `BL-041`
 
 Цель: при отправке фото, видео и файлов в group chat пользователь видит плавный,
@@ -34,7 +34,7 @@ Backlog: visual/messaging polish slice `BL-041`
 - [x] отрисовать stable progress UI без изменения composer height/scroll geometry;
 - [x] покрыть transport events, use-case forwarding, aggregate byte math и component UX;
 - [x] выполнить frontend lint/typecheck/Vitest/build и полный repository CI;
-- [ ] commit/push/deploy и проверить production health/logs/соседние домены.
+- [x] commit/push/deploy и проверить production health/logs/соседние домены.
 
 ### Security и correctness invariants
 
@@ -65,6 +65,17 @@ Backlog: visual/messaging polish slice `BL-041`
   geometry, strip scroll остаётся локальным, page horizontal overflow отсутствует;
 - `make ci`: backend `224 passed, 8 skipped`, Rust `21 passed`, frontend
   `201 passed`; lint, typecheck, production build, Compose/deploy/docs checks зелёные.
+
+### Production acceptance evidence
+
+- implementation commit `ddf76f9` доставлен immutable frontend/backend images через
+  успешный workflow `Deploy production` run `31579379964`;
+- production API `/api/v1/health` ответил `{"status":"ok"}`, frontend и API containers
+  healthy и запущены на `sha-ddf76f9fb75c6046deb9898b492d652d13c37393`;
+- host nginx активен, отдельный nginx container отсутствует; свежие API logs не содержат
+  `ERROR`, `Traceback` или HTTP 500;
+- external probes: `chat.yoowee.ru=200`, `yoowee.ru=302`, `s3.yoowee.ru=403`, у всех
+  `ssl_verify_result=0`, поэтому rollout не нарушил соседние production services.
 
 ### Definition of Done
 
