@@ -63,13 +63,18 @@ Implementation и desktop browser smoke завершены; physical 390px scree
 
 ### BL-041 — Visual system, accessibility и PWA polish
 
-Статус: **in progress; `WP-059` awaits production rollout** (`WP-041` завершил core messenger viewport/interaction и
+Статус: **in progress; `WP-059` production-verified** (`WP-041` завершил core messenger viewport/interaction и
 первую install surface; `WP-043` добавил Pixel edge-to-edge/pull-to-refresh contract
 и maskable v2 assets; `WP-053` добавил branded shell, connection status и automatic
 update lifecycle; `WP-055` убирает stable connection bar из viewport и оставляет
 только transient/offline overlay; `WP-059` исправляет Pixel adaptive icon/generated
 splash и invalidates install-time v2 cache; полный accessibility/visual-regression
 gate остаётся).
+
+`WP-059` (`59495f0`, deploy `31577182322`) восстановил explicit manifest discovery,
+выпустил versioned `v3` transparent `any`/opaque solid `maskable` assets, зафиксировал
+Android safe-zone/background pixel regressions и убрал причину белого fallback-круга,
+вложенного квадрата и серого Pixel generated splash.
 
 Результат: приложение имеет единый визуальный язык, install/update UX и
 доступность, а messenger shell по плотности и поведению привычен пользователю

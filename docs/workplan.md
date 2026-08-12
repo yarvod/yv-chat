@@ -6,7 +6,8 @@
 
 ## WP-059 — Pixel adaptive icon and Android generated splash repair
 
-Статус: **local implementation and acceptance complete; production rollout pending**
+Статус: **completed and production-verified** (`59495f0`, CI `31577182353`,
+deploy `31577182322`)
 Backlog: visual/PWA polish slice `BL-041`, defect `BUG-060`
 
 Цель: установленная из Chrome PWA на Pixel выглядит как нормальное Android
@@ -40,7 +41,7 @@ Backlog: visual/PWA polish slice `BL-041`, defect `BUG-060`
   manifest link/version/purpose и отсутствие install-time 64px candidate;
 - [x] визуально проверить circle/squircle crop и generated-splash simulation;
 - [x] frontend lint/typecheck/Vitest/build и repository CI зелёные;
-- [ ] commit/push/deploy, затем проверить production manifest, asset headers/dimensions,
+- [x] commit/push/deploy, затем проверить production manifest, asset headers/dimensions,
   health/logs и соседние домены.
 
 ### Exclusions
@@ -64,6 +65,20 @@ Backlog: visual/PWA polish slice `BL-041`, defect `BUG-060`
   вложенного midnight square и серого launch canvas нет;
 - `make ci`: backend `224 passed, 8 skipped`, Rust `21 passed`, frontend
   `197 passed`; lint, typecheck, production build, Compose/deploy/docs checks зелёные.
+
+### Production acceptance evidence
+
+- immutable backend/frontend release `sha-59495f01295f82e552c4cd4e390f12f6469e0b29`
+  выложен workflow `31577182322`; GitHub CI `31577182353` зелёный;
+- `https://chat.yoowee.ru/` содержит `<link rel="manifest"
+  href="/manifest.webmanifest">`, production manifest использует только четыре
+  ожидаемых `icon-v3-*` URL и `background_color: #07111f`;
+- обе production 512px icon загружаются как PNG и имеют точные dimensions 512×512;
+- API/direct upstream healthy, frontend upstream доступен, системный Nginx active,
+  в свежих API logs нет `ERROR`, `Traceback` или HTTP 500;
+- `yoowee.ru` сохраняет штатный redirect, `s3.yoowee.ru` имеет валидный TLS и
+  ожидаемо отвечает 403 без S3 credentials; соседние `infra-*` containers не
+  перезапускались и остаются Up.
 
 ### Definition of Done
 
