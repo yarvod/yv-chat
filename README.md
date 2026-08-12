@@ -19,7 +19,9 @@ server generation/Welcome coordination, Rust/OpenMLS lifecycle и v2 protect/unp
 v2 без fallback, group — только synthetic v1. Synthetic v1 — UTF-8/base64 transport,
 он **не шифрует сообщения и не является E2EE**, поэтому содержимое групп доступно
 серверу. Исторические v1/v2 записи не переписываются и читаются своей exact version.
-Вложения пока не поддерживаются и являются следующим vertical slice.
+Групповые чаты поддерживают один photo/file attachment на сообщение: этот поток
+server-readable, не является E2EE и хранит media не дольше server TTL. Вложения в
+личных MLS-чатах пока запрещены до отдельного client-side encrypted flow.
 
 Runtime v7 восстанавливает утраченный conversation control-checkpoint по exact
 совпадению public local MLS epoch/roster с server generation без logout/login.
@@ -41,13 +43,15 @@ launcher icon уже установленную Android PWA может потр�
 
 ## Ключевые ограничения
 
-- Сервер не получает plaintext личных E2EE-сообщений, вложений или message keys;
-  временные group v1 сообщения являются явно документированным исключением без E2EE.
+- Сервер не получает plaintext личных E2EE-сообщений, direct-вложений или message
+  keys; временные group v1 сообщения и media являются явно документированным
+  server-readable исключением без E2EE.
 - Публичной регистрации нет: пользователей создаёт администратор.
 - Browser auth строится на revocable opaque sessions в `HttpOnly` cookie, а не на токенах в `localStorage`.
 - PostgreSQL — источник истины для server sync window; WebSocket служит уведомительным каналом.
 - Криптографический протокол не проектируется самостоятельно.
-- Для MVP используется один backend, PostgreSQL и локальное encrypted media storage без лишних distributed systems.
+- Для MVP используется один backend, PostgreSQL и локальное media storage за
+  `MediaStorage` port без лишних distributed systems; S3 остаётся сменным adapter.
 
 Полные инженерные и security-инварианты закреплены в [AGENTS.md](AGENTS.md).
 

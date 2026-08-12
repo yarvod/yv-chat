@@ -22,6 +22,10 @@ from messenger.application.accounts.reset_password import ResetPasswordWithToken
 from messenger.application.accounts.security_reset import SecurityReset
 from messenger.application.accounts.update_profile import UpdateCurrentProfile
 from messenger.application.accounts.update_user import UpdateManagedUser
+from messenger.application.attachments.cleanup import CleanupExpiredAttachments
+from messenger.application.attachments.download import DownloadGroupAttachment
+from messenger.application.attachments.policy import AttachmentPolicy
+from messenger.application.attachments.upload import UploadGroupAttachment
 from messenger.application.conversation_crypto import (
     AcknowledgeConversationCryptoWelcome,
     BeginConversationCrypto,
@@ -67,11 +71,13 @@ from messenger.application.messaging.policy import MessageEnvelopePolicy
 from messenger.application.messaging.retention import MessageRetentionPolicy
 from messenger.application.messaging.send_message import SendOpaqueMessage
 from messenger.application.ports.activation_secrets import ActivationSecretService
+from messenger.application.ports.attachments import AttachmentUnitOfWorkFactory
 from messenger.application.ports.clock import Clock
 from messenger.application.ports.conversation_crypto import ConversationCryptoUnitOfWorkFactory
 from messenger.application.ports.conversations import ConversationUnitOfWorkFactory
 from messenger.application.ports.device_crypto import DeviceCryptoUnitOfWorkFactory
 from messenger.application.ports.identity import IdentityUnitOfWorkFactory
+from messenger.application.ports.media_storage import MediaStorage
 from messenger.application.ports.messages import MessagingUnitOfWorkFactory
 from messenger.application.ports.password_reset_secrets import PasswordResetSecretService
 from messenger.application.ports.passwords import PasswordHasher
@@ -96,10 +102,12 @@ from messenger.infrastructure.auth.password_reset_secrets import (
 )
 from messenger.infrastructure.realtime import InMemoryRealtimeHub
 from tests.application.fakes import (
+    FakeAttachmentUnitOfWorkFactory,
     FakeConversationCryptoUnitOfWorkFactory,
     FakeConversationUnitOfWorkFactory,
     FakeDeviceCryptoUnitOfWorkFactory,
     FakeIdentityUnitOfWorkFactory,
+    FakeMediaStorage,
     FakeMessagingUnitOfWorkFactory,
     FakePasswordHasher,
     FakeSyncUnitOfWorkFactory,
@@ -143,6 +151,7 @@ class HttpTestProvider(Provider):
         conversation_crypto_unit_of_work: ConversationCryptoUnitOfWorkFactory,
         device_crypto_unit_of_work: DeviceCryptoUnitOfWorkFactory,
         messaging_unit_of_work: MessagingUnitOfWorkFactory,
+        attachment_unit_of_work: AttachmentUnitOfWorkFactory,
         sync_unit_of_work: SyncUnitOfWorkFactory,
         clock: Clock,
         passwords: PasswordHasher,
@@ -156,6 +165,8 @@ class HttpTestProvider(Provider):
         self._conversation_crypto_unit_of_work = conversation_crypto_unit_of_work
         self._device_crypto_unit_of_work = device_crypto_unit_of_work
         self._messaging_unit_of_work = messaging_unit_of_work
+        self._attachment_unit_of_work = attachment_unit_of_work
+        self._media_storage = FakeMediaStorage()
         self._sync_unit_of_work = sync_unit_of_work
         self._clock = clock
         self._passwords = passwords
@@ -188,12 +199,24 @@ class HttpTestProvider(Provider):
         return self._messaging_unit_of_work
 
     @provide(scope=Scope.APP)
+    def attachment_unit_of_work(self) -> AttachmentUnitOfWorkFactory:
+        return self._attachment_unit_of_work
+
+    @provide(scope=Scope.APP)
+    def media_storage(self) -> MediaStorage:
+        return self._media_storage
+
+    @provide(scope=Scope.APP)
     def sync_unit_of_work(self) -> SyncUnitOfWorkFactory:
         return self._sync_unit_of_work
 
     @provide(scope=Scope.APP)
     def message_policy(self) -> MessageEnvelopePolicy:
         return MessageEnvelopePolicy()
+
+    @provide(scope=Scope.APP)
+    def attachment_policy(self) -> AttachmentPolicy:
+        return AttachmentPolicy()
 
     @provide(scope=Scope.APP)
     def sync_policy(self) -> SyncPolicy:
@@ -319,6 +342,9 @@ class HttpTestProvider(Provider):
     delete_message_for_everyone = provide(DeleteMessageForEveryone, scope=Scope.REQUEST)
     get_message = provide(GetMessage, scope=Scope.REQUEST)
     cleanup_expired_messages = provide(CleanupExpiredMessages, scope=Scope.REQUEST)
+    upload_group_attachment = provide(UploadGroupAttachment, scope=Scope.REQUEST)
+    download_group_attachment = provide(DownloadGroupAttachment, scope=Scope.REQUEST)
+    cleanup_expired_attachments = provide(CleanupExpiredAttachments, scope=Scope.REQUEST)
     list_messages = provide(ListMessages, scope=Scope.REQUEST)
     list_message_history = provide(ListMessageHistory, scope=Scope.REQUEST)
     list_conversation_read_states = provide(
@@ -376,6 +402,7 @@ def build_test_application(
             conversation_crypto_unit_of_work=FakeConversationCryptoUnitOfWorkFactory(state),
             device_crypto_unit_of_work=FakeDeviceCryptoUnitOfWorkFactory(state),
             messaging_unit_of_work=FakeMessagingUnitOfWorkFactory(state),
+            attachment_unit_of_work=FakeAttachmentUnitOfWorkFactory(state),
             sync_unit_of_work=FakeSyncUnitOfWorkFactory(state),
             clock=clock,
             passwords=passwords,

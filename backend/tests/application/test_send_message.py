@@ -6,6 +6,7 @@ from uuid import uuid4
 
 import pytest
 
+from messenger.application.attachments.policy import AttachmentPolicy
 from messenger.application.errors import (
     AuthorizationDeniedError,
     ConversationCryptoNotReadyError,
@@ -71,6 +72,7 @@ async def test_send_persists_only_opaque_envelope_metadata() -> None:
         unit_of_work=FakeMessagingUnitOfWorkFactory(state),
         clock=FixedClock(NOW + timedelta(seconds=1)),
         message_policy=MessageEnvelopePolicy(),
+        attachment_policy=AttachmentPolicy(),
         retention_policy=RETENTION,
         sync_policy=SyncPolicy(),
         realtime_notifier=RecordingRealtimeNotifier(),
@@ -170,6 +172,7 @@ async def test_conversation_type_enforces_new_protocol_but_preserves_historical_
         unit_of_work=FakeMessagingUnitOfWorkFactory(state),
         clock=FixedClock(NOW + timedelta(seconds=1)),
         message_policy=MessageEnvelopePolicy(),
+        attachment_policy=AttachmentPolicy(),
         retention_policy=RETENTION,
         sync_policy=SyncPolicy(),
         realtime_notifier=RecordingRealtimeNotifier(),
@@ -323,6 +326,7 @@ async def test_send_rejects_non_member_and_foreign_or_revoked_device() -> None:
         unit_of_work=FakeMessagingUnitOfWorkFactory(state),
         clock=FixedClock(NOW + timedelta(seconds=1)),
         message_policy=MessageEnvelopePolicy(),
+        attachment_policy=AttachmentPolicy(),
         retention_policy=RETENTION,
         sync_policy=SyncPolicy(),
         realtime_notifier=RecordingRealtimeNotifier(),
@@ -372,6 +376,7 @@ async def test_send_retry_remains_idempotent_after_ciphertext_is_scrubbed() -> N
         unit_of_work=FakeMessagingUnitOfWorkFactory(state),
         clock=FixedClock(NOW),
         message_policy=MessageEnvelopePolicy(),
+        attachment_policy=AttachmentPolicy(),
         retention_policy=RETENTION,
         sync_policy=SyncPolicy(),
         realtime_notifier=RecordingRealtimeNotifier(),
@@ -407,6 +412,7 @@ async def test_send_rejects_unsupported_empty_and_oversized_envelopes() -> None:
         unit_of_work=FakeMessagingUnitOfWorkFactory(state),
         clock=FixedClock(NOW),
         message_policy=MessageEnvelopePolicy(max_ciphertext_bytes=8),
+        attachment_policy=AttachmentPolicy(),
         retention_policy=RETENTION,
         sync_policy=SyncPolicy(),
         realtime_notifier=RecordingRealtimeNotifier(),
@@ -433,6 +439,7 @@ async def test_realtime_failure_does_not_rollback_committed_message() -> None:
         unit_of_work=FakeMessagingUnitOfWorkFactory(state),
         clock=FixedClock(NOW + timedelta(seconds=1)),
         message_policy=MessageEnvelopePolicy(),
+        attachment_policy=AttachmentPolicy(),
         retention_policy=RETENTION,
         sync_policy=SyncPolicy(),
         realtime_notifier=notifier,
@@ -464,6 +471,7 @@ async def test_v2_send_requires_ready_generation_and_sender_leaf() -> None:
         unit_of_work=FakeMessagingUnitOfWorkFactory(state),
         clock=FixedClock(NOW + timedelta(seconds=2)),
         message_policy=MessageEnvelopePolicy(supported_protocol_versions=frozenset({2})),
+        attachment_policy=AttachmentPolicy(),
         retention_policy=RETENTION,
         sync_policy=SyncPolicy(),
         realtime_notifier=RecordingRealtimeNotifier(),

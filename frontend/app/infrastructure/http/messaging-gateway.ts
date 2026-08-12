@@ -104,6 +104,7 @@ export class HttpMessagingGateway implements MessagingGateway {
     ciphertextBase64: string,
     cryptoGenerationId: string | null,
     cryptoEpoch: number | null,
+    attachmentIds: readonly string[] = [],
   ): Promise<SendMessageReceipt> {
     return parseSendMessageReceipt(await this.apiClient.request(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`, {
       method: 'POST',
@@ -113,6 +114,7 @@ export class HttpMessagingGateway implements MessagingGateway {
         ciphertext_base64: ciphertextBase64,
         crypto_generation_id: cryptoGenerationId,
         crypto_epoch: cryptoEpoch,
+        ...(attachmentIds.length > 0 ? { attachment_ids: attachmentIds } : {}),
       },
     }))
   }

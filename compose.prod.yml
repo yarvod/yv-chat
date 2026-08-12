@@ -19,6 +19,20 @@ services:
     pids_limit: 128
     shm_size: 64m
 
+  media-init:
+    image: ${BACKEND_IMAGE:?BACKEND_IMAGE is required}:${IMAGE_TAG:?IMAGE_TAG is required}
+    user: "0:0"
+    command: ["sh", "-c", "chown 65532:65532 /data/media && chmod 0700 /data/media"]
+    volumes:
+      - media-data:/data/media
+    network_mode: none
+    restart: "no"
+    mem_limit: 32m
+    pids_limit: 16
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    cap_add: ["CHOWN", "FOWNER"]
+
   api:
     image: ${BACKEND_IMAGE:?BACKEND_IMAGE is required}:${IMAGE_TAG:?IMAGE_TAG is required}
     environment:
@@ -39,6 +53,11 @@ services:
       MESSAGE_TOMBSTONE_RETENTION_SECONDS: ${MESSAGE_TOMBSTONE_RETENTION_SECONDS:-7776000}
       MESSAGE_CLEANUP_BATCH_SIZE: ${MESSAGE_CLEANUP_BATCH_SIZE:-200}
       MESSAGE_CLEANUP_INTERVAL_SECONDS: ${MESSAGE_CLEANUP_INTERVAL_SECONDS:-300}
+      MEDIA_IMAGE_MAX_BYTES: ${MEDIA_IMAGE_MAX_BYTES:-12582912}
+      MEDIA_FILE_MAX_BYTES: ${MEDIA_FILE_MAX_BYTES:-26214400}
+      MEDIA_USER_QUOTA_BYTES: ${MEDIA_USER_QUOTA_BYTES:-157286400}
+      MEDIA_PENDING_RETENTION_SECONDS: ${MEDIA_PENDING_RETENTION_SECONDS:-86400}
+      MEDIA_CLEANUP_BATCH_SIZE: ${MEDIA_CLEANUP_BATCH_SIZE:-100}
       MEDIA_ROOT: /data/media
     volumes:
       - media-data:/data/media
@@ -48,6 +67,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      media-init:
+        condition: service_completed_successfully
     healthcheck:
       test:
         - CMD
@@ -76,10 +97,20 @@ services:
       MESSAGE_TOMBSTONE_RETENTION_SECONDS: ${MESSAGE_TOMBSTONE_RETENTION_SECONDS:-7776000}
       MESSAGE_CLEANUP_BATCH_SIZE: ${MESSAGE_CLEANUP_BATCH_SIZE:-200}
       MESSAGE_CLEANUP_INTERVAL_SECONDS: ${MESSAGE_CLEANUP_INTERVAL_SECONDS:-300}
+      MEDIA_IMAGE_MAX_BYTES: ${MEDIA_IMAGE_MAX_BYTES:-12582912}
+      MEDIA_FILE_MAX_BYTES: ${MEDIA_FILE_MAX_BYTES:-26214400}
+      MEDIA_USER_QUOTA_BYTES: ${MEDIA_USER_QUOTA_BYTES:-157286400}
+      MEDIA_PENDING_RETENTION_SECONDS: ${MEDIA_PENDING_RETENTION_SECONDS:-86400}
+      MEDIA_CLEANUP_BATCH_SIZE: ${MEDIA_CLEANUP_BATCH_SIZE:-100}
+      MEDIA_ROOT: /data/media
+    volumes:
+      - media-data:/data/media
     networks: [private]
     depends_on:
       postgres:
         condition: service_healthy
+      media-init:
+        condition: service_completed_successfully
     restart: unless-stopped
     mem_limit: 96m
     pids_limit: 64

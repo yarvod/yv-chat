@@ -95,6 +95,7 @@ export function useMessageOutbox(
     conversationId: string,
     conversationType: ConversationType,
     plaintext: string,
+    attachmentIds: readonly string[] = [],
   ): Promise<boolean> {
     state.sending = true
     state.notice = null
@@ -105,6 +106,7 @@ export function useMessageOutbox(
         conversationId,
         conversationType,
         plaintext,
+        attachmentIds,
       })
       await replaceView(message)
       void flush().catch(callbacks.failed)

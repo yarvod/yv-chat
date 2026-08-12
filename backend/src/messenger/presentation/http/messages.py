@@ -10,9 +10,11 @@ from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 
 from messenger.application.errors import (
+    AttachmentConflictError,
     AuthorizationDeniedError,
     ConversationCryptoNotReadyError,
     ConversationNotFoundError,
+    InvalidAttachmentError,
     InvalidMessageEnvelopeError,
     MessageIdempotencyConflictError,
     MessageNotFoundError,
@@ -50,6 +52,7 @@ class SendOpaqueMessageRequest(BaseModel):
     ciphertext_base64: str = Field(min_length=1, max_length=87_384)
     crypto_generation_id: UUID | None = None
     crypto_epoch: int | None = Field(default=None, gt=0)
+    attachment_ids: list[UUID] = Field(default_factory=list, max_length=10)
 
 
 class SendOpaqueMessageResponse(BaseModel):
@@ -142,6 +145,7 @@ async def send_opaque_message(
                 client_message_id=payload.client_message_id,
                 protocol_version=payload.protocol_version,
                 ciphertext=decode_ciphertext(payload.ciphertext_base64),
+                attachment_ids=tuple(payload.attachment_ids),
                 crypto_generation_id=payload.crypto_generation_id,
                 crypto_epoch=payload.crypto_epoch,
             )
@@ -162,6 +166,16 @@ async def send_opaque_message(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="client message id conflict",
+        ) from error
+    except AttachmentConflictError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="attachment conflict",
+        ) from error
+    except InvalidAttachmentError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="invalid attachment selection",
         ) from error
     except ConversationCryptoNotReadyError as error:
         raise HTTPException(

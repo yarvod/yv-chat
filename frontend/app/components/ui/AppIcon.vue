@@ -35,6 +35,9 @@ defineProps<{ name: AppIconName }>()
     <template v-else-if="name === 'add'">
       <path d="M12 5v14M5 12h14" />
     </template>
+    <template v-else-if="name === 'attachment'">
+      <path d="m20.5 11.5-8.9 8.9a6 6 0 0 1-8.5-8.5l9.6-9.6a4 4 0 0 1 5.7 5.7l-9.6 9.6a2 2 0 0 1-2.8-2.8l8.9-8.9" />
+    </template>
     <template v-else-if="name === 'back'">
       <path d="m15 18-6-6 6-6" />
     </template>

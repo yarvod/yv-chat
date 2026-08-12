@@ -4,6 +4,7 @@ from dishka import Provider
 
 from messenger.bootstrap.providers.accounts import AccountUseCaseProvider
 from messenger.bootstrap.providers.adapters import SecurityAdapterProvider
+from messenger.bootstrap.providers.attachments import AttachmentProvider
 from messenger.bootstrap.providers.conversation_crypto import ConversationCryptoUseCaseProvider
 from messenger.bootstrap.providers.conversations import ConversationUseCaseProvider
 from messenger.bootstrap.providers.current_account import CurrentAccountUseCaseProvider
@@ -23,6 +24,7 @@ def application_providers(settings: AppSettings) -> tuple[Provider, ...]:
         SettingsProvider(settings),
         PersistenceProvider(),
         SecurityAdapterProvider(),
+        AttachmentProvider(),
         RealtimeProvider(),
         AccountUseCaseProvider(),
         CurrentAccountUseCaseProvider(),

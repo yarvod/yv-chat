@@ -3,12 +3,14 @@
 from datetime import timedelta
 from enum import StrEnum
 from ipaddress import ip_network
+from pathlib import Path
 from urllib.parse import urlsplit
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from messenger.application.accounts.password_reset_policy import PasswordResetPolicy
+from messenger.application.attachments.policy import AttachmentPolicy
 from messenger.application.messaging.retention import MessageRetentionPolicy
 from messenger.application.security_events.policy import SecurityEventPolicy
 from messenger.application.sessions.policy import SessionPolicy
@@ -63,6 +65,12 @@ class AppSettings(BaseSettings):
     message_tombstone_retention_seconds: int = Field(default=7_776_000, gt=0, le=63_072_000)
     message_cleanup_batch_size: int = Field(default=200, ge=1, le=1_000)
     message_cleanup_interval_seconds: int = Field(default=300, ge=10, le=86_400)
+    media_root: Path = Path("/data/media")
+    media_image_max_bytes: int = Field(default=12 * 1024 * 1024, gt=0, le=209_715_200)
+    media_file_max_bytes: int = Field(default=25 * 1024 * 1024, gt=0, le=209_715_200)
+    media_user_quota_bytes: int = Field(default=150 * 1024 * 1024, gt=0, le=10_737_418_240)
+    media_pending_retention_seconds: int = Field(default=86_400, ge=600, le=604_800)
+    media_cleanup_batch_size: int = Field(default=100, ge=1, le=1_000)
     realtime_queue_size: int = Field(default=64, ge=1, le=1_024)
     realtime_heartbeat_seconds: int = Field(default=25, ge=5, le=120)
     realtime_revalidation_seconds: int = Field(default=30, ge=5, le=300)
@@ -108,6 +116,10 @@ class AppSettings(BaseSettings):
             raise ValueError(
                 "message tombstone retention must exceed ciphertext and sync retention"
             )
+        if self.media_image_max_bytes > self.media_file_max_bytes:
+            raise ValueError("image media limit cannot exceed general media limit")
+        if self.media_user_quota_bytes < self.media_file_max_bytes:
+            raise ValueError("media user quota must fit one maximum file")
         return self
 
     @property
@@ -153,6 +165,16 @@ class AppSettings(BaseSettings):
             ciphertext_retention=timedelta(seconds=self.message_ciphertext_retention_seconds),
             tombstone_retention=timedelta(seconds=self.message_tombstone_retention_seconds),
             cleanup_batch_size=self.message_cleanup_batch_size,
+        )
+
+    @property
+    def attachment_policy(self) -> AttachmentPolicy:
+        return AttachmentPolicy(
+            image_max_bytes=self.media_image_max_bytes,
+            file_max_bytes=self.media_file_max_bytes,
+            user_quota_bytes=self.media_user_quota_bytes,
+            pending_retention=timedelta(seconds=self.media_pending_retention_seconds),
+            cleanup_batch_size=self.media_cleanup_batch_size,
         )
 
 

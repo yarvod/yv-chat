@@ -5,6 +5,7 @@ from collections.abc import AsyncIterator
 from dishka import Provider, Scope, provide
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from messenger.application.ports.attachments import AttachmentUnitOfWorkFactory
 from messenger.application.ports.conversation_crypto import ConversationCryptoUnitOfWorkFactory
 from messenger.application.ports.conversations import ConversationUnitOfWorkFactory
 from messenger.application.ports.device_crypto import DeviceCryptoUnitOfWorkFactory
@@ -12,6 +13,9 @@ from messenger.application.ports.identity import IdentityUnitOfWorkFactory
 from messenger.application.ports.messages import MessagingUnitOfWorkFactory
 from messenger.application.ports.sync import SyncUnitOfWorkFactory
 from messenger.bootstrap.settings import AppSettings
+from messenger.infrastructure.persistence.attachment_uow import (
+    SqlAlchemyAttachmentUnitOfWorkFactory,
+)
 from messenger.infrastructure.persistence.conversation_crypto_uow import (
     SqlAlchemyConversationCryptoUnitOfWorkFactory,
 )
@@ -81,6 +85,13 @@ class PersistenceProvider(Provider):
         session_factory: async_sessionmaker[AsyncSession],
     ) -> MessagingUnitOfWorkFactory:
         return SqlAlchemyMessagingUnitOfWorkFactory(session_factory)
+
+    @provide(scope=Scope.APP)
+    def attachment_unit_of_work_factory(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> AttachmentUnitOfWorkFactory:
+        return SqlAlchemyAttachmentUnitOfWorkFactory(session_factory)
 
     @provide(scope=Scope.APP)
     def sync_unit_of_work_factory(

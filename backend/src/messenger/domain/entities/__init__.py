@@ -1,6 +1,7 @@
 """Domain entities."""
 
 from messenger.domain.entities.activation_token import ActivationToken
+from messenger.domain.entities.attachment import Attachment, AttachmentMediaKind
 from messenger.domain.entities.conversation import (
     Conversation,
     ConversationMember,
@@ -29,6 +30,8 @@ from messenger.domain.entities.user import User
 
 __all__ = [
     "ActivationToken",
+    "Attachment",
+    "AttachmentMediaKind",
     "Conversation",
     "ConversationCryptoBlockReason",
     "ConversationCryptoGeneration",

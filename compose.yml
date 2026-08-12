@@ -15,6 +15,18 @@ services:
       retries: 10
     restart: unless-stopped
 
+  media-init:
+    build:
+      context: ./backend
+    user: "0:0"
+    command: ["sh", "-c", "chown 65532:65532 /data/media && chmod 0700 /data/media"]
+    volumes:
+      - media-data:/data/media
+    network_mode: none
+    restart: "no"
+    cap_drop: ["ALL"]
+    cap_add: ["CHOWN", "FOWNER"]
+
   api:
     build:
       context: ./backend
@@ -27,6 +39,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      media-init:
+        condition: service_completed_successfully
     healthcheck:
       test:
         - CMD
@@ -36,6 +50,23 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
+    restart: unless-stopped
+
+  cleanup:
+    build:
+      context: ./backend
+    command: ["python", "-m", "messenger.cleanup_messages"]
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://messenger:change-me@postgres:5432/messenger}
+      MEDIA_ROOT: /data/media
+    volumes:
+      - media-data:/data/media
+    depends_on:
+      postgres:
+        condition: service_healthy
+      media-init:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   frontend:

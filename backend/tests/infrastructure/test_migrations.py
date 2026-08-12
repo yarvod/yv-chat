@@ -11,6 +11,6 @@ def test_migration_graph_has_one_head_and_version_ids_fit_version_table() -> Non
     scripts = ScriptDirectory.from_config(Config(backend_root / "alembic.ini"))
     revisions = list(scripts.walk_revisions())
 
-    assert scripts.get_heads() == ["0018_message_crypto_binding"]
+    assert scripts.get_heads() == ["0019_group_attachments"]
     assert len({revision.revision for revision in revisions}) == len(revisions)
     assert all(len(revision.revision) <= 32 for revision in revisions)

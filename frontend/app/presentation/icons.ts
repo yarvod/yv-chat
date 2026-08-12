@@ -1,5 +1,6 @@
 export type AppIconName =
   | 'add'
+  | 'attachment'
   | 'back'
   | 'chat'
   | 'close'

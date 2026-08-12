@@ -18,6 +18,7 @@ COPY src ./src
 COPY alembic.ini ./
 COPY migrations ./migrations
 RUN uv sync --frozen --no-dev
+RUN install -d -o 65532 -g 65532 -m 0700 /data/media
 
 ENV PATH="/app/.venv/bin:$PATH" \
     UV_CACHE_DIR=/tmp/uv-runtime-cache \

@@ -42,4 +42,32 @@ export class ApiClient {
       throw new ApplicationError(response.status, 'invalid-response', 'invalid server response')
     }
   }
+
+  async upload(path: string, body: Blob): Promise<unknown> {
+    const headers = new Headers({
+      Accept: 'application/json',
+      'Content-Type': 'application/octet-stream',
+    })
+    const token = csrfToken()
+    if (token) headers.set('X-CSRF-Token', token)
+    let response: Response
+    try {
+      response = await fetch(path, {
+        method: 'PUT',
+        headers,
+        credentials: 'include',
+        body,
+      })
+    } catch {
+      throw new ApplicationError(null, 'network', 'network unavailable')
+    }
+    if (!response.ok) {
+      throw new ApplicationError(response.status, 'http', `request failed: ${response.status}`)
+    }
+    try {
+      return await response.json()
+    } catch {
+      throw new ApplicationError(response.status, 'invalid-response', 'invalid server response')
+    }
+  }
 }

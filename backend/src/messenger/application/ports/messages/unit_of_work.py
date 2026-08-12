@@ -3,6 +3,7 @@
 from types import TracebackType
 from typing import Protocol, Self
 
+from messenger.application.ports.attachments import AttachmentRepository
 from messenger.application.ports.conversation_crypto import (
     ConversationCryptoGenerationRepository,
     ConversationCryptoRequiredDeviceRepository,
@@ -25,6 +26,7 @@ class MessagingUnitOfWork(Protocol):
     sync_events: SyncRepository
     crypto_generations: ConversationCryptoGenerationRepository
     crypto_required_devices: ConversationCryptoRequiredDeviceRepository
+    attachments: AttachmentRepository
 
     async def __aenter__(self) -> Self: ...
 

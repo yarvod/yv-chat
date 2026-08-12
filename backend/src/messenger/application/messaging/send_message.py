@@ -4,11 +4,13 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
+from messenger.application.attachments.policy import AttachmentPolicy
 from messenger.application.conversations.authorization import (
     require_active_actor,
     require_active_membership,
 )
 from messenger.application.errors import (
+    AttachmentConflictError,
     AuthorizationDeniedError,
     ConversationCryptoNotReadyError,
     MessageIdempotencyConflictError,
@@ -26,6 +28,7 @@ from messenger.domain.entities import (
     ConversationCryptoStatus,
     ConversationDeliveryState,
     ConversationReadState,
+    ConversationType,
     Message,
 )
 from messenger.domain.entities.message import digest_ciphertext
@@ -39,6 +42,7 @@ class SendOpaqueMessageCommand:
     client_message_id: UUID
     protocol_version: int
     ciphertext: bytes
+    attachment_ids: tuple[UUID, ...] = ()
     crypto_generation_id: UUID | None = None
     crypto_epoch: int | None = None
 
@@ -65,6 +69,7 @@ class SendOpaqueMessage:
         unit_of_work: MessagingUnitOfWorkFactory,
         clock: Clock,
         message_policy: MessageEnvelopePolicy,
+        attachment_policy: AttachmentPolicy,
         retention_policy: MessageRetentionPolicy,
         sync_policy: SyncPolicy,
         realtime_notifier: RealtimeNotifier,
@@ -72,12 +77,14 @@ class SendOpaqueMessage:
         self._unit_of_work = unit_of_work
         self._clock = clock
         self._policy = message_policy
+        self._attachment_policy = attachment_policy
         self._retention_policy = retention_policy
         self._sync_policy = sync_policy
         self._realtime_notifier = realtime_notifier
 
     async def execute(self, command: SendOpaqueMessageCommand) -> SendOpaqueMessageResult:
         self._policy.validate(command.protocol_version, command.ciphertext)
+        self._attachment_policy.validate_message_attachments(command.attachment_ids)
         async with self._unit_of_work() as unit_of_work:
             await require_active_actor(unit_of_work.users, command.actor_user_id)
             device = await unit_of_work.devices.get_owned_by_id(
@@ -98,6 +105,7 @@ class SendOpaqueMessage:
                 client_message_id=command.client_message_id,
             )
             if existing is not None:
+                existing_attachments = await unit_of_work.attachments.list_for_message(existing.id)
                 if (
                     existing.conversation_id != conversation.id
                     or existing.sender_user_id != command.actor_user_id
@@ -105,6 +113,7 @@ class SendOpaqueMessage:
                     or existing.crypto_generation_id != command.crypto_generation_id
                     or existing.crypto_epoch != command.crypto_epoch
                     or existing.ciphertext_digest != digest_ciphertext(command.ciphertext)
+                    or {item.id for item in existing_attachments} != set(command.attachment_ids)
                 ):
                     raise MessageIdempotencyConflictError(
                         "client message ID was reused for different envelope"
@@ -114,6 +123,13 @@ class SendOpaqueMessage:
                 conversation.conversation_type,
                 command.protocol_version,
             )
+            if command.attachment_ids and (
+                conversation.conversation_type is not ConversationType.GROUP
+                or command.protocol_version != 1
+            ):
+                raise AttachmentConflictError(
+                    "attachments are available only for non-E2EE group v1 messages"
+                )
             if command.protocol_version == 2:
                 generation = await unit_of_work.crypto_generations.get_current(
                     conversation.id,
@@ -147,6 +163,17 @@ class SendOpaqueMessage:
                     raise ConversationCryptoNotReadyError(
                         "sender device is outside current MLS roster"
                     )
+            now = self._clock.now()
+            attachments = await unit_of_work.attachments.get_many_for_update(command.attachment_ids)
+            if len(attachments) != len(command.attachment_ids) or any(
+                item.conversation_id != conversation.id
+                or item.uploader_user_id != command.actor_user_id
+                or item.uploader_device_id != command.actor_device_id
+                or item.committed_message_id is not None
+                or item.expires_at <= now
+                for item in attachments
+            ):
+                raise AttachmentConflictError("attachment cannot be committed to message")
             sequence = await unit_of_work.messages.next_sequence(conversation.id)
             message = Message.create(
                 conversation_id=conversation.id,
@@ -156,12 +183,16 @@ class SendOpaqueMessage:
                 protocol_version=command.protocol_version,
                 sequence=sequence,
                 ciphertext=command.ciphertext,
-                now=self._clock.now(),
+                now=now,
                 retention=self._retention_policy.ciphertext_retention,
                 crypto_generation_id=command.crypto_generation_id,
                 crypto_epoch=command.crypto_epoch,
             )
             await unit_of_work.messages.add(message)
+            for attachment in attachments:
+                await unit_of_work.attachments.update(
+                    attachment.commit_to_message(message.id, message.expires_at)
+                )
             current_read_state = await unit_of_work.read_states.get(
                 user_id=command.actor_user_id,
                 conversation_id=conversation.id,

@@ -40,6 +40,16 @@ export interface OpaqueMessage {
   deletedAt: string | null
 }
 
+export type MessageAttachmentKind = 'image' | 'file'
+
+export interface MessageAttachment {
+  attachmentId: string
+  kind: MessageAttachmentKind
+  name: string
+  contentType: string
+  byteSize: number
+}
+
 export interface SendMessageReceipt {
   messageId: string
   clientMessageId: string

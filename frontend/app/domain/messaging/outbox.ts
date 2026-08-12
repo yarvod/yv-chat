@@ -11,6 +11,7 @@ export interface OutboxMessage {
   ciphertextBase64: string
   cryptoGenerationId: string | null
   cryptoEpoch: number | null
+  attachmentIds?: readonly string[]
   status: OutboxMessageStatus
   attemptCount: number
   createdAt: string

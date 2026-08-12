@@ -12,6 +12,7 @@ export interface QueueOutgoingMessageCommand {
   conversationId: string
   conversationType: ConversationType
   plaintext: string
+  attachmentIds?: readonly string[]
 }
 
 export class QueueOutgoingMessage {
@@ -24,12 +25,16 @@ export class QueueOutgoingMessage {
 
   async execute(command: QueueOutgoingMessageCommand): Promise<OutboxMessage> {
     const plaintext = command.plaintext.trim()
+    const attachmentIds = [...(command.attachmentIds ?? [])]
     if (
       !command.ownerUserId
       || !command.senderDeviceId
       || !command.conversationId
       || !plaintext
-      || plaintext.length > 4_000
+      || plaintext.length > (attachmentIds.length > 0 ? 8_000 : 4_000)
+      || attachmentIds.length > 10
+      || new Set(attachmentIds).size !== attachmentIds.length
+      || attachmentIds.some(item => !item || item.length > 64)
     ) {
       throw new TypeError('invalid outgoing message')
     }
@@ -52,6 +57,7 @@ export class QueueOutgoingMessage {
       ciphertextBase64: protectedMessage.ciphertextBase64,
       cryptoGenerationId: protectedMessage.cryptoGenerationId,
       cryptoEpoch: protectedMessage.cryptoEpoch,
+      ...(attachmentIds.length > 0 ? { attachmentIds } : {}),
       status: 'pending',
       attemptCount: 0,
       createdAt: now,

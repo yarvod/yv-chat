@@ -9,6 +9,7 @@ import pytest
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from messenger.application.attachments.policy import AttachmentPolicy
 from messenger.application.errors import ConversationNotFoundError
 from messenger.application.messaging.cleanup_messages import CleanupExpiredMessages
 from messenger.application.messaging.delete_message import (
@@ -160,6 +161,7 @@ async def run_flow(database_url: str) -> None:
             unit_of_work=SqlAlchemyMessagingUnitOfWorkFactory(session_factory),
             clock=FixedClock(NOW + timedelta(seconds=1)),
             message_policy=MessageEnvelopePolicy(),
+            attachment_policy=AttachmentPolicy(),
             retention_policy=MessageRetentionPolicy(timedelta(days=30), timedelta(days=90)),
             sync_policy=SyncPolicy(),
             realtime_notifier=RecordingRealtimeNotifier(),
@@ -339,6 +341,7 @@ async def run_flow(database_url: str) -> None:
             unit_of_work=read_state_factory,
             clock=FixedClock(NOW + timedelta(days=122)),
             message_policy=MessageEnvelopePolicy(),
+            attachment_policy=AttachmentPolicy(),
             retention_policy=MessageRetentionPolicy(timedelta(days=30), timedelta(days=90)),
             sync_policy=SyncPolicy(),
             realtime_notifier=RecordingRealtimeNotifier(),

@@ -1,11 +1,14 @@
 import type { OutboxFailureCode, OutboxMessage, OutboxMessageStatus } from '../../domain/messaging/outbox'
 import type { ProtocolMessageProtection } from './message-protection'
+import type { MessageAttachment } from '../../domain/messaging/models'
+import { decodeGroupMessageContent } from './group-message-content'
 
 export interface OutgoingMessageView {
   clientMessageId: string
   conversationId: string
   createdAt: string
   displayBody: string
+  displayAttachments?: readonly MessageAttachment[]
   contentSecure: boolean
   status: OutboxMessageStatus
   attemptCount: number
@@ -22,11 +25,15 @@ export async function prepareOutgoingMessageView(
       clientMessageId: message.clientMessageId,
       ciphertextBase64: message.ciphertextBase64,
     })
+    const decoded = message.protocolVersion === 1
+      ? decodeGroupMessageContent(content.plaintext)
+      : { text: content.plaintext, attachments: [] }
     return {
       clientMessageId: message.clientMessageId,
       conversationId: message.conversationId,
       createdAt: message.createdAt,
-      displayBody: content.plaintext,
+      displayBody: decoded.text,
+      ...(decoded.attachments.length > 0 ? { displayAttachments: decoded.attachments } : {}),
       contentSecure: content.secure,
       status: message.status,
       attemptCount: message.attemptCount,

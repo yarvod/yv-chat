@@ -20,6 +20,7 @@ FORBIDDEN_COLUMNS = {
 def test_persistence_metadata_contains_expected_tables() -> None:
     assert set(Base.metadata.tables) == {
         "activation_tokens",
+        "attachments",
         "conversation_members",
         "conversation_delivery_states",
         "conversation_crypto_generations",
@@ -38,6 +39,27 @@ def test_persistence_metadata_contains_expected_tables() -> None:
         "sync_streams",
         "users",
     }
+
+
+def test_attachment_schema_keeps_only_opaque_storage_and_bounded_routing_metadata() -> None:
+    attachments = Base.metadata.tables["attachments"]
+
+    assert set(attachments.columns.keys()) == {
+        "byte_size",
+        "client_attachment_id",
+        "committed_message_id",
+        "content_type",
+        "conversation_id",
+        "created_at",
+        "expires_at",
+        "id",
+        "media_kind",
+        "sha256_digest",
+        "storage_key",
+        "uploader_device_id",
+        "uploader_user_id",
+    }
+    assert not (set(attachments.columns.keys()) & FORBIDDEN_COLUMNS)
 
 
 def test_device_crypto_schema_contains_only_public_bounded_material() -> None:

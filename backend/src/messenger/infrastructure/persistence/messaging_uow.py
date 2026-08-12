@@ -4,6 +4,7 @@ from types import TracebackType
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from messenger.application.ports.attachments import AttachmentRepository
 from messenger.application.ports.conversation_crypto import (
     ConversationCryptoGenerationRepository,
     ConversationCryptoRequiredDeviceRepository,
@@ -18,6 +19,7 @@ from messenger.application.ports.messages import (
 )
 from messenger.application.ports.sync import SyncRepository
 from messenger.infrastructure.persistence.repositories import (
+    SqlAlchemyAttachmentRepository,
     SqlAlchemyConversationCryptoGenerationRepository,
     SqlAlchemyConversationCryptoRequiredDeviceRepository,
     SqlAlchemyConversationDeliveryStateRepository,
@@ -43,6 +45,7 @@ class SqlAlchemyMessagingUnitOfWork:
         self.sync_events: SyncRepository
         self.crypto_generations: ConversationCryptoGenerationRepository
         self.crypto_required_devices: ConversationCryptoRequiredDeviceRepository
+        self.attachments: AttachmentRepository
 
     async def __aenter__(self) -> "SqlAlchemyMessagingUnitOfWork":
         self._session = self._session_factory()
@@ -57,6 +60,7 @@ class SqlAlchemyMessagingUnitOfWork:
         self.crypto_required_devices = SqlAlchemyConversationCryptoRequiredDeviceRepository(
             self._session
         )
+        self.attachments = SqlAlchemyAttachmentRepository(self._session)
         return self
 
     async def __aexit__(

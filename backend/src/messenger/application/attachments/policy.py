@@ -1,0 +1,79 @@
+"""Bounded group attachment admission, quota and retention policy."""
+
+from dataclasses import dataclass
+from datetime import timedelta
+
+from messenger.application.errors import AttachmentTooLargeError, InvalidAttachmentError
+from messenger.domain.entities import AttachmentMediaKind
+
+
+@dataclass(frozen=True, slots=True)
+class AttachmentPolicy:
+    image_max_bytes: int = 12 * 1024 * 1024
+    file_max_bytes: int = 25 * 1024 * 1024
+    user_quota_bytes: int = 150 * 1024 * 1024
+    pending_retention: timedelta = timedelta(hours=24)
+    cleanup_batch_size: int = 100
+    max_attachments_per_message: int = 10
+
+    def __post_init__(self) -> None:
+        if self.image_max_bytes <= 0:
+            raise ValueError("image attachment limit must be positive")
+        if self.file_max_bytes < self.image_max_bytes:
+            raise ValueError("file attachment limit must not be smaller than image limit")
+        if self.user_quota_bytes < self.file_max_bytes:
+            raise ValueError("user media quota must fit one maximum file")
+        if self.pending_retention <= timedelta(0):
+            raise ValueError("pending attachment retention must be positive")
+        if not 1 <= self.cleanup_batch_size <= 1_000:
+            raise ValueError("attachment cleanup batch size is out of range")
+        if not 1 <= self.max_attachments_per_message <= 20:
+            raise ValueError("attachment count limit is out of range")
+
+    def maximum_bytes(self, media_kind: AttachmentMediaKind) -> int:
+        return (
+            self.image_max_bytes if media_kind is AttachmentMediaKind.IMAGE else self.file_max_bytes
+        )
+
+    def validate_upload(
+        self,
+        *,
+        media_kind: AttachmentMediaKind,
+        byte_size: int,
+        sha256_digest: str,
+        content_type: str,
+    ) -> int:
+        if byte_size <= 0:
+            raise InvalidAttachmentError("attachment is empty")
+        maximum = self.maximum_bytes(media_kind)
+        if byte_size > maximum:
+            raise AttachmentTooLargeError("attachment exceeds configured limit")
+        if (
+            len(sha256_digest) != 64
+            or sha256_digest != sha256_digest.lower()
+            or any(character not in "0123456789abcdef" for character in sha256_digest)
+        ):
+            raise InvalidAttachmentError("invalid attachment digest")
+        if not content_type or len(content_type) > 100 or "/" not in content_type:
+            raise InvalidAttachmentError("invalid attachment content type")
+        if any(
+            character.isspace() or ord(character) < 33 or ord(character) > 126
+            for character in content_type
+        ):
+            raise InvalidAttachmentError("invalid attachment content type")
+        safe_images = {"image/avif", "image/gif", "image/jpeg", "image/png", "image/webp"}
+        if media_kind is AttachmentMediaKind.IMAGE and content_type not in safe_images:
+            raise InvalidAttachmentError("image content type is not supported")
+        return maximum
+
+    def validate_quota(self, *, current_bytes: int, incoming_bytes: int) -> None:
+        if current_bytes < 0 or incoming_bytes <= 0:
+            raise InvalidAttachmentError("invalid media quota accounting")
+        if current_bytes + incoming_bytes > self.user_quota_bytes:
+            raise AttachmentTooLargeError("user media quota exceeded")
+
+    def validate_message_attachments(self, attachment_ids: tuple[object, ...]) -> None:
+        if len(attachment_ids) > self.max_attachments_per_message:
+            raise InvalidAttachmentError("message attachment count exceeds configured limit")
+        if len(set(attachment_ids)) != len(attachment_ids):
+            raise InvalidAttachmentError("message attachment ids must be unique")

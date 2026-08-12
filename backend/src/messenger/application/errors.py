@@ -141,6 +141,22 @@ class MessageNotFoundError(ApplicationError):
     """A message is absent or outside the authorized conversation."""
 
 
+class InvalidAttachmentError(ApplicationError):
+    """Encrypted attachment metadata or bytes violate the bounded policy."""
+
+
+class AttachmentTooLargeError(InvalidAttachmentError):
+    """Encrypted attachment bytes exceed the configured media-kind limit."""
+
+
+class AttachmentConflictError(ApplicationError):
+    """An attachment id was reused or committed with incompatible scope."""
+
+
+class AttachmentNotFoundError(ApplicationError):
+    """An attachment is absent, expired, uncommitted or unauthorized."""
+
+
 class RealtimeSubscriptionClosedError(ApplicationError):
     """A realtime connection was removed because its bounded inbox closed."""
 

@@ -23,6 +23,13 @@ import {
   outgoingProtocolVersion,
 } from '../../application/messaging/conversation-message-policy'
 import type { TimelineMessage } from '../../application/messaging/timeline-message'
+import {
+  encodeGroupMessageContent,
+} from '../../application/messaging/group-message-content'
+import type {
+  GroupAttachmentSource,
+  UploadGroupAttachment,
+} from '../../application/messaging/upload-group-attachment'
 import type { MessageArchive } from '../../application/ports/message-archive'
 import type {
   MessengerSnapshot,
@@ -64,6 +71,7 @@ interface MessengerState {
   creating: boolean
   deletingMessageId: string | null
   groupMutating: boolean
+  uploadingAttachment: boolean
   conversationCryptoPhase: ConversationCryptoPhase
   conversationCryptoBlockReason: string | null
   message: string | null
@@ -85,6 +93,7 @@ export interface MessengerDependencies extends MessageOutboxDependencies {
   renameGroup: RenameGroup
   leaveGroup: LeaveGroup
   pageVisibility: PageVisibility
+  uploadGroupAttachment?: UploadGroupAttachment
   initializeDeviceCrypto?: () => Promise<unknown>
   reconcileConversationCrypto?: (
     conversationId: string,
@@ -122,6 +131,7 @@ export function useMessenger(
       renameGroup: $frontend.renameGroup,
       leaveGroup: $frontend.leaveGroup,
       pageVisibility: $frontend.pageVisibility,
+      uploadGroupAttachment: $frontend.uploadGroupAttachment,
       initializeDeviceCrypto: () => $frontend.deviceCryptoSession.initialize({
         userId: actorUserId,
         deviceId: actorDeviceId,
@@ -150,6 +160,7 @@ export function useMessenger(
     renameGroup,
     leaveGroup,
     pageVisibility,
+    uploadGroupAttachment,
   } = dependencies
   const state = reactive<MessengerState>({
     phase: 'loading',
@@ -167,6 +178,7 @@ export function useMessenger(
     creating: false,
     deletingMessageId: null,
     groupMutating: false,
+    uploadingAttachment: false,
     conversationCryptoPhase: 'checking',
     conversationCryptoBlockReason: null,
     message: null,
@@ -686,11 +698,23 @@ export function useMessenger(
     }
   }
 
-  async function send(plaintext: string): Promise<boolean> {
+  async function send(
+    plaintext: string,
+    attachment: GroupAttachmentSource | null = null,
+  ): Promise<boolean> {
     const conversationId = state.activeConversationId
     const conversation = activeConversation.value
     const normalized = plaintext.trim()
-    if (!conversationId || !conversation || normalized.length === 0 || normalized.length > 4000) {
+    if (
+      !conversationId
+      || !conversation
+      || (!normalized && attachment === null)
+      || normalized.length > 4000
+    ) {
+      return false
+    }
+    if (attachment !== null && conversation.conversationType !== 'group') {
+      state.message = 'Файлы в личных чатах появятся после отдельного E2EE media flow.'
       return false
     }
     if (
@@ -701,11 +725,39 @@ export function useMessenger(
       return false
     }
     state.message = null
+    state.uploadingAttachment = attachment !== null
     try {
-      return await outbox.enqueue(conversationId, conversation.conversationType, normalized)
+      const uploaded = attachment === null
+        ? null
+        : await uploadGroupAttachment?.execute(
+            conversationId,
+            conversation.conversationType,
+            attachment,
+          ) ?? null
+      if (attachment !== null && uploaded === null) {
+        state.message = 'Загрузка файлов на этом устройстве недоступна.'
+        return false
+      }
+      const content = uploaded === null
+        ? normalized
+        : encodeGroupMessageContent({ text: normalized, attachments: [uploaded] })
+      return await outbox.enqueue(
+        conversationId,
+        conversation.conversationType,
+        content,
+        uploaded === null ? [] : [uploaded.attachmentId],
+      )
     } catch (error) {
-      fail(error)
+      if (attachment !== null) {
+        state.message = error instanceof ApplicationError && error.status === 413
+          ? 'Файл превышает допустимый размер или доступную квоту.'
+          : 'Не удалось загрузить файл. Проверьте соединение и повторите.'
+      } else {
+        fail(error)
+      }
       return false
+    } finally {
+      state.uploadingAttachment = false
     }
   }
 

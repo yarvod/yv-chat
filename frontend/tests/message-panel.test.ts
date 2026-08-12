@@ -31,6 +31,44 @@ const conversation = {
 }
 
 describe('message panel', () => {
+  it('selects, sends and clears one group file while direct picker stays disabled', async () => {
+    const sendMessage = vi.fn().mockResolvedValue(true)
+    const wrapper = mount(MessagePanel, {
+      props: {
+        conversation: { ...conversation, conversationType: 'group', title: 'Team' },
+        messages: [],
+        actorUserId: 'alice-id',
+        sending: false,
+        protectionSecure: false,
+        protectionLabel: 'Группа без E2EE',
+        sendMessage,
+        deleteMessage: vi.fn(),
+        deletingMessageId: null,
+        typingActorIds: [],
+        onlineActorIds: [],
+        deliveryStates: [],
+        connectionState: 'connected',
+        setTyping: vi.fn(),
+      },
+    })
+    const input = wrapper.get<HTMLInputElement>('input[type="file"]')
+    const file = new File(['report'], 'report.txt', { type: 'text/plain' })
+    Object.defineProperty(input.element, 'files', { configurable: true, value: [file] })
+    await input.trigger('change')
+
+    expect(wrapper.text()).toContain('report.txt')
+    expect(wrapper.text()).toContain('не E2EE')
+    await wrapper.get('form').trigger('submit')
+    expect(sendMessage).toHaveBeenCalledWith('', expect.objectContaining({
+      name: 'report.txt',
+      body: file,
+    }))
+    expect(wrapper.text()).not.toContain('report.txt')
+
+    await wrapper.setProps({ conversation })
+    expect(wrapper.get<HTMLInputElement>('input[type="file"]').element.disabled).toBe(true)
+  })
+
   it('renders optimistic outbox states and exposes retry only for failed messages', async () => {
     const retryOutgoing = vi.fn().mockResolvedValue(true)
     const wrapper = mount(MessagePanel, {

@@ -61,14 +61,18 @@ export class DeliverOutboxMessage {
     }
     await this.outbox.replace(sending)
     try {
-      const receipt = await this.gateway.sendMessage(
+      const attachmentIds = sending.attachmentIds ?? []
+      const sendArguments = [
         sending.conversationId,
         sending.clientMessageId,
         sending.protocolVersion,
         sending.ciphertextBase64,
         sending.cryptoGenerationId,
         sending.cryptoEpoch,
-      )
+      ] as const
+      const receipt = attachmentIds.length > 0
+        ? await this.gateway.sendMessage(...sendArguments, attachmentIds)
+        : await this.gateway.sendMessage(...sendArguments)
       if (
         receipt.clientMessageId !== sending.clientMessageId
         || receipt.conversationId !== sending.conversationId

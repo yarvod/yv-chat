@@ -31,6 +31,7 @@ export interface MessagingGateway {
     ciphertextBase64: string,
     cryptoGenerationId: string | null,
     cryptoEpoch: number | null,
+    attachmentIds?: readonly string[],
   ): Promise<SendMessageReceipt>
   deleteMessage(conversationId: string, messageId: string): Promise<DeleteMessageResult>
   listSync(after: number): Promise<SyncPage>

@@ -1,14 +1,19 @@
 """In-memory identity adapters for application specifications."""
 
 import hashlib
+from collections.abc import AsyncIterable, AsyncIterator
 from dataclasses import dataclass, field
 from datetime import datetime
 from types import TracebackType
 from typing import Self
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from messenger.application.errors import DuplicateDirectConversationError, DuplicateUsernameError
 from messenger.application.ports.activation_secrets import GeneratedActivationSecret
+from messenger.application.ports.attachments import (
+    AttachmentRepository,
+    AttachmentUnitOfWork,
+)
 from messenger.application.ports.conversation_crypto import (
     ConversationCryptoGenerationRepository,
     ConversationCryptoRequiredDeviceRepository,
@@ -38,6 +43,11 @@ from messenger.application.ports.identity import (
     UserAuthenticationRecord,
     UserRepository,
 )
+from messenger.application.ports.media_storage import (
+    MediaIntegrityError,
+    MediaTooLargeError,
+    StoredMedia,
+)
 from messenger.application.ports.messages import (
     ConversationDeliveryStateRepository,
     ConversationReadStateRepository,
@@ -54,6 +64,7 @@ from messenger.application.sync import PendingSyncEvent, SyncEvent
 from messenger.application.sync.events import SyncStreamPage
 from messenger.domain.entities import (
     ActivationToken,
+    Attachment,
     Conversation,
     ConversationCryptoGeneration,
     ConversationCryptoRequiredDevice,
@@ -96,6 +107,7 @@ class IdentityState:
     security_events: dict[UUID, SecurityEvent] = field(default_factory=dict)
     conversations: dict[UUID, Conversation] = field(default_factory=dict)
     messages: dict[UUID, Message] = field(default_factory=dict)
+    attachments: dict[UUID, Attachment] = field(default_factory=dict)
     message_sequences: dict[UUID, int] = field(default_factory=dict)
     delivery_states: dict[tuple[UUID, UUID], ConversationDeliveryState] = field(
         default_factory=dict
@@ -104,6 +116,44 @@ class IdentityState:
     sync_events: list[SyncEvent] = field(default_factory=list)
     sync_cursors: dict[UUID, int] = field(default_factory=dict)
     commits: int = 0
+
+
+class FakeMediaStorage:
+    def __init__(self) -> None:
+        self.objects: dict[str, bytes] = {}
+
+    def new_storage_key(self) -> str:
+        identifier = uuid4().hex
+        return f"{identifier[:2]}/{identifier}"
+
+    async def save(
+        self,
+        storage_key: str,
+        chunks: AsyncIterable[bytes],
+        *,
+        expected_size: int,
+        expected_sha256_hex: str,
+        max_bytes: int,
+    ) -> StoredMedia:
+        body = bytearray()
+        async for chunk in chunks:
+            body.extend(chunk)
+            if len(body) > max_bytes or len(body) > expected_size:
+                raise MediaTooLargeError("fake media exceeded limit")
+        digest = hashlib.sha256(body).hexdigest()
+        if len(body) != expected_size or digest != expected_sha256_hex:
+            raise MediaIntegrityError("fake media integrity mismatch")
+        self.objects[storage_key] = bytes(body)
+        return StoredMedia(size=len(body), sha256_hex=digest)
+
+    async def open(self, storage_key: str) -> AsyncIterator[bytes]:
+        yield self.objects[storage_key]
+
+    async def delete(self, storage_key: str) -> None:
+        self.objects.pop(storage_key, None)
+
+    async def exists(self, storage_key: str) -> bool:
+        return storage_key in self.objects
 
 
 class FakeUserRepository:
@@ -1065,6 +1115,79 @@ class FakeMessageRepository:
         return len(expired)
 
 
+class FakeAttachmentRepository:
+    def __init__(self, state: IdentityState) -> None:
+        self._state = state
+
+    async def add(self, attachment: Attachment) -> None:
+        self._state.attachments[attachment.id] = attachment
+
+    async def get_by_id(
+        self,
+        attachment_id: UUID,
+        *,
+        for_update: bool = False,
+    ) -> Attachment | None:
+        del for_update
+        return self._state.attachments.get(attachment_id)
+
+    async def get_by_client_id(
+        self,
+        *,
+        uploader_device_id: UUID,
+        client_attachment_id: UUID,
+        for_update: bool = False,
+    ) -> Attachment | None:
+        del for_update
+        return next(
+            (
+                item
+                for item in self._state.attachments.values()
+                if item.uploader_device_id == uploader_device_id
+                and item.client_attachment_id == client_attachment_id
+            ),
+            None,
+        )
+
+    async def get_many_for_update(self, attachment_ids: tuple[UUID, ...]) -> list[Attachment]:
+        return [
+            self._state.attachments[item]
+            for item in sorted(attachment_ids, key=lambda value: value.int)
+            if item in self._state.attachments
+        ]
+
+    async def list_for_message(self, message_id: UUID) -> list[Attachment]:
+        return sorted(
+            (
+                item
+                for item in self._state.attachments.values()
+                if item.committed_message_id == message_id
+            ),
+            key=lambda item: item.id,
+        )
+
+    async def active_bytes_for_user(self, *, user_id: UUID, now: datetime) -> int:
+        return sum(
+            item.byte_size
+            for item in self._state.attachments.values()
+            if item.uploader_user_id == user_id and item.expires_at > now
+        )
+
+    async def update(self, attachment: Attachment) -> None:
+        if attachment.id not in self._state.attachments:
+            raise RuntimeError("attachment disappeared during update")
+        self._state.attachments[attachment.id] = attachment
+
+    async def list_expired(self, *, now: datetime, limit: int) -> list[Attachment]:
+        return sorted(
+            (item for item in self._state.attachments.values() if item.expires_at <= now),
+            key=lambda item: (item.expires_at, item.id),
+        )[:limit]
+
+    async def delete(self, attachment_id: UUID) -> None:
+        self._state.attachments.pop(attachment_id, None)
+
+
 class FakeConversationReadStateRepository:
     def __init__(self, state: IdentityState) -> None:
         self._state = state
@@ -1219,6 +1342,7 @@ class FakeMessagingUnitOfWork:
     def __init__(self, state: IdentityState) -> None:
         self._state = state
         self.messages: MessageRepository = FakeMessageRepository(state)
+        self.attachments: AttachmentRepository = FakeAttachmentRepository(state)
         self.delivery_states: ConversationDeliveryStateRepository = (
             FakeConversationDeliveryStateRepository(state)
         )
@@ -1257,6 +1381,38 @@ class FakeMessagingUnitOfWorkFactory:
 
     def __call__(self) -> MessagingUnitOfWork:
         return FakeMessagingUnitOfWork(self._state)
+
+
+class FakeAttachmentUnitOfWork:
+    def __init__(self, state: IdentityState) -> None:
+        self._state = state
+        self.attachments: AttachmentRepository = FakeAttachmentRepository(state)
+        self.conversations: ConversationRepository = FakeConversationRepository(state)
+        self.users: UserRepository = FakeUserRepository(state)
+        self.devices: DeviceRepository = FakeDeviceRepository(state)
+        self.messages: MessageRepository = FakeMessageRepository(state)
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        del exc_type, exc_value, traceback
+
+    async def commit(self) -> None:
+        self._state.commits += 1
+
+
+class FakeAttachmentUnitOfWorkFactory:
+    def __init__(self, state: IdentityState) -> None:
+        self._state = state
+
+    def __call__(self) -> AttachmentUnitOfWork:
+        return FakeAttachmentUnitOfWork(self._state)
 
 
 class FakeSyncUnitOfWork:

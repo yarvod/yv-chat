@@ -27,6 +27,7 @@ import { AcknowledgeOutboxMessage } from '../application/messaging/acknowledge-o
 import { DeliverOutboxMessage } from '../application/messaging/deliver-outbox-message'
 import { ListOutboxMessages } from '../application/messaging/list-outbox-messages'
 import { QueueOutgoingMessage } from '../application/messaging/queue-outgoing-message'
+import { UploadGroupAttachment } from '../application/messaging/upload-group-attachment'
 import { RetryOutboxMessage } from '../application/messaging/retry-outbox-message'
 import { GetDeviceCryptoRegistration } from '../application/device-crypto/get-device-crypto-registration'
 import { ListDeviceKeyPackages } from '../application/device-crypto/list-device-key-packages'
@@ -65,6 +66,7 @@ import { HttpAccountSecurityGateway } from '../infrastructure/http/account-secur
 import { ApiClient } from '../infrastructure/http/api-client'
 import { HttpAuthGateway } from '../infrastructure/http/auth-gateway'
 import { HttpMessagingGateway } from '../infrastructure/http/messaging-gateway'
+import { HttpAttachmentGateway } from '../infrastructure/http/attachment-gateway'
 import { HttpServerHealthGateway } from '../infrastructure/http/http-server-health-gateway'
 import { HttpConversationReadStateGateway } from '../infrastructure/http/conversation-read-state-gateway'
 import { HttpConversationDeliveryStateGateway } from '../infrastructure/http/conversation-delivery-state-gateway'
@@ -82,6 +84,7 @@ export default defineNuxtPlugin(() => {
   const adminAccountsGateway = new HttpAdminAccountsGateway(apiClient)
   const accountSecurityGateway = new HttpAccountSecurityGateway(apiClient)
   const messagingGateway = new HttpMessagingGateway(apiClient)
+  const attachmentGateway = new HttpAttachmentGateway(apiClient, crypto.subtle)
   const readStateGateway = new HttpConversationReadStateGateway(apiClient)
   const deliveryStateGateway = new HttpConversationDeliveryStateGateway(apiClient)
   const deviceCryptoRegistryGateway = new HttpDeviceCryptoRegistryGateway(apiClient)
@@ -120,6 +123,7 @@ export default defineNuxtPlugin(() => {
     provide: {
       frontend: {
         messagingGateway,
+        uploadGroupAttachment: new UploadGroupAttachment(attachmentGateway, clientIdGenerator),
         deleteMessageForEveryone: new DeleteMessageForEveryone(messagingGateway),
         addGroupMember: new AddGroupMember(messagingGateway),
         removeGroupMember: new RemoveGroupMember(messagingGateway),

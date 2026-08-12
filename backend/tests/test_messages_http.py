@@ -1,6 +1,7 @@
 """Opaque message HTTP envelope and authorization tests."""
 
 import base64
+import hashlib
 from datetime import timedelta
 from uuid import UUID, uuid4
 
@@ -19,6 +20,84 @@ async def login_as(client: AsyncClient, username: str) -> None:
         json={"username": username, "password": PASSWORD, "device_name": "Browser"},
     )
     assert response.status_code == 200
+
+
+async def test_group_attachment_upload_binding_download_and_direct_rejection() -> None:
+    application, state, _ = build_test_application()
+    bob = User.create(username="bob", display_name="Bob", now=NOW)
+    mallory = User.create(username="mallory", display_name="Mallory", now=NOW)
+    for user in (bob, mallory):
+        state.users[user.id] = user
+        state.password_hashes[user.id] = "$argon2id$fake-hash"
+
+    async with (
+        AsyncClient(transport=ASGITransport(app=application), base_url=ORIGIN) as alice_client,
+        AsyncClient(transport=ASGITransport(app=application), base_url=ORIGIN) as mallory_client,
+    ):
+        await login_as(alice_client, "alice")
+        await login_as(mallory_client, "mallory")
+        alice_headers = {
+            "Origin": ORIGIN,
+            "X-CSRF-Token": alice_client.cookies["__Host-yv_csrf"],
+        }
+        group_response = await alice_client.post(
+            "/api/v1/conversations/group",
+            headers=alice_headers,
+            json={"title": "Media", "member_user_ids": [str(bob.id)]},
+        )
+        group_id = group_response.json()["conversation_id"]
+        body = b"fake-png-body"
+        client_attachment_id = uuid4()
+        query = (
+            "media_kind=image"
+            f"&byte_size={len(body)}"
+            f"&sha256={hashlib.sha256(body).hexdigest()}"
+            "&content_type=image%2Fpng"
+        )
+        uploaded = await alice_client.put(
+            f"/api/v1/conversations/{group_id}/attachments/{client_attachment_id}?{query}",
+            headers={**alice_headers, "Content-Type": "application/octet-stream"},
+            content=body,
+        )
+        assert uploaded.status_code == 201
+        attachment_id = uploaded.json()["attachment_id"]
+        assert uploaded.json()["byte_size"] == len(body)
+
+        sent = await alice_client.post(
+            f"/api/v1/conversations/{group_id}/messages",
+            headers=alice_headers,
+            json={
+                "client_message_id": str(uuid4()),
+                "protocol_version": 1,
+                "ciphertext_base64": base64.b64encode(b"group media envelope").decode(),
+                "attachment_ids": [attachment_id],
+            },
+        )
+        assert sent.status_code == 201
+        downloaded = await alice_client.get(
+            f"/api/v1/conversations/{group_id}/attachments/{attachment_id}"
+        )
+        foreign = await mallory_client.get(
+            f"/api/v1/conversations/{group_id}/attachments/{attachment_id}"
+        )
+        assert downloaded.status_code == 200
+        assert downloaded.content == body
+        assert downloaded.headers["content-type"] == "image/png"
+        assert foreign.status_code == 404
+
+        direct = await alice_client.post(
+            "/api/v1/conversations/direct",
+            headers=alice_headers,
+            json={"other_user_id": str(bob.id)},
+        )
+        rejected = await alice_client.put(
+            f"/api/v1/conversations/{direct.json()['conversation_id']}"
+            f"/attachments/{uuid4()}?{query}",
+            headers={**alice_headers, "Content-Type": "application/octet-stream"},
+            content=body,
+        )
+        assert rejected.status_code == 422
+        assert len(state.attachments) == 1
 
 
 async def test_send_opaque_message_and_reject_invalid_or_non_member_envelopes() -> None:

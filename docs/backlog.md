@@ -273,9 +273,12 @@ foundation; текущая product policy использует его тольк
 
 ### BL-016 — MediaStorage port и LocalMediaStorage
 
-Статус: **queued** (`WP-051` WIP сохранён и продолжится после срочных `WP-052`/`WP-053`).
+Статус: **in progress** (`WP-056` восстанавливает сохранённый `WP-051` backend WIP
+и выполняет group-first local-storage slice).
 
-Результат: backend потоково хранит opaque encrypted bytes в `/data/media` за application port.
+Результат: backend потоково хранит bytes под opaque key в `/data/media` за application
+port. В текущем group v1 slice bytes server-readable; будущий direct flow передаст в
+тот же port уже client-encrypted ciphertext.
 
 - generated opaque storage keys и prefix layout;
 - в БД только logical key, никогда absolute path/client filename;
@@ -297,15 +300,16 @@ foundation; текущая product policy использует его тольк
 
 ### BL-043 — Telegram-like photo/file experience поверх encrypted attachments
 
-Статус: **queued** (`WP-051` WIP сохранён; объединяет product UX с `BL-016`/`BL-017`).
+Статус: **in progress** (`WP-056` выполняет group-first photo/file UX; direct E2EE
+media и расширенная gallery остаются queued).
 
-Результат: пользователь удобно отправляет изображения и произвольные файлы, но
-backend видит только opaque encrypted bytes и bounded routing metadata.
+Результат: пользователь удобно отправляет изображения и произвольные файлы. В
+текущем group v1 slice backend видит исходные bytes и bounded metadata; direct MLS
+slice позже передаст только encrypted bytes.
 
-File key и encrypted metadata direct conversation доставляются только внутри MLS v2
-application message. Group v1 использует тот же encrypted-blob format, но server-readable
-envelope позволяет серверу получить ключ: такой group media flow явно не является E2EE
-и не получает secure badge до `BL-051`.
+File key и encrypted metadata direct conversation будут доставляться только внутри
+MLS v2 application message. Group v1 сейчас загружает исходные bytes без file key:
+такой flow явно не является E2EE и не получает secure badge до отдельной crypto-фичи.
 
 - attachment button, picker и drag/drop/paste там, где это поддерживает platform;
 - одно сообщение содержит caption и bounded ordered набор файлов; несколько фото

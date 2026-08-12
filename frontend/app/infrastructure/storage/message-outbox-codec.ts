@@ -56,6 +56,7 @@ function parseOutboxMessage(
   const nextAttemptAt = item.nextAttemptAt
   const cryptoGenerationId = item.cryptoGenerationId ?? null
   const cryptoEpoch = item.cryptoEpoch ?? null
+  const attachmentIds = item.attachmentIds ?? []
   if (
     (status !== 'pending' && status !== 'sending' && status !== 'sent' && status !== 'failed')
     || (failureCode !== null && failureCode !== 'conflict'
@@ -76,6 +77,10 @@ function parseOutboxMessage(
     || !Number.isSafeInteger(item.attemptCount)
     || Number(item.attemptCount) < 0
     || Number(item.attemptCount) > 1_000_000
+    || !Array.isArray(attachmentIds)
+    || attachmentIds.length > 10
+    || attachmentIds.some(value => typeof value !== 'string' || !value || value.length > 64)
+    || new Set(attachmentIds).size !== attachmentIds.length
   ) {
     throw new MessageOutboxError('corrupt')
   }
@@ -92,6 +97,7 @@ function parseOutboxMessage(
     ),
     cryptoGenerationId,
     cryptoEpoch: cryptoEpoch === null ? null : Number(cryptoEpoch),
+    ...(attachmentIds.length > 0 ? { attachmentIds: attachmentIds.map(String) } : {}),
     status,
     attemptCount: Number(item.attemptCount),
     createdAt: item.createdAt,

@@ -1033,7 +1033,24 @@ transfer `BL-015`, а не через выдачу keys сервером. Revoke
 
 ## 11. Attachments и media storage
 
-Attachment flow:
+Вложения имеют два разных security flow и не маскируются одним названием.
+
+Текущий group v1 flow:
+
+```text
+client validates type/size and computes SHA-256
+→ streams original bytes to an authenticated group-only endpoint
+→ server verifies membership, limits, digest and quota
+→ server stores server-readable bytes under an opaque storage key
+→ group v1 message carries bounded display metadata and attachment ID
+→ every download rechecks active membership, committed message and expiry
+```
+
+Это сознательно **не E2EE**: server видит group message, filename metadata и media
+bytes. UI обязан обозначать это, direct MLS v2 endpoint отклоняет такие bytes/IDs,
+а server не создаёт plaintext fallback для личного чата.
+
+Будущий direct MLS attachment flow (`BL-017`) имеет другую границу:
 
 ```text
 client validates type/size
@@ -1044,7 +1061,25 @@ client validates type/size
 → encrypted message carries attachment metadata/key material
 ```
 
-Server-generated `storage_key` — opaque logical key. Client filename никогда не используется как filesystem path. Application зависит от `MediaStorage`, default adapter — `LocalMediaStorage(/data/media)`. Upload/download streaming и bounded; server-side thumbnail/transcoding отсутствуют, потому что нарушили бы E2EE и resource budget.
+В обоих flow server-generated `storage_key` — opaque logical key. Client filename
+никогда не используется как filesystem path и сейчас хранится только внутри
+versioned group message envelope. Application зависит от `MediaStorage`, default
+adapter — `LocalMediaStorage(/data/media)`. Upload/download streaming и bounded;
+server-side thumbnail/transcoding отсутствуют. Безопасные image MIME могут
+возвращаться inline с `nosniff`, остальные файлы — только как
+`application/octet-stream` attachment.
+
+Committed group media наследует server-side `Message.expires_at` (default 30 days),
+uncommitted upload живёт не больше 24 часов. Bounded cleanup блокирует expiry batch
+через persistence adapter, терпит already-missing blob и удаляет metadata. Default
+limits: 12 MiB image, 25 MiB file, 150 MiB active media per uploader и 10 attachment
+IDs на message; первая UI-итерация отправляет один файл.
+
+Production использует persistent Compose volume, общий для API и cleanup, с
+one-shot permission init; он не публикует port и не добавляет container nginx.
+Переход на внешний S3 требует реализации `S3MediaStorage`, копирования существующих
+opaque keys и проверяемого cutover/rollback. Domain, use cases, HTTP message schema и
+таблица metadata при сохранении key-space не меняются; MinIO на том же VPS не нужен.
 
 ## 12. Server retention и local-first storage
 
@@ -1090,8 +1125,9 @@ path; WebSocket нужен только для уменьшения latency ру
 server history — она возможна только через будущий secure device-to-device transfer.
 Backup retention не должна сохранять TTL-deleted ciphertext бесконечно.
 
-Attachment/media TTL ещё не реализован: будущий cleanup должен идемпотентно удалять
-expired encrypted blobs и терпеть already-missing storage keys через `MediaStorage`.
+Group attachment cleanup реализован тем же low-memory process: pending blobs имеют
+24-hour TTL, committed blobs наследуют message expiry и удаляются bounded/idempotent
+через `MediaStorage`. Direct encrypted media и локальный OPFS cache ещё не реализованы.
 
 ## 13. PWA, realtime и Web Push
 

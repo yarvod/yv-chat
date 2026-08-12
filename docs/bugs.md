@@ -4,6 +4,32 @@
 
 ## Active
 
+### BUG-056 — Concurrent retry attachment upload мог оставить orphan blob
+
+- Статус: `fixed, full-CI verified; production rollout pending` (`WP-056`).
+- Severity: `medium storage correctness`.
+- Reproduction: два запроса одного device одновременно загружают разные HTTP body с
+  одинаковым `client_attachment_id`; оба проходят ранний idempotency lookup.
+- Ожидаемое поведение: один metadata row/opaque blob, compatible retry получает тот
+  же результат, incompatible retry получает `409`, лишний blob удаляется.
+- Причина: ранняя проверка до streaming write не сериализует конкурентные requests.
+- Исправление: после write uploader row блокируется, client ID повторно читается
+  `FOR UPDATE`, quota считается под той же serialization boundary, лишний object
+  удаляется до возврата результата/ошибки.
+
+### BUG-055 — Existing media volume мог остаться недоступным non-root backend
+
+- Статус: `fixed, full-CI verified; production rollout pending` (`WP-056`).
+- Severity: `high deployment availability`.
+- Reproduction: named volume уже создан Docker как root-owned directory, новый API
+  image запускается UID 65532 и пытается создать `/data/media/<prefix>`.
+- Ожидаемое поведение: deploy повторяемо подготавливает persistent volume, не меняя
+  host nginx и не требуя root API process.
+- Причина: ownership из Dockerfile применяется к image layer, но не гарантируется
+  для уже существующего mounted volume.
+- Исправление: bounded one-shot `media-init` с `CHOWN/FOWNER`, без network/ports и с
+  drop остальных capabilities; API/cleanup ждут его успешного завершения.
+
 ### BUG-054 — Stable connection status постоянно съедал высоту messenger shell
 
 - Статус: `fixed, frontend checks verified` (`WP-055`).
