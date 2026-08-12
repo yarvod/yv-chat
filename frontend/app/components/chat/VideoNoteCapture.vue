@@ -266,8 +266,11 @@ onBeforeUnmount(() => {
       :disabled="disabled"
       aria-label="Удерживайте, чтобы записать видеокружок"
       title="Удерживайте для записи · влево отмена · вверх фиксация"
+      @touchstart.prevent
       @pointerdown="beginRecording"
       @contextmenu.prevent
+      @selectstart.prevent
+      @dragstart.prevent
     >
       <span aria-hidden="true" />
     </button>

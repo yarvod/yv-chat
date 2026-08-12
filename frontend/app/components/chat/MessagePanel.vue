@@ -235,6 +235,15 @@ function senderName(message: TimelineMessage): string {
     ?? 'Участник'
 }
 
+function isStandaloneVideoNote(message: TimelineMessage): boolean {
+  const attachments = message.displayAttachments ?? []
+  return message.contentState === 'available'
+    && !message.displayBody?.trim()
+    && attachments.length === 1
+    && attachments[0]?.kind === 'video'
+    && attachments[0].presentation === 'video_note'
+}
+
 function replyPreview(message: TimelineMessage | null): string {
   if (!message) return 'Сообщение'
   if (message.contentState === 'deleted') return 'Удалённое сообщение'
@@ -941,6 +950,7 @@ onBeforeUnmount(() => {
             own: item.message.senderUserId === actorUserId,
             joined: item.joinedToPrevious,
             targeted: item.message.messageId === highlightedMessageId,
+            'message-bubble--video-note': isStandaloneVideoNote(item.message),
           }"
           :data-message-id="item.message.messageId"
           :data-sequence="item.message.sequence"

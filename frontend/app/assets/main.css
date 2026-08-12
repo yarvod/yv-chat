@@ -243,6 +243,10 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .message-bubble.joined { margin-top: 0; border-top-left-radius: 12px; }
 .message-bubble.own { align-self: flex-end; border-color: color-mix(in srgb, var(--primary) 28%, var(--border)); border-radius: 17px 5px 17px 17px; background: color-mix(in srgb, var(--primary) 13%, var(--surface-solid)); }
 .message-bubble.own.joined { border-top-right-radius: 12px; }
+.message-bubble.message-bubble--video-note { max-width: min(290px, 88%); padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.message-bubble--video-note .message-attachments { margin: 0 0 4px; overflow: visible; border-radius: 0; }
+.message-bubble--video-note .message-actions { padding-inline: 4px; }
+.message-bubble--video-note .message-meta { padding-inline: 6px; }
 .message-bubble.targeted { animation: message-target 1.8s ease-out both; }
 @keyframes message-target { 0%, 28% { border-color: var(--primary); box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 22%, transparent), 0 10px 30px var(--glow); } 100% { box-shadow: 0 5px 18px rgb(0 0 0 / 6%); } }
 .outbox-message { opacity: .88; }
@@ -373,8 +377,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .send-button { display: grid; width: 46px; height: 46px; place-items: center; padding: 0; border: 0; border-radius: 50%; color: var(--primary-ink); background: var(--primary); font-size: 1.05rem; font-weight: 850; transition: transform .15s ease; }
 .send-button:active { transform: scale(.93); }
 .send-button:disabled { cursor: default; opacity: .45; transform: none; }
-.video-note-capture { display: grid; width: 46px; height: 46px; place-items: center; }
-.video-note-button { position: relative; display: grid; width: 46px; height: 46px; place-items: center; padding: 0; border: 0; border-radius: 50%; color: var(--primary-ink); background: var(--primary); cursor: pointer; touch-action: none; user-select: none; -webkit-user-select: none; transition: transform .15s ease, box-shadow .15s ease; }
+.video-note-capture { display: grid; width: 46px; height: 46px; place-items: center; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.video-note-button { position: relative; display: grid; width: 46px; height: 46px; place-items: center; padding: 0; border: 0; border-radius: 50%; color: var(--primary-ink); background: var(--primary); cursor: pointer; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; -webkit-user-drag: none; transition: transform .15s ease, box-shadow .15s ease; }
 .video-note-button:active { transform: scale(.92); box-shadow: 0 0 0 7px color-mix(in srgb, var(--primary) 18%, transparent); }
 .video-note-button:disabled { cursor: default; opacity: .45; transform: none; }
 .video-note-button > span { position: relative; width: 23px; height: 18px; border: 2px solid currentcolor; border-radius: 6px; }

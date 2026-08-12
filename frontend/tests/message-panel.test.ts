@@ -31,6 +31,60 @@ const conversation = {
 }
 
 describe('message panel', () => {
+  it('renders a standalone video note without the generic square message frame', () => {
+    const videoNoteMessage = {
+      messageId: 'video-note-message',
+      clientMessageId: 'video-note-client',
+      conversationId: 'conversation-1',
+      senderUserId: 'alice-id',
+      senderDeviceId: 'alice-device',
+      protocolVersion: 1,
+      sequence: 1,
+      createdAt: '2026-08-13T12:00:00Z',
+      expiresAt: '2026-09-12T12:00:00Z',
+      ciphertextBase64: 'dmlkZW8tbm90ZQ==',
+      deletionReason: null,
+      deletedAt: null,
+      contentState: 'available' as const,
+      displayBody: '',
+      displayAttachments: [{
+        attachmentId: 'video-note-1',
+        kind: 'video' as const,
+        name: 'video-note.webm',
+        contentType: 'video/webm',
+        byteSize: 420,
+        presentation: 'video_note' as const,
+        durationSeconds: 9,
+      }],
+      contentSecure: false,
+    }
+    const wrapper = mount(MessagePanel, {
+      props: {
+        conversation: { ...conversation, conversationType: 'group', title: 'Team' },
+        messages: [videoNoteMessage],
+        actorUserId: 'alice-id',
+        sending: false,
+        protectionSecure: false,
+        protectionLabel: 'Группа без E2EE',
+        sendMessage: vi.fn(),
+        deleteMessage: vi.fn(),
+        deletingMessageId: null,
+        typingActorIds: [],
+        onlineActorIds: [],
+        deliveryStates: [],
+        connectionState: 'connected',
+        setTyping: vi.fn(),
+      },
+      global: {
+        stubs: {
+          MessageAttachments: { template: '<div class="fake-video-note" />' },
+        },
+      },
+    })
+
+    expect(wrapper.get('.message-bubble').classes()).toContain('message-bubble--video-note')
+  })
+
   it('opens intentional pickers and sends an ordered photo/video/arbitrary-file batch', async () => {
     Object.defineProperty(URL, 'createObjectURL', {
       configurable: true,

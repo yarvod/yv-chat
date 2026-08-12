@@ -67,6 +67,14 @@ describe('mobile application shell', () => {
     expect(mobileBlock).toMatch(/\.sidebar-actions \{[^}]*padding-top: calc\(10px \+ env\(safe-area-inset-top, 0px\)\);/)
   })
 
+  it('keeps video-note capture free of native long-press callouts and its player frameless', () => {
+    const css = readFileSync(resolve(process.cwd(), 'app/assets/main.css'), 'utf8')
+
+    expect(css).toMatch(/\.video-note-capture \{[^}]*touch-action: none;[^}]*user-select: none;[^}]*-webkit-touch-callout: none;/)
+    expect(css).toMatch(/\.video-note-button \{[^}]*-webkit-touch-callout: none;[^}]*-webkit-user-drag: none;/)
+    expect(css).toMatch(/\.message-bubble\.message-bubble--video-note \{[^}]*border: 0;[^}]*background: transparent;[^}]*box-shadow: none;/)
+  })
+
   it('overlays transient connection state without reserving a shell row', () => {
     const css = readFileSync(resolve(process.cwd(), 'app/assets/main.css'), 'utf8')
 

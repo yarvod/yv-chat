@@ -68,4 +68,7 @@
   `BUG-068` локально;
 - iPhone 13/iOS 18 acceptance выявил top safe-area overlap и keyboard viewport pan;
   mobile shell теперь следует за размером и offset visual viewport, а list toolbar
-  резервирует верхний safe area (`BUG-069`).
+  резервирует верхний safe area (`BUG-069`);
+- Pixel acceptance выявил native long-press conflict и generic square bubble вокруг
+  круглого player; gesture zone теперь подавляет selection/callout только локально,
+  а standalone video note отображается без общей rectangular card (`BUG-070`).

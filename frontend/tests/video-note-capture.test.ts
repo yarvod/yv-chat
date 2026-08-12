@@ -43,6 +43,21 @@ describe('video note capture gestures', () => {
     vi.useRealTimers()
   })
 
+  it('suppresses native long-press selection and context gestures on the capture button', () => {
+    const { recorder } = recordingHarness()
+    const wrapper = mount(VideoNoteCapture, {
+      props: { recorder, disabled: false },
+      global: { stubs: { Teleport: true } },
+    })
+    const button = wrapper.get('.video-note-button').element
+
+    for (const type of ['touchstart', 'contextmenu', 'selectstart', 'dragstart']) {
+      const event = new Event(type, { bubbles: true, cancelable: true })
+      button.dispatchEvent(event)
+      expect(event.defaultPrevented, type).toBe(true)
+    }
+  })
+
   it('records on hold/release and emits one compact video note', async () => {
     const { recorder, session } = recordingHarness()
     const wrapper = mount(VideoNoteCapture, {

@@ -4,6 +4,22 @@
 
 ## Active
 
+### BUG-070 — Pixel long-press конфликтовал с записью и кружок наследовал рамку сообщения
+
+- Статус: `fixed locally; physical Android acceptance pending` (`WP-073`).
+- Severity: `medium video-note gesture/presentation UX`.
+- Production reproduction: удержание camera control на Pixel даёт системный haptic
+  long-press и может завершить capture gesture; отправленный круг отображается внутри
+  общей прямоугольной message card.
+- Причина: pointer/context suppression не закрывала отдельные native touch selection,
+  selectstart/drag и touch-callout paths; timeline применял generic bubble chrome ко
+  всем сообщениям независимо от presentation metadata.
+- Исправление: capture control подавляет только собственные native long-press paths,
+  не запрещая выделение текста сообщений; одиночный `video_note` без подписи получает
+  frameless bubble variant, а обычные video и сообщения с текстом не меняются.
+- Проверка: component tests фиксируют cancelled native gesture events и selection
+  class; CSS regression требует touch-callout suppression и прозрачный frameless shell.
+
 ### BUG-069 — iOS PWA перекрывала toolbar и переносила composer под вырез
 
 - Статус: `fixed locally; iPhone acceptance pending` (`WP-073`).
