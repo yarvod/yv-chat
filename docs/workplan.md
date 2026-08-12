@@ -6,7 +6,7 @@
 
 ## WP-056 — Фото и файлы в групповых чатах с 30-дневным media TTL
 
-Статус: **in progress**
+Статус: **completed** (`5135a50`; production run `31551963185`)
 Backlog: `BL-016`, group-first slice `BL-043`, media часть `BL-018`
 
 Цель: дать участникам групп удобную отправку изображений и произвольных файлов,
@@ -79,7 +79,7 @@ client-side encrypted flow.
   direct fail-closed и expired state;
 - [x] backend ruff/format/mypy/pytest, frontend lint/typecheck/Vitest/build,
   compose config и полный `make ci` зелёные;
-- [ ] production rollout: migration, persistent volume, health/log/API smoke и
+- [x] production rollout: migration, persistent volume, health/log/API smoke и
   отсутствие влияния на `yoowee.ru`/`s3.yoowee.ru`.
 
 ### Ограничения
@@ -98,3 +98,15 @@ client-side encrypted flow.
 - direct MLS confidentiality не понижена;
 - storage implementation заменяема на S3 adapter без изменения use cases;
 - tests, docs, focused commit и production verification завершены.
+
+### Production evidence
+
+- independent CI run `31551963116` и deploy run `31551963185` завершились успешно;
+- production containers используют immutable `sha-5135a50...`, migration показывает
+  `0019_group_attachments (head)`;
+- `/data/media` доступен non-root API как `0700:65532:65532`, cleanup выполнил
+  первый bounded media pass без ошибок;
+- public `chat` health/app отвечают `200`, anonymous attachment request — `401`;
+- host nginx `active`, yv-chat Compose содержит только API/cleanup/frontend/Postgres;
+  `yoowee.ru` после redirect отвечает `200`, anonymous root `s3.yoowee.ru` —
+  ожидаемым `403` без TLS/connection failure.

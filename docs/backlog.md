@@ -273,8 +273,7 @@ foundation; текущая product policy использует его тольк
 
 ### BL-016 — MediaStorage port и LocalMediaStorage
 
-Статус: **in progress** (`WP-056` восстанавливает сохранённый `WP-051` backend WIP
-и выполняет group-first local-storage slice).
+Статус: **completed** (`WP-056`, `5135a50`, production run `31551963185`).
 
 Результат: backend потоково хранит bytes под opaque key в `/data/media` за application
 port. В текущем group v1 slice bytes server-readable; будущий direct flow передаст в
@@ -300,8 +299,8 @@ port. В текущем group v1 slice bytes server-readable; будущий dir
 
 ### BL-043 — Telegram-like photo/file experience поверх encrypted attachments
 
-Статус: **in progress** (`WP-056` выполняет group-first photo/file UX; direct E2EE
-media и расширенная gallery остаются queued).
+Статус: **частично выполнено** (`WP-056` завершил и развернул group-first single-file
+photo/file UX; direct E2EE media и расширенная gallery остаются queued).
 
 Результат: пользователь удобно отправляет изображения и произвольные файлы. В
 текущем group v1 slice backend видит исходные bytes и bounded metadata; direct MLS
@@ -328,8 +327,9 @@ MLS v2 application message. Group v1 сейчас загружает исход�
 ### BL-018 — Server TTL cleanup и tombstone retention
 
 Статус: **частично выполнено** (`WP-028` завершил message ciphertext TTL,
-tombstones, bounded PostgreSQL cleanup и monotonic sequence; media/per-type/forever
-policy остаются).
+tombstones, bounded PostgreSQL cleanup и monotonic sequence; `WP-056` добавил
+24-hour pending и 30-day committed group media cleanup; per-type/forever policy
+остаётся).
 
 Результат: expired ciphertext/media удаляются идемпотентно и безопасно повторяются.
 

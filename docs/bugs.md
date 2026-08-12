@@ -6,7 +6,7 @@
 
 ### BUG-056 — Concurrent retry attachment upload мог оставить orphan blob
 
-- Статус: `fixed, full-CI verified; production rollout pending` (`WP-056`).
+- Статус: `fixed, full-CI and production verified` (`WP-056`, `5135a50`).
 - Severity: `medium storage correctness`.
 - Reproduction: два запроса одного device одновременно загружают разные HTTP body с
   одинаковым `client_attachment_id`; оба проходят ранний idempotency lookup.
@@ -19,7 +19,7 @@
 
 ### BUG-055 — Existing media volume мог остаться недоступным non-root backend
 
-- Статус: `fixed, full-CI verified; production rollout pending` (`WP-056`).
+- Статус: `fixed, full-CI and production verified` (`WP-056`, `5135a50`).
 - Severity: `high deployment availability`.
 - Reproduction: named volume уже создан Docker как root-owned directory, новый API
   image запускается UID 65532 и пытается создать `/data/media/<prefix>`.
