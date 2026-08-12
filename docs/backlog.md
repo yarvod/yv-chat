@@ -461,6 +461,8 @@ upgrade migration gate и offline outbox остаются).
 
 ### BL-026 — Push subscriptions и VAPID
 
+Статус: **in progress через `WP-061`**.
+
 Результат: каждая browser installation управляет собственной subscription.
 
 - permission только после user gesture, включая installed iOS/iPadOS PWA constraints;
@@ -471,6 +473,8 @@ upgrade migration gate и offline outbox остаются).
 
 ### BL-027 — Privacy-safe push dispatcher
 
+Статус: **in progress через `WP-061`**.
+
 Результат: push будит клиент opaque routing hint, а message correctness остаётся у sync.
 
 - payload только version/event/conversation/message IDs или `sync_required`;
@@ -480,6 +484,8 @@ upgrade migration gate и offline outbox остаются).
 - push failure не откатывает message.
 
 ### BL-028 — Notification UX, preferences и deduplication
+
+Статус: **MVP slice in progress через `WP-061`; mute/badge/rich controls остаются**.
 
 Результат: foreground/background уведомления не дублируют unread state.
 

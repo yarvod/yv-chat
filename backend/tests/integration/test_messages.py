@@ -70,7 +70,7 @@ from messenger.infrastructure.persistence.models import (
     SyncStreamModel,
     UserModel,
 )
-from tests.application.fakes import FixedClock, RecordingRealtimeNotifier
+from tests.application.fakes import FixedClock, RecordingPushNotifier, RecordingRealtimeNotifier
 
 NOW = datetime(2026, 8, 11, 12, 0, tzinfo=UTC)
 PASSWORD = "correct horse battery staple"
@@ -165,6 +165,7 @@ async def run_flow(database_url: str) -> None:
             retention_policy=MessageRetentionPolicy(timedelta(days=30), timedelta(days=90)),
             sync_policy=SyncPolicy(),
             realtime_notifier=RecordingRealtimeNotifier(),
+            push_notifier=RecordingPushNotifier(),
         )
         ciphertext = b"\x00\xffopaque-postgresql-envelope"
         client_message_id = uuid4()
@@ -345,6 +346,7 @@ async def run_flow(database_url: str) -> None:
             retention_policy=MessageRetentionPolicy(timedelta(days=30), timedelta(days=90)),
             sync_policy=SyncPolicy(),
             realtime_notifier=RecordingRealtimeNotifier(),
+            push_notifier=RecordingPushNotifier(),
         )
         resumed = await resumed_send.execute(
             SendOpaqueMessageCommand(

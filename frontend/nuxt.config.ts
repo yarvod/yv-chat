@@ -80,6 +80,7 @@ export default defineNuxtConfig({
       ],
     },
     workbox: {
+      importScripts: ['/sw-push.js'],
       navigateFallback: '/',
       maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
       globPatterns: ['**/*.{css,html,ico,js,png,svg,wasm,webmanifest}'],

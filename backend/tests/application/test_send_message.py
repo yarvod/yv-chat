@@ -41,6 +41,7 @@ from tests.application.fakes import (
     FakeMessagingUnitOfWorkFactory,
     FixedClock,
     IdentityState,
+    RecordingPushNotifier,
     RecordingRealtimeNotifier,
 )
 
@@ -76,6 +77,7 @@ async def test_send_persists_only_opaque_envelope_metadata() -> None:
         retention_policy=RETENTION,
         sync_policy=SyncPolicy(),
         realtime_notifier=RecordingRealtimeNotifier(),
+        push_notifier=RecordingPushNotifier(),
     )
     client_message_id = uuid4()
     command = SendOpaqueMessageCommand(
@@ -176,6 +178,7 @@ async def test_conversation_type_enforces_new_protocol_but_preserves_historical_
         retention_policy=RETENTION,
         sync_policy=SyncPolicy(),
         realtime_notifier=RecordingRealtimeNotifier(),
+        push_notifier=RecordingPushNotifier(),
     )
 
     with pytest.raises(InvalidMessageEnvelopeError, match="direct conversation requires"):
@@ -330,6 +333,7 @@ async def test_send_rejects_non_member_and_foreign_or_revoked_device() -> None:
         retention_policy=RETENTION,
         sync_policy=SyncPolicy(),
         realtime_notifier=RecordingRealtimeNotifier(),
+        push_notifier=RecordingPushNotifier(),
     )
     charlie_device = Device.create(user_id=charlie.id, name="Charlie device", now=NOW)
     state.devices[charlie_device.id] = charlie_device
@@ -380,6 +384,7 @@ async def test_send_retry_remains_idempotent_after_ciphertext_is_scrubbed() -> N
         retention_policy=RETENTION,
         sync_policy=SyncPolicy(),
         realtime_notifier=RecordingRealtimeNotifier(),
+        push_notifier=RecordingPushNotifier(),
     )
     command = SendOpaqueMessageCommand(alice.id, device.id, conversation.id, uuid4(), 1, b"opaque")
     sent = await use_case.execute(command)
@@ -416,6 +421,7 @@ async def test_send_rejects_unsupported_empty_and_oversized_envelopes() -> None:
         retention_policy=RETENTION,
         sync_policy=SyncPolicy(),
         realtime_notifier=RecordingRealtimeNotifier(),
+        push_notifier=RecordingPushNotifier(),
     )
     for version, ciphertext in ((2, b"opaque"), (1, b""), (1, b"x" * 9)):
         with pytest.raises(InvalidMessageEnvelopeError):
@@ -443,6 +449,7 @@ async def test_realtime_failure_does_not_rollback_committed_message() -> None:
         retention_policy=RETENTION,
         sync_policy=SyncPolicy(),
         realtime_notifier=notifier,
+        push_notifier=RecordingPushNotifier(),
     )
     result = await use_case.execute(
         SendOpaqueMessageCommand(
@@ -457,6 +464,61 @@ async def test_realtime_failure_does_not_rollback_committed_message() -> None:
 
     assert state.messages[result.message_id].ciphertext == b"opaque"
     assert state.commits == 1
+
+
+async def test_send_pushes_only_recipient_after_commit_and_isolates_push_failure() -> None:
+    state, alice, bob, _, device, conversation = messaging_state()
+    notifier = RecordingPushNotifier()
+    use_case = SendOpaqueMessage(
+        unit_of_work=FakeMessagingUnitOfWorkFactory(state),
+        clock=FixedClock(NOW + timedelta(seconds=1)),
+        message_policy=MessageEnvelopePolicy(),
+        attachment_policy=AttachmentPolicy(),
+        retention_policy=RETENTION,
+        sync_policy=SyncPolicy(),
+        realtime_notifier=RecordingRealtimeNotifier(),
+        push_notifier=notifier,
+    )
+    result = await use_case.execute(
+        SendOpaqueMessageCommand(
+            alice.id,
+            device.id,
+            conversation.id,
+            uuid4(),
+            1,
+            b"opaque",
+        )
+    )
+
+    assert state.commits == 1
+    assert len(notifier.notifications) == 1
+    notification = notifier.notifications[0]
+    assert notification.user_id == bob.id
+    assert notification.conversation_id == conversation.id
+    assert notification.message_id == result.message_id
+
+    failing = SendOpaqueMessage(
+        unit_of_work=FakeMessagingUnitOfWorkFactory(state),
+        clock=FixedClock(NOW + timedelta(seconds=2)),
+        message_policy=MessageEnvelopePolicy(),
+        attachment_policy=AttachmentPolicy(),
+        retention_policy=RETENTION,
+        sync_policy=SyncPolicy(),
+        realtime_notifier=RecordingRealtimeNotifier(),
+        push_notifier=RecordingPushNotifier(fail=True),
+    )
+    second = await failing.execute(
+        SendOpaqueMessageCommand(
+            alice.id,
+            device.id,
+            conversation.id,
+            uuid4(),
+            1,
+            b"another-opaque",
+        )
+    )
+    assert state.messages[second.message_id].ciphertext == b"another-opaque"
+    assert state.commits == 2
 
 
 async def test_v2_send_requires_ready_generation_and_sender_leaf() -> None:
@@ -475,6 +537,7 @@ async def test_v2_send_requires_ready_generation_and_sender_leaf() -> None:
         retention_policy=RETENTION,
         sync_policy=SyncPolicy(),
         realtime_notifier=RecordingRealtimeNotifier(),
+        push_notifier=RecordingPushNotifier(),
     )
     command = SendOpaqueMessageCommand(
         alice.id,

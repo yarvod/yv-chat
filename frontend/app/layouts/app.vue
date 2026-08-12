@@ -4,6 +4,7 @@ import { computed } from 'vue'
 import AppIcon from '../components/ui/AppIcon.vue'
 import BrandMark from '../components/ui/BrandMark.vue'
 import ConnectionStatus from '../components/ui/ConnectionStatus.vue'
+import PushPermissionPrompt from '../components/ui/PushPermissionPrompt.vue'
 import { selectedConversationId } from '../presentation/chat/conversation-route'
 import type { AppIconName } from '../presentation/icons'
 import { useAuth } from '../presentation/composables/useAuth'
@@ -40,6 +41,7 @@ async function reconnectDevice(): Promise<void> {
 <template>
   <main class="product-shell" :class="{ 'product-shell--conversation': conversationFocused }">
     <ConnectionStatus />
+    <PushPermissionPrompt />
     <p
       v-if="deviceCrypto.state.status === 'unavailable'"
       class="device-crypto-warning"

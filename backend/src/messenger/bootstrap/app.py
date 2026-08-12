@@ -25,6 +25,7 @@ from messenger.presentation.http.key_packages import (
 from messenger.presentation.http.key_packages import device_router as key_package_device_router
 from messenger.presentation.http.me import router as me_router
 from messenger.presentation.http.messages import router as messages_router
+from messenger.presentation.http.push import router as push_router
 from messenger.presentation.http.read_states import router as read_states_router
 from messenger.presentation.http.realtime import router as realtime_router
 from messenger.presentation.http.sync import router as sync_router
@@ -80,6 +81,7 @@ def create_app(
     application.include_router(messages_router)
     application.include_router(sync_router)
     application.include_router(realtime_router)
+    application.include_router(push_router)
     application.include_router(read_states_router)
     application.include_router(delivery_states_router)
     setup_dishka(container=resolved_container, app=application)

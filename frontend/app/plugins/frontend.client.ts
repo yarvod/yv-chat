@@ -78,6 +78,9 @@ import { BrowserRealtimeGateway } from '../infrastructure/realtime/browser-realt
 import { CryptoWorkerClient } from '../infrastructure/crypto/crypto-worker-client'
 import { IndexedDbConversationCryptoState } from '../infrastructure/storage/indexeddb-conversation-crypto-state'
 import { ConnectionMonitor } from '../application/connectivity/connection-monitor'
+import { PushNotificationManager } from '../application/notifications/push-notification-manager'
+import { BrowserPushAdapter } from '../infrastructure/browser/browser-push'
+import { HttpPushRegistrationGateway } from '../infrastructure/http/push-registration-gateway'
 
 export default defineNuxtPlugin(() => {
   const apiClient = new ApiClient()
@@ -102,6 +105,7 @@ export default defineNuxtPlugin(() => {
   const pageVisibility = new BrowserPageVisibility()
   const networkStatus = new BrowserNetworkStatus()
   const serverHealthGateway = new HttpServerHealthGateway(apiClient)
+  const pushRegistrationGateway = new HttpPushRegistrationGateway(apiClient)
   const themePreference = themePreferences.load()
   const messageArchive = new IndexedDbMessageArchive()
   const messengerSnapshotStore = new IndexedDbMessengerSnapshotStore()
@@ -186,6 +190,10 @@ export default defineNuxtPlugin(() => {
           serverHealthGateway,
           networkStatus,
           scheduler,
+        ),
+        pushNotifications: new PushNotificationManager(
+          new BrowserPushAdapter(),
+          pushRegistrationGateway,
         ),
         deviceCryptoSession,
         getDeviceCryptoRegistration: new GetDeviceCryptoRegistration(deviceCryptoRegistryGateway),

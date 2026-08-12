@@ -1,5 +1,6 @@
 """Typed application configuration."""
 
+from base64 import urlsafe_b64decode
 from datetime import timedelta
 from enum import StrEnum
 from ipaddress import ip_network
@@ -75,6 +76,16 @@ class AppSettings(BaseSettings):
     realtime_queue_size: int = Field(default=64, ge=1, le=1_024)
     realtime_heartbeat_seconds: int = Field(default=25, ge=5, le=120)
     realtime_revalidation_seconds: int = Field(default=30, ge=5, le=300)
+    vapid_public_key: str | None = None
+    vapid_private_key: SecretStr | None = None
+    vapid_contact: str | None = None
+    push_ttl_seconds: int = Field(default=300, ge=0, le=86_400)
+    push_timeout_seconds: float = Field(default=5.0, gt=0, le=30)
+
+    @field_validator("vapid_public_key", "vapid_private_key", "vapid_contact", mode="before")
+    @classmethod
+    def normalize_optional_vapid_value(cls, value: object) -> object:
+        return None if value == "" else value
 
     @field_validator("allowed_origins")
     @classmethod
@@ -123,7 +134,51 @@ class AppSettings(BaseSettings):
             self.media_file_max_bytes,
         ):
             raise ValueError("media user quota must fit one maximum attachment")
+        vapid_values = (self.vapid_public_key, self.vapid_private_key, self.vapid_contact)
+        if any(value is not None for value in vapid_values) and not all(
+            value is not None for value in vapid_values
+        ):
+            raise ValueError(
+                "VAPID public key, private key and contact must be configured together"
+            )
+        if self.vapid_public_key is not None:
+            private_setting = self.vapid_private_key
+            if private_setting is None:
+                raise ValueError("VAPID private key is required")
+            try:
+                public_key = urlsafe_b64decode(
+                    self.vapid_public_key + "=" * (-len(self.vapid_public_key) % 4)
+                )
+                private_value = private_setting.get_secret_value()
+                private_key = urlsafe_b64decode(private_value + "=" * (-len(private_value) % 4))
+            except ValueError as error:
+                raise ValueError("VAPID keys must use base64url encoding") from error
+            if (
+                len(public_key) != 65
+                or public_key[0] != 4
+                or not (len(private_key) == 32 or 64 <= len(private_key) <= 256)
+            ):
+                raise ValueError("VAPID keys have invalid P-256 lengths")
+            contact = self.vapid_contact or ""
+            if not (contact.startswith("mailto:") or contact.startswith("https://")):
+                raise ValueError("VAPID contact must use mailto: or https://")
         return self
+
+    @property
+    def push_enabled(self) -> bool:
+        return self.vapid_public_key is not None
+
+    @property
+    def vapid_private_key_value(self) -> str:
+        if self.vapid_private_key is None:
+            raise RuntimeError("Web Push is disabled")
+        return self.vapid_private_key.get_secret_value()
+
+    @property
+    def vapid_contact_value(self) -> str:
+        if self.vapid_contact is None:
+            raise RuntimeError("Web Push is disabled")
+        return self.vapid_contact
 
     @property
     def expose_api_schema(self) -> bool:

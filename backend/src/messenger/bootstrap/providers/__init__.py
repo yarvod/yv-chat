@@ -12,6 +12,7 @@ from messenger.bootstrap.providers.device_crypto import DeviceCryptoUseCaseProvi
 from messenger.bootstrap.providers.devices import DeviceUseCaseProvider
 from messenger.bootstrap.providers.messaging import MessagingUseCaseProvider
 from messenger.bootstrap.providers.persistence import PersistenceProvider
+from messenger.bootstrap.providers.push import PushProvider
 from messenger.bootstrap.providers.realtime import RealtimeProvider
 from messenger.bootstrap.providers.sessions import SessionUseCaseProvider
 from messenger.bootstrap.providers.settings import SettingsProvider
@@ -26,6 +27,7 @@ def application_providers(settings: AppSettings) -> tuple[Provider, ...]:
         SecurityAdapterProvider(),
         AttachmentProvider(),
         RealtimeProvider(),
+        PushProvider(),
         AccountUseCaseProvider(),
         CurrentAccountUseCaseProvider(),
         ConversationUseCaseProvider(),

@@ -167,3 +167,7 @@ class InvalidReadSequenceError(ApplicationError):
 
 class InvalidDeliverySequenceError(ApplicationError):
     """A delivery cursor does not identify an existing authorized message."""
+
+
+class PushSubscriptionConflictError(ApplicationError):
+    """A browser push endpoint is already bound to another device."""

@@ -385,6 +385,12 @@ legend { padding: 0 6px; color: var(--muted); font-size: .8rem; }
 .settings-card h2 { margin: 0; font-size: 1.05rem; }
 .settings-card p { margin: 5px 0 0; color: var(--muted); line-height: 1.45; }
 .settings-card__heading { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 19px; }
+.notification-privacy-note { padding: 12px 14px; border-radius: 14px; background: color-mix(in srgb, var(--primary) 8%, transparent); }
+.settings-inline-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+.push-permission-prompt { position: fixed; z-index: 80; right: 18px; bottom: max(18px, env(safe-area-inset-bottom)); width: min(420px, calc(100vw - 28px)); display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 18px; background: var(--surface-solid); box-shadow: 0 18px 60px rgb(0 0 0 / 18%); }
+.push-permission-prompt > div:first-child { display: grid; gap: 3px; min-width: 0; }
+.push-permission-prompt span { color: var(--muted); font-size: .82rem; line-height: 1.35; }
+.push-permission-prompt__actions { display: flex; align-items: center; gap: 8px; flex: none; }
 .settings-icon { display: grid; flex: 0 0 auto; width: 42px; height: 42px; place-items: center; border-radius: 14px; color: var(--primary); background: color-mix(in srgb, var(--primary) 12%, transparent); font-size: 1.2rem; }
 .segmented-control { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; padding: 5px; border-radius: 14px; background: var(--field); }
 .segmented-control button { min-height: 40px; border: 0; border-radius: 10px; color: var(--muted); background: transparent; font-size: .8rem; font-weight: 700; }
@@ -466,6 +472,8 @@ legend { padding: 0 6px; color: var(--muted); font-size: .8rem; }
 @keyframes bubble-in { from { opacity: 0; transform: translateY(5px) scale(.985); } to { opacity: 1; transform: none; } }
 
 @media (max-width: 840px) {
+  .push-permission-prompt { left: 14px; right: 14px; bottom: calc(var(--mobile-tabs-slot-height) + 10px); width: auto; align-items: stretch; flex-direction: column; }
+  .push-permission-prompt__actions { justify-content: flex-end; }
   .auth-layout { grid-template-columns: 1fr; }
   .auth-hero { min-height: 30dvh; padding: 25px 24px; }
   .auth-hero__copy { padding: 38px 0 12px; }

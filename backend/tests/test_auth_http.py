@@ -81,6 +81,7 @@ from messenger.application.ports.media_storage import MediaStorage
 from messenger.application.ports.messages import MessagingUnitOfWorkFactory
 from messenger.application.ports.password_reset_secrets import PasswordResetSecretService
 from messenger.application.ports.passwords import PasswordHasher
+from messenger.application.ports.push import PushNotifier
 from messenger.application.ports.realtime import RealtimeHub, RealtimeNotifier
 from messenger.application.ports.session_credentials import SessionCredentialService
 from messenger.application.ports.sync import SyncUnitOfWorkFactory
@@ -113,6 +114,7 @@ from tests.application.fakes import (
     FakeSyncUnitOfWorkFactory,
     FixedSessionCredentials,
     IdentityState,
+    RecordingPushNotifier,
     SequentialActivationSecrets,
 )
 
@@ -273,6 +275,10 @@ class HttpTestProvider(Provider):
     @provide(scope=Scope.APP)
     def realtime_notifier(self) -> RealtimeNotifier:
         return self._realtime_hub
+
+    @provide(scope=Scope.APP)
+    def push_notifier(self) -> PushNotifier:
+        return RecordingPushNotifier()
 
     login = provide(Login, scope=Scope.REQUEST)
     authenticate_session = provide(AuthenticateSession, scope=Scope.REQUEST)

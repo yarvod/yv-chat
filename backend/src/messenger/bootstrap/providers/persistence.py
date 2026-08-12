@@ -11,6 +11,7 @@ from messenger.application.ports.conversations import ConversationUnitOfWorkFact
 from messenger.application.ports.device_crypto import DeviceCryptoUnitOfWorkFactory
 from messenger.application.ports.identity import IdentityUnitOfWorkFactory
 from messenger.application.ports.messages import MessagingUnitOfWorkFactory
+from messenger.application.ports.push import PushUnitOfWorkFactory
 from messenger.application.ports.sync import SyncUnitOfWorkFactory
 from messenger.bootstrap.settings import AppSettings
 from messenger.infrastructure.persistence.attachment_uow import (
@@ -30,6 +31,7 @@ from messenger.infrastructure.persistence.identity_uow import SqlAlchemyIdentity
 from messenger.infrastructure.persistence.messaging_uow import (
     SqlAlchemyMessagingUnitOfWorkFactory,
 )
+from messenger.infrastructure.persistence.push_uow import SqlAlchemyPushUnitOfWorkFactory
 from messenger.infrastructure.persistence.sync_uow import SqlAlchemySyncUnitOfWorkFactory
 
 
@@ -99,3 +101,10 @@ class PersistenceProvider(Provider):
         session_factory: async_sessionmaker[AsyncSession],
     ) -> SyncUnitOfWorkFactory:
         return SqlAlchemySyncUnitOfWorkFactory(session_factory)
+
+    @provide(scope=Scope.APP)
+    def push_unit_of_work_factory(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> PushUnitOfWorkFactory:
+        return SqlAlchemyPushUnitOfWorkFactory(session_factory)

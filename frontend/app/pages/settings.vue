@@ -5,6 +5,7 @@ import DeviceSessionsCard from '../components/settings/DeviceSessionsCard.vue'
 import PasswordSecurityCard from '../components/settings/PasswordSecurityCard.vue'
 import ProfileCard from '../components/settings/ProfileCard.vue'
 import SecurityEventsCard from '../components/settings/SecurityEventsCard.vue'
+import NotificationSettingsCard from '../components/settings/NotificationSettingsCard.vue'
 import LogoutDeviceCard from '../components/settings/LogoutDeviceCard.vue'
 import { ApplicationError } from '../application/errors'
 import type { CurrentAccount } from '../domain/accounts/account'
@@ -40,6 +41,7 @@ async function logoutCurrentDevice(): Promise<void> {
   loggingOut.value = true
   logoutError.value = null
   try {
+    await $frontend.pushNotifications.disable().catch(() => undefined)
     await auth.logout()
     await navigateTo('/login?logged-out=1')
   } catch (error) {
@@ -76,6 +78,7 @@ async function logoutCurrentDevice(): Promise<void> {
         <small class="muted">Информация приблизительная и не используется для авторизации.</small>
       </article>
       <DeviceSessionsCard />
+      <NotificationSettingsCard />
       <PasswordSecurityCard @security-reset="securityResetCompleted" />
       <SecurityEventsCard />
       <LogoutDeviceCard :busy="loggingOut" :error="logoutError" @confirm="logoutCurrentDevice" />

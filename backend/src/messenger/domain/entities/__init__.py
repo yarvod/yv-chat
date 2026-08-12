@@ -24,6 +24,7 @@ from messenger.domain.entities.device_crypto_identity import (
 )
 from messenger.domain.entities.message import Message, MessageDeletionReason
 from messenger.domain.entities.password_reset_token import PasswordResetToken
+from messenger.domain.entities.push_subscription import PushSubscription
 from messenger.domain.entities.security_event import SecurityEvent, SecurityEventType
 from messenger.domain.entities.session import Session
 from messenger.domain.entities.user import User
@@ -46,6 +47,7 @@ __all__ = [
     "Message",
     "MessageDeletionReason",
     "PasswordResetToken",
+    "PushSubscription",
     "Device",
     "DeviceCryptoIdentity",
     "DeviceKeyPackage",

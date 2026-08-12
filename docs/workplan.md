@@ -4,82 +4,88 @@
 завершённая работа фиксируется отдельным коммитом, а новый пункт переносится
 сюда из `backlog.md`.
 
-## WP-060 — Byte-accurate attachment upload progress
+## WP-061 — Device-bound Web Push notifications
 
-Статус: **completed and production-verified**
-Backlog: visual/messaging polish slice `BL-041`
+Статус: **in progress**
+Backlog: `BL-026`, `BL-027`, MVP slice `BL-028`
 
-Цель: при отправке фото, видео и файлов в group chat пользователь видит плавный,
-реальный прогресс передачи данных как в привычном messenger UI, а не только счётчик
-«файл N из M».
+Цель: установленная PWA или поддерживаемый browser получает системное уведомление
+о новом сообщении в background/closed-tab состоянии, не раскрывая plaintext,
+crypto material или session credentials push provider-у.
 
 ### Product scope
 
-- [x] показывать общий процент по сумме байтов всех выбранных вложений;
-- [x] показывать progress bar и процент на каждом attachment preview/file card;
-- [x] уже загруженные элементы остаются на 100%, текущий отражает реальные network
-  bytes, ожидающие остаются на 0%;
-- [x] различать «загружаем» и короткую финальную фазу «сохраняем сообщение»;
-- [x] не позволять удалить/переставить выбранные элементы во время активной загрузки;
-- [x] progress semantics доступны screen reader через `role=progressbar` и ARIA values;
-- [x] batch до 10 mixed image/video/file сохраняет существующий sequential,
-  idempotent и retry-safe upload contract.
+- [x] настройка показывает platform support и фактический permission/subscription status;
+- [x] native permission prompt запускается только явной кнопкой пользователя;
+- [x] одна browser installation регистрирует subscription текущего authenticated device;
+- [x] changed/expired subscription пере-регистрируется, UI logout удаляет текущую subscription;
+- [x] background push показывает generic notification без имени/текста/имени файла;
+- [x] click фокусирует существующую PWA либо открывает `/chat?conversation=<id>`;
+- [x] foreground visible client не получает лишнюю system notification;
+- [x] отправитель не получает push собственного сообщения на своих устройствах;
+- [x] unsupported/denied/iOS-not-installed состояния объясняются без бесконечных prompts.
 
-### Implementation и проверки
+### Backend implementation
 
-- [x] добавить typed byte-progress callback в attachment application port/use case;
-- [x] реализовать same-origin binary upload через `XMLHttpRequest.upload.onprogress`
-  с прежними cookie, CSRF, status/error и strict JSON semantics;
-- [x] агрегировать sent/total bytes в `useMessenger`, не переносить transport detail в Vue;
-- [x] отрисовать stable progress UI без изменения composer height/scroll geometry;
-- [x] покрыть transport events, use-case forwarding, aggregate byte math и component UX;
-- [x] выполнить frontend lint/typecheck/Vitest/build и полный repository CI;
-- [x] commit/push/deploy и проверить production health/logs/соседние домены.
+- [x] добавить typed push subscription entity/DTO/repository port и отдельную migration;
+- [x] endpoint public VAPID configuration и authenticated current-device upsert/delete;
+- [x] сервер повторно проверяет ownership текущего `device_id`, endpoint uniqueness и bounds;
+- [x] infrastructure adapter использует стандарт Web Push/VAPID и отправляет bounded payload;
+- [x] после message commit выполняется best-effort dispatch recipient devices;
+- [x] HTTP 404/410 отключает permanent invalid subscription, transient failure только логируется;
+- [x] logs содержат только opaque IDs/count/status class, не endpoint/keys/payload content.
+
+### Frontend implementation
+
+- [x] application port/use cases изолируют browser Push API и HTTP subscription API;
+- [x] Service Worker обрабатывает `push`/`notificationclick`, dedup по stable `event_id`;
+- [x] payload валидируется и содержит только version/event/conversation/message IDs;
+- [x] settings card позволяет включить/выключить и восстановить changed subscription;
+- [x] CSRF/cookie policy остаётся same-origin; subscription не хранит auth bearer credential;
+- [x] install/update/offline shell lifecycle остаётся совместим с существующим Workbox SW.
 
 ### Security и correctness invariants
 
-- auth credential остаётся только в `HttpOnly` cookie; progress transport не создаёт
-  bearer token, query credential или новый storage;
-- CSRF header и same-origin credential policy не меняются;
-- callback получает только bounded byte counts и не видит содержимое файла;
-- direct MLS attachments по-прежнему запрещены до отдельного E2EE media flow;
-- failure не создаёт ложный 100%/sent state и не очищает выбранные файлы, чтобы
-  пользователь мог безопасно повторить отправку с теми же idempotency IDs.
+- VAPID private key существует только в runtime secret environment и никогда не попадает
+  в Git, image, frontend bundle, API response или logs;
+- API отдаёт только public application server key;
+- notification payload не содержит plaintext preview, sender name, attachment filename,
+  ciphertext, MLS state/key material или device/session credential;
+- message и sync events commit выполняются до push; push failure не откатывает message;
+- WebSocket, Push и sync остаются wake-up/delivery слоями, PostgreSQL cursor sync — correctness;
+- нельзя зарегистрировать subscription на чужой device или удалить чужую subscription.
 
-### Exclusions
+### Tests и acceptance
 
-- parallel/chunked/resumable uploads, background upload после закрытия PWA и cancel
-  endpoint не входят в эту итерацию;
-- download progress и E2EE direct attachments планируются отдельно;
-- server API, database schema, media TTL и storage adapter не меняются.
+- [ ] migration: fresh database → head (GitHub PostgreSQL verify pending);
+- [x] backend entity/use-case authorization, bounds, config-route redaction и invalidation tests;
+- [x] send-message tests: recipient-only payload, post-commit ordering, failure isolation;
+- [x] frontend permission states, application key conversion, subscribe/upsert/delete tests;
+- [x] Service Worker push/click/visible-client/dedup tests;
+- [x] frontend lint/typecheck/Vitest/build, backend Ruff/mypy/pytest и полный `make ci`;
+- [ ] real production subscription и background notification проверены после deploy;
+- [ ] production health/logs/nginx и соседние `yoowee.ru`/`s3.yoowee.ru` не нарушены.
 
 ### Local acceptance evidence
 
-- transport regression подтверждает `PUT`, `withCredentials`, CSRF header, unchanged
-  binary body и events `0 → partial bytes → exact size`;
-- use-case test подтверждает forwarding typed callback, composable regression —
-  aggregate snapshots `2/10` и `7/10` для sequential 4+6-byte batch с reset после send;
-- component regression отображает overall `25%`, per-item `100%/25%/0%`, ARIA labels,
-  disabled removal и финальную фазу `Сохраняем сообщение… 100%`;
-- browser acceptance на desktop и Pixel viewport `390×844`: cards не меняют composer
-  geometry, strip scroll остаётся локальным, page horizontal overflow отсутствует;
-- `make ci`: backend `224 passed, 8 skipped`, Rust `21 passed`, frontend
-  `201 passed`; lint, typecheck, production build, Compose/deploy/docs checks зелёные.
+- backend: `236 passed, 8 skipped`; Ruff format/check, mypy strict и import-linter зелёные;
+- frontend: `206 passed` в `41` files; ESLint, Nuxt typecheck и production PWA build зелёные;
+- Service Worker build содержит versioned `sw-push.js` в precache и `importScripts`;
+- Rust/OpenMLS `21 passed`; full `make ci`, Compose/deploy/docs checks зелёные;
+- OpenSSL bootstrap output принят `AppSettings` и `py_vapid` без вывода ключевого материала.
 
-### Production acceptance evidence
+### Exclusions
 
-- implementation commit `ddf76f9` доставлен immutable frontend/backend images через
-  успешный workflow `Deploy production` run `31579379964`;
-- production API `/api/v1/health` ответил `{"status":"ok"}`, frontend и API containers
-  healthy и запущены на `sha-ddf76f9fb75c6046deb9898b492d652d13c37393`;
-- host nginx активен, отдельный nginx container отсутствует; свежие API logs не содержат
-  `ERROR`, `Traceback` или HTTP 500;
-- external probes: `chat.yoowee.ru=200`, `yoowee.ru=302`, `s3.yoowee.ru=403`, у всех
-  `ssl_verify_result=0`, поэтому rollout не нарушил соседние production services.
+- plaintext message previews, notification sounds selected by the server и rich media preview;
+- conversation mute schedules, app badge/read-state fan-out и notification actions/replies;
+- native-like incoming call notifications;
+- guaranteed delivery: browser/OS/push service может задержать или отбросить notification.
 
 ### Definition of Done
 
-- крупное видео на throttled connection показывает монотонный byte-accurate progress;
-- mixed batch корректно переходит `completed → current → pending` без скачков;
-- success очищает composer после server message enqueue, failure сохраняет selection;
-- автоматические проверки и production rollout зелёные, worktree чистый.
+- пользователь явно включает уведомления и видит точный status;
+- новый message вызывает privacy-safe system notification в background install;
+- click открывает нужный conversation, duplicate event не показывает второй notification;
+- revoked/current logout subscription не получает push;
+- VAPID secret безопасно установлен в production без чтения/вывода;
+- проверки, rollout и production acceptance зелёные, worktree чистый.

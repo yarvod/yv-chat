@@ -1322,6 +1322,22 @@ Push subscription принадлежит device/install, не User целико�
 
 Foreground/background policy и stable event IDs предотвращают двойные notifications/unread increments.
 
+`WP-061` реализует этот boundary через `push_subscriptions`: строка принадлежит exact
+`device_id + user_id`, удаляется каскадно при revoke/logout и никогда не возвращает
+endpoint или browser keys в status API. Current-device API предоставляет public VAPID
+configuration и authenticated `GET/PUT/DELETE /api/v1/push/subscription`; state-changing
+operations сохраняют обычные cookie/CSRF проверки. Infrastructure `WebPushNotifier`
+получает только typed delivery configuration из composition root, ограничивает четыре
+одновременных blocking provider calls через thread adapter и удаляет subscription только
+после permanent HTTP `404/410`.
+
+Message use case сначала commit-ит message/sync state, затем best-effort отправляет push
+только другим participant users. Service Worker валидирует versioned opaque payload,
+подавляет system notification при видимом app window, использует stable event tag для
+deduplication и по click фокусирует/открывает exact conversation. Generic title/body не
+содержат sender, message или attachment metadata. WebSocket и Push остаются wake-up
+каналами; authoritative cursor sync не меняется.
+
 ## 14. Calls
 
 Calls появляются только после стабильных messaging, sync и E2EE.

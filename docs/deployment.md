@@ -84,6 +84,12 @@ one-time `.bootstrap-admin.env`. The first deploy consumes the latter and rename
 to `.initial-admin-credential`; retrieve it over trusted SSH, sign in, change the
 password, then delete the file.
 
+The same bootstrap generates one P-256 VAPID pair with OpenSSL. `.env` stores
+`VAPID_PUBLIC_KEY`, secret `VAPID_PRIVATE_KEY`, `VAPID_CONTACT`, bounded push TTL and
+provider timeout. Compose requires all three identity values before API rollout. Never
+print or copy the private value; rotating it invalidates existing browser subscriptions,
+so rotation requires users to enable notifications again on each device.
+
 Relevant non-secret ingress values are:
 
 ```text

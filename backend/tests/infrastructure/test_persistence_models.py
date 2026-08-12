@@ -33,6 +33,7 @@ def test_persistence_metadata_contains_expected_tables() -> None:
         "device_key_packages",
         "messages",
         "password_reset_tokens",
+        "push_subscriptions",
         "security_events",
         "sessions",
         "sync_events",

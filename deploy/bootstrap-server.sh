@@ -17,13 +17,17 @@ test ! -e "$deploy_root/.initial-admin-credential"
 umask 077
 env_tmp=$(mktemp "$deploy_root/.env.tmp.XXXXXX")
 bootstrap_tmp=$(mktemp "$deploy_root/.bootstrap-admin.tmp.XXXXXX")
+vapid_key_tmp=$(mktemp "$deploy_root/.vapid-key.tmp.XXXXXX")
 cleanup() {
-    rm -f -- "$env_tmp" "$bootstrap_tmp"
+    rm -f -- "$env_tmp" "$bootstrap_tmp" "$vapid_key_tmp"
 }
 trap cleanup EXIT HUP INT TERM
 
 database_password=$(openssl rand -hex 32)
 admin_password=$(openssl rand -hex 24)
+openssl ecparam -name prime256v1 -genkey -noout -out "$vapid_key_tmp" 2>/dev/null
+vapid_private_key=$(openssl ec -in "$vapid_key_tmp" -outform DER 2>/dev/null | openssl base64 -A | tr '+/' '-_' | tr -d '=')
+vapid_public_key=$(openssl ec -in "$vapid_key_tmp" -pubout -outform DER 2>/dev/null | tail -c 65 | openssl base64 -A | tr '+/' '-_' | tr -d '=')
 
 printf '%s\n' \
     'POSTGRES_DB=yv_chat' \
@@ -44,6 +48,13 @@ printf '%s\n' \
     'SECURITY_EVENT_RETENTION_SECONDS=7776000' >"$env_tmp"
 
 printf '%s\n' \
+    "VAPID_PUBLIC_KEY=$vapid_public_key" \
+    "VAPID_PRIVATE_KEY=$vapid_private_key" \
+    'VAPID_CONTACT=mailto:admin@yoowee.ru' \
+    'PUSH_TTL_SECONDS=300' \
+    'PUSH_TIMEOUT_SECONDS=5' >>"$env_tmp"
+
+printf '%s\n' \
     'BOOTSTRAP_ADMIN_USERNAME=admin' \
     'BOOTSTRAP_ADMIN_DISPLAY_NAME=Administrator' \
     "BOOTSTRAP_ADMIN_PASSWORD=$admin_password" >"$bootstrap_tmp"
@@ -51,7 +62,8 @@ printf '%s\n' \
 chmod 600 "$env_tmp" "$bootstrap_tmp"
 mv "$env_tmp" "$deploy_root/.env"
 mv "$bootstrap_tmp" "$deploy_root/.bootstrap-admin.env"
-unset database_password admin_password
+rm -f -- "$vapid_key_tmp"
+unset database_password admin_password vapid_private_key vapid_public_key
 trap - EXIT HUP INT TERM
 
 echo "Created production .env and one-time admin credential with mode 0600."

@@ -57,6 +57,7 @@ from messenger.application.ports.messages import (
     ParticipantDeliverySummary,
 )
 from messenger.application.ports.password_reset_secrets import GeneratedPasswordResetSecret
+from messenger.application.ports.push import PushNotification
 from messenger.application.ports.session_credentials import GeneratedSessionCredential
 from messenger.application.ports.sync import SyncRepository, SyncUnitOfWork
 from messenger.application.realtime import RealtimeNotification
@@ -499,6 +500,17 @@ class RecordingRealtimeNotifier:
     async def publish(self, notifications: tuple[RealtimeNotification, ...]) -> None:
         if self.fail:
             raise RuntimeError("simulated realtime failure")
+        self.notifications.extend(notifications)
+
+
+@dataclass(slots=True)
+class RecordingPushNotifier:
+    notifications: list[PushNotification] = field(default_factory=list)
+    fail: bool = False
+
+    async def publish(self, notifications: tuple[PushNotification, ...]) -> None:
+        if self.fail:
+            raise RuntimeError("simulated push failure")
         self.notifications.extend(notifications)
 
 

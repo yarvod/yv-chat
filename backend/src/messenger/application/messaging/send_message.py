@@ -19,7 +19,9 @@ from messenger.application.messaging.policy import MessageEnvelopePolicy
 from messenger.application.messaging.retention import MessageRetentionPolicy
 from messenger.application.ports.clock import Clock
 from messenger.application.ports.messages import MessagingUnitOfWorkFactory
+from messenger.application.ports.push import PushNotification, PushNotifier
 from messenger.application.ports.realtime import RealtimeNotifier
+from messenger.application.push.publish import publish_push_best_effort
 from messenger.application.realtime import notifications_from_sync
 from messenger.application.realtime.publish import publish_best_effort
 from messenger.application.sync import SyncEventType, SyncPolicy
@@ -73,6 +75,7 @@ class SendOpaqueMessage:
         retention_policy: MessageRetentionPolicy,
         sync_policy: SyncPolicy,
         realtime_notifier: RealtimeNotifier,
+        push_notifier: PushNotifier,
     ) -> None:
         self._unit_of_work = unit_of_work
         self._clock = clock
@@ -81,6 +84,7 @@ class SendOpaqueMessage:
         self._retention_policy = retention_policy
         self._sync_policy = sync_policy
         self._realtime_notifier = realtime_notifier
+        self._push_notifier = push_notifier
 
     async def execute(self, command: SendOpaqueMessageCommand) -> SendOpaqueMessageResult:
         self._policy.validate(command.protocol_version, command.ciphertext)
@@ -261,6 +265,20 @@ class SendOpaqueMessage:
         await publish_best_effort(
             self._realtime_notifier,
             notifications_from_sync(sync_events),
+        )
+        await publish_push_best_effort(
+            self._push_notifier,
+            tuple(
+                PushNotification(
+                    user_id=event.user_id,
+                    event_id=event.event_id,
+                    conversation_id=conversation.id,
+                    message_id=message.id,
+                )
+                for event in sync_events
+                if event.event_type is SyncEventType.MESSAGE_CREATED
+                and event.user_id != command.actor_user_id
+            ),
         )
         return result_from(message)
 

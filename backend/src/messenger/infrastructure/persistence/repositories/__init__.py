@@ -29,6 +29,9 @@ from messenger.infrastructure.persistence.repositories.messages import SqlAlchem
 from messenger.infrastructure.persistence.repositories.password_reset_tokens import (
     SqlAlchemyPasswordResetTokenRepository,
 )
+from messenger.infrastructure.persistence.repositories.push_subscriptions import (
+    SqlAlchemyPushSubscriptionRepository,
+)
 from messenger.infrastructure.persistence.repositories.security_events import (
     SqlAlchemySecurityEventRepository,
 )
@@ -50,6 +53,7 @@ __all__ = [
     "SqlAlchemyDeviceRepository",
     "SqlAlchemyMessageRepository",
     "SqlAlchemyPasswordResetTokenRepository",
+    "SqlAlchemyPushSubscriptionRepository",
     "SqlAlchemySecurityEventRepository",
     "SqlAlchemySessionRepository",
     "SqlAlchemySyncRepository",

@@ -130,6 +130,9 @@ compose-check:
 	POSTGRES_USER=yv_chat \
 	POSTGRES_PASSWORD=test-only \
 	DATABASE_URL=postgresql+asyncpg://yv_chat:test-only@postgres:5432/yv_chat \
+	VAPID_PUBLIC_KEY=BHZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnZ2dnY \
+	VAPID_PRIVATE_KEY=a2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2s \
+	VAPID_CONTACT=mailto:test@example.test \
 	docker compose -p yv-chat -f compose.prod.yml config --quiet
 
 deploy-check:

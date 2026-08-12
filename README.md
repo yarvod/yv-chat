@@ -25,6 +25,11 @@ server TTL. Поддерживаемые видео воспроизводятс
 безопасно скачиваются. Вложения в личных MLS-чатах пока запрещены до отдельного
 client-side encrypted flow.
 
+Web Push включается отдельно на каждом устройстве после явного действия пользователя.
+Системное уведомление содержит только generic wake-up text, а push payload — opaque
+event/conversation/message IDs; имя отправителя и текст сообщения push provider-у не
+передаются. На iPhone/iPad уведомления доступны только установленной Home Screen PWA.
+
 Runtime v7 восстанавливает утраченный conversation control-checkpoint по exact
 совпадению public local MLS epoch/roster с server generation без logout/login.
 Permanent primary device нет: coordinator — временная роль одной MLS generation.

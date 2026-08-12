@@ -39,6 +39,7 @@ from tests.application.fakes import (
     FakeMessagingUnitOfWorkFactory,
     FixedClock,
     IdentityState,
+    RecordingPushNotifier,
     RecordingRealtimeNotifier,
 )
 
@@ -226,6 +227,7 @@ async def test_message_binding_download_authorization_and_cleanup() -> None:
         retention_policy=MessageRetentionPolicy(timedelta(days=30), timedelta(days=90)),
         sync_policy=SyncPolicy(),
         realtime_notifier=RecordingRealtimeNotifier(),
+        push_notifier=RecordingPushNotifier(),
     )
     sent = await send.execute(
         SendOpaqueMessageCommand(
@@ -301,6 +303,7 @@ async def test_message_binding_rejects_another_uploaders_attachment() -> None:
             retention_policy=MessageRetentionPolicy(timedelta(days=30), timedelta(days=90)),
             sync_policy=SyncPolicy(),
             realtime_notifier=RecordingRealtimeNotifier(),
+            push_notifier=RecordingPushNotifier(),
         ).execute(
             SendOpaqueMessageCommand(
                 actor_user_id=alice.id,

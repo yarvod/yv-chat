@@ -42,7 +42,13 @@ from messenger.application.messaging.send_message import SendOpaqueMessage
 from messenger.application.ports.conversation_crypto import ConversationCryptoUnitOfWorkFactory
 from messenger.application.ports.conversations import ConversationUnitOfWorkFactory
 from messenger.application.ports.messages import MessagingUnitOfWorkFactory
+from messenger.application.ports.push import PushUnitOfWorkFactory
 from messenger.application.ports.sync import SyncUnitOfWorkFactory
+from messenger.application.push.manage_subscription import (
+    GetCurrentPushSubscription,
+    RegisterPushSubscription,
+    RemovePushSubscription,
+)
 from messenger.application.sessions.authenticate import AuthenticateSession
 from messenger.application.sessions.login import Login
 from messenger.application.sessions.logout import Logout
@@ -98,6 +104,9 @@ async def test_production_graph_resolves_every_application_operation() -> None:
         RenameMyDevice,
         RevokeMyDevice,
         RevokeOtherSessions,
+        GetCurrentPushSubscription,
+        RegisterPushSubscription,
+        RemovePushSubscription,
     )
 
     try:
@@ -111,6 +120,7 @@ async def test_production_graph_resolves_every_application_operation() -> None:
             )
             messaging_unit_of_work = await request_container.get(MessagingUnitOfWorkFactory)
             sync_unit_of_work = await request_container.get(SyncUnitOfWorkFactory)
+            push_unit_of_work = await request_container.get(PushUnitOfWorkFactory)
     finally:
         await container.close()
 
@@ -119,3 +129,4 @@ async def test_production_graph_resolves_every_application_operation() -> None:
     assert conversation_crypto_unit_of_work() is not None
     assert messaging_unit_of_work() is not None
     assert sync_unit_of_work() is not None
+    assert push_unit_of_work() is not None
