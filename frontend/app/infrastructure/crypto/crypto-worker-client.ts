@@ -13,6 +13,8 @@ import type {
   BootstrapMlsConversationResult,
   ApplyMlsCommitCommand,
   JoinMlsConversationCommand,
+  InspectMlsConversationCommand,
+  MlsConversationInspectionResult,
   MlsConversationGateway,
   MlsConversationStateResult,
   ProtectMlsMessageCommand,
@@ -117,6 +119,14 @@ export class CryptoWorkerClient implements DeviceCryptoGateway, MlsConversationG
       throw new DeviceCryptoError('worker-protocol')
     }
     return { ...result, welcome }
+  }
+
+  async inspectConversation(
+    command: InspectMlsConversationCommand,
+  ): Promise<MlsConversationInspectionResult> {
+    const result = await this.send(mlsRequestEnvelope(this.requestId(), 'mls-inspect', command))
+    if (!('deviceIds' in result)) throw new DeviceCryptoError('worker-protocol')
+    return result
   }
 
   async joinConversation(

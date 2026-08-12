@@ -56,11 +56,59 @@ export class ReconcileConversationCrypto {
       }
       return result(generation)
     }
+    local = await this.recoverCheckpointFromSealedGroup(command, local, generation.generationNumber)
     local = await this.catchUpReadyGenerations(command, local, generation.generationNumber)
     if (generation.coordinatorDeviceId === command.deviceId) {
       return await this.reconcileCoordinator(command, generation, local, bootstrapRequestId)
     }
     return await this.reconcileMember(command, generation, local)
+  }
+
+  private async recoverCheckpointFromSealedGroup(
+    command: ReconcileConversationCryptoCommand,
+    local: ConversationCryptoLocalState,
+    observedGenerationNumber: number,
+  ): Promise<ConversationCryptoLocalState> {
+    if (local.phase !== 'bootstrap-requested') return local
+    const inspection = await this.mls.inspectConversation({
+      conversationId: command.conversationId,
+    })
+    if (inspection.epoch === null) return local
+    const inspectedRoster = canonicalRoster(inspection.deviceIds)
+    if (!inspectedRoster.includes(command.deviceId)) {
+      throw new DeviceCryptoError('local-state-lost')
+    }
+
+    const matches: ConversationCryptoGeneration[] = []
+    let cursor = 0
+    while (cursor < observedGenerationNumber) {
+      const generations = await this.server.listReadyAfter(command.conversationId, cursor)
+      if (generations.length === 0) break
+      let advanced = false
+      for (const generation of generations) {
+        this.assertGenerationBinding(generation, command.conversationId)
+        if (
+          generation.status !== 'ready'
+          || generation.epoch === null
+          || generation.generationNumber <= cursor
+          || generation.generationNumber > observedGenerationNumber
+        ) throw new DeviceCryptoError('conflict')
+        cursor = generation.generationNumber
+        advanced = true
+        if (
+          generation.epoch === inspection.epoch
+          && sameRoster(
+            inspectedRoster,
+            generation.requiredDevices.map(device => device.deviceId),
+          )
+        ) matches.push(generation)
+      }
+      if (!advanced || generations.length < 100) break
+    }
+    if (matches.length !== 1) throw new DeviceCryptoError('local-state-lost')
+    const recovered = readyState(local, matches[0]!)
+    await this.state.save(recovered)
+    return recovered
   }
 
   private async resumeAppliedCheckpoint(
@@ -159,7 +207,9 @@ export class ReconcileConversationCrypto {
         || local.generationNumber === null
         || generation.generationNumber <= local.generationNumber
         || generation.commit === null
-      ) throw new DeviceCryptoError('conflict')
+      ) throw new DeviceCryptoError(
+        local.phase === 'bootstrap-requested' ? 'local-state-lost' : 'conflict',
+      )
       const applied = await this.mls.applyCommit({
         conversationId: command.conversationId,
         commit: generation.commit,
@@ -294,7 +344,9 @@ export class ReconcileConversationCrypto {
         || local.generationNumber === null
         || generation.generationNumber <= local.generationNumber
         || generation.commit === null
-      ) throw new DeviceCryptoError('conflict')
+      ) throw new DeviceCryptoError(
+        local?.phase === 'bootstrap-requested' ? 'local-state-lost' : 'conflict',
+      )
       const applied = await this.mls.applyCommit({
         conversationId: command.conversationId,
         commit: generation.commit,
@@ -447,4 +499,18 @@ function result(generation: ConversationCryptoGeneration): ReconcileConversation
     blockReason: generation.blockReason,
     epoch: generation.epoch,
   }
+}
+
+function canonicalRoster(deviceIds: readonly string[]): string[] {
+  const result = [...deviceIds].sort()
+  if (result.length === 0 || new Set(result).size !== result.length) {
+    throw new DeviceCryptoError('corrupt-state')
+  }
+  return result
+}
+
+function sameRoster(left: readonly string[], right: readonly string[]): boolean {
+  const canonicalRight = canonicalRoster(right)
+  return left.length === canonicalRight.length
+    && left.every((deviceId, index) => deviceId === canonicalRight[index])
 }

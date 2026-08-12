@@ -1,8 +1,8 @@
 import { DeviceCryptoError } from '../../application/device-crypto/errors'
 
 // A new immutable path is mandatory whenever the generated JS/WASM binding changes.
-// v6 adds explicit same-device rejoin; v1-v5 remain rolling assets.
-const MODULE_URL = '/crypto/v6/yv_chat_openmls_provider.js'
+// v7 adds public local epoch/roster inspection; v1-v6 remain rolling assets.
+const MODULE_URL = '/crypto/v7/yv_chat_openmls_provider.js'
 
 export interface OpenMlsSealedSnapshot {
   readonly revision: bigint
@@ -19,6 +19,7 @@ export interface OpenMlsDeviceBootstrap {
   generateKeyPackages(count: number): Uint8Array[]
   fingerprint(): string
   createConversation(conversationId: string): bigint
+  inspectConversation(conversationId: string): OpenMlsConversationStateOutput | undefined
   addMembersAndMerge(
     conversationId: string,
     serializedKeyPackages: Uint8Array[],
@@ -54,6 +55,12 @@ export interface OpenMlsDeviceBootstrap {
     ciphertext: Uint8Array,
   ): Uint8Array
   sealState(key: CryptoKey, revision: bigint): Promise<OpenMlsSealedSnapshot>
+  free(): void
+}
+
+export interface OpenMlsConversationStateOutput {
+  readonly epoch: bigint
+  readonly deviceIds: string[]
   free(): void
 }
 
@@ -108,6 +115,7 @@ function isOpenMlsModule(value: unknown): value is OpenMlsModule {
     && typeof candidate.DeviceBootstrap.restoreSealedState === 'function'
     && typeof candidate.validatePublicKeyPackage === 'function'
     && typeof prototype?.createConversation === 'function'
+    && typeof prototype.inspectConversation === 'function'
     && typeof prototype.generateKeyPackages === 'function'
     && typeof prototype.addMembersAndMerge === 'function'
     && typeof prototype.updateMembersAndMerge === 'function'

@@ -12,6 +12,8 @@ import type {
   BootstrapMlsConversationResult,
   ApplyMlsCommitCommand,
   JoinMlsConversationCommand,
+  InspectMlsConversationCommand,
+  MlsConversationInspectionResult,
   MlsConversationStateResult,
   ProtectMlsMessageCommand,
   ProtectMlsMessageResult,
@@ -218,6 +220,35 @@ export class DeviceCryptoRuntime {
         output.free()
       }
     })
+  }
+
+  async inspectConversation(
+    command: InspectMlsConversationCommand,
+  ): Promise<MlsConversationInspectionResult> {
+    if (!UUID_PATTERN.test(command.conversationId)) {
+      throw new DeviceCryptoError('invalid-request')
+    }
+    const active = this.active
+    if (!active) throw new DeviceCryptoError('not-provisioned')
+    try {
+      const state = active.value.inspectConversation(command.conversationId)
+      if (!state) return { epoch: null, deviceIds: [], revision: active.revision }
+      try {
+        const deviceIds = [...state.deviceIds]
+        if (!validConversationRoster(command.conversationId, deviceIds)) {
+          throw new DeviceCryptoError('corrupt-state')
+        }
+        return {
+          epoch: safeUnsignedInteger(state.epoch),
+          deviceIds,
+          revision: active.revision,
+        }
+      } finally {
+        state.free()
+      }
+    } catch (error) {
+      throw translateError(error)
+    }
   }
 
   async joinConversation(

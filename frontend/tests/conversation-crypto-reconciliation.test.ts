@@ -23,6 +23,8 @@ import type {
   BootstrapMlsConversationResult,
   ApplyMlsCommitCommand,
   JoinMlsConversationCommand,
+  InspectMlsConversationCommand,
+  MlsConversationInspectionResult,
   MlsConversationGateway,
   MlsConversationStateResult,
   ProtectMlsMessageCommand,
@@ -94,6 +96,14 @@ class FakeDeviceCrypto implements DeviceCryptoGateway {
 }
 
 class FakeMls implements MlsConversationGateway {
+  readonly inspectConversation = vi.fn(async (
+    _command: InspectMlsConversationCommand,
+  ): Promise<MlsConversationInspectionResult> => ({
+    epoch: null,
+    deviceIds: [],
+    revision: 1,
+  }))
+
   readonly bootstrapConversation = vi.fn(async (
     _command: BootstrapMlsConversationCommand,
   ): Promise<BootstrapMlsConversationResult> => ({
@@ -403,6 +413,98 @@ describe('conversation crypto reconciliation', () => {
     })
     expect(mls.joinConversation).not.toHaveBeenCalled()
     expect(state.saveCalls.map(item => item.phase)).toEqual(['commit-applied', 'ready'])
+  })
+
+  it('rebuilds a lost control checkpoint from the exact sealed MLS epoch and roster', async () => {
+    const state = new MemoryState()
+    const first = generation('ready', coordinatorDeviceId)
+    const second = incrementalGeneration('ready')
+    const server: ConversationCryptoGateway = {
+      getCurrent: vi.fn(async () => second),
+      begin: vi.fn(async () => second),
+      listReadyAfter: vi.fn(async (_conversation, after) => (
+        after < 1 ? [first, second] : after < 2 ? [second] : []
+      )),
+      finalize: vi.fn(),
+      acknowledgeWelcome: vi.fn(),
+    }
+    const mls = new FakeMls()
+    mls.inspectConversation.mockResolvedValue({
+      epoch: 2,
+      deviceIds: [memberDeviceId, coordinatorDeviceId],
+      revision: 17,
+    })
+    const useCase = new ReconcileConversationCrypto(
+      server,
+      state,
+      new FakeDeviceCrypto(),
+      mls,
+      new FixedIds([requestId]),
+    )
+
+    await expect(useCase.execute({ conversationId, deviceId: memberDeviceId }))
+      .resolves.toMatchObject({ status: 'ready', generationNumber: 2, epoch: 3 })
+    expect(mls.inspectConversation).toHaveBeenCalledWith({ conversationId })
+    expect(mls.applyCommit).toHaveBeenCalledOnce()
+    expect(state.saveCalls.map(item => `${item.phase}:${item.generationNumber}`)).toEqual([
+      'bootstrap-requested:null',
+      'ready:1',
+      'commit-applied:2',
+      'ready:2',
+    ])
+  })
+
+  it('fails closed when neither a local group nor a targeted Welcome can restore the device', async () => {
+    const state = new MemoryState()
+    const current = generation('ready', coordinatorDeviceId)
+    const server: ConversationCryptoGateway = {
+      getCurrent: vi.fn(async () => current),
+      begin: vi.fn(async () => current),
+      listReadyAfter: vi.fn(async () => [current]),
+      finalize: vi.fn(),
+      acknowledgeWelcome: vi.fn(),
+    }
+    const useCase = new ReconcileConversationCrypto(
+      server,
+      state,
+      new FakeDeviceCrypto(),
+      new FakeMls(),
+      new FixedIds([requestId]),
+    )
+
+    await expect(useCase.execute({ conversationId, deviceId: memberDeviceId }))
+      .rejects.toMatchObject({ code: 'local-state-lost' })
+    expect(state.value).toMatchObject({ phase: 'bootstrap-requested', generationNumber: null })
+  })
+
+  it('does not trust a sealed group whose public roster mismatches every server generation', async () => {
+    const state = new MemoryState()
+    const current = generation('ready', coordinatorDeviceId)
+    const server: ConversationCryptoGateway = {
+      getCurrent: vi.fn(async () => current),
+      begin: vi.fn(async () => current),
+      listReadyAfter: vi.fn(async () => [current]),
+      finalize: vi.fn(),
+      acknowledgeWelcome: vi.fn(),
+    }
+    const mls = new FakeMls()
+    mls.inspectConversation.mockResolvedValue({
+      epoch: 2,
+      deviceIds: [coordinatorDeviceId, newDeviceId],
+      revision: 9,
+    })
+    const useCase = new ReconcileConversationCrypto(
+      server,
+      state,
+      new FakeDeviceCrypto(),
+      mls,
+      new FixedIds([requestId]),
+    )
+
+    await expect(useCase.execute({ conversationId, deviceId: memberDeviceId }))
+      .rejects.toMatchObject({ code: 'local-state-lost' })
+    expect(mls.applyCommit).not.toHaveBeenCalled()
+    expect(state.value).toMatchObject({ phase: 'bootstrap-requested', generationNumber: null })
   })
 
   it('applies the next ready Commit even when blocked generations created a number gap', async () => {

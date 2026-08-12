@@ -47,6 +47,7 @@ describe('device crypto lifecycle diagnostics', () => {
   it('requires a new device login when registered local keys are missing or invalid', () => {
     for (const issue of [
       'not-provisioned',
+      'local-state-lost',
       'conflict',
       'corrupt-state',
       'rollback',

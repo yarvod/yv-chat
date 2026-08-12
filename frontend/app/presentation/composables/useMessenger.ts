@@ -1,6 +1,7 @@
 import { computed, reactive, readonly } from 'vue'
 
 import { ApplicationError } from '../../application/errors'
+import { DeviceCryptoError } from '../../application/device-crypto/errors'
 import type { ReconcileConversationCryptoResult } from '../../application/conversation-crypto/reconcile-conversation-crypto'
 import {
   ConversationHistory,
@@ -207,6 +208,9 @@ export function useMessenger(
     if (state.conversationCryptoPhase === 'ready') return 'MLS E2EE готово'
     if (state.conversationCryptoPhase === 'pending') return 'Шифрование личного чата обновляется'
     if (state.conversationCryptoPhase === 'blocked') {
+      if (state.conversationCryptoBlockReason === 'local_state_lost') {
+        return 'Локальные ключи этого личного чата потеряны на устройстве'
+      }
       return state.conversationCryptoBlockReason === 'missing_key_package'
         ? 'Не хватает одноразового ключа одного из устройств'
         : state.conversationCryptoBlockReason === 'missing_identity'
@@ -239,10 +243,15 @@ export function useMessenger(
       if (state.activeConversationId !== conversationId) return
       state.conversationCryptoPhase = result.status
       state.conversationCryptoBlockReason = result.blockReason
-    } catch {
+    } catch (error) {
       if (state.activeConversationId !== conversationId) return
-      state.conversationCryptoPhase = 'unavailable'
-      state.conversationCryptoBlockReason = null
+      if (error instanceof DeviceCryptoError && error.code === 'local-state-lost') {
+        state.conversationCryptoPhase = 'blocked'
+        state.conversationCryptoBlockReason = 'local_state_lost'
+      } else {
+        state.conversationCryptoPhase = 'unavailable'
+        state.conversationCryptoBlockReason = null
+      }
     }
   }
 

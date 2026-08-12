@@ -44,6 +44,8 @@ scope.addEventListener('message', async (event: MessageEvent<unknown>) => {
       result = await current.generateKeyPackages(request.command)
     } else if (request.type === 'mls-bootstrap') {
       result = await current.bootstrapConversation(request.command)
+    } else if (request.type === 'mls-inspect') {
+      result = await current.inspectConversation(request.command)
     } else if (request.type === 'mls-join') {
       result = await current.joinConversation(request.command)
     } else if (request.type === 'mls-rejoin') {

@@ -21,6 +21,7 @@ const ERROR_CODES = new Set<DeviceCryptoErrorCode>([
   'conflict',
   'corrupt-state',
   'invalid-key-package',
+  'local-state-lost',
   'invalid-request',
   'not-provisioned',
   'operation-failed',

@@ -78,7 +78,46 @@ pub struct ProtectedApplicationMessage {
     pub epoch: u64,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub struct LocalConversationState {
+    pub epoch: u64,
+    pub device_ids: Vec<String>,
+}
+
 impl DeviceBootstrap {
+    /// Return only public membership metadata from the sealed local group.
+    ///
+    /// This is used to rebuild an outer crash-recovery checkpoint. It never
+    /// exports tree secrets, ratchets, private keys, or serialized MLS state.
+    pub fn inspect_conversation(
+        &self,
+        conversation_id: &str,
+    ) -> Result<Option<LocalConversationState>, ConversationError> {
+        let group_id = canonical_group_id(conversation_id)?;
+        let Some(group) = MlsGroup::load(self._provider.storage(), &group_id)
+            .map_err(|_| ConversationError::StorageUnavailable)?
+        else {
+            return Ok(None);
+        };
+        let members = group.members().collect::<Vec<_>>();
+        let mut device_ids = members
+            .iter()
+            .map(|member| credential_device_id(member.credential.serialized_content()))
+            .collect::<Result<Vec<_>, _>>()?;
+        let unique = device_ids.iter().copied().collect::<HashSet<_>>();
+        if unique.len() != device_ids.len() {
+            return Err(ConversationError::MembershipUpdateFailed);
+        }
+        device_ids.sort_unstable();
+        Ok(Some(LocalConversationState {
+            epoch: group.epoch().as_u64(),
+            device_ids: device_ids
+                .into_iter()
+                .map(|device_id| device_id.hyphenated().to_string())
+                .collect(),
+        }))
+    }
+
     pub fn create_conversation(&mut self, conversation_id: &str) -> Result<u64, ConversationError> {
         let group_id = canonical_group_id(conversation_id)?;
         if MlsGroup::load(self._provider.storage(), &group_id)
@@ -509,6 +548,30 @@ mod tests {
             1,
         );
         (alice, bob)
+    }
+
+    #[test]
+    fn conversation_inspection_is_public_canonical_and_handles_missing_group() {
+        let missing = DeviceBootstrap::generate(ALICE_USER, ALICE_DEVICE).unwrap();
+        assert_eq!(missing.inspect_conversation(CONVERSATION).unwrap(), None);
+
+        let (alice, bob) = joined_pair();
+        let mut expected = vec![ALICE_DEVICE.to_owned(), BOB_DEVICE.to_owned()];
+        expected.sort();
+        assert_eq!(
+            alice.inspect_conversation(CONVERSATION).unwrap(),
+            Some(LocalConversationState {
+                epoch: 1,
+                device_ids: expected.clone(),
+            }),
+        );
+        assert_eq!(
+            bob.inspect_conversation(CONVERSATION).unwrap(),
+            Some(LocalConversationState {
+                epoch: 1,
+                device_ids: expected,
+            }),
+        );
     }
 
     #[test]

@@ -61,8 +61,8 @@ frontend-test:
 
 frontend-build:
 	cd frontend && npm run build
-	test -s frontend/.output/public/crypto/v6/yv_chat_openmls_provider_bg.wasm
-	grep -q 'crypto/v6/yv_chat_openmls_provider_bg.wasm' frontend/.output/public/sw.js
+	test -s frontend/.output/public/crypto/v7/yv_chat_openmls_provider_bg.wasm
+	grep -q 'crypto/v7/yv_chat_openmls_provider_bg.wasm' frontend/.output/public/sw.js
 	find frontend/.output/public/_nuxt -name 'device-crypto.worker-*.js' -type f | grep -q .
 
 crypto-format:
@@ -97,19 +97,20 @@ crypto-wasm-bindgen: crypto-wasm
 	grep -q 'updateMembersAndMerge(conversation_id: string' crypto/target/wasm-bindgen/yv_chat_openmls_provider.d.ts
 	grep -q 'applyCommitAndMerge(conversation_id: string' crypto/target/wasm-bindgen/yv_chat_openmls_provider.d.ts
 	grep -q 'rejoinConversation(conversation_id: string' crypto/target/wasm-bindgen/yv_chat_openmls_provider.d.ts
+	grep -q 'inspectConversation(conversation_id: string' crypto/target/wasm-bindgen/yv_chat_openmls_provider.d.ts
 	! grep -Eq 'snapshotForSealing|restoreFromUnsealedSnapshot' \
 		crypto/target/wasm-bindgen/yv_chat_openmls_provider.d.ts
 
 crypto-package: crypto-wasm-bindgen
-	install -d frontend/public/crypto/v6
+	install -d frontend/public/crypto/v7
 	install -m 0644 crypto/target/wasm-bindgen/yv_chat_openmls_provider.js \
-		frontend/public/crypto/v6/yv_chat_openmls_provider.js
+		frontend/public/crypto/v7/yv_chat_openmls_provider.js
 	install -m 0644 crypto/target/wasm-bindgen/yv_chat_openmls_provider.d.ts \
-		frontend/public/crypto/v6/yv_chat_openmls_provider.d.ts
+		frontend/public/crypto/v7/yv_chat_openmls_provider.d.ts
 	install -m 0644 crypto/target/wasm-bindgen/yv_chat_openmls_provider_bg.wasm \
-		frontend/public/crypto/v6/yv_chat_openmls_provider_bg.wasm
+		frontend/public/crypto/v7/yv_chat_openmls_provider_bg.wasm
 	install -m 0644 crypto/target/wasm-bindgen/yv_chat_openmls_provider_bg.wasm.d.ts \
-		frontend/public/crypto/v6/yv_chat_openmls_provider_bg.wasm.d.ts
+		frontend/public/crypto/v7/yv_chat_openmls_provider_bg.wasm.d.ts
 
 crypto-feature-check:
 	cd crypto && ! $(CARGO) tree --locked -e features -i openmls | \

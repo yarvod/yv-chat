@@ -238,6 +238,33 @@ describe('device crypto Worker protocol', () => {
     }))).toBeNull()
   })
 
+  it('routes a read-only local conversation inspection with a closed public result', async () => {
+    const worker = new MockWorker()
+    const client = new CryptoWorkerClient(
+      () => worker as unknown as Worker,
+      1_000,
+      requestIds(firstRequestId),
+    )
+
+    const inspecting = client.inspectConversation({ conversationId })
+    expect(parseWorkerRequest(worker.messages[0])).toMatchObject({
+      type: 'mls-inspect',
+      command: { conversationId },
+    })
+    const result = { epoch: 4, deviceIds: [deviceId], revision: 8 }
+    worker.reply(successResponse(firstRequestId, result))
+    await expect(inspecting).resolves.toEqual(result)
+    expect(parseWorkerResponse(successResponse(firstRequestId, {
+      ...result,
+      privateTree: new Uint8Array([1]),
+    }))).toBeNull()
+    expect(parseWorkerResponse(successResponse(firstRequestId, {
+      epoch: null,
+      deviceIds: [deviceId],
+      revision: 8,
+    }))).toBeNull()
+  })
+
   it('fails all pending calls on malformed messages and timeouts', async () => {
     vi.useFakeTimers()
     const worker = new MockWorker()

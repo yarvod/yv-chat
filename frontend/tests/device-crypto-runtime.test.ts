@@ -13,7 +13,7 @@ import { IndexedDbCryptoVault } from '../app/infrastructure/storage/indexeddb-cr
 import initOpenMls, {
   DeviceBootstrap,
   validatePublicKeyPackage,
-} from '../public/crypto/v6/yv_chat_openmls_provider.js'
+} from '../public/crypto/v7/yv_chat_openmls_provider.js'
 
 const userId = '1b0a32e8-144f-4f60-bcb6-112f71bd5316'
 const deviceId = '50d6b08a-84ae-4bd7-829a-f40f38e9a2c1'
@@ -43,7 +43,7 @@ function vault(indexedDb: IDBFactory): IndexedDbCryptoVault {
 }
 
 beforeAll(async () => {
-  const wasm = await readFile('public/crypto/v6/yv_chat_openmls_provider_bg.wasm')
+  const wasm = await readFile('public/crypto/v7/yv_chat_openmls_provider_bg.wasm')
   await initOpenMls({ module_or_path: wasm })
 })
 
@@ -155,6 +155,16 @@ describe('device crypto runtime with the release OpenMLS WASM', () => {
       ratchetTree: bootstrap.ratchetTree,
     })
     expect(joined).toEqual({ epoch: 1, revision: 2 })
+    await expect(alice.inspectConversation({ conversationId })).resolves.toEqual({
+      epoch: 1,
+      deviceIds: [deviceId, otherDeviceId].sort(),
+      revision: 2,
+    })
+    await expect(bob.inspectConversation({ conversationId })).resolves.toEqual({
+      epoch: 1,
+      deviceIds: [deviceId, otherDeviceId].sort(),
+      revision: 2,
+    })
     alice.dispose()
     bob.dispose()
 

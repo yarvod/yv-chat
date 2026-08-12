@@ -24,6 +24,16 @@ export interface MlsConversationStateResult {
   readonly revision: number
 }
 
+export interface InspectMlsConversationCommand {
+  readonly conversationId: string
+}
+
+export interface MlsConversationInspectionResult {
+  readonly epoch: number | null
+  readonly deviceIds: readonly string[]
+  readonly revision: number
+}
+
 export interface UpdateMlsConversationCommand {
   readonly conversationId: string
   readonly desiredDeviceIds: readonly string[]
@@ -66,6 +76,9 @@ export interface UnprotectMlsMessageResult {
 }
 
 export interface MlsConversationGateway {
+  inspectConversation(
+    command: InspectMlsConversationCommand,
+  ): Promise<MlsConversationInspectionResult>
   bootstrapConversation(
     command: BootstrapMlsConversationCommand,
   ): Promise<BootstrapMlsConversationResult>

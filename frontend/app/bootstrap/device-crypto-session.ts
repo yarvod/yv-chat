@@ -18,6 +18,8 @@ import type {
   BootstrapMlsConversationResult,
   ApplyMlsCommitCommand,
   JoinMlsConversationCommand,
+  InspectMlsConversationCommand,
+  MlsConversationInspectionResult,
   MlsConversationGateway,
   MlsConversationStateResult,
   ProtectMlsMessageCommand,
@@ -100,6 +102,12 @@ export class DeviceCryptoSession implements MlsConversationGateway {
     command: BootstrapMlsConversationCommand,
   ): Promise<BootstrapMlsConversationResult> {
     return this.requireActive().gateway.bootstrapConversation(command)
+  }
+
+  inspectConversation(
+    command: InspectMlsConversationCommand,
+  ): Promise<MlsConversationInspectionResult> {
+    return this.requireActive().gateway.inspectConversation(command)
   }
 
   joinConversation(command: JoinMlsConversationCommand): Promise<MlsConversationStateResult> {

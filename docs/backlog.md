@@ -149,6 +149,21 @@ responsive group-info UI, а backend остаётся единственной �
 
 ## E2EE и multi-device history
 
+### BL-054 — Self-healing local MLS checkpoint и явный device recovery
+
+Статус: **in progress** (`WP-054`).
+
+Результат: существующая device identity не требует logout/login после deploy/reload,
+если sealed OpenMLS group сохранилась, но отдельный conversation checkpoint потерян.
+
+- read-only public inspection локального epoch/device roster через Rust/Worker port;
+- точное восстановление server-generation checkpoint только при epoch+roster match;
+- ordered catch-up последующих Commit/Welcome после восстановления;
+- отдельная fail-closed диагностика полной потери device-local MLS state;
+- permanent primary device не вводится: coordinator выбирается на generation;
+- последующий explicit re-enrollment и encrypted history transfer остаются отдельными
+  security slices для случая реального удаления crypto vault.
+
 ### BL-050 — Conversation-scoped direct/group protocol policy
 
 Статус: **completed** (`WP-050`, commit `45709c3`, production run `31541538389`).

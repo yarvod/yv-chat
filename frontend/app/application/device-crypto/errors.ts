@@ -3,6 +3,7 @@ export type DeviceCryptoErrorCode =
   | 'corrupt-state'
   | 'invalid-request'
   | 'invalid-key-package'
+  | 'local-state-lost'
   | 'not-provisioned'
   | 'operation-failed'
   | 'rollback'

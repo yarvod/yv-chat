@@ -4,6 +4,22 @@
 
 ## Active
 
+### BUG-053 — Потеря conversation checkpoint требовала logout/login
+
+- Статус: `in progress` (`WP-054`).
+- Severity: `critical availability`; после deploy/reload existing non-coordinator
+  device получал READY bootstrap HTTP 200, но не мог отправлять direct MLS v2 message.
+- Reproduction: sealed `yv-chat-crypto-v1` snapshot содержит действующий OpenMLS group,
+  а запись этого conversation в `yv-chat-conversation-crypto-v1` отсутствует/сброшена;
+  server возвращает READY generation без нового Welcome, client начинает catch-up с 0
+  и трактует существующий leaf как конфликт.
+- Причина: reconciliation не имел read-only способа сопоставить сохранённый local
+  epoch/roster с server generation. Logout/login маскировал дефект созданием нового
+  `device_id`, KeyPackage и Welcome, а не ремонтом старого устройства.
+- Security invariant: checkpoint можно восстановить только по exact conversation,
+  epoch и полному roster; при отсутствии/несовпадении private state direct chat
+  остаётся fail-closed без v1 downgrade.
+
 ### BUG-052 — Direct generation could omit a participant with no capable device
 
 - Статус: `fixed and full-CI verified; production rollout pending`.

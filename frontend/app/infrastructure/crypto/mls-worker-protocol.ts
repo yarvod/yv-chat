@@ -5,6 +5,8 @@ import type {
   BootstrapMlsConversationResult,
   ApplyMlsCommitCommand,
   JoinMlsConversationCommand,
+  InspectMlsConversationCommand,
+  MlsConversationInspectionResult,
   MlsConversationStateResult,
   ProtectMlsMessageCommand,
   ProtectMlsMessageResult,
@@ -27,6 +29,7 @@ interface WorkerRequestBase {
 
 export type MlsWorkerRequest =
   | (WorkerRequestBase & { type: 'mls-bootstrap', command: BootstrapMlsConversationCommand })
+  | (WorkerRequestBase & { type: 'mls-inspect', command: InspectMlsConversationCommand })
   | (WorkerRequestBase & { type: 'mls-join', command: JoinMlsConversationCommand })
   | (WorkerRequestBase & { type: 'mls-rejoin', command: JoinMlsConversationCommand })
   | (WorkerRequestBase & { type: 'mls-update', command: UpdateMlsConversationCommand })
@@ -36,6 +39,7 @@ export type MlsWorkerRequest =
 
 export type MlsWorkerResult =
   | BootstrapMlsConversationResult
+  | MlsConversationInspectionResult
   | MlsConversationStateResult
   | ProtectMlsMessageResult
   | UnprotectMlsMessageResult
@@ -79,6 +83,13 @@ function validBootstrapCommand(value: unknown): value is BootstrapMlsConversatio
     && candidate.keyPackages.length > 0
     && candidate.keyPackages.length <= MAX_ADD_MEMBERS
     && candidate.keyPackages.every(item => validBytes(item, MAX_WIRE_BYTES))
+}
+
+function validInspectCommand(value: unknown): value is InspectMlsConversationCommand {
+  const candidate = record(value)
+  return candidate !== null
+    && exactKeys(candidate, ['conversationId'])
+    && validUuid(candidate.conversationId)
 }
 
 function validJoinCommand(value: unknown): value is JoinMlsConversationCommand {
@@ -147,6 +158,9 @@ export function parseMlsWorkerRequest(value: unknown): MlsWorkerRequest | null {
   if (candidate.type === 'mls-bootstrap' && validBootstrapCommand(candidate.command)) {
     return { version: PROTOCOL_VERSION, requestId: candidate.requestId, type: candidate.type, command: candidate.command }
   }
+  if (candidate.type === 'mls-inspect' && validInspectCommand(candidate.command)) {
+    return { version: PROTOCOL_VERSION, requestId: candidate.requestId, type: candidate.type, command: candidate.command }
+  }
   if (candidate.type === 'mls-join' && validJoinCommand(candidate.command)) {
     return { version: PROTOCOL_VERSION, requestId: candidate.requestId, type: candidate.type, command: candidate.command }
   }
@@ -171,6 +185,16 @@ export function parseMlsWorkerRequest(value: unknown): MlsWorkerRequest | null {
 export function parseMlsWorkerResult(value: unknown): MlsWorkerResult | null {
   const candidate = record(value)
   if (candidate === null || !validRevision(candidate.revision)) return null
+  if (
+    exactKeys(candidate, ['deviceIds', 'epoch', 'revision'])
+    && (candidate.epoch === null || validEpoch(candidate.epoch))
+    && Array.isArray(candidate.deviceIds)
+    && (
+      candidate.epoch === null
+        ? candidate.deviceIds.length === 0
+        : validRoster(candidate.deviceIds)
+    )
+  ) return candidate as unknown as MlsConversationInspectionResult
   if (
     exactKeys(candidate, ['commit', 'epoch', 'ratchetTree', 'revision', 'welcome'])
     && validEpoch(candidate.epoch)
@@ -205,6 +229,7 @@ export function mlsRequestEnvelope(
   requestId: string,
   type: MlsWorkerRequest['type'],
   command: BootstrapMlsConversationCommand | JoinMlsConversationCommand
+    | InspectMlsConversationCommand
     | UpdateMlsConversationCommand | ApplyMlsCommitCommand
     | ProtectMlsMessageCommand | UnprotectMlsMessageCommand,
 ): MlsWorkerRequest {

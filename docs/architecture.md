@@ -687,6 +687,9 @@ ratchets и key schedule не реализуются project code. ADR фикс�
 model, metadata leakage, KeyPackage/Welcome lifecycle, v2 framing, multi-device,
 recovery и provider release gates.
 
+Локальный partial-loss recovery и отсутствие permanent primary device уточнены в
+[ADR-0002](adr/0002-local-mls-checkpoint-recovery.md).
+
 OpenMLS core + minimal Rust/WASM adapter развёрнут для direct v2 после browser
 persistence/corruption, CSP/build и production-like acceptance. KAT/interop,
 Safari/storage-denial и independent binding review остаются hardening gates. Group
@@ -755,14 +758,14 @@ Vue/application DTO. Fake IndexedDB + Node WebCrypto tests фиксируют tr
 metadata semantics. Physical Chromium и чистый Firefox подтверждены; Safari и
 storage-denial scenarios всё ещё release-gated.
 
-Repository хранит текущий generated package под immutable asset path `/crypto/v4/`:
+Repository хранит текущий generated package под immutable asset path `/crypto/v7/`:
 JS glue, TypeScript declaration и WASM производятся exact `Rust 1.91.0` /
 `wasm-bindgen 0.2.127`; CI пересобирает их и отклоняет tracked drift и private
 snapshot exports. Nuxt production build обязан выпустить отдельный module Worker
 chunk, скопировать WASM и включить оба versioned crypto assets и Worker в Workbox
 precache. Версия URL меняется вместе с несовместимой binding/schema revision, чтобы
 active service worker не смешивал новые JS bindings со старым WASM.
-Старые `/crypto/v1/`–`/crypto/v3/` временно остаются только rolling-compatibility
+Старые `/crypto/v1/`–`/crypto/v6/` временно остаются только rolling-compatibility
 assets для уже открытых Worker, не используются новым runtime и не входят в новый
 precache. Import,
 binding-shape, WASM init,
@@ -783,7 +786,8 @@ dispose-ить общий runtime; logout/unmount либо фактическа�
 детерминированно dispose-ят старый scope. Worker не стартует на public
 login/activation page.
 
-Runtime v6 также реализует intent-level bounded KeyPackage generation и
+Runtime v7 также реализует intent-level bounded KeyPackage generation,
+read-only public conversation inspection и
 create/join/rejoin/update/apply-commit/protect/unprotect. Каждая state-changing операция
 считается успешной
 только после следующего optimistic vault revision и
@@ -793,7 +797,8 @@ atomic sealed-state commit. Commit/Welcome/ciphertext/plaintext копируют
 через restore последнего подтверждённого snapshot. Это предотвращает ratchet/epoch
 rollback после частичного сбоя и повторное использование неподтверждённого state.
 Main-thread gateway достигает этих операций только через exact Worker envelopes
-`mls-bootstrap`, `mls-join`, `mls-rejoin`, `mls-update`, `mls-apply-commit`, `mls-protect`,
+`mls-inspect`, `mls-bootstrap`, `mls-join`, `mls-rejoin`, `mls-update`,
+`mls-apply-commit`, `mls-protect`,
 `mls-unprotect`. Каждый command/result
 variant имеет закрытый набор полей, canonical UUID, bounded binary sizes и safe
 integer epoch/revision. Лишнее поле делает весь envelope invalid; private state не
@@ -911,6 +916,25 @@ target checkpoint-ит join/apply-commit до Welcome ack/ready. Group mutations
 conversation sync invalidates cached reconciliation, поэтому следующий protect
 сверяется с server roster. Outgoing router использует v2, а v1 остаётся только
 read-only historical adapter.
+
+`coordinator_device_id` — временный author одной membership generation, а не
+account-level primary device. Любой сохранившийся active leaf из предыдущей READY
+generation может координировать следующий Commit; logout coordinator не передаёт
+особый master key и не делает остальные устройства зависимыми от его online status.
+После revoke/logout backend публикует roster drift, а следующее подходящее устройство
+становится coordinator обычным deterministic election в use case.
+
+Conversation control checkpoint и sealed OpenMLS group хранятся раздельно. Если
+control IndexedDB record потерян, но sealed group осталась, runtime v7 read-only
+возвращает только её epoch и canonical public device roster. Reconciliation получает
+ordered READY generations и восстанавливает `ready` checkpoint исключительно при
+единственном exact совпадении conversation + epoch + полного roster, после чего
+применяет последующие Commit/Welcome штатно. Inspection не меняет ratchet/revision и
+не экспортирует tree/private state. Отсутствующий group, неоднозначное совпадение или
+roster mismatch дают typed `local-state-lost`; direct остаётся fail-closed без v1
+fallback. Реальная потеря sealed vault требует explicit re-enrollment новой device
+identity, а старая история может вернуться только отдельным encrypted device-to-device
+transfer flow.
 
 Каждый v2 message transport содержит `crypto_generation_id` и `crypto_epoch`,
 полученные от того же reconciliation/protect operation. Backend под conversation

@@ -26,7 +26,8 @@ mod conversation;
 mod snapshot;
 
 pub use conversation::{
-    AddMembersOutput, ConversationError, ProtectedApplicationMessage, UpdateMembersOutput,
+    AddMembersOutput, ConversationError, LocalConversationState, ProtectedApplicationMessage,
+    UpdateMembersOutput,
 };
 
 #[cfg(any(test, target_arch = "wasm32"))]
@@ -137,6 +138,27 @@ impl ProtectedMessageOutput {
     #[wasm_bindgen(getter)]
     pub fn epoch(&self) -> u64 {
         self.epoch
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub struct ConversationStateOutput {
+    epoch: u64,
+    device_ids: Vec<String>,
+}
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+impl ConversationStateOutput {
+    #[wasm_bindgen(getter)]
+    pub fn epoch(&self) -> u64 {
+        self.epoch
+    }
+
+    #[wasm_bindgen(getter, js_name = deviceIds)]
+    pub fn device_ids(&self) -> Array {
+        self.device_ids.iter().map(JsValue::from).collect()
     }
 }
 
@@ -381,6 +403,21 @@ impl DeviceBootstrap {
     #[wasm_bindgen(js_name = createConversation)]
     pub fn wasm_create_conversation(&mut self, conversation_id: &str) -> Result<u64, JsError> {
         self.create_conversation(conversation_id)
+            .map_err(|error| JsError::new(error.to_string().as_str()))
+    }
+
+    #[wasm_bindgen(js_name = inspectConversation)]
+    pub fn wasm_inspect_conversation(
+        &self,
+        conversation_id: &str,
+    ) -> Result<Option<ConversationStateOutput>, JsError> {
+        self.inspect_conversation(conversation_id)
+            .map(|state| {
+                state.map(|state| ConversationStateOutput {
+                    epoch: state.epoch,
+                    device_ids: state.device_ids,
+                })
+            })
             .map_err(|error| JsError::new(error.to_string().as_str()))
     }
 

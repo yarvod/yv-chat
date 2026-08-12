@@ -39,6 +39,9 @@ export function deviceCryptoIssueMessage(issue: DeviceCryptoLifecycleIssue | nul
   if (issue === 'not-provisioned') {
     return 'Локальные ключи этого входа отсутствуют. Переподключите устройство.'
   }
+  if (issue === 'local-state-lost') {
+    return 'Локальные ключи защищённых чатов потеряны. Требуется безопасно переподключить устройство.'
+  }
   if (issue === 'conflict' || issue === 'corrupt-state' || issue === 'rollback') {
     return 'Локальные ключи не совпадают с регистрацией устройства. Переподключите его.'
   }
@@ -75,6 +78,7 @@ export function deviceCryptoIssueNeedsReconnect(
   issue: DeviceCryptoLifecycleIssue | null,
 ): boolean {
   return issue === 'not-provisioned'
+    || issue === 'local-state-lost'
     || issue === 'conflict'
     || issue === 'corrupt-state'
     || issue === 'rollback'

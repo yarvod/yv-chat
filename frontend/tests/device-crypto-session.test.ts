@@ -83,6 +83,7 @@ describe('shared authenticated device crypto session', () => {
       checkpoint: vi.fn(),
       validateKeyPackage: vi.fn(async () => ({ validated: true as const })),
       generateKeyPackages: vi.fn(),
+      inspectConversation: vi.fn(async () => ({ epoch: null, deviceIds: [], revision: 2 })),
       bootstrapConversation: vi.fn(),
       joinConversation,
       rejoinConversation: vi.fn(),
