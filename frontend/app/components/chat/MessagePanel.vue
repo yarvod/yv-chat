@@ -87,6 +87,7 @@ interface SelectedAttachment {
 const selectedAttachments = ref<SelectedAttachment[]>([])
 const attachmentError = ref<string | null>(null)
 const attachmentMenuOpen = ref(false)
+const attachmentDragActive = ref(false)
 const showScrollToLatest = ref(false)
 const restorationPending = ref(true)
 const highlightedMessageId = ref<string | null>(null)
@@ -98,6 +99,7 @@ let composerFocused = false
 let followComposerResize = false
 let layoutAnchor: { messageId: string, offset: number } | null = null
 let layoutAnchorExpiresAt = 0
+let attachmentDragDepth = 0
 
 function boundedPercent(completed: number, total: number): number {
   if (total <= 0) return 0
@@ -222,7 +224,7 @@ async function submit(): Promise<void> {
   if (props.sending || (draft.value.trim().length === 0 && selectedAttachments.value.length === 0)) return
   const value = draft.value
   const attachments = selectedAttachments.value.map(({ file }) => ({
-    name: file.name,
+    name: attachmentName(file),
     type: file.type,
     size: file.size,
     body: file,
@@ -250,16 +252,27 @@ function clearAttachments(): void {
   if (fileInput.value) fileInput.value.value = ''
 }
 
-function chooseAttachment(event: Event): void {
-  const input = event.target as HTMLInputElement
-  const files = Array.from(input.files ?? [])
-  input.value = ''
+function attachmentName(file: File): string {
+  if (file.name.trim()) return file.name
+  const extension = file.type.split('/')[1]?.replace(/[^a-z0-9.+-]/gi, '')
+  return extension ? `Вставленное изображение.${extension}` : 'Вставленный файл'
+}
+
+function addAttachments(files: readonly File[]): boolean {
   attachmentError.value = null
   attachmentMenuOpen.value = false
-  if (files.length === 0) return
+  if (files.length === 0) return false
+  if (props.sending) {
+    attachmentError.value = 'Дождитесь завершения текущей отправки.'
+    return false
+  }
+  if (props.conversation?.conversationType !== 'group') {
+    attachmentError.value = 'Вложения в личных чатах появятся после подключения E2EE media flow.'
+    return false
+  }
   if (selectedAttachments.value.length + files.length > GROUP_ATTACHMENT_LIMIT) {
     attachmentError.value = 'В одном сообщении можно отправить не больше 10 файлов.'
-    return
+    return false
   }
   for (const file of files) {
     const kind = attachmentKindFor(file.type)
@@ -267,8 +280,8 @@ function chooseAttachment(event: Event): void {
     if (file.size <= 0 || file.size > maximum) {
       const limitLabel = kind === 'image' ? '12 МБ' : kind === 'video' ? '100 МБ' : '25 МБ'
       const kindLabel = kind === 'image' ? 'изображение' : kind === 'video' ? 'видео' : 'файл'
-      attachmentError.value = `«${file.name}»: ${kindLabel} должно быть не больше ${limitLabel}.`
-      return
+      attachmentError.value = `«${attachmentName(file)}»: ${kindLabel} должно быть не больше ${limitLabel}.`
+      return false
     }
   }
   selectedAttachments.value = [
@@ -282,6 +295,60 @@ function chooseAttachment(event: Event): void {
       }
     }),
   ]
+  return true
+}
+
+function chooseAttachment(event: Event): void {
+  const input = event.target as HTMLInputElement
+  const files = Array.from(input.files ?? [])
+  input.value = ''
+  addAttachments(files)
+}
+
+function clipboardFiles(event: ClipboardEvent): File[] {
+  const itemFiles = Array.from(event.clipboardData?.items ?? [])
+    .filter(item => item.kind === 'file')
+    .map(item => item.getAsFile())
+    .filter((file): file is File => file !== null)
+  return itemFiles.length > 0 ? itemFiles : Array.from(event.clipboardData?.files ?? [])
+}
+
+function handlePaste(event: ClipboardEvent): void {
+  const files = clipboardFiles(event)
+  if (files.length === 0) return
+  event.preventDefault()
+  addAttachments(files)
+}
+
+function carriesFiles(event: DragEvent): boolean {
+  return Array.from(event.dataTransfer?.types ?? []).includes('Files')
+}
+
+function handleAttachmentDragEnter(event: DragEvent): void {
+  if (!carriesFiles(event)) return
+  event.preventDefault()
+  attachmentDragDepth += 1
+  attachmentDragActive.value = true
+}
+
+function handleAttachmentDragOver(event: DragEvent): void {
+  if (!carriesFiles(event)) return
+  event.preventDefault()
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'
+}
+
+function handleAttachmentDragLeave(event: DragEvent): void {
+  if (!carriesFiles(event)) return
+  attachmentDragDepth = Math.max(0, attachmentDragDepth - 1)
+  if (attachmentDragDepth === 0) attachmentDragActive.value = false
+}
+
+function handleAttachmentDrop(event: DragEvent): void {
+  if (!carriesFiles(event)) return
+  event.preventDefault()
+  attachmentDragDepth = 0
+  attachmentDragActive.value = false
+  addAttachments(Array.from(event.dataTransfer?.files ?? []))
 }
 
 function openAttachmentPicker(kind: 'media' | 'file'): void {
@@ -557,12 +624,32 @@ onBeforeUnmount(() => {
   resizeObserver?.disconnect()
   window.visualViewport?.removeEventListener('resize', handleVisualViewportResize)
   clearAttachments()
+  attachmentDragDepth = 0
   if (props.conversation) props.setTyping(props.conversation.conversationId, false)
 })
 </script>
 
 <template>
-  <section v-if="conversation" class="message-panel">
+  <section
+    v-if="conversation"
+    class="message-panel"
+    @paste="handlePaste"
+    @dragenter="handleAttachmentDragEnter"
+    @dragover="handleAttachmentDragOver"
+    @dragleave="handleAttachmentDragLeave"
+    @drop="handleAttachmentDrop"
+  >
+    <div
+      v-if="attachmentDragActive"
+      class="attachment-drop-overlay"
+      role="status"
+      aria-live="polite"
+    >
+      <span class="attachment-drop-overlay__icon"><AppIcon name="attachment" /></span>
+      <strong>Перетащите файлы в сообщение</strong>
+      <small v-if="conversation.conversationType === 'group'">До 10 файлов за одну отправку</small>
+      <small v-else>Вложения в личных чатах пока недоступны</small>
+    </div>
     <header class="conversation-header">
       <button class="mobile-back" type="button" aria-label="К списку диалогов" @click="emit('back')">
         <AppIcon name="back" />
@@ -750,13 +837,13 @@ onBeforeUnmount(() => {
         <div class="composer-attachments__strip">
           <div
             v-for="(item, index) in selectedAttachments"
-            :key="`${item.file.name}-${item.file.lastModified}-${index}`"
+            :key="`${attachmentName(item.file)}-${item.file.lastModified}-${index}`"
             class="composer-attachment"
           >
             <img
               v-if="item.previewUrl && item.kind === 'image'"
               :src="item.previewUrl"
-              :alt="`Предпросмотр ${item.file.name}`"
+              :alt="`Предпросмотр ${attachmentName(item.file)}`"
             >
             <video
               v-else-if="item.previewUrl && item.kind === 'video'"
@@ -764,11 +851,11 @@ onBeforeUnmount(() => {
               muted
               playsinline
               preload="metadata"
-              :aria-label="`Предпросмотр ${item.file.name}`"
+              :aria-label="`Предпросмотр ${attachmentName(item.file)}`"
             />
             <span v-else class="composer-attachment__icon"><AppIcon name="attachment" /></span>
             <span class="composer-attachment__copy">
-              <strong>{{ item.file.name }}</strong>
+              <strong>{{ attachmentName(item.file) }}</strong>
               <small>
                 {{ Math.max(1, Math.ceil(item.file.size / 1024)) }} КБ
                 <template v-if="attachmentUploadPercent(index) !== null">
@@ -779,7 +866,7 @@ onBeforeUnmount(() => {
             <button
               type="button"
               :disabled="sending"
-              :aria-label="`Убрать ${item.file.name}`"
+              :aria-label="`Убрать ${attachmentName(item.file)}`"
               @click="removeAttachment(index)"
             >
               <AppIcon name="close" />
@@ -788,7 +875,7 @@ onBeforeUnmount(() => {
               v-if="attachmentUploadPercent(index) !== null"
               class="composer-attachment__progress"
               role="progressbar"
-              :aria-label="`Загрузка ${item.file.name}`"
+              :aria-label="`Загрузка ${attachmentName(item.file)}`"
               aria-valuemin="0"
               aria-valuemax="100"
               :aria-valuenow="attachmentUploadPercent(index) ?? 0"

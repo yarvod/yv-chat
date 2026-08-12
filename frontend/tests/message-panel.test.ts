@@ -109,6 +109,122 @@ describe('message panel', () => {
     expect(wrapper.get<HTMLInputElement>('input[data-picker="file"]').element.disabled).toBe(true)
   })
 
+  it('adds clipboard and drag-drop files in order without intercepting ordinary text paste', async () => {
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: vi.fn((file: File) => `blob:${file.name || 'clipboard'}`),
+    })
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      configurable: true,
+      value: vi.fn(),
+    })
+    const sendMessage = vi.fn().mockResolvedValue(true)
+    const wrapper = mount(MessagePanel, {
+      props: {
+        conversation: { ...conversation, conversationType: 'group', title: 'Team' },
+        messages: [],
+        actorUserId: 'alice-id',
+        sending: false,
+        protectionSecure: false,
+        protectionLabel: 'Группа без E2EE',
+        sendMessage,
+        deleteMessage: vi.fn(),
+        deletingMessageId: null,
+        typingActorIds: [],
+        onlineActorIds: [],
+        deliveryStates: [],
+        connectionState: 'connected',
+        setTyping: vi.fn(),
+      },
+    })
+    const panel = wrapper.get('.message-panel').element
+    const textarea = wrapper.get('textarea').element
+    const clipboardImage = new File(['image'], '', { type: 'image/png' })
+    const pasteFile = new Event('paste', { bubbles: true, cancelable: true })
+    Object.defineProperty(pasteFile, 'clipboardData', {
+      value: {
+        items: [{ kind: 'file', getAsFile: () => clipboardImage }],
+        files: [],
+      },
+    })
+    textarea.dispatchEvent(pasteFile)
+    await wrapper.vm.$nextTick()
+
+    expect(pasteFile.defaultPrevented).toBe(true)
+    expect(wrapper.text()).toContain('Вставленное изображение.png')
+
+    const pasteText = new Event('paste', { bubbles: true, cancelable: true })
+    Object.defineProperty(pasteText, 'clipboardData', {
+      value: {
+        items: [{ kind: 'string', getAsFile: () => null }],
+        files: [],
+      },
+    })
+    textarea.dispatchEvent(pasteText)
+    expect(pasteText.defaultPrevented).toBe(false)
+
+    const droppedFile = new File(['document'], 'notes.pdf', { type: 'application/pdf' })
+    const transfer = { types: ['Files'], files: [droppedFile], dropEffect: 'none' }
+    const dragEnter = new Event('dragenter', { bubbles: true, cancelable: true })
+    Object.defineProperty(dragEnter, 'dataTransfer', { value: transfer })
+    panel.dispatchEvent(dragEnter)
+    await wrapper.vm.$nextTick()
+    expect(dragEnter.defaultPrevented).toBe(true)
+    expect(wrapper.text()).toContain('Перетащите файлы в сообщение')
+
+    const dragOver = new Event('dragover', { bubbles: true, cancelable: true })
+    Object.defineProperty(dragOver, 'dataTransfer', { value: transfer })
+    panel.dispatchEvent(dragOver)
+    expect(dragOver.defaultPrevented).toBe(true)
+    expect(transfer.dropEffect).toBe('copy')
+
+    const drop = new Event('drop', { bubbles: true, cancelable: true })
+    Object.defineProperty(drop, 'dataTransfer', { value: transfer })
+    panel.dispatchEvent(drop)
+    await wrapper.vm.$nextTick()
+    expect(drop.defaultPrevented).toBe(true)
+    expect(wrapper.text()).not.toContain('Перетащите файлы в сообщение')
+    expect(wrapper.text()).toContain('notes.pdf')
+
+    await wrapper.get('form').trigger('submit')
+    expect(sendMessage).toHaveBeenCalledWith('', [
+      expect.objectContaining({ name: 'Вставленное изображение.png', body: clipboardImage }),
+      expect.objectContaining({ name: 'notes.pdf', body: droppedFile }),
+    ])
+  })
+
+  it('does not bypass the direct-chat E2EE media boundary for pasted files', async () => {
+    const wrapper = mount(MessagePanel, {
+      props: {
+        conversation,
+        messages: [],
+        actorUserId: 'alice-id',
+        sending: false,
+        protectionSecure: true,
+        protectionLabel: 'Защищено',
+        sendMessage: vi.fn(),
+        deleteMessage: vi.fn(),
+        deletingMessageId: null,
+        typingActorIds: [],
+        onlineActorIds: [],
+        deliveryStates: [],
+        connectionState: 'connected',
+        setTyping: vi.fn(),
+      },
+    })
+    const pasted = new File(['secret'], 'secret.png', { type: 'image/png' })
+    const event = new Event('paste', { bubbles: true, cancelable: true })
+    Object.defineProperty(event, 'clipboardData', {
+      value: { items: [], files: [pasted] },
+    })
+    wrapper.get('textarea').element.dispatchEvent(event)
+    await wrapper.vm.$nextTick()
+
+    expect(event.defaultPrevented).toBe(true)
+    expect(wrapper.text()).toContain('Вложения в личных чатах появятся после подключения E2EE media flow')
+    expect(wrapper.find('.composer-attachment').exists()).toBe(false)
+  })
+
   it('renders aggregate and per-item byte progress for a mixed attachment batch', async () => {
     Object.defineProperty(URL, 'createObjectURL', {
       configurable: true,
