@@ -128,7 +128,7 @@ async def download_group_attachment(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "attachment not found") from error
     except AuthorizationDeniedError as error:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "forbidden") from error
-    return StreamingResponse(
+    streaming_response = StreamingResponse(
         result.chunks,
         media_type=(
             result.content_type
@@ -144,3 +144,7 @@ async def download_group_attachment(
             "X-Content-Type-Options": "nosniff",
         },
     )
+    streaming_response.raw_headers.extend(
+        (name, value) for name, value in response.raw_headers if name.lower() == b"set-cookie"
+    )
+    return streaming_response

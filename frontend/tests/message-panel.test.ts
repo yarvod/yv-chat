@@ -31,7 +31,15 @@ const conversation = {
 }
 
 describe('message panel', () => {
-  it('selects, sends and clears one group file while direct picker stays disabled', async () => {
+  it('selects, edits and sends an ordered batch of 10 group files', async () => {
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: vi.fn((file: File) => `blob:${file.name}`),
+    })
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      configurable: true,
+      value: vi.fn(),
+    })
     const sendMessage = vi.fn().mockResolvedValue(true)
     const wrapper = mount(MessagePanel, {
       props: {
@@ -52,18 +60,30 @@ describe('message panel', () => {
       },
     })
     const input = wrapper.get<HTMLInputElement>('input[type="file"]')
-    const file = new File(['report'], 'report.txt', { type: 'text/plain' })
-    Object.defineProperty(input.element, 'files', { configurable: true, value: [file] })
+    const files = Array.from({ length: 10 }, (_, index) => (
+      new File([`photo-${index}`], `photo-${index}.png`, { type: 'image/png' })
+    ))
+    Object.defineProperty(input.element, 'files', { configurable: true, value: files })
     await input.trigger('change')
 
-    expect(wrapper.text()).toContain('report.txt')
+    expect(wrapper.text()).toContain('10 из 10')
+    expect(wrapper.text()).toContain('photo-0.png')
     expect(wrapper.text()).toContain('не E2EE')
+    const overflow = new File(['overflow'], 'overflow.png', { type: 'image/png' })
+    Object.defineProperty(input.element, 'files', { configurable: true, value: [overflow] })
+    await input.trigger('change')
+    expect(wrapper.text()).toContain('не больше 10 файлов')
+    await wrapper.get('button[aria-label="Убрать photo-0.png"]').trigger('click')
+    Object.defineProperty(input.element, 'files', { configurable: true, value: [overflow] })
+    await input.trigger('change')
+    expect(wrapper.text()).toContain('10 из 10')
     await wrapper.get('form').trigger('submit')
-    expect(sendMessage).toHaveBeenCalledWith('', expect.objectContaining({
-      name: 'report.txt',
-      body: file,
-    }))
-    expect(wrapper.text()).not.toContain('report.txt')
+    expect(sendMessage).toHaveBeenCalledWith('', expect.arrayContaining([
+      expect.objectContaining({ name: 'photo-1.png', body: files[1] }),
+      expect.objectContaining({ name: 'overflow.png', body: overflow }),
+    ]))
+    expect(sendMessage.mock.calls[0]?.[1]).toHaveLength(10)
+    expect(wrapper.text()).not.toContain('photo-1.png')
 
     await wrapper.setProps({ conversation })
     expect(wrapper.get<HTMLInputElement>('input[type="file"]').element.disabled).toBe(true)

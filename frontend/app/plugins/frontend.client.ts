@@ -28,6 +28,7 @@ import { DeliverOutboxMessage } from '../application/messaging/deliver-outbox-me
 import { ListOutboxMessages } from '../application/messaging/list-outbox-messages'
 import { QueueOutgoingMessage } from '../application/messaging/queue-outgoing-message'
 import { UploadGroupAttachment } from '../application/messaging/upload-group-attachment'
+import { DownloadGroupAttachment } from '../application/messaging/download-group-attachment'
 import { RetryOutboxMessage } from '../application/messaging/retry-outbox-message'
 import { GetDeviceCryptoRegistration } from '../application/device-crypto/get-device-crypto-registration'
 import { ListDeviceKeyPackages } from '../application/device-crypto/list-device-key-packages'
@@ -124,6 +125,7 @@ export default defineNuxtPlugin(() => {
       frontend: {
         messagingGateway,
         uploadGroupAttachment: new UploadGroupAttachment(attachmentGateway, clientIdGenerator),
+        downloadGroupAttachment: new DownloadGroupAttachment(attachmentGateway),
         deleteMessageForEveryone: new DeleteMessageForEveryone(messagingGateway),
         addGroupMember: new AddGroupMember(messagingGateway),
         removeGroupMember: new RemoveGroupMember(messagingGateway),

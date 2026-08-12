@@ -24,7 +24,9 @@ cleanup ───────────┼→ PostgreSQL on internal private n
 ```
 
 Production has no Nginx container. The Nginx service in root `compose.yml` is only
-for local same-origin integration at `http://localhost:8080`.
+for local same-origin integration at
+`http://localhost:${YV_CHAT_LOCAL_BIND_PORT:-8080}`; matching origin must be present
+in `ALLOWED_ORIGINS`.
 
 Only API/frontend loopback ports are published:
 

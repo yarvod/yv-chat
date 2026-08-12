@@ -70,4 +70,25 @@ export class ApiClient {
       throw new ApplicationError(response.status, 'invalid-response', 'invalid server response')
     }
   }
+
+  async download(path: string): Promise<Blob> {
+    let response: Response
+    try {
+      response = await fetch(path, {
+        method: 'GET',
+        headers: new Headers({ Accept: 'application/octet-stream,image/*' }),
+        credentials: 'include',
+      })
+    } catch {
+      throw new ApplicationError(null, 'network', 'network unavailable')
+    }
+    if (!response.ok) {
+      throw new ApplicationError(response.status, 'http', `request failed: ${response.status}`)
+    }
+    try {
+      return await response.blob()
+    } catch {
+      throw new ApplicationError(response.status, 'invalid-response', 'invalid binary response')
+    }
+  }
 }

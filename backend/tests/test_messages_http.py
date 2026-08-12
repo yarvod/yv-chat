@@ -23,7 +23,7 @@ async def login_as(client: AsyncClient, username: str) -> None:
 
 
 async def test_group_attachment_upload_binding_download_and_direct_rejection() -> None:
-    application, state, _ = build_test_application()
+    application, state, clock = build_test_application()
     bob = User.create(username="bob", display_name="Bob", now=NOW)
     mallory = User.create(username="mallory", display_name="Mallory", now=NOW)
     for user in (bob, mallory):
@@ -74,6 +74,7 @@ async def test_group_attachment_upload_binding_download_and_direct_rejection() -
             },
         )
         assert sent.status_code == 201
+        clock.instant = NOW + timedelta(hours=1)
         downloaded = await alice_client.get(
             f"/api/v1/conversations/{group_id}/attachments/{attachment_id}"
         )
@@ -83,6 +84,10 @@ async def test_group_attachment_upload_binding_download_and_direct_rejection() -
         assert downloaded.status_code == 200
         assert downloaded.content == body
         assert downloaded.headers["content-type"] == "image/png"
+        assert downloaded.cookies.get("__Host-yv_session") is not None
+        clock.instant += timedelta(seconds=61)
+        still_authenticated = await alice_client.get("/api/v1/auth/session")
+        assert still_authenticated.status_code == 200
         assert foreign.status_code == 404
 
         direct = await alice_client.post(

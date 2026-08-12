@@ -1,11 +1,12 @@
-import { mount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   decodeGroupMessageContent,
   encodeGroupMessageContent,
 } from '../app/application/messaging/group-message-content'
 import { UploadGroupAttachment } from '../app/application/messaging/upload-group-attachment'
+import { DownloadGroupAttachment } from '../app/application/messaging/download-group-attachment'
 import type { AttachmentGateway } from '../app/application/ports/attachment-gateway'
 import MessageAttachments from '../app/components/chat/MessageAttachments.vue'
 
@@ -16,6 +17,39 @@ const attachment = {
   contentType: 'image/png',
   byteSize: 321,
 }
+const originalIntersectionObserver = globalThis.IntersectionObserver
+
+beforeEach(() => {
+  Object.defineProperty(URL, 'createObjectURL', {
+    configurable: true,
+    value: vi.fn((blob: Blob) => `blob:test-${blob.size}`),
+  })
+  Object.defineProperty(URL, 'revokeObjectURL', {
+    configurable: true,
+    value: vi.fn(),
+  })
+  class ImmediateIntersectionObserver {
+    constructor(private readonly callback: IntersectionObserverCallback) {}
+
+    observe(target: Element): void {
+      this.callback([{ isIntersecting: true, target } as IntersectionObserverEntry], this as never)
+    }
+
+    disconnect(): void {}
+    unobserve(): void {}
+  }
+  Object.defineProperty(globalThis, 'IntersectionObserver', {
+    configurable: true,
+    value: ImmediateIntersectionObserver,
+  })
+})
+
+afterEach(() => {
+  Object.defineProperty(globalThis, 'IntersectionObserver', {
+    configurable: true,
+    value: originalIntersectionObserver,
+  })
+})
 
 describe('group message attachment content', () => {
   it('round-trips bounded metadata while preserving legacy text messages', () => {
@@ -54,7 +88,7 @@ describe('group attachment upload use case', () => {
       expiresAt: '2026-08-13T12:00:00Z',
     }))
     const useCase = new UploadGroupAttachment(
-      { upload },
+      { upload, download: vi.fn() },
       { create: () => 'client-attachment' },
     )
     const body = new Blob(['image'], { type: 'image/png' })
@@ -81,33 +115,99 @@ describe('group attachment upload use case', () => {
   })
 })
 
+describe('group attachment download use case', () => {
+  it('accepts only a bounded binary response matching message metadata', async () => {
+    const body = new Blob(['photo'], { type: 'image/png' })
+    const gateway: AttachmentGateway = {
+      upload: vi.fn(),
+      download: vi.fn().mockResolvedValue(body),
+    }
+    const useCase = new DownloadGroupAttachment(gateway)
+
+    await expect(useCase.execute('conversation-1', {
+      ...attachment,
+      byteSize: body.size,
+    })).resolves.toBe(body)
+    await expect(useCase.execute('conversation-1', attachment)).rejects.toThrow(
+      'attachment response mismatch',
+    )
+  })
+})
+
 describe('message attachment rendering', () => {
-  it('renders authenticated same-origin photo and file actions', () => {
+  it('loads photos through the authenticated gateway and opens an in-app viewer', async () => {
+    const second = { ...attachment, attachmentId: 'attachment-2', name: 'second.png' }
+    const loadAttachment = vi.fn(async (_conversationId, item) => (
+      new Blob(['x'.repeat(item.byteSize)], { type: item.contentType })
+    ))
     const wrapper = mount(MessageAttachments, {
       props: {
-        conversationId: 'conversation/1',
-        attachments: [attachment, {
-          attachmentId: 'file-1',
-          kind: 'file',
-          name: 'report.pdf',
-          contentType: 'application/pdf',
-          byteSize: 2048,
-        }],
+        conversationId: 'conversation-1',
+        attachments: [attachment, second],
+        loadAttachment,
       },
+      global: { stubs: { Teleport: true } },
     })
+    await flushPromises()
 
-    expect(wrapper.get('img').attributes('src')).toContain('conversation%2F1')
-    expect(wrapper.get('.message-file').attributes('download')).toBe('report.pdf')
-    expect(wrapper.text()).toContain('2 КБ')
+    expect(loadAttachment).toHaveBeenCalledWith('conversation-1', attachment)
+    expect(wrapper.get('.message-photo img').attributes('src')).toBe('blob:test-321')
+    expect(wrapper.find('a[target="_blank"]').exists()).toBe(false)
+    await wrapper.findAll('.message-photo')[0]?.trigger('click')
+    expect(wrapper.get('[role="dialog"]').text()).toContain('1 / 2')
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
+    await flushPromises()
+    expect(wrapper.get('[role="dialog"]').text()).toContain('2 / 2')
+    await wrapper.get('.media-viewer__close').trigger('click')
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
   })
 
-  it('replaces a failed image with an expiry-safe state', async () => {
+  it('downloads a file through the authenticated gateway without endpoint navigation', async () => {
+    const file = {
+      attachmentId: 'file-1',
+      kind: 'file' as const,
+      name: 'report.pdf',
+      contentType: 'application/pdf',
+      byteSize: 2048,
+    }
+    const loadAttachment = vi.fn().mockResolvedValue(
+      new Blob(['x'.repeat(file.byteSize)], { type: 'application/octet-stream' }),
+    )
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
     const wrapper = mount(MessageAttachments, {
-      props: { conversationId: 'conversation-1', attachments: [attachment] },
+      props: { conversationId: 'conversation-1', attachments: [file], loadAttachment },
     })
 
-    await wrapper.get('img').trigger('error')
+    expect(loadAttachment).not.toHaveBeenCalled()
+    await wrapper.get('.message-file').trigger('click')
+    await flushPromises()
+    expect(loadAttachment).toHaveBeenCalledWith('conversation-1', file)
+    expect(click).toHaveBeenCalledOnce()
+    expect(wrapper.find('a').exists()).toBe(false)
+    click.mockRestore()
+  })
+
+  it('renders gallery count and an expiry-safe retry state', async () => {
+    const second = { ...attachment, attachmentId: 'attachment-2', name: 'second.png' }
+    const loadAttachment = vi.fn(async (_conversationId, item) => {
+      if (item.attachmentId === attachment.attachmentId) throw new Error('expired')
+      return new Blob(['x'.repeat(item.byteSize)], { type: item.contentType })
+    })
+    const wrapper = mount(MessageAttachments, {
+      props: {
+        conversationId: 'conversation-1',
+        attachments: [attachment, second],
+        loadAttachment,
+      },
+      global: { stubs: { Teleport: true } },
+    })
+    await flushPromises()
+
     expect(wrapper.text()).toContain('срок хранения истёк')
-    expect(wrapper.find('img').exists()).toBe(false)
+    expect(wrapper.findAll('.message-photo')).toHaveLength(1)
+    await wrapper.get('.message-photo').trigger('click')
+    expect(wrapper.get('[role="dialog"]').text()).toContain('2 / 2')
+    await wrapper.get('.attachment-unavailable button').trigger('click')
+    expect(loadAttachment).toHaveBeenCalledTimes(3)
   })
 })

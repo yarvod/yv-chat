@@ -62,4 +62,11 @@ export class HttpAttachmentGateway implements AttachmentGateway {
     ) throw new ApplicationError(200, 'invalid-response', 'attachment receipt scope mismatch')
     return result
   }
+
+  async download(conversationId: string, attachmentId: string): Promise<Blob> {
+    return await this.apiClient.download(
+      `/api/v1/conversations/${encodeURIComponent(conversationId)}`
+      + `/attachments/${encodeURIComponent(attachmentId)}`,
+    )
+  }
 }

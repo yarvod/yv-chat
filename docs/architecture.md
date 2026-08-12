@@ -1042,7 +1042,7 @@ client validates type/size and computes SHA-256
 → streams original bytes to an authenticated group-only endpoint
 → server verifies membership, limits, digest and quota
 → server stores server-readable bytes under an opaque storage key
-→ group v1 message carries bounded display metadata and attachment ID
+→ group v1 message carries up to 10 ordered display metadata/attachment IDs
 → every download rechecks active membership, committed message and expiry
 ```
 
@@ -1069,11 +1069,28 @@ server-side thumbnail/transcoding отсутствуют. Безопасные i
 возвращаться inline с `nosniff`, остальные файлы — только как
 `application/octet-stream` attachment.
 
+Frontend никогда не навигирует browser/PWA напрямую на protected media URL и не
+открывает его через `_blank`: standalone PWA и внешний browser могут иметь разный
+cookie context. Infrastructure gateway выполняет same-origin binary `fetch` с
+`credentials: include`, application сверяет conversation/attachment metadata и
+bounded byte size, а presentation создаёт только краткоживущий Blob URL. Image URL
+лениво создаётся около viewport, отзывается при удалении/unmount и открывается во
+встроенном fullscreen viewer с keyboard/swipe navigation; file Blob скачивается без
+выхода из приложения. Это пока не durable OPFS cache: reload повторно получает media
+с сервера в пределах TTL.
+
+Authentication может ротировать opaque credential на любом authenticated GET.
+Поэтому attachment route обязан перенести каждый `Set-Cookie` из injected auth
+response в фактически возвращаемый `StreamingResponse`; иначе database уже примет
+новый digest, а browser останется со старым credential и после grace получит replay
+revocation.
+
 Committed group media наследует server-side `Message.expires_at` (default 30 days),
 uncommitted upload живёт не больше 24 часов. Bounded cleanup блокирует expiry batch
 через persistence adapter, терпит already-missing blob и удаляет metadata. Default
 limits: 12 MiB image, 25 MiB file, 150 MiB active media per uploader и 10 attachment
-IDs на message; первая UI-итерация отправляет один файл.
+IDs на message; UI отправляет ordered batch до 10 элементов одним сообщением и
+повторяет partial failure с теми же client attachment IDs.
 
 Production использует persistent Compose volume, общий для API и cleanup, с
 one-shot permission init; он не публикует port и не добавляет container nginx.

@@ -84,7 +84,8 @@ make frontend-dev
 docker compose up --build
 ```
 
-Он доступен на `http://localhost:8080` и не является production deployment с TLS.
+Он доступен на `http://localhost:${YV_CHAT_LOCAL_BIND_PORT:-8080}`; `ALLOWED_ORIGINS`
+должен содержать выбранный origin. Это не production deployment с TLS.
 
 ## Проверки
 

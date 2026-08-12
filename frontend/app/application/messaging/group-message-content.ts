@@ -61,8 +61,3 @@ export function decodeGroupMessageContent(plaintext: string): GroupMessageConten
     return { text: plaintext, attachments: [] }
   }
 }
-
-export function attachmentDownloadUrl(conversationId: string, attachmentId: string): string {
-  return `/api/v1/conversations/${encodeURIComponent(conversationId)}`
-    + `/attachments/${encodeURIComponent(attachmentId)}`
-}

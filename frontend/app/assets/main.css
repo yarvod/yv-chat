@@ -253,7 +253,11 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .attach-button:active { transform: scale(.93); }
 .attach-button.disabled { color: var(--muted); cursor: not-allowed; opacity: .5; }
 .attach-button input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
-.composer-attachment { grid-column: 1 / -1; display: grid; grid-template-columns: 48px minmax(0, 1fr) 34px; align-items: center; gap: 10px; min-height: 58px; padding: 6px 8px; border: 1px solid color-mix(in srgb, var(--primary) 25%, var(--border)); border-radius: 14px; background: var(--surface-raised); }
+.composer-attachments { grid-column: 1 / -1; display: grid; min-width: 0; gap: 6px; }
+.composer-attachments__heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 4px; color: var(--muted); font-size: .68rem; }
+.composer-attachments__heading button { padding: 2px 5px; border: 0; color: var(--primary); background: transparent; font-size: inherit; }
+.composer-attachments__strip { display: flex; gap: 7px; overflow-x: auto; overscroll-behavior-inline: contain; scrollbar-width: thin; padding-bottom: 2px; }
+.composer-attachment { display: grid; min-width: min(230px, 72vw); max-width: 230px; grid-template-columns: 48px minmax(0, 1fr) 34px; align-items: center; gap: 8px; min-height: 58px; padding: 6px; border: 1px solid color-mix(in srgb, var(--primary) 25%, var(--border)); border-radius: 14px; background: var(--surface-raised); }
 .composer-attachment > img { width: 48px; height: 48px; border-radius: 10px; object-fit: cover; }
 .composer-attachment__icon { display: grid; width: 44px; height: 44px; place-items: center; border-radius: 12px; color: var(--primary); background: color-mix(in srgb, var(--primary) 11%, transparent); }
 .composer-attachment__copy { display: grid; min-width: 0; gap: 2px; }
@@ -261,15 +265,33 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .composer-attachment__copy small { color: var(--muted); font-size: .68rem; }
 .composer-attachment > button { display: grid; width: 32px; height: 32px; place-items: center; padding: 0; border: 0; border-radius: 50%; color: var(--muted); background: transparent; }
 .composer-attachment-error { grid-column: 1 / -1; margin: 0; padding: 0 5px; color: var(--danger); font-size: .72rem; }
-.message-attachments { display: grid; gap: 6px; margin: -3px -6px 6px; }
-.message-photo { display: block; overflow: hidden; border-radius: 12px; background: var(--field); }
-.message-photo img { display: block; width: min(420px, 68vw); max-height: 58dvh; aspect-ratio: auto; object-fit: contain; }
-.message-file { display: grid; min-width: min(310px, 65vw); grid-template-columns: 42px minmax(0, 1fr); align-items: center; gap: 9px; padding: 8px; border-radius: 12px; color: inherit; background: color-mix(in srgb, var(--primary) 8%, transparent); text-decoration: none; }
+.message-attachments { display: grid; gap: 3px; margin: -3px -6px 6px; overflow: hidden; border-radius: 12px; }
+.message-attachments--gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.message-photo-shell { display: grid; min-width: 0; overflow: hidden; background: var(--field); }
+.message-photo { display: block; min-width: 0; overflow: hidden; padding: 0; border: 0; border-radius: 12px; background: var(--field); cursor: zoom-in; }
+.message-photo img { display: block; width: min(420px, 68vw); max-width: 100%; max-height: 58dvh; object-fit: contain; }
+.message-attachments--gallery .message-photo, .message-attachments--gallery .message-photo-shell { border-radius: 5px; }
+.message-attachments--gallery .message-photo img { width: 100%; height: clamp(120px, 24vw, 230px); object-fit: cover; }
+.message-photo-loading { display: grid; width: min(420px, 68vw); min-height: 170px; place-items: center; background: color-mix(in srgb, var(--primary) 5%, var(--field)); }
+.message-attachments--gallery .message-photo-loading { width: 100%; min-height: clamp(120px, 24vw, 230px); }
+.message-photo-loading .loading-orbit { width: 24px; height: 24px; }
+.message-file { display: grid; min-width: min(310px, 65vw); grid-column: 1 / -1; grid-template-columns: 42px minmax(0, 1fr); align-items: center; gap: 9px; padding: 8px; border: 0; border-radius: 12px; color: inherit; background: color-mix(in srgb, var(--primary) 8%, transparent); text-align: left; cursor: pointer; }
+.message-file:disabled { cursor: wait; opacity: .7; }
 .message-file__icon { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 12px; color: var(--primary); background: var(--surface-solid); }
 .message-file > span:last-child { display: grid; min-width: 0; gap: 2px; }
 .message-file strong { overflow: hidden; margin: 0; color: inherit; text-overflow: ellipsis; white-space: nowrap; }
 .message-file small { color: var(--muted); font-size: .7rem; }
-.attachment-unavailable { padding: 10px; border-radius: 10px; color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, transparent); font-size: .78rem; }
+.attachment-unavailable { display: grid; min-height: 90px; place-items: center; gap: 7px; padding: 10px; border-radius: 10px; color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, transparent); text-align: center; font-size: .78rem; }
+.attachment-unavailable button { min-height: 30px; padding: 3px 10px; border: 1px solid currentcolor; border-radius: 999px; color: inherit; background: transparent; }
+.media-viewer { position: fixed; z-index: 120; inset: 0; display: grid; grid-template-columns: minmax(44px, 1fr) minmax(0, 12fr) minmax(44px, 1fr); grid-template-rows: minmax(52px, auto) minmax(0, 1fr) minmax(48px, auto); align-items: center; gap: 10px; padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)); touch-action: pan-y; background: rgb(5 7 13 / 94%); backdrop-filter: blur(18px); }
+.media-viewer img { grid-column: 2; grid-row: 2; width: 100%; height: 100%; min-height: 0; object-fit: contain; user-select: none; }
+.media-viewer button { display: grid; width: 44px; height: 44px; place-items: center; padding: 0; border: 1px solid rgb(255 255 255 / 16%); border-radius: 50%; color: white; background: rgb(255 255 255 / 10%); font-size: 2rem; }
+.media-viewer__close { grid-column: 3; grid-row: 1; justify-self: end; font-size: 1rem !important; }
+.media-viewer__previous { grid-column: 1; grid-row: 2; }
+.media-viewer__next { grid-column: 3; grid-row: 2; justify-self: end; }
+.media-viewer p { grid-column: 1 / -1; grid-row: 3; margin: 0; overflow: hidden; color: rgb(255 255 255 / 78%); text-align: center; text-overflow: ellipsis; white-space: nowrap; }
+.media-viewer-enter-active, .media-viewer-leave-active { transition: opacity .18s ease; }
+.media-viewer-enter-from, .media-viewer-leave-to { opacity: 0; }
 .outbox-attachment { display: flex; align-items: center; gap: 7px; margin-bottom: 4px; color: var(--primary); font-size: .8rem; }
 .outbox-attachment .app-icon { width: 17px; height: 17px; }
 .send-button { display: grid; width: 46px; height: 46px; place-items: center; padding: 0; border: 0; border-radius: 50%; color: var(--primary-ink); background: var(--primary); font-size: 1.05rem; font-weight: 850; transition: transform .15s ease; }

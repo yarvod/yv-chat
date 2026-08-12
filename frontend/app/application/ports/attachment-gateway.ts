@@ -22,4 +22,5 @@ export interface UploadedGroupAttachment {
 
 export interface AttachmentGateway {
   upload(conversationId: string, upload: GroupAttachmentUpload): Promise<UploadedGroupAttachment>
+  download(conversationId: string, attachmentId: string): Promise<Blob>
 }

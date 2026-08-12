@@ -4,109 +4,99 @@
 завершённая работа фиксируется отдельным коммитом, а новый пункт переносится
 сюда из `backlog.md`.
 
-## WP-056 — Фото и файлы в групповых чатах с 30-дневным media TTL
+## WP-057 — Session-safe Telegram-like group media gallery
 
-Статус: **completed** (`5135a50`; production run `31551963185`)
-Backlog: `BL-016`, group-first slice `BL-043`, media часть `BL-018`
+Статус: **implementation/browser acceptance complete; production rollout pending**
+Backlog: следующий group-first slice `BL-043`; defects `BUG-057`, `BUG-058`
 
-Цель: дать участникам групп удобную отправку изображений и произвольных файлов,
-не выдавая этот v1 flow за E2EE. Media хранится на серверном local volume не дольше
-30 дней; direct MLS v2 conversations fail-closed для attachments до отдельного
-client-side encrypted flow.
+Цель: сделать отправку и просмотр group v1 фото/файлов предсказуемыми в обычном
+browser и установленной PWA: media никогда не открывает неавторизованный внешний
+контекст, session rotation сохраняется на streaming response, а одно сообщение
+принимает до 10 ordered вложений с удобным preview/gallery UX.
 
 ### Product scope
 
-- [x] attachment button открывает photo/file picker на mobile и desktop;
-- [x] выбранное вложение видно до отправки, его можно отменить, upload/send имеет
-  понятный busy/error/retry state;
-- [x] group message поддерживает caption либо attachment-only send;
-- [x] изображения показываются внутри bubble с пропорциональным preview и
-  открываются по нажатию; другие файлы имеют name/type/size и download action;
-- [x] expired/missing media отображается понятным unavailable state без поломки
-  timeline и остальных сообщений;
-- [x] существующие text messages, sync, ordering, idempotency и mobile composer не
-  деградируют.
+- [x] picker принимает до 10 фото/файлов за выбор и позволяет добавлять следующий
+  выбор до общего лимита;
+- [x] composer показывает ordered preview всех выбранных элементов, размер/type,
+  позволяет убрать один элемент или очистить набор;
+- [x] один send загружает весь валидный набор и создаёт одно сообщение с caption и
+  ordered attachment metadata/IDs;
+- [x] изображения загружаются authenticated fetch внутри PWA и показываются
+  адаптивной gallery без перехода во внешний browser/tab;
+- [x] tap/click открывает fullscreen viewer внутри приложения; keyboard navigation,
+  close и переключение между фото не ломают timeline;
+- [x] произвольный файл скачивается authenticated fetch через bounded Blob URL с
+  исходным безопасным display name;
+- [x] loading, partial upload failure, retry, expired/unavailable и offline состояния
+  видимы и не оставляют ложное «отправлено» сообщение.
 
-### Backend и storage boundary
+### Security/session invariants
 
-- [x] application зависит от узкого `MediaStorage` port; default adapter —
-  `LocalMediaStorage(/data/media)`, absolute paths не попадают в БД/API;
-- [x] server генерирует opaque storage key и пишет upload потоково через atomic
-  temporary file/rename; client filename никогда не используется как path;
-- [x] metadata/ownership/message binding хранятся отдельно через migration и typed
-  repository/UoW; ORM не выходит из infrastructure;
-- [x] upload/download требуют active group membership, direct conversation получает
-  явный rejection, чужое pending attachment нельзя привязать к сообщению;
-- [x] limits включают bounded file count, image/file bytes, filename/content-type,
-  per-user quota и chunked processing без unbounded backend RAM;
-- [x] pending upload имеет короткий TTL, committed media получает `expires_at`
-  сообщения (default 30 days); cleanup bounded/idempotent и терпит missing blob;
-- [x] production Compose монтирует persistent media volume в API и cleanup, не
-  публикует новый порт и не затрагивает host Nginx или `s3.yoowee.ru`.
+- [x] каждый media fetch использует same-origin `credentials: include`, membership
+  и expiry всё равно проверяются backend;
+- [x] frontend не помещает session credential в URL/storage и не создаёт permanent
+  public/object URL; каждый Blob URL отзывается при замене/unmount;
+- [x] rotated auth/CSRF cookies, выставленные authentication boundary, копируются в
+  фактический `StreamingResponse`, чтобы media GET не рассинхронизировал session;
+- [x] direct MLS v2 attachments остаются fail-closed; group v1 media по-прежнему
+  честно отмечены как server-readable и имеют 30-day TTL;
+- [x] набор ограничен 10 вложениями, существующие per-file size/quota/content-type
+  проверки не ослабляются.
 
-### Protocol и security contract
+### Architecture и implementation
 
-- [x] текущий group v1 upload server-readable и явно помечен как **не E2EE**;
-- [x] direct MLS v2 не принимает plaintext attachment IDs/bytes и не получает
-  downgrade/synthetic fallback;
-- [x] API никогда не логирует media content, session credentials или filesystem path;
-- [x] original filename — только bounded client display metadata; server
-  `Content-Disposition` его не отражает, sniffed/executable content не выполняется
-  inline;
-- [x] download повторно проверяет membership, expiry и committed state;
-- [x] будущий S3 adapter реализует тот же port и использует уже сохранённый opaque
-  key, поэтому domain/application и message schema не зависят от filesystem.
-
-### Frontend boundaries
-
-- [x] transport DTO/gateway, upload use case и presentation state разделены;
-- [x] raw network calls и Blob URL lifecycle не размазываются по visual components;
-- [x] attachment metadata входит в authoritative snapshot/sync и local archive;
-- [x] direct composer скрывает/блокирует attachment action с ясным объяснением;
-- [x] image/file rendering не пытается расшифровать group v1 media и не называет его
-  защищённым.
+- [x] `AttachmentGateway` получает typed download operation; `ApiClient` отвечает
+  только за credentialed binary transport;
+- [x] отдельный application use case валидирует conversation/attachment scope и
+  bounded downloaded Blob;
+- [x] `useMessenger` оркестрирует batch upload и передаёт ordered metadata/IDs в
+  существующий outbox/message flow;
+- [x] visual components владеют picker/viewer interaction и ephemeral Blob URL, но
+  не делают raw fetch;
+- [x] backend streaming route сохраняет response cookies без изменения storage/use
+  case boundary.
 
 ### Tests и acceptance
 
-- [x] domain/application: policy, ownership, idempotent message retry, quota и TTL;
-- [x] infrastructure: traversal, partial write cleanup, missing delete, persistence;
-- [x] HTTP/application boundary: upload/download group happy path;
-  direct/non-member/expired/oversize/
-  чужой attachment negative cases;
-- [x] cleanup: pending и committed expiry, repeat/concurrent-safe bounded batches;
-- [x] migration: fresh PostgreSQL `base -> head` и upgrade from previous head;
-- [x] frontend: picker/cancel/upload, photo/file bubble, attachment-only send,
-  direct fail-closed и expired state;
-- [x] backend ruff/format/mypy/pytest, frontend lint/typecheck/Vitest/build,
-  compose config и полный `make ci` зелёные;
-- [x] production rollout: migration, persistent volume, health/log/API smoke и
-  отсутствие влияния на `yoowee.ru`/`s3.yoowee.ru`.
+- [x] backend regression: rotation на attachment GET возвращает новый Set-Cookie и
+  следующий authenticated request остаётся valid;
+- [x] frontend unit/component: single image, 10-item batch, add/remove, 11th reject,
+  ordered upload/message, partial failure/retry, file download, viewer close/nav,
+  unavailable response и отсутствие `_blank` media navigation;
+- [x] backend ruff/format/mypy/pytest и frontend lint/typecheck/Vitest/build зелёные;
+- [x] isolated Compose stack: admin + второй пользователь, group, single photo,
+  batch photos, mixed file, receive/open/download/reload в реальном browser;
+- [ ] после merge/deploy проверены migration/health/logs и отсутствие влияния на
+  host Nginx, `yoowee.ru` и `s3.yoowee.ru`.
 
 ### Ограничения
 
-- этот slice не является E2EE media и не добавляет direct attachments;
-- gallery/multi-select, drag-and-drop/paste, OPFS encrypted media cache и offline
-  resumable/chunk protocol могут остаться следующими slices после одного файла;
-- server-side thumbnailing/transcoding и MinIO не добавляются;
-- TTL удаляет server copy; уже скачанный пользователем файл удалённо уничтожить
-  невозможно.
+- текущий slice не добавляет direct E2EE attachments, resumable/chunk upload,
+  offline media draft persistence, OPFS cache, drag/drop/paste или image editor;
+- server-side thumbnailing/transcoding и новый storage service не добавляются;
+- batch upload может быть ограниченно последовательным: корректность, quota и
+  повторяемый UX важнее параллельной нагрузки на малый VPS.
+
+### Local acceptance evidence
+
+- полный `make ci`: backend `223 passed, 8 skipped`, crypto `21 passed`, frontend
+  `195 passed`, production Nuxt/PWA build и Compose/deploy/docs checks зелёные;
+- isolated project `yv-chat-wp057` на `127.0.0.1:18100`: fresh migration `base →
+  0019`, admin + activated receiver, group message с 10 PNG и caption, отдельный
+  Markdown file;
+- sender/receiver открыли fullscreen viewer, keyboard next, file Blob download без
+  URL navigation и reload с 10 доступными фото; media GET вернули `200`, в API logs
+  нет `401/403/409/422/500` или traceback;
+- acceptance отдельно выявил stale directory snapshot (`BUG-059`), не связанный с
+  media transport; чистый origin получил authoritative directory и завершил flow.
 
 ### Definition of Done
 
-- фото и файлы удобно отправляются/получаются только в group v1;
-- media не переживает server TTL и хранится в persistent local volume;
-- direct MLS confidentiality не понижена;
-- storage implementation заменяема на S3 adapter без изменения use cases;
-- tests, docs, focused commit и production verification завершены.
-
-### Production evidence
-
-- independent CI run `31551963116` и deploy run `31551963185` завершились успешно;
-- production containers используют immutable `sha-5135a50...`, migration показывает
-  `0019_group_attachments (head)`;
-- `/data/media` доступен non-root API как `0700:65532:65532`, cleanup выполнил
-  первый bounded media pass без ошибок;
-- public `chat` health/app отвечают `200`, anonymous attachment request — `401`;
-- host nginx `active`, yv-chat Compose содержит только API/cleanup/frontend/Postgres;
-  `yoowee.ru` после redirect отвечает `200`, anonymous root `s3.yoowee.ru` —
-  ожидаемым `403` без TLS/connection failure.
+- пользователь отправляет одним group message до 10 фото/файлов и управляет набором
+  до send;
+- получатель без 401 открывает фото во встроенной gallery и скачивает файл;
+- attachment GET не теряет session credential rotation;
+- ошибки не ломают session/timeline и дают безопасный повтор;
+- automated checks, реальный browser acceptance, docs, focused commit и production
+  verification завершены.

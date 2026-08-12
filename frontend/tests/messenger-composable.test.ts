@@ -23,6 +23,8 @@ import { AcknowledgeOutboxMessage } from '../app/application/messaging/acknowled
 import { DeliverOutboxMessage } from '../app/application/messaging/deliver-outbox-message'
 import { ListOutboxMessages } from '../app/application/messaging/list-outbox-messages'
 import { QueueOutgoingMessage } from '../app/application/messaging/queue-outgoing-message'
+import { UploadGroupAttachment } from '../app/application/messaging/upload-group-attachment'
+import { decodeGroupMessageContent } from '../app/application/messaging/group-message-content'
 import { RetryOutboxMessage } from '../app/application/messaging/retry-outbox-message'
 import { ListParticipantDeliveryStates } from '../app/application/messaging/list-participant-delivery-states'
 import { MarkConversationDelivered } from '../app/application/messaging/mark-conversation-delivered'
@@ -266,6 +268,104 @@ describe('messenger orchestration', () => {
       'conversation-1', 'client-generated-id', 1, 'Z3JvdXAgc3RheXMgYXZhaWxhYmxl',
       null, null,
     ))
+  })
+
+  it('uploads an ordered batch and binds all attachment IDs to one message', async () => {
+    let uploadIndex = 0
+    const upload = vi.fn(async (conversationId, source) => ({
+      attachmentId: `server-${uploadIndex++}`,
+      clientAttachmentId: source.clientAttachmentId,
+      conversationId,
+      kind: source.kind,
+      contentType: source.contentType,
+      byteSize: source.byteSize,
+      sha256Digest: 'a'.repeat(64),
+      createdAt: '2026-08-11T12:00:00Z',
+      expiresAt: '2026-09-10T12:00:00Z',
+    }))
+    let clientIndex = 0
+    const uploadGroupAttachment = new UploadGroupAttachment(
+      { upload, download: vi.fn() },
+      { create: () => `upload-client-${clientIndex++}` },
+    )
+    const messenger = useMessenger('alice-id', 'device-alice', vi.fn(), {
+      ...messengerDependencies(),
+      uploadGroupAttachment,
+    })
+    const sources = Array.from({ length: 10 }, (_, index) => {
+      const body = new Blob([`photo-${index}`], { type: 'image/png' })
+      return {
+        name: `photo-${index}.png`,
+        type: 'image/png',
+        size: body.size,
+        body,
+      }
+    })
+
+    await messenger.load()
+    expect(await messenger.send('album', sources)).toBe(true)
+    expect(upload).toHaveBeenCalledTimes(10)
+    expect(upload.mock.calls.map(call => call[1].clientAttachmentId)).toEqual(
+      sources.map((_, index) => `upload-client-${index}`),
+    )
+    await vi.waitFor(() => expect(gateway.sendMessage).toHaveBeenCalled())
+    const call = vi.mocked(gateway.sendMessage).mock.calls.at(-1)
+    expect(call?.[6]).toEqual(sources.map((_, index) => `server-${index}`))
+    const plaintext = atob(call?.[3] ?? '')
+    expect(decodeGroupMessageContent(plaintext).attachments.map(item => item.name)).toEqual(
+      sources.map(item => item.name),
+    )
+  })
+
+  it('keeps a failed batch retryable with stable upload idempotency IDs', async () => {
+    let failSecond = true
+    const upload = vi.fn(async (conversationId, source) => {
+      if (source.clientAttachmentId === 'batch-client-1' && failSecond) {
+        failSecond = false
+        throw new ApplicationError(null, 'network', 'network unavailable')
+      }
+      return {
+        attachmentId: `server-${source.clientAttachmentId}`,
+        clientAttachmentId: source.clientAttachmentId,
+        conversationId,
+        kind: source.kind,
+        contentType: source.contentType,
+        byteSize: source.byteSize,
+        sha256Digest: 'a'.repeat(64),
+        createdAt: '2026-08-11T12:00:00Z',
+        expiresAt: '2026-09-10T12:00:00Z',
+      }
+    })
+    let clientIndex = 0
+    const messenger = useMessenger('alice-id', 'device-alice', vi.fn(), {
+      ...messengerDependencies(),
+      uploadGroupAttachment: new UploadGroupAttachment(
+        { upload, download: vi.fn() },
+        { create: () => `batch-client-${clientIndex++}` },
+      ),
+    })
+    const sources = Array.from({ length: 3 }, (_, index) => {
+      const body = new Blob([`file-${index}`], { type: 'text/plain' })
+      return { name: `file-${index}.txt`, type: body.type, size: body.size, body }
+    })
+
+    await messenger.load()
+    expect(await messenger.send('', sources)).toBe(false)
+    expect(messenger.state.message).toContain('повторите')
+    expect(await messenger.send('', sources)).toBe(true)
+    expect(upload.mock.calls.map(call => call[1].clientAttachmentId)).toEqual([
+      'batch-client-0',
+      'batch-client-1',
+      'batch-client-0',
+      'batch-client-1',
+      'batch-client-2',
+    ])
+    await vi.waitFor(() => expect(gateway.sendMessage).toHaveBeenCalled())
+    expect(vi.mocked(gateway.sendMessage).mock.calls.at(-1)?.[6]).toEqual([
+      'server-batch-client-0',
+      'server-batch-client-1',
+      'server-batch-client-2',
+    ])
   })
 
   it('keeps direct send fail-closed while MLS reconciliation is pending', async () => {

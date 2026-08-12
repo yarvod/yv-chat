@@ -7,11 +7,16 @@ import type { OutgoingMessageView } from '../../application/messaging/outgoing-m
 import type { RealtimeConnectionState } from '../../application/messaging/realtime-sync-service'
 import type {
   Conversation,
+  MessageAttachment,
   ParticipantDeliveryState,
 } from '../../domain/messaging/models'
 import { buildTimelineLayout } from '../../presentation/chat/timeline-layout'
 import AppIcon from '../ui/AppIcon.vue'
 import MessageAttachments from './MessageAttachments.vue'
+
+const PREVIEWABLE_IMAGE_TYPES = new Set([
+  'image/avif', 'image/gif', 'image/jpeg', 'image/png', 'image/webp',
+])
 
 const props = withDefaults(defineProps<{
   conversation: Conversation | null
@@ -24,9 +29,12 @@ const props = withDefaults(defineProps<{
   outboxStatus?: 'ready' | 'unavailable'
   actorUserId: string
   sending: boolean
+  attachmentUploadCompleted?: number
+  attachmentUploadTotal?: number
   protectionSecure: boolean
   protectionLabel: string
-  sendMessage: (plaintext: string, attachment?: GroupAttachmentSource | null) => Promise<boolean>
+  sendMessage: (plaintext: string, attachments?: readonly GroupAttachmentSource[]) => Promise<boolean>
+  loadAttachment?: (conversationId: string, attachment: MessageAttachment) => Promise<Blob>
   retryOutgoing?: (clientMessageId: string) => Promise<boolean>
   loadOlder?: () => Promise<void>
   returnToLatest?: () => Promise<void>
@@ -44,9 +52,12 @@ const props = withDefaults(defineProps<{
   archiveStatus: 'ready',
   outboxStatus: 'ready',
   outgoingMessages: () => [],
+  attachmentUploadCompleted: 0,
+  attachmentUploadTotal: 0,
   retryOutgoing: async () => false,
   loadOlder: async () => undefined,
   returnToLatest: async () => undefined,
+  loadAttachment: async () => { throw new TypeError('attachment download unavailable') },
 })
 const emit = defineEmits<{ back: []; groupDetails: [] }>()
 
@@ -55,8 +66,11 @@ const deleteCandidateId = ref<string | null>(null)
 const timeline = ref<HTMLElement | null>(null)
 const composerInput = ref<HTMLTextAreaElement | null>(null)
 const attachmentInput = ref<HTMLInputElement | null>(null)
-const selectedAttachment = ref<File | null>(null)
-const selectedPreviewUrl = ref<string | null>(null)
+interface SelectedAttachment {
+  file: File
+  previewUrl: string | null
+}
+const selectedAttachments = ref<SelectedAttachment[]>([])
 const attachmentError = ref<string | null>(null)
 const showScrollToLatest = ref(false)
 
@@ -154,49 +168,69 @@ async function confirmDelete(messageId: string): Promise<void> {
 }
 
 async function submit(): Promise<void> {
-  if (props.sending || (draft.value.trim().length === 0 && selectedAttachment.value === null)) return
+  if (props.sending || (draft.value.trim().length === 0 && selectedAttachments.value.length === 0)) return
   const value = draft.value
-  const attachment = selectedAttachment.value
-  const sent = attachment === null
+  const attachments = selectedAttachments.value.map(({ file }) => ({
+    name: file.name,
+    type: file.type,
+    size: file.size,
+    body: file,
+  }))
+  const sent = attachments.length === 0
     ? await props.sendMessage(value)
-    : await props.sendMessage(value, {
-    name: attachment.name,
-    type: attachment.type,
-    size: attachment.size,
-    body: attachment,
-    })
+    : await props.sendMessage(value, attachments)
   if (sent) {
     draft.value = ''
-    clearAttachment()
+    clearAttachments()
     await nextTick()
     resizeComposer()
     scrollToLatest('smooth')
   }
 }
 
-function clearAttachment(): void {
-  if (selectedPreviewUrl.value) URL.revokeObjectURL(selectedPreviewUrl.value)
-  selectedPreviewUrl.value = null
-  selectedAttachment.value = null
+function clearAttachments(): void {
+  for (const item of selectedAttachments.value) {
+    if (item.previewUrl) URL.revokeObjectURL(item.previewUrl)
+  }
+  selectedAttachments.value = []
   attachmentError.value = null
   if (attachmentInput.value) attachmentInput.value.value = ''
 }
 
 function chooseAttachment(event: Event): void {
-  const file = (event.target as HTMLInputElement).files?.[0] ?? null
-  clearAttachment()
-  if (!file) return
-  const isImage = ['image/avif', 'image/gif', 'image/jpeg', 'image/png', 'image/webp']
-    .includes(file.type)
-  const maximum = isImage ? 12 * 1024 * 1024 : 25 * 1024 * 1024
-  if (file.size <= 0 || file.size > maximum) {
-    attachmentError.value = isImage
-      ? 'Изображение должно быть не больше 12 МБ.'
-      : 'Файл должен быть не больше 25 МБ.'
+  const input = event.target as HTMLInputElement
+  const files = Array.from(input.files ?? [])
+  input.value = ''
+  attachmentError.value = null
+  if (files.length === 0) return
+  if (selectedAttachments.value.length + files.length > 10) {
+    attachmentError.value = 'В одном сообщении можно отправить не больше 10 файлов.'
     return
   }
-  selectedAttachment.value = file
-  if (isImage) selectedPreviewUrl.value = URL.createObjectURL(file)
+  for (const file of files) {
+    const isImage = PREVIEWABLE_IMAGE_TYPES.has(file.type)
+    const maximum = isImage ? 12 * 1024 * 1024 : 25 * 1024 * 1024
+    if (file.size <= 0 || file.size > maximum) {
+      attachmentError.value = isImage
+        ? `«${file.name}»: изображение должно быть не больше 12 МБ.`
+        : `«${file.name}»: файл должен быть не больше 25 МБ.`
+      return
+    }
+  }
+  selectedAttachments.value = [
+    ...selectedAttachments.value,
+    ...files.map(file => ({
+      file,
+      previewUrl: PREVIEWABLE_IMAGE_TYPES.has(file.type) ? URL.createObjectURL(file) : null,
+    })),
+  ]
+}
+
+function removeAttachment(index: number): void {
+  const item = selectedAttachments.value[index]
+  if (item?.previewUrl) URL.revokeObjectURL(item.previewUrl)
+  selectedAttachments.value = selectedAttachments.value.filter((_, itemIndex) => itemIndex !== index)
+  attachmentError.value = null
 }
 
 function isNearLatest(): boolean {
@@ -283,7 +317,7 @@ watch(
     if (previousConversationId) props.setTyping(previousConversationId, false)
     if (conversationId !== previousConversationId) {
       draft.value = ''
-      clearAttachment()
+      clearAttachments()
       deleteCandidateId.value = null
       showScrollToLatest.value = false
       await nextTick()
@@ -299,7 +333,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  clearAttachment()
+  clearAttachments()
   if (props.conversation) props.setTyping(props.conversation.conversationId, false)
 })
 </script>
@@ -381,6 +415,7 @@ onBeforeUnmount(() => {
             v-if="item.message.contentState === 'available' && (item.message.displayAttachments?.length ?? 0) > 0"
             :conversation-id="item.message.conversationId"
             :attachments="item.message.displayAttachments ?? []"
+            :load-attachment="loadAttachment"
           />
           <p v-if="item.message.contentState === 'available' && item.message.displayBody">
             {{ item.message.displayBody }}
@@ -431,7 +466,12 @@ onBeforeUnmount(() => {
       >
         <div v-if="(message.displayAttachments?.length ?? 0) > 0" class="outbox-attachment">
           <AppIcon name="attachment" />
-          <span>{{ message.displayAttachments?.[0]?.name }}</span>
+          <span>
+            {{ message.displayAttachments?.[0]?.name }}
+            <template v-if="(message.displayAttachments?.length ?? 0) > 1">
+              и ещё {{ (message.displayAttachments?.length ?? 1) - 1 }}
+            </template>
+          </span>
         </div>
         <p v-if="message.displayBody">{{ message.displayBody }}</p>
         <small class="message-meta outbox-meta">
@@ -463,16 +503,33 @@ onBeforeUnmount(() => {
     </button>
 
     <form class="composer" @submit.prevent="submit">
-      <div v-if="selectedAttachment" class="composer-attachment">
-        <img v-if="selectedPreviewUrl" :src="selectedPreviewUrl" alt="Предпросмотр выбранного изображения">
-        <span v-else class="composer-attachment__icon"><AppIcon name="attachment" /></span>
-        <span class="composer-attachment__copy">
-          <strong>{{ selectedAttachment.name }}</strong>
-          <small>Будет храниться на сервере до 30 дней · не E2EE</small>
-        </span>
-        <button type="button" aria-label="Убрать вложение" @click="clearAttachment">
-          <AppIcon name="close" />
-        </button>
+      <div v-if="selectedAttachments.length > 0" class="composer-attachments">
+        <div class="composer-attachments__heading">
+          <span v-if="sending && attachmentUploadTotal > 0">
+            {{ attachmentUploadCompleted < attachmentUploadTotal
+              ? `Загружаем ${attachmentUploadCompleted + 1} из ${attachmentUploadTotal}…`
+              : 'Сохраняем сообщение…' }}
+          </span>
+          <span v-else>{{ selectedAttachments.length }} из 10 · хранение до 30 дней · не E2EE</span>
+          <button type="button" @click="clearAttachments">Убрать все</button>
+        </div>
+        <div class="composer-attachments__strip">
+          <div
+            v-for="(item, index) in selectedAttachments"
+            :key="`${item.file.name}-${item.file.lastModified}-${index}`"
+            class="composer-attachment"
+          >
+            <img v-if="item.previewUrl" :src="item.previewUrl" :alt="`Предпросмотр ${item.file.name}`">
+            <span v-else class="composer-attachment__icon"><AppIcon name="attachment" /></span>
+            <span class="composer-attachment__copy">
+              <strong>{{ item.file.name }}</strong>
+              <small>{{ Math.max(1, Math.ceil(item.file.size / 1024)) }} КБ</small>
+            </span>
+            <button type="button" :aria-label="`Убрать ${item.file.name}`" @click="removeAttachment(index)">
+              <AppIcon name="close" />
+            </button>
+          </div>
+        </div>
       </div>
       <p v-if="attachmentError" class="composer-attachment-error" role="alert">
         {{ attachmentError }}
@@ -487,6 +544,7 @@ onBeforeUnmount(() => {
         <input
           ref="attachmentInput"
           type="file"
+          multiple
           :disabled="conversation.conversationType !== 'group' || sending"
           @change="chooseAttachment"
         >
@@ -504,7 +562,7 @@ onBeforeUnmount(() => {
         @input="resizeComposer"
         @keydown="handleComposerKeydown"
       />
-      <button class="send-button" type="submit" :disabled="sending || (draft.trim().length === 0 && !selectedAttachment)" aria-label="Отправить">
+      <button class="send-button" type="submit" :disabled="sending || (draft.trim().length === 0 && selectedAttachments.length === 0)" aria-label="Отправить">
         <span v-if="sending" aria-hidden="true">…</span>
         <AppIcon v-else name="send" />
       </button>

@@ -4,6 +4,43 @@
 
 ## Active
 
+### BUG-059 — Cached directory не видел только что активированного пользователя
+
+- Статус: `open, captured during WP-057 browser acceptance`.
+- Severity: `medium account/group UX`.
+- Reproduction: admin открывает messenger и сохраняет directory snapshot, затем в
+  другом tab активирует приглашённого пользователя; reload/chat startup восстанавливает
+  snapshot и делает cursor sync, но форма новой группы не показывает active account.
+  Чистый browser origin без snapshot сразу показывает пользователя.
+- Причина: account create/activation не публикует directory sync event, а cache-first
+  startup при успешном snapshot не выполняет authoritative directory refresh.
+- Ожидаемое исправление: после cache paint directory обязательно reconciled с API
+  либо account lifecycle публикует bounded user-directory invalidation; offline startup
+  по-прежнему использует snapshot.
+
+### BUG-058 — Attachment StreamingResponse терял rotated session cookie
+
+- Статус: `fixed, automated and two-user browser verified` (`WP-057`).
+- Severity: `critical authentication availability`.
+- Reproduction: attachment GET попадает в окно credential rotation;
+  `authenticate_request` выставляет новый cookie на injected `Response`, после чего
+  route возвращает другой `StreamingResponse`. Новый `Set-Cookie` не попадает клиенту,
+  а server уже хранит новый digest; после previous-token grace дальнейшие запросы
+  получают unauthorized/replay handling.
+- Ожидаемое поведение: фактический streaming response переносит все auth boundary
+  `Set-Cookie`, и следующий запрос с обновлённым credential остаётся valid.
+
+### BUG-057 — Фото открывалось вне PWA и получало unauthorized
+
+- Статус: `fixed, automated and two-user browser verified` (`WP-057`).
+- Severity: `high group-media usability`.
+- Reproduction: нажать group photo в установленной standalone PWA; обычный
+  `<a target="_blank">` может открыть внешний browser context/cookie partition без
+  текущей PWA session, и attachment endpoint отвечает `401`.
+- Ожидаемое поведение: PWA получает bytes через credentialed application gateway,
+  показывает фото во встроенной gallery, а file download использует краткоживущий
+  Blob URL без навигации на protected endpoint.
+
 ### BUG-056 — Concurrent retry attachment upload мог оставить orphan blob
 
 - Статус: `fixed, full-CI and production verified` (`WP-056`, `5135a50`).
