@@ -131,6 +131,12 @@ The production vhost routes API/WebSocket and frontend separately. It preserves
 `Host`, scheme and the forwarding chain; a conditional `Connection` map upgrades
 actual WebSocket requests without forcing upgrade semantics on ordinary HTTP.
 
+`Permissions-Policy` allows `camera` and `microphone` only for the top-level
+same-origin PWA because group video notes call `getUserMedia` after an explicit user
+gesture. Both capabilities remain unavailable to cross-origin content; geolocation
+remains disabled. Setting either capture capability to an empty allowlist blocks the
+browser permission prompt entirely and must be rejected by `make deploy-check`.
+
 Never run Certbot/Nginx in the yv-chat production Compose. Never edit neighboring
 `yoowee.ru` or `s3.yoowee.ru` vhosts as part of chat deployment.
 

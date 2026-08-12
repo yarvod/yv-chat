@@ -6,7 +6,7 @@
 
 ## WP-073 — Telegram-style group video notes
 
-Статус: **deployed; installed-PWA permission recovery fix in verification**
+Статус: **production header blocker fixed locally; rollout pending**
 
 Цель: участник server-readable group v1 записывает компактное круглое видео прямо
 из composer, управляет записью привычными мобильными жестами и получает устойчивое
@@ -64,4 +64,5 @@
 - physical Android/iOS installed-PWA camera, permission and codec acceptance не
   запускались в текущем environment и остаются обязательным pre-deploy smoke.
 - production rollout `31645619731` успешно развернул основной video-note flow;
-  последующий permission-recovery regression закрывает `BUG-068` локально.
+  последующий permission-recovery и same-origin Permissions Policy fix закрывают
+  `BUG-068` локально.

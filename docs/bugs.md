@@ -8,17 +8,20 @@
 
 - Статус: `fixed locally; installed-PWA acceptance pending` (`WP-073`).
 - Severity: `medium video-note availability/UX`.
-- Reproduction: один раз запретить camera или microphone установленной PWA, затем
-  снова удержать кнопку кружка; browser ожидаемо не показывает native prompt и сразу
-  возвращает permission error, а UI просил лишь открыть абстрактные настройки.
-- Причина: browser не имеет права повторно открыть prompt после persisted denial;
-  дополнительно client распознавал denial только через realm-sensitive
-  `instanceof DOMException` и мог ошибочно показать generic capture failure.
-- Исправление: denial классифицируется по стандартному error name без привязки к
-  realm; сообщение прямо объясняет отсутствие prompt, требует разрешить camera и
-  microphone для установленной PWA/site и предлагает снова удержать кнопку.
+- Production reproduction: на устройстве, где camera/microphone ещё не запрашивались,
+  удержать кнопку кружка; native prompt не появляется, browser сразу возвращает
+  permission error. После persisted denial повторный hold имеет тот же симптом.
+- Причина: production Nginx отправлял `Permissions-Policy: camera=(), microphone=()`,
+  то есть запрещал обе возможности до user permission layer. Для отдельного recovery
+  path client также распознавал denial только через realm-sensitive
+  `instanceof DOMException` и показывал слишком общий совет.
+- Исправление: production policy разрешает camera/microphone только top-level
+  same-origin PWA через `(self)`, не делегируя их cross-origin content; deploy-check
+  запрещает возврат empty allowlist. Denial классифицируется по стандартному error
+  name, а сообщение объясняет persisted denial и повторный hold после настроек.
 - Проверка: recorder regression покрывает cross-realm-style `PermissionDeniedError`,
-  component regression подтверждает понятный текст, закрытие overlay и повторный hold.
+  component regression подтверждает понятный текст, закрытие overlay и повторный
+  hold; deployment regression проверяет exact same-origin policy.
 
 ### BUG-067 — MLS roster обновлялся только при открытии того же личного чата
 
