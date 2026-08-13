@@ -557,7 +557,8 @@ generic background notification, focus/navigation и invalid-subscription cleanu
 
 ### BL-075 — Dual production origins
 
-Статус: **in progress** (`WP-075`).
+Статус: **completed and production verified** (`WP-075`, `dda65a4`, workflow
+`31702700102`).
 
 - общий chat-vhost и SAN TLS certificate для `chat.yoowee.ru` и
   `chat.yoowee.com.de`;

@@ -6,7 +6,8 @@
 
 ## WP-075 — Dual production origins
 
-Статус: **in progress**
+Статус: **completed and production verified** (`dda65a4`, workflow
+`31702700102`)
 
 Цель: один и тот же production messenger безопасно работает через
 `https://chat.yoowee.ru` и `https://chat.yoowee.com.de`, не затрагивая соседние
@@ -43,3 +44,19 @@
   application response, а неизвестный Origin остаётся запрещён;
 - yv-chat healthy, соседние `infra-*` containers сохраняют uptime;
 - deploy/docs checks проходят, production evidence записан.
+
+### Verification
+
+- DNS с production VPS: оба имени резолвятся в `31.192.110.84`;
+- immutable deployment tag —
+  `sha-dda65a4d85b531fb38c16bd41d42fa4db3994335`; yv-chat containers healthy;
+- Let’s Encrypt certificate SAN: `chat.yoowee.ru`, `chat.yoowee.com.de`, срок до
+  `2026-11-11`; renewal authenticator — `webroot`, path `/var/www/html`;
+- общий `nginx -t` и graceful reload прошли; scoped vhost backup —
+  `/etc/nginx/conf.d/chat.yoowee.ru.conf.before-dda65a4`;
+- оба HTTPS origin вернули API/frontend `200`, unauthenticated WebSocket `403`;
+  публичный DNS/TLS request к `.com.de` также вернул `200`;
+- exact `.com.de` Origin дошёл до application validation (`400` на synthetic invalid
+  invite), неизвестный Origin отклонён (`403`);
+- соседние `infra-*` containers сохранили uptime; temporary `.env` backup с
+  production secrets удалён после проверки нового mode-`0600` файла.
