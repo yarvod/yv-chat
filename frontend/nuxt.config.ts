@@ -57,7 +57,7 @@ export default defineNuxtConfig({
     typeCheck: true,
   },
   pwa: {
-    registerType: 'autoUpdate',
+    registerType: 'prompt',
     manifest: {
       id: '/',
       name: 'yv-chat',

@@ -64,15 +64,19 @@ describe('PWA install assets', () => {
     expect(config).toContain("'crypto/v3/**/*'")
   })
 
-  it('automatically activates updates and checks for them periodically', () => {
+  it('downloads updates periodically but requires explicit activation', () => {
     const config = readFileSync(resolve(process.cwd(), 'nuxt.config.ts'), 'utf8')
     const lifecycle = readFileSync(
       resolve(process.cwd(), 'app/plugins/pwa-lifecycle.client.ts'),
       'utf8',
     )
-    expect(config).toContain("registerType: 'autoUpdate'")
+    const app = readFileSync(resolve(process.cwd(), 'app/app.vue'), 'utf8')
+    expect(config).toContain("registerType: 'prompt'")
+    expect(config).not.toContain("registerType: 'autoUpdate'")
     expect(lifecycle).toContain('PwaUpdateCoordinator')
     expect(lifecycle).not.toContain('indexedDB.deleteDatabase')
+    expect(app).toContain('updateServiceWorker(true)')
+    expect(app).toContain('AppUpdatePrompt')
   })
 
   it('keeps standard artwork transparent and the maskable canvas fully opaque', async () => {

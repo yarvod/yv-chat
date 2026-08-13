@@ -4,9 +4,23 @@
 
 ## Active
 
+### BUG-074 — Installed PWA сама перезагружала active UI после deployment
+
+- Статус: `fixed locally; full CI passed; production acceptance pending` (`WP-078`).
+- Severity: `high PWA runtime continuity`.
+- Production reproduction: оставить installed macOS PWA открытой во время
+  deployment или вернуть её на foreground после deployment; UI внезапно делает
+  full reload/remount, что видно как рывок всей картинки.
+- Причина: `registerType: 'autoUpdate'` включал Workbox `skipWaiting`/
+  `clientsClaim`; Vite PWA handler на updated Service Worker activation вызывал
+  `window.location.reload()`. Project coordinator сам вызывал `registration.update()`
+  каждую минуту и при foreground resume, поэтому activation быстро обнаруживалась.
+- Исправление: prompt-mode install/download и explicit user-controlled activation/reload.
+
 ### BUG-073 — Logout одного device делал историю другого device нечитаемой
 
-- Статус: `fixed locally; full CI passed; production acceptance pending` (`WP-077`).
+- Статус: `fixed and production deployed` (`WP-077`, `2caa048`, workflow
+  `31721953404`).
 - Severity: `critical direct-message history availability`.
 - Production reproduction: direct conversation имеет не прочитанные/не закэшированные
   MLS messages на Mac; logout/relogin phone того же account меняет device roster;

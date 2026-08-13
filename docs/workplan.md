@@ -4,53 +4,37 @@
 завершённая работа фиксируется отдельным коммитом, а новый пункт переносится
 сюда из `backlog.md`.
 
-## WP-077 — Retention-aligned MLS epoch continuity and device-logout isolation
+## WP-078 — User-controlled PWA activation without surprise reloads
 
 Статус: **implemented and full-CI verified; production rollout pending**
-(`BL-064`, `BUG-073`)
+(`BL-025`, `BUG-074`)
 
-Цель: logout/relogin/revoke одного device не ломает чтение уже доступной E2EE-
-истории на другом авторизованном device, а долго offline device догоняет
-ещё хранящиеся server messages до необратимого MLS epoch advance.
+Цель: installed macOS/iOS/Android PWA никогда не перезагружает active UI из-за
+фоновой Service Worker update check. Новая версия скачивается в фоне, но
+activation/reload происходит только по явному действию пользователя.
 
 ### Scope
 
-- direct-message decrypt не запускает скрытый roster reconciliation;
-- перед каждым explicit reconciliation client постранично получает всю ещё
-  retained server history, decrypts доступные current/old-epoch messages и сохраняет
-  content только в device-local AES-GCM vault;
-- новые OpenMLS group/join config используют bounded `max_past_epochs = 128`;
-  это safety window, а не unlimited key archive, и он не отменяет pre-advance drain;
-- existing groups с историческим `max_past_epochs = 0` защищаются pre-advance drain;
-  уже выброшенные secrets без другой локальной копии не восстанавливаются;
-- active/inactive conversation, startup, cursor reset и durable `conversation_updated` идут через
-  один и тот же drain-before-advance flow;
-- QR linking/history union остаются следующим отдельным slice `BL-015`: эта
-  работа делает передаваемое состояние устойчивым.
-
-### Security invariants
-
-- server не получает plaintext, message key, past epoch secret или device-local storage key;
-- removed device не decrypt-ит messages из epochs после Remove Commit;
-- позднее добавленный device не получает pre-membership MLS secrets;
-- повреждённый ciphertext не блокирует drain остальной retained history и не
-  приводит к plaintext fallback;
-- pagination обязана monotonic progress; malformed/non-progressing response fail closed;
-- count-bounded past-epoch window дополняет, а не заменяет 30-day server TTL.
+- заменить Vite PWA `autoUpdate` на `prompt`, чтобы activated/update event не вызывал
+  implicit `window.location.reload()`;
+- сохранить bounded checks на startup, visibility resume и раз в минуту;
+- показывать global non-modal update notice с явной кнопкой activation;
+- на время activation блокировать double click и ясно показывать reload;
+- running old executable остаётся active, если download/check/activation не удались;
+- не менять IndexedDB, session, device identity, MLS state, archive и outbox schemas.
 
 ### Verification
 
-- Rust regression: unread epoch-N ciphertext decrypts after a roster Commit and sealed-state reload;
-- Rust security regression: removed leaf cannot decrypt future ciphertext;
-- frontend protocol regression: decrypt never triggers reconciliation, send still requires READY;
-- frontend orchestration regression: retained-history pages finish before active and inactive conversation
-  reconciliation, including durable roster-change event;
-- frontend lint/typecheck/tests/build, Rust fmt/clippy/tests and repository checks pass.
+- config regression запрещает `registerType: 'autoUpdate'`;
+- component regression проверяет explicit activation и busy state;
+- update coordinator по-прежнему coalesces startup/foreground/periodic checks;
+- frontend lint/typecheck/tests/build и full repository CI проходят;
+- production asset содержит prompt registration, а existing PWA после одного последнего
+  automatic reload больше не activation-ит future releases без кнопки.
 
 ### Definition of Done
 
-- reproduced logout/relogin sequence remains readable on the unaffected device without opening the chat first;
-- subsequent deploy/service restart does not alter device-local MLS state or require peer presence;
-- legacy groups survive future rotations once the fixed client has completed at least one pre-advance drain;
-- limits and unrecoverable already-lost-history case are documented honestly;
-- focused commit, CI and production acceptance complete before `BL-015` begins.
+- background update check не reload-ит active app;
+- пользователь видит доступное обновление и сам выбирает момент reload;
+- failed update не выбрасывает из сессии и не сбрасывает crypto/local data;
+- focused commit, CI/CD и macOS installed-PWA acceptance завершены.
