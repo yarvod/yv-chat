@@ -22,6 +22,11 @@ from messenger.domain.entities.device_crypto_identity import (
     DeviceCryptoIdentity,
     DeviceKeyPackage,
 )
+from messenger.domain.entities.device_pairing import (
+    DevicePairing,
+    DevicePairingPurpose,
+    DevicePairingStatus,
+)
 from messenger.domain.entities.message import Message, MessageDeletionReason
 from messenger.domain.entities.message_reaction import (
     ALLOWED_MESSAGE_REACTIONS,
@@ -57,6 +62,9 @@ __all__ = [
     "PushSubscription",
     "RegistrationInvitation",
     "Device",
+    "DevicePairing",
+    "DevicePairingPurpose",
+    "DevicePairingStatus",
     "DeviceCryptoIdentity",
     "DeviceKeyPackage",
     "SecurityEvent",

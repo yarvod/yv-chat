@@ -12,6 +12,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from messenger.application.accounts.password_reset_policy import PasswordResetPolicy
 from messenger.application.attachments.policy import AttachmentPolicy
+from messenger.application.device_pairings.policy import DevicePairingPolicy
 from messenger.application.messaging.retention import MessageRetentionPolicy
 from messenger.application.security_events.policy import SecurityEventPolicy
 from messenger.application.sessions.policy import SessionPolicy
@@ -60,6 +61,8 @@ class AppSettings(BaseSettings):
     session_rotation_interval_seconds: int = Field(default=86_400, gt=0)
     session_previous_token_grace_seconds: int = Field(default=60, gt=0)
     session_touch_interval_seconds: int = Field(default=300, gt=0)
+    device_pairing_ttl_seconds: int = Field(default=600, ge=60, le=1_800)
+    device_pairing_retention_seconds: int = Field(default=86_400, ge=3_600, le=604_800)
     security_event_retention_seconds: int = Field(default=7_776_000, gt=0, le=31_536_000)
     sync_event_retention_seconds: int = Field(default=2_592_000, gt=0, le=31_536_000)
     message_ciphertext_retention_seconds: int = Field(default=2_592_000, gt=0, le=31_536_000)
@@ -138,6 +141,8 @@ class AppSettings(BaseSettings):
             self.media_file_max_bytes,
         ):
             raise ValueError("media user quota must fit one maximum attachment")
+        if self.device_pairing_retention_seconds <= self.device_pairing_ttl_seconds:
+            raise ValueError("device pairing retention must exceed its TTL")
         vapid_values = (self.vapid_public_key, self.vapid_private_key, self.vapid_contact)
         if any(value is not None for value in vapid_values) and not all(
             value is not None for value in vapid_values
@@ -208,6 +213,13 @@ class AppSettings(BaseSettings):
             rotation_interval=timedelta(seconds=self.session_rotation_interval_seconds),
             previous_token_grace=timedelta(seconds=self.session_previous_token_grace_seconds),
             touch_interval=timedelta(seconds=self.session_touch_interval_seconds),
+        )
+
+    @property
+    def device_pairing_policy(self) -> DevicePairingPolicy:
+        return DevicePairingPolicy(
+            ttl=timedelta(seconds=self.device_pairing_ttl_seconds),
+            retention=timedelta(seconds=self.device_pairing_retention_seconds),
         )
 
     @property

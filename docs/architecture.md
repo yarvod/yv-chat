@@ -509,6 +509,27 @@ authoritative list после response. IP показывается только
 контекст. Event UI принимает закрытый набор typed event names и не ожидает
 free-form payload.
 
+QR device linking — отдельный passwordless bootstrap поверх того же opaque-session
+model, а не перенос существующей session/device identity. `device_pairings` хранит
+durable monotonic state, exact trusted session/device binding, TTL и только SHA-256
+digests двух независимых 256-bit values: scan capability из QR и candidate proof,
+который в QR не попадает. Request создаёт новый компьютер, который показывает QR
+доверенному телефону; offer создаёт доверенный компьютер, чей QR сканирует новый
+телефон. До explicit approval exact active trusted session и proof-preimage candidate
+новые `Device`/`Session` не создаются. После approval candidate proof одноразово
+становится первым opaque session credential; потерянный HTTP response можно повторить
+без хранения plaintext credential на server и без duplicate device. Browser держит
+proof только в памяти/`sessionStorage` незавершённого flow и удаляет после установки
+HttpOnly cookie; `localStorage`/IndexedDB/URL запрещены. Подробнее: ADR-0003.
+
+QR pairing transport не меняет MLS roster и не копирует signer, provider state,
+archive/storage key или message history. Он лишь создаёт независимую authenticated
+device boundary. Background MLS enrollment и bidirectional archive union идут
+отдельными `BL-015` slices, чтобы deployment QR UI не мог остановить healthy chats.
+PostgreSQL state переживает API restart; polling является latency mechanism, а не
+источником correctness. Компьютер всегда display, телефон scanner; камера внутри PWA
+имеет paste/manual fallback, а обычная iOS Camera landing не получает trust сама.
+
 Выход с текущего устройства является security operation, а не обычной навигацией:
 он требует отдельного confirm step в Settings и backend атомарно отзывает current
 session вместе с device identity. Device-scoped IndexedDB records физически не

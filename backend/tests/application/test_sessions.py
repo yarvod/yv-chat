@@ -91,7 +91,7 @@ async def test_login_enrolls_device_and_persists_only_credential_digest() -> Non
     session = next(iter(state.sessions.values()))
     device = state.devices[session.device_id]
 
-    assert plaintext == "opaque-session-1"
+    assert plaintext == "opaque-session-00000000000000000001"
     assert session.current_token_hash == credentials.digest(plaintext)
     assert plaintext not in session.current_token_hash
     assert session.previous_token_hash is None
@@ -151,7 +151,7 @@ async def test_rotation_allows_concurrent_previous_credential_then_revokes_repla
     rotated = await rotate.execute(AuthenticateSessionCommand(session_credential=original))
     replacement = rotated.rotated_session_credential
 
-    assert replacement == "opaque-session-2"
+    assert replacement == "opaque-session-00000000000000000002"
     within_grace = AuthenticateSession(
         unit_of_work=factory,
         clock=FixedClock(NOW + timedelta(hours=1, seconds=59)),

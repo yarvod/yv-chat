@@ -65,6 +65,18 @@ class OwnedDeviceNotFoundError(ApplicationError):
     """The requested device is absent or owned by another user."""
 
 
+class DevicePairingNotFoundError(ApplicationError):
+    """The pairing is absent or cannot be disclosed to this actor."""
+
+
+class DevicePairingStateError(ApplicationError):
+    """The pairing cannot perform the requested monotonic transition."""
+
+
+class DevicePairingProofError(ApplicationError):
+    """A scan token or candidate proof does not match the pairing commitment."""
+
+
 class DeviceCryptoIdentityNotFoundError(ApplicationError):
     """The current device has no registered public cryptographic identity."""
 

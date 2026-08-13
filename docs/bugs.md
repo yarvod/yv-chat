@@ -6,7 +6,7 @@
 
 ### BUG-074 — Installed PWA сама перезагружала active UI после deployment
 
-- Статус: `fixed locally; full CI passed; production acceptance pending` (`WP-078`).
+- Статус: `fixed and production deployed` (`WP-078`, `053bfd7`).
 - Severity: `high PWA runtime continuity`.
 - Production reproduction: оставить installed macOS PWA открытой во время
   deployment или вернуть её на foreground после deployment; UI внезапно делает

@@ -31,6 +31,7 @@ from messenger.application.ports.device_crypto import (
 )
 from messenger.application.ports.identity import (
     ActivationTokenRepository,
+    DevicePairingRepository,
     DeviceRepository,
     DeviceSessionRecord,
     IdentityUnitOfWork,
@@ -78,6 +79,7 @@ from messenger.domain.entities import (
     Device,
     DeviceCryptoIdentity,
     DeviceKeyPackage,
+    DevicePairing,
     Message,
     MessageReaction,
     PasswordResetToken,
@@ -98,6 +100,7 @@ class IdentityState:
     registration_invitations: dict[UUID, RegistrationInvitation] = field(default_factory=dict)
     password_hashes: dict[UUID, str] = field(default_factory=dict)
     devices: dict[UUID, Device] = field(default_factory=dict)
+    device_pairings: dict[UUID, DevicePairing] = field(default_factory=dict)
     device_crypto_identities: dict[UUID, DeviceCryptoIdentity] = field(default_factory=dict)
     device_key_packages: dict[UUID, DeviceKeyPackage] = field(default_factory=dict)
     conversation_crypto_generations: dict[UUID, ConversationCryptoGeneration] = field(
@@ -655,6 +658,29 @@ class FakeSessionRepository:
         return {user_id: count for user_id, count in counts.items() if count > 0}
 
 
+class FakeDevicePairingRepository:
+    def __init__(self, state: IdentityState) -> None:
+        self._state = state
+
+    async def add(self, pairing: DevicePairing) -> None:
+        self._state.device_pairings[pairing.id] = pairing
+
+    async def get_by_id_for_update(self, pairing_id: UUID) -> DevicePairing | None:
+        return self._state.device_pairings.get(pairing_id)
+
+    async def update(self, pairing: DevicePairing) -> None:
+        if pairing.id not in self._state.device_pairings:
+            raise RuntimeError("pairing disappeared during update")
+        self._state.device_pairings[pairing.id] = pairing
+
+    async def prune_expired(self, *, before: datetime) -> None:
+        self._state.device_pairings = {
+            pairing_id: pairing
+            for pairing_id, pairing in self._state.device_pairings.items()
+            if pairing.expires_at > before
+        }
+
+
 class FakeSecurityEventRepository:
     def __init__(self, state: IdentityState) -> None:
         self._state = state
@@ -700,6 +726,7 @@ class FakeIdentityUnitOfWork:
             FakeRegistrationInvitationRepository(state)
         )
         self.devices: DeviceRepository = FakeDeviceRepository(state)
+        self.device_pairings: DevicePairingRepository = FakeDevicePairingRepository(state)
         self.sessions: SessionRepository = FakeSessionRepository(state)
         self.security_events: SecurityEventRepository = FakeSecurityEventRepository(state)
         self.conversations: ConversationRepository = FakeConversationRepository(state)
@@ -1617,7 +1644,7 @@ class FixedSessionCredentials:
         self.generated_plaintexts: list[str] = []
 
     def generate(self) -> GeneratedSessionCredential:
-        plaintext = f"opaque-session-{len(self.generated_plaintexts) + 1}"
+        plaintext = f"opaque-session-{len(self.generated_plaintexts) + 1:020d}"
         self.generated_plaintexts.append(plaintext)
         return GeneratedSessionCredential(
             plaintext=plaintext,

@@ -23,6 +23,7 @@ from messenger.infrastructure.persistence.models.device_crypto_identity import (
     DeviceCryptoIdentityModel,
     DeviceKeyPackageModel,
 )
+from messenger.infrastructure.persistence.models.device_pairing import DevicePairingModel
 from messenger.infrastructure.persistence.models.message import MessageModel
 from messenger.infrastructure.persistence.models.message_reaction import MessageReactionModel
 from messenger.infrastructure.persistence.models.password_reset_token import PasswordResetTokenModel
@@ -47,6 +48,7 @@ __all__ = [
     "ConversationDeliveryStateModel",
     "ConversationReadStateModel",
     "DeviceModel",
+    "DevicePairingModel",
     "DeviceCryptoIdentityModel",
     "DeviceKeyPackageModel",
     "MessageModel",

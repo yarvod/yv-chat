@@ -30,6 +30,19 @@ from messenger.application.conversations.leave_conversation import LeaveConversa
 from messenger.application.conversations.list_conversations import ListConversations
 from messenger.application.conversations.remove_member import RemoveConversationMember
 from messenger.application.conversations.rename_group import RenameGroupConversation
+from messenger.application.device_pairings.approve import ApproveDevicePairing
+from messenger.application.device_pairings.authorize import AuthorizeDevicePairing
+from messenger.application.device_pairings.cancel import (
+    CancelCandidatePairing,
+    CancelTrustedPairing,
+)
+from messenger.application.device_pairings.create_offer import CreatePairingOffer
+from messenger.application.device_pairings.create_request import CreatePairingRequest
+from messenger.application.device_pairings.scan import ScanPairingOffer, ScanPairingRequest
+from messenger.application.device_pairings.status import (
+    GetCandidatePairingStatus,
+    GetTrustedPairingStatus,
+)
 from messenger.application.devices.list_security_events import ListSecurityEvents
 from messenger.application.devices.list_sessions import ListMySessions
 from messenger.application.devices.rename import RenameMyDevice
@@ -104,6 +117,16 @@ async def test_production_graph_resolves_every_application_operation() -> None:
         RenameMyDevice,
         RevokeMyDevice,
         RevokeOtherSessions,
+        CreatePairingRequest,
+        CreatePairingOffer,
+        ScanPairingRequest,
+        ScanPairingOffer,
+        GetCandidatePairingStatus,
+        GetTrustedPairingStatus,
+        ApproveDevicePairing,
+        AuthorizeDevicePairing,
+        CancelCandidatePairing,
+        CancelTrustedPairing,
         GetCurrentPushSubscription,
         RegisterPushSubscription,
         RemovePushSubscription,

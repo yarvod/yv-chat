@@ -1,6 +1,7 @@
 """Identity persistence ports, split by aggregate and re-exported as one boundary."""
 
 from messenger.application.ports.identity.activation_tokens import ActivationTokenRepository
+from messenger.application.ports.identity.device_pairings import DevicePairingRepository
 from messenger.application.ports.identity.devices import DeviceRepository
 from messenger.application.ports.identity.password_reset_tokens import PasswordResetTokenRepository
 from messenger.application.ports.identity.records import (
@@ -24,6 +25,7 @@ from messenger.application.ports.identity.users import UserRepository
 __all__ = [
     "ActivationTokenRepository",
     "DeviceRepository",
+    "DevicePairingRepository",
     "DeviceSessionRecord",
     "IdentityUnitOfWork",
     "IdentityUnitOfWorkFactory",

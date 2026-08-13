@@ -6,6 +6,7 @@ from types import TracebackType
 from typing import TYPE_CHECKING, Protocol, Self
 
 from messenger.application.ports.identity.activation_tokens import ActivationTokenRepository
+from messenger.application.ports.identity.device_pairings import DevicePairingRepository
 from messenger.application.ports.identity.devices import DeviceRepository
 from messenger.application.ports.identity.password_reset_tokens import PasswordResetTokenRepository
 from messenger.application.ports.identity.registration_invitations import (
@@ -24,6 +25,7 @@ class IdentityUnitOfWork(Protocol):
     users: UserRepository
     activation_tokens: ActivationTokenRepository
     devices: DeviceRepository
+    device_pairings: DevicePairingRepository
     password_reset_tokens: PasswordResetTokenRepository
     registration_invitations: RegistrationInvitationRepository
     sessions: SessionRepository

@@ -5,7 +5,7 @@ interface UserAgentDataLike {
   readonly platform?: string
 }
 
-interface NavigatorWithUserAgentData extends Navigator {
+type NavigatorWithUserAgentData = Navigator & {
   readonly userAgentData?: UserAgentDataLike
 }
 

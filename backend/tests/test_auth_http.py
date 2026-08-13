@@ -63,6 +63,20 @@ from messenger.application.device_crypto.register import RegisterDeviceCryptoIde
 from messenger.application.device_crypto.replenish_key_packages import (
     ReplenishDeviceKeyPackages,
 )
+from messenger.application.device_pairings.approve import ApproveDevicePairing
+from messenger.application.device_pairings.authorize import AuthorizeDevicePairing
+from messenger.application.device_pairings.cancel import (
+    CancelCandidatePairing,
+    CancelTrustedPairing,
+)
+from messenger.application.device_pairings.create_offer import CreatePairingOffer
+from messenger.application.device_pairings.create_request import CreatePairingRequest
+from messenger.application.device_pairings.policy import DevicePairingPolicy
+from messenger.application.device_pairings.scan import ScanPairingOffer, ScanPairingRequest
+from messenger.application.device_pairings.status import (
+    GetCandidatePairingStatus,
+    GetTrustedPairingStatus,
+)
 from messenger.application.devices.list_security_events import ListSecurityEvents
 from messenger.application.devices.list_sessions import ListMySessions
 from messenger.application.devices.rename import RenameMyDevice
@@ -267,6 +281,13 @@ class HttpTestProvider(Provider):
         return POLICY
 
     @provide(scope=Scope.APP)
+    def device_pairing_policy(self) -> DevicePairingPolicy:
+        return DevicePairingPolicy(
+            ttl=timedelta(minutes=10),
+            retention=timedelta(days=1),
+        )
+
+    @provide(scope=Scope.APP)
     def password_reset_policy(self) -> PasswordResetPolicy:
         return PasswordResetPolicy(ttl=timedelta(hours=1))
 
@@ -299,6 +320,16 @@ class HttpTestProvider(Provider):
     rename_my_device = provide(RenameMyDevice, scope=Scope.REQUEST)
     revoke_my_device = provide(RevokeMyDevice, scope=Scope.REQUEST)
     revoke_other_sessions = provide(RevokeOtherSessions, scope=Scope.REQUEST)
+    create_pairing_request = provide(CreatePairingRequest, scope=Scope.REQUEST)
+    create_pairing_offer = provide(CreatePairingOffer, scope=Scope.REQUEST)
+    scan_pairing_request = provide(ScanPairingRequest, scope=Scope.REQUEST)
+    scan_pairing_offer = provide(ScanPairingOffer, scope=Scope.REQUEST)
+    get_candidate_pairing_status = provide(GetCandidatePairingStatus, scope=Scope.REQUEST)
+    get_trusted_pairing_status = provide(GetTrustedPairingStatus, scope=Scope.REQUEST)
+    approve_pairing = provide(ApproveDevicePairing, scope=Scope.REQUEST)
+    authorize_pairing = provide(AuthorizeDevicePairing, scope=Scope.REQUEST)
+    cancel_candidate_pairing = provide(CancelCandidatePairing, scope=Scope.REQUEST)
+    cancel_trusted_pairing = provide(CancelTrustedPairing, scope=Scope.REQUEST)
     get_current_device_crypto_identity = provide(
         GetCurrentDeviceCryptoIdentity,
         scope=Scope.REQUEST,
@@ -600,8 +631,8 @@ async def run_cookie_only_auth() -> None:
     transport = ASGITransport(app=application)
     async with AsyncClient(transport=transport, base_url="https://test") as client:
         response = await client.get(
-            "/api/v1/auth/session?session_credential=opaque-session-1",
-            headers={"Authorization": "Bearer opaque-session-1"},
+            "/api/v1/auth/session?session_credential=opaque-session-00000000000000000001",
+            headers={"Authorization": "Bearer opaque-session-00000000000000000001"},
         )
         assert response.status_code == 401
 

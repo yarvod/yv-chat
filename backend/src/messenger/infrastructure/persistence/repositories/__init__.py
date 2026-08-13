@@ -24,6 +24,9 @@ from messenger.infrastructure.persistence.repositories.device_crypto import (
     SqlAlchemyDeviceCryptoIdentityRepository,
     SqlAlchemyDeviceKeyPackageRepository,
 )
+from messenger.infrastructure.persistence.repositories.device_pairings import (
+    SqlAlchemyDevicePairingRepository,
+)
 from messenger.infrastructure.persistence.repositories.devices import SqlAlchemyDeviceRepository
 from messenger.infrastructure.persistence.repositories.message_reactions import (
     SqlAlchemyMessageReactionRepository,
@@ -57,6 +60,7 @@ __all__ = [
     "SqlAlchemyDeviceCryptoIdentityRepository",
     "SqlAlchemyDeviceKeyPackageRepository",
     "SqlAlchemyDeviceRepository",
+    "SqlAlchemyDevicePairingRepository",
     "SqlAlchemyMessageRepository",
     "SqlAlchemyMessageReactionRepository",
     "SqlAlchemyPasswordResetTokenRepository",

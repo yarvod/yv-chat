@@ -5,6 +5,9 @@ from messenger.domain.entities import (
     Device,
     DeviceCryptoIdentity,
     DeviceKeyPackage,
+    DevicePairing,
+    DevicePairingPurpose,
+    DevicePairingStatus,
     PasswordResetToken,
     RegistrationInvitation,
     SecurityEvent,
@@ -17,6 +20,7 @@ from messenger.infrastructure.persistence.models import (
     DeviceCryptoIdentityModel,
     DeviceKeyPackageModel,
     DeviceModel,
+    DevicePairingModel,
     PasswordResetTokenModel,
     RegistrationInvitationModel,
     SecurityEventModel,
@@ -87,6 +91,30 @@ def map_device(model: DeviceModel) -> Device:
         revoked_at=model.revoked_at,
         login_ip=model.login_ip,
         last_ip=model.last_ip,
+    )
+
+
+def map_device_pairing(model: DevicePairingModel) -> DevicePairing:
+    return DevicePairing(
+        id=model.id,
+        protocol_version=model.protocol_version,
+        purpose=DevicePairingPurpose(model.purpose),
+        status=DevicePairingStatus(model.status),
+        scan_token_hash=model.scan_token_hash,
+        candidate_proof_hash=model.candidate_proof_hash,
+        candidate_device_name=model.candidate_device_name,
+        user_id=model.user_id,
+        trusted_session_id=model.trusted_session_id,
+        trusted_device_id=model.trusted_device_id,
+        authorized_session_id=model.authorized_session_id,
+        authorized_device_id=model.authorized_device_id,
+        created_at=model.created_at,
+        expires_at=model.expires_at,
+        scanned_at=model.scanned_at,
+        approved_at=model.approved_at,
+        authorized_at=model.authorized_at,
+        cancelled_at=model.cancelled_at,
+        expired_at=model.expired_at,
     )
 
 

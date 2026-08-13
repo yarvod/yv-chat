@@ -11,6 +11,7 @@ import { RegisterAccount } from '../application/accounts/register-account'
 import { IssuePasswordReset } from '../application/accounts/issue-password-reset'
 import { ListManagedUsers } from '../application/accounts/list-managed-users'
 import { ListDeviceSessions } from '../application/accounts/list-device-sessions'
+import { DevicePairingService } from '../application/accounts/device-pairing'
 import { ListSecurityEvents } from '../application/accounts/list-security-events'
 import {
   BuildPasswordResetLink,
@@ -59,6 +60,7 @@ import { BrowserClipboard } from '../infrastructure/browser/clipboard'
 import { BrowserClock } from '../infrastructure/browser/clock'
 import { BrowserClientIdGenerator } from '../infrastructure/browser/client-id-generator'
 import { BrowserDeviceInfo } from '../infrastructure/browser/device-info'
+import { BrowserDevicePairingSecretStore } from '../infrastructure/browser/device-pairing-secrets'
 import { BrowserHaptics } from '../infrastructure/browser/haptics'
 import { BrowserLocation } from '../infrastructure/browser/browser-location'
 import { BrowserNetworkStatus } from '../infrastructure/browser/browser-network-status'
@@ -82,6 +84,7 @@ import { HttpServerHealthGateway } from '../infrastructure/http/http-server-heal
 import { HttpConversationReadStateGateway } from '../infrastructure/http/conversation-read-state-gateway'
 import { HttpConversationDeliveryStateGateway } from '../infrastructure/http/conversation-delivery-state-gateway'
 import { HttpDeviceCryptoRegistryGateway } from '../infrastructure/http/device-crypto-registry-gateway'
+import { HttpDevicePairingGateway } from '../infrastructure/http/device-pairing-gateway'
 import { HttpDeviceKeyPackageGateway } from '../infrastructure/http/device-key-package-gateway'
 import { HttpConversationCryptoGateway } from '../infrastructure/http/conversation-crypto-gateway'
 import { BrowserRealtimeGateway } from '../infrastructure/realtime/browser-realtime-gateway'
@@ -102,9 +105,17 @@ export default defineNuxtPlugin(() => {
   const readStateGateway = new HttpConversationReadStateGateway(apiClient)
   const deliveryStateGateway = new HttpConversationDeliveryStateGateway(apiClient)
   const deviceCryptoRegistryGateway = new HttpDeviceCryptoRegistryGateway(apiClient)
+  const devicePairingGateway = new HttpDevicePairingGateway(apiClient)
   const deviceKeyPackageGateway = new HttpDeviceKeyPackageGateway(apiClient)
   const conversationCryptoGateway = new HttpConversationCryptoGateway(apiClient)
   const deviceInfo = new BrowserDeviceInfo()
+  const devicePairing = new DevicePairingService(
+    devicePairingGateway,
+    new BrowserDevicePairingSecretStore(),
+    authGateway,
+    deviceInfo,
+    window.location.origin,
+  )
   const haptics = new BrowserHaptics()
   const realtimeGateway = new BrowserRealtimeGateway()
   const scheduler = new BrowserScheduler()
@@ -199,6 +210,7 @@ export default defineNuxtPlugin(() => {
         consumePasswordResetFragment: new ConsumePasswordResetFragment(browserLocation),
         updateProfile: new UpdateProfile(accountSecurityGateway),
         listDeviceSessions: new ListDeviceSessions(accountSecurityGateway),
+        devicePairing,
         renameDevice: new RenameDevice(accountSecurityGateway),
         revokeDevice: new RevokeDevice(accountSecurityGateway),
         revokeOtherSessions: new RevokeOtherSessions(accountSecurityGateway),
