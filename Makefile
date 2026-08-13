@@ -149,7 +149,8 @@ deploy-check:
 	grep -q 'compose up -d --wait --wait-timeout 120 frontend' deploy/remote-deploy.sh
 	grep -q 'YV_CHAT_API_BIND_PORT:-18081' deploy/remote-deploy.sh
 	grep -q 'YV_CHAT_FRONTEND_BIND_PORT:-18082' deploy/remote-deploy.sh
-	grep -q 'server_name chat.yoowee.ru' deploy/nginx/host-chat.http.conf
+	grep -q 'server_name chat.yoowee.ru chat.yoowee.com.de' deploy/nginx/host-chat.http.conf
+	grep -q 'server_name chat.yoowee.ru chat.yoowee.com.de' deploy/nginx/host-chat.conf
 	grep -q 'Strict-Transport-Security' deploy/nginx/host-chat.conf
 	grep -q 'Permissions-Policy "camera=(self), geolocation=(), microphone=(self)"' deploy/nginx/host-chat.conf
 	! grep -q 'Permissions-Policy "camera=(),.*microphone=()"' deploy/nginx/host-chat.conf

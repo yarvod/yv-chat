@@ -1512,7 +1512,19 @@ Production runtime изолирован explicit Compose project `yv-chat`. Ед
 
 API подключён одновременно к non-internal project-owned ingress network `172.30.243.0/24` (иначе Docker published loopback port не активируется в проверенном runtime) и к internal private network `172.30.242.0/24` с PostgreSQL. Frontend подключён только к ingress network, cleanup и PostgreSQL — только к private. Host proxy приходит в API от фактически проверенного bridge gateway `172.30.243.1`; backend доверяет forwarding chain только от этого exact `/32`, не доверяет произвольному клиентскому `X-Forwarded-For` и выбирает первый справа untrusted address. Оба subnet обязательно проверяются на конфликт при переносе на другой host.
 
-Host Nginx владеет TLS/Certbot, HTTP→HTTPS, security headers и WebSocket upgrade для `chat.yoowee.ru`; соседние `yoowee.ru`/`s3.yoowee.ru` vhost не изменяются. Vhost устанавливается из temp file с backup, `nginx -t`, reload и acceptance обоих upstream; graceful reload проверяется bounded retry, потому что старые workers короткое время могут обслуживать прежнюю конфигурацию. Workflow использует immutable `sha-<commit>` GHCR tags, выполняет migration новым backend image до health-checked rollout и не запускает Docker build на VPS. Runtime `.env` и одноразовая initial-admin credential существуют только на сервере с mode `0600`; deploy artifacts не содержат secrets. Полный runbook: [deployment.md](deployment.md).
+Host Nginx владеет TLS/Certbot, HTTP→HTTPS, security headers и WebSocket upgrade для
+двух production origins — `chat.yoowee.ru` и `chat.yoowee.com.de` — в одном
+yv-chat vhost и SAN-сертификате; backend strict Origin allowlist содержит оба имени.
+Cookies с `__Host-`, Service Worker, IndexedDB и E2EE device state не разделяются
+между origins, поэтому вход через второе имя создаёт отдельную browser session/device,
+не копируя local crypto state. Соседние `yoowee.ru`/`s3.yoowee.ru` vhost не
+изменяются. Vhost устанавливается из temp file с backup, `nginx -t`, reload и
+acceptance обоих upstream; graceful reload проверяется bounded retry, потому что
+старые workers короткое время могут обслуживать прежнюю конфигурацию. Workflow
+использует immutable `sha-<commit>` GHCR tags, выполняет migration новым backend
+image до health-checked rollout и не запускает Docker build на VPS. Runtime `.env`
+и одноразовая initial-admin credential существуют только на сервере с mode `0600`;
+deploy artifacts не содержат secrets. Полный runbook: [deployment.md](deployment.md).
 
 Rollout пересоздаёт и дожидается healthcheck `postgres/media-init/api/cleanup`, затем
 проверяет API через loopback ingress и только после этого обновляет frontend. Это не

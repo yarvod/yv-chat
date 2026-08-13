@@ -1,6 +1,7 @@
 # Production deployment
 
-Production target: `chat.yoowee.ru` on `ru1`. The VPS also runs unrelated services.
+Production origins: `chat.yoowee.ru` and `chat.yoowee.com.de` on `ru1`. The VPS also
+runs unrelated services.
 yv-chat is isolated as Docker Compose project `yv-chat` and must never manage
 containers, networks, volumes or vhosts belonging to another project.
 
@@ -96,7 +97,7 @@ so rotation requires users to enable notifications again on each device.
 Relevant non-secret ingress values are:
 
 ```text
-ALLOWED_ORIGINS=["https://chat.yoowee.ru"]
+ALLOWED_ORIGINS=["https://chat.yoowee.ru","https://chat.yoowee.com.de"]
 TRUSTED_PROXY_CIDRS=["172.30.243.1/32"]
 YV_CHAT_API_BIND_PORT=18081
 YV_CHAT_FRONTEND_BIND_PORT=18082
@@ -130,6 +131,10 @@ owns the certificate. Versioned source files are:
 The production vhost routes API/WebSocket and frontend separately. It preserves
 `Host`, scheme and the forwarding chain; a conditional `Connection` map upgrades
 actual WebSocket requests without forcing upgrade semantics on ordinary HTTP.
+Both production names use the same vhost and one Certbot certificate whose SAN list
+contains both names. Browser cookies, Service Worker, IndexedDB and E2EE device state
+remain origin-scoped: signing in on the second domain creates a separate browser
+session/device and does not copy local crypto state from the first domain.
 
 `Permissions-Policy` allows `camera` and `microphone` only for the top-level
 same-origin PWA because group video notes call `getUserMedia` after an explicit user
@@ -139,6 +144,21 @@ browser permission prompt entirely and must be rejected by `make deploy-check`.
 
 Never run Certbot/Nginx in the yv-chat production Compose. Never edit neighboring
 `yoowee.ru` or `s3.yoowee.ru` vhosts as part of chat deployment.
+
+When adding or restoring the second production name, first install the reviewed
+dual-name chat vhost so its port-80 ACME webroot is reachable, then expand only the
+existing chat certificate without letting Certbot rewrite Nginx configs:
+
+```bash
+certbot certonly --webroot --webroot-path /var/www/html \
+  --cert-name chat.yoowee.ru --expand --non-interactive \
+  -d chat.yoowee.ru -d chat.yoowee.com.de
+certbot certificates
+nginx -t
+systemctl reload nginx
+```
+
+The resulting renewal file must retain both domains and the `webroot` authenticator.
 
 ## Safe vhost change
 
@@ -172,6 +192,10 @@ curl --fail --resolve chat.yoowee.ru:443:127.0.0.1 \
   https://chat.yoowee.ru/api/v1/health
 curl --fail --resolve chat.yoowee.ru:443:127.0.0.1 \
   https://chat.yoowee.ru/
+curl --fail --resolve chat.yoowee.com.de:443:127.0.0.1 \
+  https://chat.yoowee.com.de/api/v1/health
+curl --fail --resolve chat.yoowee.com.de:443:127.0.0.1 \
+  https://chat.yoowee.com.de/
 curl --http1.1 --include --resolve chat.yoowee.ru:443:127.0.0.1 \
   -H 'Origin: https://chat.yoowee.ru' \
   -H 'Connection: Upgrade' -H 'Upgrade: websocket' \

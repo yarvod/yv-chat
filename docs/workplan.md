@@ -4,82 +4,42 @@
 завершённая работа фиксируется отдельным коммитом, а новый пункт переносится
 сюда из `backlog.md`.
 
-## WP-074 — Standalone managed registration invitations
+## WP-075 — Dual production origins
 
-Статус: **completed and production verified** (`50d0b6d`, workflow
-`31701582705`)
+Статус: **in progress**
 
-Цель: администратор выпускает и управляет одноразовыми приглашениями без создания
-псевдопользователя, а приглашённый сам выбирает уникальный username, display name и
-пароль и сразу получает защищённую device-bound session.
+Цель: один и тот же production messenger безопасно работает через
+`https://chat.yoowee.ru` и `https://chat.yoowee.com.de`, не затрагивая соседние
+сервисы общего VPS/Nginx.
 
 ### Scope
 
-- отдельная `registration_invitations` persistence model с label, creator, TTL,
-  `used_at`, `revoked_at` и ссылкой на созданного пользователя;
-- admin-only create/list/revoke API; plaintext secret возвращается только при create;
-- admin UI показывает active/used/expired/revoked invitations и позволяет копировать
-  одноразовую ссылку, показать QR и немедленно отозвать active invitation;
-- activation fragment удаляется из address bar сразу после чтения и живёт только в
-  памяти до HTTPS request body; DOM input для token отсутствует;
-- приглашённый вводит username, display name и пароль дважды с корректными
-  `autocomplete=username/new-password` hints;
-- username проверяется case-insensitively и атомарно; conflict не потребляет invite;
-- успешная регистрация создаёт user, device и opaque session в одной transaction и
-  сразу открывает приложение без повторного login;
-- legacy user-bound activation links продолжают работать до естественного expiry,
-  но новые pseudo-user invitations больше не создаются;
-- public registration endpoint защищён per-IP Nginx rate limit, строгим Origin,
-  bounded body и дешёвой проверкой invitation до Argon2id.
+- оба DNS A records указывают на production VPS;
+- один scoped yv-chat vhost обслуживает оба `server_name` и использует один
+  Certbot SAN-сертификат с обоими именами;
+- backend strict `ALLOWED_ORIGINS` содержит оба HTTPS origin;
+- versioned Nginx source, deploy assertions, architecture и runbook фиксируют
+  dual-origin contract;
+- cookies, PWA/Service Worker, IndexedDB и E2EE device state остаются
+  origin-scoped; междоменный перенос local state не добавляется.
 
-### Security and abuse invariants
+### Security and rollout invariants
 
-- публичная self-registration отсутствует: без active server-issued secret user не
-  создаётся;
-- БД хранит только SHA-256 digest secret; API list/HTML/logs никогда не содержат
-  secret или digest, старую ссылку невозможно восстановить после закрытия карточки;
-- revoked, expired и used invitations дают одинаковый bounded public failure;
-- username conflict сообщается только после валидного invite, чтобы endpoint не стал
-  общедоступным username-enumeration oracle;
-- row lock и database constraints допускают не более одного successful redemption;
-- rate limit защищает application/Argon2 от обычного abuse, но не обещает выдержать
-  volumetric distributed DDoS без upstream filtering.
-
-### Exclusions
-
-- public signup без invitation;
-- хранение plaintext links для повторного просмотра;
-- IP/device blacklist как identity/authorization boundary;
-- CAPTCHA, email/SMS delivery и внешняя invitation infrastructure;
-- удаление legacy activation schema до окончания compatibility window.
+- cookies сохраняют `__Host-`, `Secure`, `HttpOnly`, `SameSite=Strict` и не получают
+  `Domain` attribute;
+- CORS/Origin wildcard не используется;
+- certificate выпускается существующим webroot Certbot без автоматического
+  редактирования чужих vhost;
+- до каждого graceful reload сохраняется unique chat-vhost backup и выполняется
+  общий `nginx -t`; при ошибке восстанавливается только chat-vhost;
+- `yoowee.ru`, S3 и остальные Nginx configs/containers не изменяются.
 
 ### Definition of Done
 
-- admin может создать, увидеть status и отозвать invite; non-admin не может;
-- QR/copy доступны только в transient create result;
-- valid invite регистрирует выбранный unique username и автоматически логинит device;
-- duplicate username не расходует invite; retry с другим username succeeds;
-- invalid/expired/revoked/used invite не запускает password hash и не создаёт user;
-- concurrent redemption создаёт ровно одного user/session;
-- Nginx возвращает 429 сверх bounded registration burst;
-- migration проходит fresh `base -> head` и upgrade с previous head;
-- backend/frontend tests, lint, typecheck, build и repository CI проходят.
-
-### Verification
-
-- полный `make ci` проходит: backend Ruff/import contracts/mypy и 255 pytest,
-  frontend lint/typecheck/Vitest/build, Rust fmt/clippy/21 tests, Compose/deploy/docs
-  checks;
-- отдельная PostgreSQL database прошла fresh `base -> head`, downgrade
-  `0023 -> 0022`, повторный upgrade и concurrent redemption integration tests;
-- локальная browser-проверка на viewport `390x844` подтвердила отсутствие
-  horizontal overflow, token/code input в DOM и console errors; username/password
-  autocomplete hints корректны, fragment очищается;
-- production migration находится на `0023_registration_invitations`; immutable
-  backend/frontend tag — `sha-50d0b6db9526f83fb5e5dbdc6622108a6e8002b1`;
-- scoped `chat.yoowee.ru` vhost установлен после успешного общего `nginx -t` с
-  backup `chat.yoowee.ru.conf.before-50d0b6d`; graceful reload и повторный
-  `nginx -t` прошли;
-- HTTPS acceptance: API/frontend `200`, unauthenticated WebSocket `403` без `502`,
-  шесть invalid-registration requests получили bounded `400`, следующие два —
-  ожидаемый `429`; соседние `infra-*` containers сохранили uptime.
+- сертификат содержит оба DNS SAN и renewal config сохраняет оба имени;
+- API/frontend отвечают `200` через оба HTTPS origin;
+- unauthenticated WebSocket через оба origin доходит до backend (`403`, не `502`);
+- state-changing request с новым exact Origin проходит Origin boundary и получает
+  application response, а неизвестный Origin остаётся запрещён;
+- yv-chat healthy, соседние `infra-*` containers сохраняют uptime;
+- deploy/docs checks проходят, production evidence записан.

@@ -555,6 +555,16 @@ generic background notification, focus/navigation и invalid-subscription cleanu
 
 ## Completed
 
+### BL-075 — Dual production origins
+
+Статус: **in progress** (`WP-075`).
+
+- общий chat-vhost и SAN TLS certificate для `chat.yoowee.ru` и
+  `chat.yoowee.com.de`;
+- exact backend Origin allowlist без wildcard;
+- отдельные origin-scoped browser sessions, PWA storage и E2EE devices;
+- scoped Nginx/Certbot rollout без изменения соседних VPS services.
+
 ### BL-074 — Standalone managed registration invitations
 
 Статус: **completed and production verified** (`WP-074`, `50d0b6d`, workflow
