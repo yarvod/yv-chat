@@ -1,87 +1,93 @@
 # Текущий workplan
 
-## WP-081 — Bidirectional encrypted history merge for QR-linked devices
+## WP-082 — Unified QR pairing and existing-device history union
 
-Статус: **completed locally; production rollout held** (`BL-015`, ADR-0004)
+Статус: **completed locally; production rollout pending** (`BL-015`, `BUG-076`,
+ADR-0003/ADR-0004)
 
-Цель: после `WP-080` оба связанных device обмениваются доступной text/tombstone
-history в обе стороны. Server хранит только TTL-bounded opaque MLS application
-messages. Target проверяет, расшифровывает и заново сохраняет content под собственной
-non-extractable archive key; MLS signer/group state/storage key не копируются.
+Цель: один `enrollment_offer` QR на авторизованном компьютере должен безопасно
+поддерживать два сценария без ручного выбора режима. Неавторизованная телефонная PWA
+подключается как новое independent device, а уже авторизованная PWA того же account
+привязывает две существующие device/session boundaries и запускает двустороннее
+объединение доступной encrypted local history. Открытие чата и online собеседника не
+требуются.
 
 ### Scope
 
-- сохранять расшифрованный canonical text payload вместе с immutable envelope только
-  внутри существующего AES-GCM encrypted local archive; server refresh не стирает
-  уже восстановленную local copy;
-- сохранять plaintext исходящего MLS message в encrypted outbox/archive, потому что
-  OpenMLS по правилам forward secrecy не может расшифровать message собственного
-  sender ratchet после отправки;
-- добавить PostgreSQL relay rows, привязанные к authorized pairing, exact sender /
-  counterpart target device, direct conversation, monotonic sequence, idempotent
-  chunk ID, ACK, byte/record limit и TTL;
-- transfer payload защищать стандартным MLS `PrivateMessage` текущего READY epoch;
-  не добавлять самостоятельный AES/ECDH/ratchet. Один chunk = один MLS application
-  generation, максимум 20 chunks на direction/conversation — значительно ниже
-  OpenMLS `maximum_forward_distance=1000`;
-- source экспортирует только сообщения, которые уже может локально показать, и
-  authenticated tombstones; недоступные записи считаются gap и не угадываются;
-- target валидирует version, pairing/conversation/chunk binding, bounded ordered
-  records, immutable IDs/sequences/metadata и duplicate consistency до archive put;
-- обе стороны запускают export + inbound import; retries/resume используют server
-  chunk sequence/ACK и не требуют одновременного peer connection после upload;
-- UI различает `history syncing`, `partial/gaps`, `ready`; отсутствие history не
-  откатывает успешный MLS enrollment и не блокирует future messages.
+- backend определяет режим только по authenticated principal сканера, а не по
+  client-supplied account/device IDs;
+- `enrollment_offer` сохраняет exact existing candidate session/device binding либо
+  новый candidate proof, но никогда оба варианта одновременно;
+- same-device и cross-account scan fail closed, revoked/expired session не участвует;
+- компьютер остаётся trusted approver и явно подтверждает отображаемое устройство;
+- для existing-device pairing approval сразу авторизует уже существующий exact device,
+  не создаёт новую Session/Device и не меняет его crypto identity;
+- scanner и display независимо восстанавливают один durable history-sync job и
+  выполняют union в обе стороны через существующий opaque MLS relay;
+- существующий anonymous `offer → authorize new phone` и
+  `request → trusted phone approves new computer` сохраняют обратную совместимость;
+- Settings на телефоне автоматически объясняет выбранный режим и ожидает approval
+  компьютера; Settings на компьютере использует один QR для подключения или sync;
+- доступная canonical text/tombstone history дополняет обе стороны; records не
+  затираются отсутствием на peer, gaps остаются явными.
 
 ### Security invariants
 
-- server не получает plaintext, archive key, signer, epoch secret или candidate proof;
-- relay доступен только двум active sessions/devices exact authorized pairing и только
-  для direct, где paired account является active member;
-- MLS authentication остаётся cryptographic source authentication; HTTP binding не
-  заменяет проверку `PrivateMessage`;
-- hidden transfer generations bounded; target обрабатывает их по relay sequence, ACK
-  только после durable encrypted local commit;
-- contradictory duplicate, malformed payload, wrong conversation/target/pairing,
-  revoked session/device и expired transfer fail closed без удаления local archive;
-- transferred plaintext никогда не попадает в logs, URLs, analytics, Vue debug state
-  или обычную message API; memory очищается после encode/decode насколько позволяет JS;
-- server ciphertext retention и local archive retention остаются разными политиками.
+- raw session credential, candidate proof, archive/storage key, MLS signer/state и
+  plaintext не попадают в QR, PostgreSQL, logs или HTTP DTO;
+- exact candidate session/device подтверждается серверной cookie-authentication,
+  strict Origin/CSRF и row-locked monotonic transition;
+- pairing status/history relay доступны только exact active trusted/candidate
+  sessions одного account;
+- retry scan/approve/status idempotent; иной scanner после первого bind получает
+  conflict без раскрытия account/device state;
+- backend restart сохраняет pairing, authorization, relay chunks и ACK; PWA restart
+  восстанавливает local history job без повторного QR;
+- existing-device sync не копирует private crypto state и не выполняет скрытый MLS
+  roster change.
 
 ### Verification
 
-- archive/outbox codec tests: local plaintext encrypted at rest, survives reload,
-  server envelope refresh preserves it, corruption fails closed;
-- backend application/HTTP/PostgreSQL tests: both directions, wrong device/account /
-  conversation, duplicate exact/conflict, byte limits, ACK authorization, TTL/restart;
-- frontend transfer tests: mutually missing ranges, own-sent content, tombstone,
-  duplicate/out-of-order relay, partial undecryptable source, restart/resume and gaps;
-- MLS runtime regression: hidden chunks remain below forward-distance bound and normal
-  visible message decrypts after skipped relay generations;
-- full backend/frontend/crypto/Compose CI before rollout.
+- domain/application tests: existing offer scan/approval, exact retry, same-device,
+  cross-account, revoked session, competing scanner и new-device regression;
+- HTTP tests: CSRF/origin, exact candidate status/cancel, anonymous offer path и
+  отсутствие создания Session/Device для existing sync;
+- PostgreSQL integration + fresh migration to `0026`, persistence across engine
+  restart и authorization of existing device;
+- frontend tests: authenticated offer auto-routing, anonymous offer regression,
+  scanner waiting state, both peers queue same resumable job и mutually missing union;
+- lint/typecheck/build, full backend pytest and Compose config before rollout.
 
 ### Exclusions
 
-- attachments/media, preferences/read receipts and history beyond available local/server
-  sources;
-- peer-to-peer WebRTC optimization, External Commit, key transparency;
-- transfer from revoked device or automatic plaintext backup;
-- production flag before physical iOS/macOS/Android/browser matrix.
+- перенос direct attachments/media, preferences/read receipts и данных, отсутствующих
+  на server и обоих devices;
+- объединение Safari tab и installed PWA без явного pairing;
+- копирование MLS epoch/provider state либо создание общего archive key;
+- default-camera universal-link handoff и ручной six-digit fallback UI — отдельный
+  compatibility slice уже описан в `BL-015`.
 
 ### Definition of Done
 
-- both QR directions perform union, not source overwrite;
-- available sent/received text and tombstones survive target reload encrypted at rest;
-- duplicate/restart is idempotent and server remains opaque;
-- gaps are explicit and future MLS messaging remains usable;
-- focused commit, migration, tests and security documentation complete.
+- залогиненный телефон сканирует QR залогиненного компьютера, компьютер подтверждает,
+  после чего обе стороны автоматически дополняют доступные histories друг друга;
+- тот же QR по-прежнему подключает неавторизованный новый телефон;
+- same-device/cross-account/revoked actors не могут создать pairing или читать relay;
+- restart/retry не создаёт duplicate identity/job/chunk и не требует открытия чата;
+- migration, документация, security tests и production checks green.
 
 ### Verification result
 
-- backend Ruff/format/mypy и полный pytest green;
-- frontend lint/typecheck, 287 tests и production Nuxt/PWA build green;
-- HTTP negative checks подтверждают CSRF и exact target binding;
-- fresh PostgreSQL migrations до `0025`, upload, полный engine restart и target
-  retrieval прошли на отдельном временном PostgreSQL 17 container;
-- rollout удерживается до additive migration/deploy checks и physical
-  iOS/macOS/Android PWA matrix; attachment/media transfer остаётся вне этого slice.
+- backend Ruff/format/import-lint/mypy и 265 pytest tests green;
+- frontend ESLint/typecheck, 289 Vitest tests и production Nuxt/PWA build green;
+- full `make ci`, включая Rust fmt/clippy, 23 native crypto tests и WASM build, green;
+- anonymous new-device offer regression и authenticated existing-device
+  auto-routing/approval/status/CSRF/cross-account/same-device tests green;
+- bidirectional archive test покрывает mutually missing sent records и отдельно
+  сценарий, где computer завершил первый poll до запуска phone, а затем догнал
+  обратную половину через recurring durable job;
+- fresh PostgreSQL 17 upgrade `0001 → 0026` и integration flow с последовательным
+  пересозданием четырёх backend engines сохраняют pairing/relay и не создают лишние
+  Device/Session; временный test container после проверки удалён;
+- `docker compose -f compose.dev.yml config` green; physical iOS/macOS PWA acceptance
+  остаётся production rollout check, а не доказательством из unit/integration tests.

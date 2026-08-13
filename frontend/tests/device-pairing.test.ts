@@ -37,6 +37,7 @@ function view(purpose: CreatedDevicePairing['purpose'], status = 'confirmation_p
     expiresAt: future,
     authorizedDeviceId: null,
     trustedDeviceId: 'trusted-device',
+    candidateDeviceId: null,
   }
 }
 
@@ -68,6 +69,7 @@ class FakeSecrets implements DevicePairingSecretStore {
 class FakeGateway implements DevicePairingGateway {
   scannedRequest: [string, string] | null = null
   scannedOffer: [string, string, string, string] | null = null
+  scannedExistingOffer: [string, string] | null = null
   authorized: [string, string] | null = null
 
   async createRequest(candidateProofHash: string, candidateDeviceName: string) {
@@ -90,11 +92,18 @@ class FakeGateway implements DevicePairingGateway {
     return view('enrollment_offer')
   }
 
+  async scanExistingOffer(id: string, token: string) {
+    this.scannedExistingOffer = [id, token]
+    return { ...view('enrollment_offer'), candidateDeviceId: 'existing-device' }
+  }
+
   async candidateStatus() { return view('enrollment_request') }
   async trustedStatus() { return view('enrollment_offer') }
+  async existingCandidateStatus() { return view('enrollment_offer') }
   async approve() { return view('enrollment_offer', 'approved') }
   async cancelCandidate() { return view('enrollment_request', 'cancelled') }
   async cancelTrusted() { return view('enrollment_offer', 'cancelled') }
+  async cancelExistingCandidate() { return view('enrollment_offer', 'cancelled') }
   async uploadHistoryChunk() { throw new Error('not used') }
   async listHistoryChunks() { return [] }
   async listOutboundHistoryChunks() { return [] }
@@ -173,6 +182,10 @@ describe('device pairing', () => {
       'Safari · iOS · Телефон',
     ])
     expect(secrets.load(pairingId)).toBe(proof)
+
+    const existing = await pairing.scan(offerQr, true)
+    expect(gateway.scannedExistingOffer).toEqual([pairingId, scanToken])
+    expect(existing.candidateDeviceId).toBe('existing-device')
   })
 
   it('clears candidate proof only after cookie exchange and current-account load', async () => {

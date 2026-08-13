@@ -58,6 +58,7 @@ function parseStatus(value: unknown): DevicePairingView {
     expiresAt: stringField(item, 'expires_at'),
     authorizedDeviceId: nullableStringField(item, 'authorized_device_id'),
     trustedDeviceId: nullableStringField(item, 'trusted_device_id'),
+    candidateDeviceId: nullableStringField(item, 'candidate_device_id'),
   }
 }
 
@@ -129,6 +130,13 @@ export class HttpDevicePairingGateway implements DevicePairingGateway {
     ))
   }
 
+  async scanExistingOffer(pairingId: string, scanToken: string): Promise<DevicePairingView> {
+    return parseStatus(await this.apiClient.request(
+      `/api/v1/device-pairings/${pairingId}/scan-existing-offer`,
+      { method: 'POST', body: { scan_token: scanToken } },
+    ))
+  }
+
   async candidateStatus(pairingId: string, candidateProof: string): Promise<DevicePairingView> {
     return parseStatus(await this.apiClient.request(
       `/api/v1/device-pairings/${pairingId}/candidate-status`,
@@ -139,6 +147,12 @@ export class HttpDevicePairingGateway implements DevicePairingGateway {
   async trustedStatus(pairingId: string): Promise<DevicePairingView> {
     return parseStatus(await this.apiClient.request(
       `/api/v1/device-pairings/${pairingId}/trusted-status`,
+    ))
+  }
+
+  async existingCandidateStatus(pairingId: string): Promise<DevicePairingView> {
+    return parseStatus(await this.apiClient.request(
+      `/api/v1/device-pairings/${pairingId}/existing-candidate-status`,
     ))
   }
 
@@ -169,6 +183,13 @@ export class HttpDevicePairingGateway implements DevicePairingGateway {
   async cancelTrusted(pairingId: string): Promise<DevicePairingView> {
     return parseStatus(await this.apiClient.request(
       `/api/v1/device-pairings/${pairingId}/cancel-trusted`,
+      { method: 'POST' },
+    ))
+  }
+
+  async cancelExistingCandidate(pairingId: string): Promise<DevicePairingView> {
+    return parseStatus(await this.apiClient.request(
+      `/api/v1/device-pairings/${pairingId}/cancel-existing-candidate`,
       { method: 'POST' },
     ))
   }

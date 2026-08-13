@@ -103,6 +103,8 @@ def map_device_pairing(model: DevicePairingModel) -> DevicePairing:
         scan_token_hash=model.scan_token_hash,
         candidate_proof_hash=model.candidate_proof_hash,
         candidate_device_name=model.candidate_device_name,
+        candidate_session_id=model.candidate_session_id,
+        candidate_device_id=model.candidate_device_id,
         user_id=model.user_id,
         trusted_session_id=model.trusted_session_id,
         trusted_device_id=model.trusted_device_id,

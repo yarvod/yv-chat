@@ -234,4 +234,34 @@ describe('QR-linked bidirectional device history sync', () => {
     expect(candidateProgress.complete).toBe(true)
     expect(relay.acknowledged.size).toBe(2)
   })
+
+  it('completes union when the second device starts only after the first polling pass', async () => {
+    const trustedArchive = new MemoryArchive([archived(1, trusted, 'from phone')])
+    const candidateArchive = new MemoryArchive([archived(2, candidate, 'from mac')])
+    const relay: RelayState = { chunks: [], acknowledged: new Set() }
+    const trustedJobs = new MemoryJobs()
+    const candidateJobs = new MemoryJobs()
+    const trustedService = service(trusted, trustedArchive, relay, trustedJobs)
+    const candidateService = service(candidate, candidateArchive, relay, candidateJobs)
+    const expiresAt = '2099-08-14T12:00:00Z'
+    const trustedInput = {
+      ownerUserId: owner,
+      currentDeviceId: trusted,
+      pairingId: pairing,
+      targetDeviceId: candidate,
+      expiresAt,
+    }
+
+    await trustedService.synchronize(trustedInput)
+    expect([...trustedArchive.records.keys()]).toEqual([1])
+    await candidateService.synchronize({
+      ...trustedInput,
+      currentDeviceId: candidate,
+      targetDeviceId: trusted,
+    })
+    expect([...candidateArchive.records.keys()].sort()).toEqual([1, 2])
+    await trustedService.synchronize(trustedInput)
+    expect([...trustedArchive.records.keys()].sort()).toEqual([1, 2])
+    expect(relay.acknowledged.size).toBe(2)
+  })
 })

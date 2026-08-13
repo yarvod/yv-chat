@@ -4,6 +4,22 @@
 
 ## Active
 
+### BUG-076 — Авторизованный scanner не мог синхронизировать историю с компьютером
+
+- Статус: `fixed locally; production rollout pending` (`WP-082`).
+- Severity: `critical multi-device history availability`.
+- Reproduction: телефон и компьютер уже авторизованы в одном account, но имеют
+  mutually missing расшифрованные записи; компьютер показывает Settings
+  `enrollment_offer`, телефон сканирует его внутри Settings PWA. Frontend отклоняет
+  scan сообщением, что candidate обязан использовать login page, поэтому pairing не
+  связывает существующие devices и history union не запускается.
+- Причина: `WP-079` моделировал offer только как enrollment нового anonymous device;
+  server state не имел exact existing-candidate session/device binding, а frontend
+  жёстко разделял authenticated и anonymous scanners.
+- Исправление: `WP-082` делает offer mode server-authenticated: anonymous scanner
+  сохраняет прежний enrollment, authenticated same-account scanner привязывает
+  existing device и после approval обе стороны запускают один resumable history job.
+
 ### BUG-075 — Server refresh снова делал уже прочитанное MLS-сообщение недоступным
 
 - Статус: `fixed locally; production rollout pending` (`WP-081`).

@@ -30,16 +30,21 @@ class DevicePairingView:
     expires_at: datetime
     authorized_device_id: UUID | None
     trusted_device_id: UUID | None
+    candidate_device_id: UUID | None
 
 
 def pairing_authentication_code(pairing: DevicePairing) -> str | None:
-    if pairing.candidate_proof_hash is None:
+    if pairing.candidate_proof_hash is not None:
+        candidate_binding = bytes.fromhex(pairing.candidate_proof_hash)
+    elif pairing.candidate_session_id is not None and pairing.candidate_device_id is not None:
+        candidate_binding = pairing.candidate_session_id.bytes + pairing.candidate_device_id.bytes
+    else:
         return None
     digest = hashlib.sha256(
         b"yv-chat-device-pairing-sas-v1\x00"
         + pairing.id.bytes
         + bytes.fromhex(pairing.scan_token_hash)
-        + bytes.fromhex(pairing.candidate_proof_hash)
+        + candidate_binding
     ).digest()
     return f"{int.from_bytes(digest[:4], 'big') % 1_000_000:06d}"
 
@@ -83,10 +88,14 @@ async def build_pairing_view(
     pairing: DevicePairing,
 ) -> DevicePairingView:
     trusted_device_name: str | None = None
+    candidate_device_name = pairing.candidate_device_name
     account_display_name: str | None = None
     if pairing.trusted_device_id is not None:
         trusted_device = await uow.devices.get_by_id(pairing.trusted_device_id)
         trusted_device_name = trusted_device.name if trusted_device is not None else None
+    if pairing.candidate_device_id is not None:
+        candidate_device = await uow.devices.get_by_id(pairing.candidate_device_id)
+        candidate_device_name = candidate_device.name if candidate_device is not None else None
     if pairing.user_id is not None:
         user = await uow.users.get_by_id(pairing.user_id)
         account_display_name = user.display_name if user is not None else None
@@ -95,7 +104,7 @@ async def build_pairing_view(
         protocol_version=pairing.protocol_version,
         purpose=pairing.purpose.value,
         status=pairing.status.value,
-        candidate_device_name=pairing.candidate_device_name,
+        candidate_device_name=candidate_device_name,
         trusted_device_name=trusted_device_name,
         account_display_name=account_display_name,
         authentication_code=(
@@ -111,6 +120,7 @@ async def build_pairing_view(
         expires_at=pairing.expires_at,
         authorized_device_id=pairing.authorized_device_id,
         trusted_device_id=pairing.trusted_device_id,
+        candidate_device_id=pairing.candidate_device_id,
     )
 
 
@@ -150,6 +160,21 @@ def require_trusted_actor(
         pairing.user_id != user_id
         or pairing.trusted_session_id != session_id
         or pairing.trusted_device_id != device_id
+    ):
+        raise DevicePairingNotFoundError("pairing not found")
+
+
+def require_existing_candidate_actor(
+    pairing: DevicePairing,
+    *,
+    user_id: UUID,
+    session_id: UUID,
+    device_id: UUID,
+) -> None:
+    if (
+        pairing.user_id != user_id
+        or pairing.candidate_session_id != session_id
+        or pairing.candidate_device_id != device_id
     ):
         raise DevicePairingNotFoundError("pairing not found")
 

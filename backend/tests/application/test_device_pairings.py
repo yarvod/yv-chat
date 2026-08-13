@@ -22,6 +22,8 @@ from messenger.application.device_pairings.create_request import (
 )
 from messenger.application.device_pairings.policy import DevicePairingPolicy
 from messenger.application.device_pairings.scan import (
+    ScanExistingPairingOffer,
+    ScanExistingPairingOfferCommand,
     ScanPairingOffer,
     ScanPairingOfferCommand,
     ScanPairingRequest,
@@ -30,6 +32,8 @@ from messenger.application.device_pairings.scan import (
 from messenger.application.device_pairings.status import (
     GetCandidatePairingStatus,
     GetCandidatePairingStatusQuery,
+    GetExistingCandidatePairingStatus,
+    GetExistingCandidatePairingStatusQuery,
 )
 from messenger.application.errors import (
     DevicePairingNotFoundError,
@@ -250,6 +254,147 @@ async def test_offer_binds_candidate_only_after_scan_and_rejects_other_approver(
                 user_id=user.id,
                 session_id=trusted_session.id,
                 device_id=other.id,
+            )
+        )
+
+
+async def test_offer_auto_binds_existing_same_account_device_without_new_identity() -> None:
+    state, user, trusted_device, trusted_session = trusted_state()
+    credentials = FixedSessionCredentials()
+    candidate_device = Device.create(user_id=user.id, name="Existing iPhone", now=NOW)
+    candidate_session = Session.create(
+        user_id=user.id,
+        device_id=candidate_device.id,
+        token_hash=credentials.digest("candidate-existing-session-secret"),
+        now=NOW,
+        idle_timeout=SESSION_POLICY.idle_timeout,
+        absolute_lifetime=SESSION_POLICY.absolute_lifetime,
+    )
+    state.devices[candidate_device.id] = candidate_device
+    state.sessions[candidate_session.id] = candidate_session
+    created = await CreatePairingOffer(
+        unit_of_work=FakeIdentityUnitOfWorkFactory(state),
+        clock=FixedClock(NOW),
+        credentials=credentials,
+        pairing_policy=PAIRING_POLICY,
+    ).execute(
+        CreatePairingOfferCommand(
+            user_id=user.id,
+            session_id=trusted_session.id,
+            device_id=trusted_device.id,
+        )
+    )
+
+    scan = ScanExistingPairingOffer(
+        unit_of_work=FakeIdentityUnitOfWorkFactory(state),
+        clock=FixedClock(NOW),
+        credentials=credentials,
+    )
+    scanned = await scan.execute(
+        ScanExistingPairingOfferCommand(
+            pairing_id=created.pairing_id,
+            scan_token=created.scan_token,
+            user_id=user.id,
+            session_id=candidate_session.id,
+            device_id=candidate_device.id,
+        )
+    )
+    retried = await scan.execute(
+        ScanExistingPairingOfferCommand(
+            pairing_id=created.pairing_id,
+            scan_token=created.scan_token,
+            user_id=user.id,
+            session_id=candidate_session.id,
+            device_id=candidate_device.id,
+        )
+    )
+    assert scanned.status == retried.status == "confirmation_pending"
+    assert scanned.candidate_device_id == candidate_device.id
+    assert scanned.candidate_device_name == "Existing iPhone"
+    assert scanned.authentication_code is not None
+
+    candidate_view = await GetExistingCandidatePairingStatus(
+        unit_of_work=FakeIdentityUnitOfWorkFactory(state),
+        clock=FixedClock(NOW),
+    ).execute(
+        GetExistingCandidatePairingStatusQuery(
+            pairing_id=created.pairing_id,
+            user_id=user.id,
+            session_id=candidate_session.id,
+            device_id=candidate_device.id,
+        )
+    )
+    assert candidate_view.trusted_device_id == trusted_device.id
+
+    authorized = await ApproveDevicePairing(
+        unit_of_work=FakeIdentityUnitOfWorkFactory(state),
+        clock=FixedClock(NOW),
+    ).execute(
+        ApproveDevicePairingCommand(
+            pairing_id=created.pairing_id,
+            user_id=user.id,
+            session_id=trusted_session.id,
+            device_id=trusted_device.id,
+        )
+    )
+    assert authorized.status == "authorized"
+    assert authorized.authorized_device_id == candidate_device.id
+    assert len(state.devices) == 2
+    assert len(state.sessions) == 2
+
+
+async def test_existing_offer_rejects_same_device_cross_account_and_competing_scanner() -> None:
+    state, user, trusted_device, trusted_session = trusted_state()
+    credentials = FixedSessionCredentials()
+    created = await CreatePairingOffer(
+        unit_of_work=FakeIdentityUnitOfWorkFactory(state),
+        clock=FixedClock(NOW),
+        credentials=credentials,
+        pairing_policy=PAIRING_POLICY,
+    ).execute(
+        CreatePairingOfferCommand(
+            user_id=user.id,
+            session_id=trusted_session.id,
+            device_id=trusted_device.id,
+        )
+    )
+    scan = ScanExistingPairingOffer(
+        unit_of_work=FakeIdentityUnitOfWorkFactory(state),
+        clock=FixedClock(NOW),
+        credentials=credentials,
+    )
+    with pytest.raises(DevicePairingStateError):
+        await scan.execute(
+            ScanExistingPairingOfferCommand(
+                pairing_id=created.pairing_id,
+                scan_token=created.scan_token,
+                user_id=user.id,
+                session_id=trusted_session.id,
+                device_id=trusted_device.id,
+            )
+        )
+
+    other_user = User.create(username="mallory", display_name="Mallory", now=NOW)
+    other_device = Device.create(user_id=other_user.id, name="Mallory phone", now=NOW)
+    other_session = Session.create(
+        user_id=other_user.id,
+        device_id=other_device.id,
+        token_hash=credentials.digest("other-session-secret"),
+        now=NOW,
+        idle_timeout=SESSION_POLICY.idle_timeout,
+        absolute_lifetime=SESSION_POLICY.absolute_lifetime,
+    )
+    state.users[other_user.id] = other_user
+    state.devices[other_device.id] = other_device
+    state.sessions[other_session.id] = other_session
+    with pytest.raises(DevicePairingNotFoundError):
+        await scan.execute(
+            ScanExistingPairingOfferCommand(
+                pairing_id=created.pairing_id,
+                scan_token=created.scan_token,
+                user_id=other_user.id,
+                session_id=other_session.id,
+                device_id=other_device.id,
             )
         )
 

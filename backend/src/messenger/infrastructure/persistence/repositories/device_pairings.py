@@ -32,6 +32,8 @@ class SqlAlchemyDevicePairingRepository:
         model.status = pairing.status.value
         model.candidate_proof_hash = pairing.candidate_proof_hash
         model.candidate_device_name = pairing.candidate_device_name
+        model.candidate_session_id = pairing.candidate_session_id
+        model.candidate_device_id = pairing.candidate_device_id
         model.user_id = pairing.user_id
         model.trusted_session_id = pairing.trusted_session_id
         model.trusted_device_id = pairing.trusted_device_id
@@ -60,6 +62,8 @@ class SqlAlchemyDevicePairingRepository:
             scan_token_hash=pairing.scan_token_hash,
             candidate_proof_hash=pairing.candidate_proof_hash,
             candidate_device_name=pairing.candidate_device_name,
+            candidate_session_id=pairing.candidate_session_id,
+            candidate_device_id=pairing.candidate_device_id,
             user_id=pairing.user_id,
             trusted_session_id=pairing.trusted_session_id,
             trusted_device_id=pairing.trusted_device_id,

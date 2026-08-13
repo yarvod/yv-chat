@@ -36,7 +36,7 @@ controls. Encrypted OPFS cache, byte-bounded eviction и safe device clear уж�
 4. `BL-043` — оставшийся offline draft, cancel/retry и polished
    attachment UX поверх уже готовых secure storage boundaries.
 5. `BL-015` — QR linking, trusted-device MLS enrollment и двусторонний
-   device-to-device history transfer после `BL-064`/`BL-025`.
+   device-to-device history transfer; `WP-082` объединяет new/existing-device offer.
 6. `BL-051` — возврат group MLS только после multi-epoch и multi-device acceptance.
 
 ### P2 — assurance, product controls и эксплуатация
@@ -138,7 +138,8 @@ cross-browser/security assurance gates.
 
 Статус: **in progress; `WP-079` durable pairing/session bootstrap, `WP-080`
 background MLS enrollment и `WP-081` bidirectional encrypted text/tombstone archive
-merge завершены локально; production rollout held до compatibility/physical gate**.
+merge развернуты; `WP-082` automatic existing-device pairing/union завершён локально,
+production rollout held до compatibility/physical gate**.
 `BL-064` и первый deployment-safe slice `BL-025` завершены; pairing реализуется
 итерациями с отдельным security/ADR review до изменения MLS membership semantics.
 Это не UI-задача «нарисовать QR»: `WP-079` не менял MLS roster, `WP-080` добавил

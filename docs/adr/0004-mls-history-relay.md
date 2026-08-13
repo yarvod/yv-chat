@@ -2,7 +2,7 @@
 
 - Статус: **accepted for WP-081 text/tombstone slice**
 - Дата решения: 2026-08-13
-- Связанные задачи: `BL-015`, `WP-081`
+- Связанные задачи: `BL-015`, `WP-081`, `WP-082`
 - Базовый протокол: [ADR-0001](0001-e2ee-mls.md)
 - Pairing boundary: [ADR-0003](0003-qr-device-pairing.md)
 
@@ -25,6 +25,9 @@ non-extractable AES-GCM archive key.
 Relay двусторонний: trusted и candidate devices независимо публикуют свои доступные
 ranges counterpart-у. Union определяется immutable server message IDs/sequences;
 target не удаляет записи, которых нет в manifest другого устройства.
+`WP-082` разрешает тем же relay связать два уже авторизованных same-account device:
+pairing authorization ссылается на их exact active sessions, поэтому новый leaf,
+session или crypto identity для archive union не создаётся.
 
 ## Почему MLS application messages
 

@@ -510,20 +510,27 @@ authoritative list после response. IP показывается только
 free-form payload.
 
 QR device linking — отдельный passwordless bootstrap поверх того же opaque-session
-model, а не перенос существующей session/device identity. `device_pairings` хранит
+model. Для new-device enrollment он не переносит существующую session/device identity;
+для explicit existing-device sync он лишь связывает две уже существующие boundaries.
+`device_pairings` хранит
 durable monotonic state, exact trusted session/device binding, TTL и только SHA-256
 digests двух независимых 256-bit values: scan capability из QR и candidate proof,
 который в QR не попадает. Request создаёт новый компьютер, который показывает QR
-доверенному телефону; offer создаёт доверенный компьютер, чей QR сканирует новый
-телефон. До explicit approval exact active trusted session и proof-preimage candidate
-новые `Device`/`Session` не создаются. После approval candidate proof одноразово
+доверенному телефону; offer создаёт доверенный компьютер, чей QR сканирует новый или
+уже авторизованный телефон. Anonymous offer scanner использует proof-preimage и после
+approval создаёт новую Device/Session. Authenticated same-account scanner определяется
+server-side по HttpOnly session, сохраняет exact existing candidate session/device и
+после approval не создаёт новую identity. До explicit approval exact active trusted
+session и candidate binding не авторизуются. Для нового candidate proof одноразово
 становится первым opaque session credential; потерянный HTTP response можно повторить
 без хранения plaintext credential на server и без duplicate device. Browser держит
 proof только в памяти/`sessionStorage` незавершённого flow и удаляет после установки
 HttpOnly cookie; `localStorage`/IndexedDB/URL запрещены. Подробнее: ADR-0003.
 
-QR pairing bootstrap не копирует signer, provider state или archive/storage key. Он
-создаёт независимую authenticated device boundary; следующий background slice
+QR pairing bootstrap не копирует signer, provider state или archive/storage key. New
+device flow создаёт независимую authenticated device boundary; existing-device flow
+сохраняет обе существующие boundaries и только выдаёт bounded relay authorization.
+Следующий background slice
 добавляет leaf стандартным MLS Commit/Welcome, а history slice переносит только
 доступные canonical records стандартными MLS application `PrivateMessage`.
 PostgreSQL state переживает API restart; polling является latency mechanism, а не

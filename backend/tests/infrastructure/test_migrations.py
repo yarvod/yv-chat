@@ -11,6 +11,6 @@ def test_migration_graph_has_one_head_and_version_ids_fit_version_table() -> Non
     scripts = ScriptDirectory.from_config(Config(backend_root / "alembic.ini"))
     revisions = list(scripts.walk_revisions())
 
-    assert scripts.get_heads() == ["0025_device_history_chunks"]
+    assert scripts.get_heads() == ["0026_existing_device_pairings"]
     assert len({revision.revision for revision in revisions}) == len(revisions)
     assert all(len(revision.revision) <= 32 for revision in revisions)

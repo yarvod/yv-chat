@@ -18,6 +18,8 @@ from messenger.application.device_pairings.authorize import (
 from messenger.application.device_pairings.cancel import (
     CancelCandidatePairing,
     CancelCandidatePairingCommand,
+    CancelExistingCandidatePairing,
+    CancelExistingCandidatePairingCommand,
     CancelTrustedPairing,
     CancelTrustedPairingCommand,
 )
@@ -40,6 +42,8 @@ from messenger.application.device_pairings.history import (
     UploadHistoryChunkCommand,
 )
 from messenger.application.device_pairings.scan import (
+    ScanExistingPairingOffer,
+    ScanExistingPairingOfferCommand,
     ScanPairingOffer,
     ScanPairingOfferCommand,
     ScanPairingRequest,
@@ -48,6 +52,8 @@ from messenger.application.device_pairings.scan import (
 from messenger.application.device_pairings.status import (
     GetCandidatePairingStatus,
     GetCandidatePairingStatusQuery,
+    GetExistingCandidatePairingStatus,
+    GetExistingCandidatePairingStatusQuery,
     GetTrustedPairingStatus,
     GetTrustedPairingStatusQuery,
 )
@@ -112,6 +118,7 @@ class PairingStatusResponse(BaseModel):
     expires_at: datetime
     authorized_device_id: UUID | None
     trusted_device_id: UUID | None
+    candidate_device_id: UUID | None
 
 
 class UploadHistoryChunkBody(BaseModel):
@@ -385,6 +392,33 @@ async def scan_pairing_offer(
     return status_response(view)
 
 
+@router.post("/{pairing_id}/scan-existing-offer", response_model=PairingStatusResponse)
+async def scan_existing_pairing_offer(
+    pairing_id: UUID,
+    payload: ScanPairingBody,
+    request: Request,
+    response: Response,
+    settings: FromDishka[AppSettings],
+    authenticate_session: FromDishka[AuthenticateSession],
+    use_case: FromDishka[ScanExistingPairingOffer],
+) -> PairingStatusResponse:
+    require_csrf(request, settings)
+    principal = await authenticate_request(request, response, settings, authenticate_session)
+    try:
+        view = await use_case.execute(
+            ScanExistingPairingOfferCommand(
+                pairing_id=pairing_id,
+                scan_token=payload.scan_token,
+                user_id=principal.user_id,
+                session_id=principal.session_id,
+                device_id=principal.device_id,
+            )
+        )
+    except (DevicePairingNotFoundError, DevicePairingProofError, DevicePairingStateError) as error:
+        raise translate_pairing_error(error) from error
+    return status_response(view)
+
+
 @router.post("/{pairing_id}/candidate-status", response_model=PairingStatusResponse)
 async def candidate_pairing_status(
     pairing_id: UUID,
@@ -419,6 +453,30 @@ async def trusted_pairing_status(
     try:
         view = await use_case.execute(
             GetTrustedPairingStatusQuery(
+                pairing_id=pairing_id,
+                user_id=principal.user_id,
+                session_id=principal.session_id,
+                device_id=principal.device_id,
+            )
+        )
+    except DevicePairingNotFoundError as error:
+        raise translate_pairing_error(error) from error
+    return status_response(view)
+
+
+@router.get("/{pairing_id}/existing-candidate-status", response_model=PairingStatusResponse)
+async def existing_candidate_pairing_status(
+    pairing_id: UUID,
+    request: Request,
+    response: Response,
+    settings: FromDishka[AppSettings],
+    authenticate_session: FromDishka[AuthenticateSession],
+    use_case: FromDishka[GetExistingCandidatePairingStatus],
+) -> PairingStatusResponse:
+    principal = await authenticate_request(request, response, settings, authenticate_session)
+    try:
+        view = await use_case.execute(
+            GetExistingCandidatePairingStatusQuery(
                 pairing_id=pairing_id,
                 user_id=principal.user_id,
                 session_id=principal.session_id,
@@ -524,6 +582,31 @@ async def cancel_trusted_pairing(
     try:
         view = await use_case.execute(
             CancelTrustedPairingCommand(
+                pairing_id=pairing_id,
+                user_id=principal.user_id,
+                session_id=principal.session_id,
+                device_id=principal.device_id,
+            )
+        )
+    except DevicePairingNotFoundError as error:
+        raise translate_pairing_error(error) from error
+    return status_response(view)
+
+
+@router.post("/{pairing_id}/cancel-existing-candidate", response_model=PairingStatusResponse)
+async def cancel_existing_candidate_pairing(
+    pairing_id: UUID,
+    request: Request,
+    response: Response,
+    settings: FromDishka[AppSettings],
+    authenticate_session: FromDishka[AuthenticateSession],
+    use_case: FromDishka[CancelExistingCandidatePairing],
+) -> PairingStatusResponse:
+    require_csrf(request, settings)
+    principal = await authenticate_request(request, response, settings, authenticate_session)
+    try:
+        view = await use_case.execute(
+            CancelExistingCandidatePairingCommand(
                 pairing_id=pairing_id,
                 user_id=principal.user_id,
                 session_id=principal.session_id,

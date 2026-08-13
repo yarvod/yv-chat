@@ -120,6 +120,71 @@ async def test_request_pairing_needs_origin_csrf_approval_and_candidate_proof() 
         assert len(state.devices) == 2
 
 
+async def test_offer_binds_two_existing_sessions_without_creating_another_device() -> None:
+    application, state, _ = build_test_application()
+    transport = ASGITransport(app=application, client=("203.0.113.7", 443))
+    async with (
+        AsyncClient(transport=transport, base_url="https://test") as trusted,
+        AsyncClient(transport=transport, base_url="https://test") as candidate,
+        AsyncClient(transport=transport, base_url="https://test") as competing,
+    ):
+        trusted_login = await login(trusted)
+        candidate_login = await login(candidate)
+        competing_login = await login(competing)
+        assert (
+            trusted_login.status_code
+            == candidate_login.status_code
+            == competing_login.status_code
+            == 200
+        )
+        created = await trusted.post(
+            "/api/v1/device-pairings/offers",
+            headers=csrf_headers(trusted),
+        )
+        assert created.status_code == 200
+        pairing_id = created.json()["pairing_id"]
+
+        missing_csrf = await candidate.post(
+            f"/api/v1/device-pairings/{pairing_id}/scan-existing-offer",
+            headers={"Origin": "https://test"},
+            json={"scan_token": created.json()["scan_token"]},
+        )
+        assert missing_csrf.status_code == 403
+        scanned = await candidate.post(
+            f"/api/v1/device-pairings/{pairing_id}/scan-existing-offer",
+            headers=csrf_headers(candidate),
+            json={"scan_token": created.json()["scan_token"]},
+        )
+        assert scanned.status_code == 200
+        assert scanned.json()["candidate_device_id"] == candidate_login.json()["device_id"]
+        assert len(scanned.json()["authentication_code"]) == 6
+
+        conflict = await competing.post(
+            f"/api/v1/device-pairings/{pairing_id}/scan-existing-offer",
+            headers=csrf_headers(competing),
+            json={"scan_token": created.json()["scan_token"]},
+        )
+        assert conflict.status_code == 409
+        before_counts = (len(state.devices), len(state.sessions))
+        approved = await trusted.post(
+            f"/api/v1/device-pairings/{pairing_id}/approve",
+            headers=csrf_headers(trusted),
+        )
+        assert approved.status_code == 200
+        assert approved.json()["status"] == "authorized"
+        assert approved.json()["authorized_device_id"] == candidate_login.json()["device_id"]
+        assert (len(state.devices), len(state.sessions)) == before_counts
+
+        candidate_status = await candidate.get(
+            f"/api/v1/device-pairings/{pairing_id}/existing-candidate-status"
+        )
+        assert candidate_status.status_code == 200
+        assert candidate_status.json()["status"] == "authorized"
+        assert (
+            await competing.get(f"/api/v1/device-pairings/{pairing_id}/existing-candidate-status")
+        ).status_code == 404
+
+
 async def test_authorized_pair_can_relay_only_opaque_chunks_to_exact_target() -> None:
     application, state, _ = build_test_application()
     transport = ASGITransport(app=application, client=("203.0.113.7", 443))

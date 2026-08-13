@@ -40,6 +40,8 @@ class DevicePairing:
     scan_token_hash: str
     candidate_proof_hash: str | None
     candidate_device_name: str | None
+    candidate_session_id: UUID | None
+    candidate_device_id: UUID | None
     user_id: UUID | None
     trusted_session_id: UUID | None
     trusted_device_id: UUID | None
@@ -93,6 +95,11 @@ class DevicePairing:
         candidate_values = (self.candidate_proof_hash, self.candidate_device_name)
         if (candidate_values[0] is None) != (candidate_values[1] is None):
             raise DomainValidationError("candidate pairing binding must be complete")
+        existing_candidate_values = (self.candidate_session_id, self.candidate_device_id)
+        if (existing_candidate_values[0] is None) != (existing_candidate_values[1] is None):
+            raise DomainValidationError("existing candidate binding must be complete")
+        if self.candidate_proof_hash is not None and self.candidate_session_id is not None:
+            raise DomainValidationError("candidate binding modes are mutually exclusive")
 
         if self.purpose is DevicePairingPurpose.ENROLLMENT_REQUEST:
             if self.candidate_proof_hash is None:
@@ -104,7 +111,10 @@ class DevicePairing:
             DevicePairingStatus.CONFIRMATION_PENDING,
             DevicePairingStatus.APPROVED,
             DevicePairingStatus.AUTHORIZED,
-        } and (self.user_id is None or self.candidate_proof_hash is None):
+        } and (
+            self.user_id is None
+            or (self.candidate_proof_hash is None and self.candidate_session_id is None)
+        ):
             raise DomainValidationError("advanced pairing state requires both bindings")
         if (
             self.status
@@ -166,6 +176,8 @@ class DevicePairing:
                 field_name="candidate_device_name",
                 maximum_length=80,
             ),
+            candidate_session_id=None,
+            candidate_device_id=None,
             user_id=None,
             trusted_session_id=None,
             trusted_device_id=None,
@@ -200,6 +212,8 @@ class DevicePairing:
             scan_token_hash=scan_token_hash,
             candidate_proof_hash=None,
             candidate_device_name=None,
+            candidate_session_id=None,
+            candidate_device_id=None,
             user_id=user_id,
             trusted_session_id=trusted_session_id,
             trusted_device_id=trusted_device_id,
@@ -273,6 +287,27 @@ class DevicePairing:
             scanned_at=now,
         )
 
+    def scan_existing_offer(
+        self,
+        *,
+        candidate_session_id: UUID,
+        candidate_device_id: UUID,
+        now: datetime,
+    ) -> "DevicePairing":
+        if self.purpose is not DevicePairingPurpose.ENROLLMENT_OFFER:
+            raise DomainValidationError("pairing purpose mismatch")
+        if self.status is not DevicePairingStatus.CREATED or self.is_expired(now):
+            raise DomainValidationError("pairing cannot be scanned")
+        if candidate_device_id == self.trusted_device_id:
+            raise DomainValidationError("pairing requires two different devices")
+        return replace(
+            self,
+            status=DevicePairingStatus.CONFIRMATION_PENDING,
+            candidate_session_id=candidate_session_id,
+            candidate_device_id=candidate_device_id,
+            scanned_at=now,
+        )
+
     def approve(self, *, trusted_session_id: UUID, now: datetime) -> "DevicePairing":
         if self.trusted_session_id != trusted_session_id:
             raise DomainValidationError("only the bound trusted session may approve")
@@ -283,6 +318,15 @@ class DevicePairing:
             return self
         if self.status is not DevicePairingStatus.CONFIRMATION_PENDING or self.is_expired(now):
             raise DomainValidationError("pairing cannot be approved")
+        if self.candidate_session_id is not None and self.candidate_device_id is not None:
+            return replace(
+                self,
+                status=DevicePairingStatus.AUTHORIZED,
+                approved_at=now,
+                authorized_at=now,
+                authorized_session_id=self.candidate_session_id,
+                authorized_device_id=self.candidate_device_id,
+            )
         return replace(self, status=DevicePairingStatus.APPROVED, approved_at=now)
 
     def authorize(

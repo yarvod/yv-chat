@@ -50,7 +50,9 @@ export class DevicePairingService {
       if (!authenticated) throw new Error('trusted session required')
       return await this.gateway.scanRequest(qr.pairingId, qr.scanToken)
     }
-    if (authenticated) throw new Error('candidate phone must use the login screen')
+    if (authenticated) {
+      return await this.gateway.scanExistingOffer(qr.pairingId, qr.scanToken)
+    }
     const existingProof = this.secrets.load(qr.pairingId)
     const proof = existingProof
       ? { secret: existingProof, digest: await this.secrets.digest(existingProof) }
@@ -71,6 +73,10 @@ export class DevicePairingService {
 
   trustedStatus(pairingId: string): Promise<DevicePairingView> {
     return this.gateway.trustedStatus(pairingId)
+  }
+
+  existingCandidateStatus(pairingId: string): Promise<DevicePairingView> {
+    return this.gateway.existingCandidateStatus(pairingId)
   }
 
   approve(pairingId: string): Promise<DevicePairingView> {
@@ -96,6 +102,10 @@ export class DevicePairingService {
 
   async cancelTrusted(pairingId: string): Promise<void> {
     await this.gateway.cancelTrusted(pairingId)
+  }
+
+  async cancelExistingCandidate(pairingId: string): Promise<void> {
+    await this.gateway.cancelExistingCandidate(pairingId)
   }
 
   private requireProof(pairingId: string): string {

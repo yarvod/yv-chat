@@ -19,6 +19,10 @@ from messenger.application.device_pairings.authorize import (
     AuthorizeDevicePairing,
     AuthorizeDevicePairingCommand,
 )
+from messenger.application.device_pairings.create_offer import (
+    CreatePairingOffer,
+    CreatePairingOfferCommand,
+)
 from messenger.application.device_pairings.create_request import (
     CreatePairingRequest,
     CreatePairingRequestCommand,
@@ -31,12 +35,16 @@ from messenger.application.device_pairings.history import (
 )
 from messenger.application.device_pairings.policy import DevicePairingPolicy
 from messenger.application.device_pairings.scan import (
+    ScanExistingPairingOffer,
+    ScanExistingPairingOfferCommand,
     ScanPairingRequest,
     ScanPairingRequestCommand,
 )
 from messenger.application.device_pairings.status import (
     GetCandidatePairingStatus,
     GetCandidatePairingStatusQuery,
+    GetExistingCandidatePairingStatus,
+    GetExistingCandidatePairingStatusQuery,
 )
 from messenger.application.ports.identity import IdentityUnitOfWork
 from messenger.application.security_events.policy import SecurityEventPolicy
@@ -269,6 +277,80 @@ async def run_flow(database_url: str) -> None:
         assert [chunk.id for chunk in incoming] == [uploaded.id]
     finally:
         await fourth_engine.dispose()
+
+    fifth_engine = create_engine(database_url)
+    fifth_sessions = create_session_factory(fifth_engine)
+    try:
+        existing_created = await CreatePairingOffer(
+            unit_of_work=unit_of_work_factory(fifth_sessions),
+            clock=FixedClock(NOW + timedelta(seconds=9)),
+            credentials=SecureSessionCredentialService(),
+            pairing_policy=PAIRING_POLICY,
+        ).execute(
+            CreatePairingOfferCommand(
+                user_id=trusted.user_id,
+                session_id=trusted.session_id,
+                device_id=trusted.device_id,
+            )
+        )
+    finally:
+        await fifth_engine.dispose()
+
+    sixth_engine = create_engine(database_url)
+    sixth_sessions = create_session_factory(sixth_engine)
+    try:
+        existing_scanned = await ScanExistingPairingOffer(
+            unit_of_work=unit_of_work_factory(sixth_sessions),
+            clock=FixedClock(NOW + timedelta(seconds=10)),
+            credentials=SecureSessionCredentialService(),
+        ).execute(
+            ScanExistingPairingOfferCommand(
+                pairing_id=existing_created.pairing_id,
+                scan_token=existing_created.scan_token,
+                user_id=trusted.user_id,
+                session_id=issued.session_id,
+                device_id=issued.device_id,
+            )
+        )
+        assert existing_scanned.candidate_device_id == issued.device_id
+    finally:
+        await sixth_engine.dispose()
+
+    seventh_engine = create_engine(database_url)
+    seventh_sessions = create_session_factory(seventh_engine)
+    try:
+        seventh_uow = unit_of_work_factory(seventh_sessions)
+        existing_authorized = await ApproveDevicePairing(
+            unit_of_work=seventh_uow,
+            clock=FixedClock(NOW + timedelta(seconds=11)),
+        ).execute(
+            ApproveDevicePairingCommand(
+                pairing_id=existing_created.pairing_id,
+                user_id=trusted.user_id,
+                session_id=trusted.session_id,
+                device_id=trusted.device_id,
+            )
+        )
+        assert existing_authorized.status == "authorized"
+        existing_status = await GetExistingCandidatePairingStatus(
+            unit_of_work=seventh_uow,
+            clock=FixedClock(NOW + timedelta(seconds=12)),
+        ).execute(
+            GetExistingCandidatePairingStatusQuery(
+                pairing_id=existing_created.pairing_id,
+                user_id=trusted.user_id,
+                session_id=issued.session_id,
+                device_id=issued.device_id,
+            )
+        )
+        assert existing_status.authorized_device_id == issued.device_id
+        async with seventh_sessions() as session:
+            session_count = await session.scalar(select(func.count()).select_from(SessionModel))
+            device_count = await session.scalar(select(func.count()).select_from(DeviceModel))
+        assert session_count == 2
+        assert device_count == 2
+    finally:
+        await seventh_engine.dispose()
 
 
 @pytest.mark.integration

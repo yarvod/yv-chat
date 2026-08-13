@@ -1,8 +1,8 @@
 # ADR-0003: QR device pairing и passwordless device-bound session bootstrap
 
-- Статус: **accepted for WP-079 transport slice**
+- Статус: **accepted; extended by WP-082 for existing-device sync**
 - Дата решения: 2026-08-13
-- Связанные задачи: `BL-015`, `WP-079`
+- Связанные задачи: `BL-015`, `WP-079`, `WP-082`
 - E2EE protocol: [ADR-0001](0001-e2ee-mls.md)
 
 ## 1. Контекст
@@ -37,9 +37,11 @@ created → confirmation_pending → approved → authorized
 any non-terminal state + TTL → expired
 ```
 
-`authorized` связывает pairing с ровно одним созданным `device_id/session_id`.
-Повтор exact authorize не создаёт второй device и может повторно установить cookie
-в пределах TTL; иной proof/account/device получает fail-closed conflict.
+`authorized` связывает pairing с exact candidate `device_id/session_id`. Для нового
+candidate эти identities создаются один раз при authorize; для уже авторизованного
+same-account scanner `WP-082` использует существующие identities и не создаёт ещё
+один device/session. Повтор exact transition идемпотентен; иной proof/account/device
+получает fail-closed outcome.
 
 ## 3. Разделение QR capability и candidate proof
 
@@ -77,7 +79,11 @@ Browser немедленно удаляет JS copy после успешног�
 - `enrollment_request` создаётся anonymous candidate, затем exact active trusted
   session сканирует и одновременно привязывает account + approving device.
 - `enrollment_offer` создаётся exact active trusted session и уже привязан к account;
-  anonymous scanner добавляет candidate commitment/device metadata.
+  anonymous scanner добавляет candidate commitment/device metadata, а authenticated
+  scanner того же account добавляет exact existing session/device binding.
+- Existing-device mode выбирает server только из валидной HttpOnly session scanner-а;
+  client не передаёт `user_id/device_id`. Same-device, cross-account, revoked/expired
+  session и второй scanner отвергаются.
 - Only exact scanner (`request`) или creator (`offer`) может approve/cancel.
 - До `approved` server не создаёт `Device`/session. Manual/authentication code не
   заменяет scan token, trusted cookie/CSRF и candidate proof.
@@ -88,8 +94,8 @@ Browser немедленно удаляет JS copy после успешног�
 
 ## 5. Persistence, restart и privacy
 
-Pairing row содержит только bounded metadata, token/proof digests, state timestamps,
-trusted/candidate IDs после соответствующих transitions и TTL. Backend restart
+Pairing row содержит только bounded metadata, token/proof digests либо exact existing
+candidate session/device IDs, state timestamps и TTL. Backend restart
 теряет только long-poll/WebSocket latency; candidate и trusted device восстанавливают
 status через HTTP polling.
 
@@ -99,14 +105,19 @@ additive: старые клиенты продолжают password login и с�
 
 ## 6. MLS и history boundary
 
-`authorized` означает только HTTP/device trust bootstrap. Реализованный `WP-080`
-затем выполняет:
+Для нового device `authorized` означает HTTP/device trust bootstrap, после чего
+реализованный `WP-080` выполняет:
 
 1. генерирует новую independent MLS identity/KeyPackages на candidate;
 2. атомарно enroll-ит pending leaf во все доступные direct без остановки healthy
    generation и без online собеседника;
 3. оставляет authenticated bidirectional history manifest/chunk union следующему
    изолированному `WP-081`.
+
+Для existing-device pairing `WP-082` не создаёт identity и не меняет MLS roster:
+оба уже существующих peers сразу восстанавливают один bounded `WP-081` history job,
+передают mutually missing canonical records через opaque MLS relay и сохраняют union
+под своими независимыми archive keys.
 
 Существующий signer, sealed provider, current/past MLS state и device-local storage key
 не передаются. Старые epochs не перешифровываются. Пока эти slices не завершены, UI

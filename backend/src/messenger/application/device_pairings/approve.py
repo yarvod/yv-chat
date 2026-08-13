@@ -46,6 +46,14 @@ class ApproveDevicePairing:
                 session_id=command.session_id,
                 device_id=command.device_id,
             )
+            if pairing.candidate_session_id is not None and pairing.candidate_device_id is not None:
+                await require_active_trusted_session(
+                    uow,
+                    user_id=command.user_id,
+                    session_id=pairing.candidate_session_id,
+                    device_id=pairing.candidate_device_id,
+                    now=now,
+                )
             try:
                 approved = pairing.approve(trusted_session_id=command.session_id, now=now)
             except DomainValidationError as error:

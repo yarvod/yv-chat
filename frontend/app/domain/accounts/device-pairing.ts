@@ -27,6 +27,7 @@ export interface DevicePairingView {
   expiresAt: string
   authorizedDeviceId: string | null
   trustedDeviceId: string | null
+  candidateDeviceId: string | null
 }
 
 export interface DeviceHistoryRelayChunk {

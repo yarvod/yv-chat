@@ -14,12 +14,15 @@ export interface DevicePairingGateway {
     candidateProofHash: string,
     candidateDeviceName: string,
   ): Promise<DevicePairingView>
+  scanExistingOffer(pairingId: string, scanToken: string): Promise<DevicePairingView>
   candidateStatus(pairingId: string, candidateProof: string): Promise<DevicePairingView>
   trustedStatus(pairingId: string): Promise<DevicePairingView>
+  existingCandidateStatus(pairingId: string): Promise<DevicePairingView>
   approve(pairingId: string): Promise<DevicePairingView>
   authorize(pairingId: string, candidateProof: string): Promise<void>
   cancelCandidate(pairingId: string, candidateProof: string): Promise<DevicePairingView>
   cancelTrusted(pairingId: string): Promise<DevicePairingView>
+  cancelExistingCandidate(pairingId: string): Promise<DevicePairingView>
   uploadHistoryChunk(
     pairingId: string,
     targetDeviceId: string,

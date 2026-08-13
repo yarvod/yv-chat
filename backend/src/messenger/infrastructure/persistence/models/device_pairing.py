@@ -42,6 +42,14 @@ class DevicePairingModel(Base):
             name="candidate_binding_complete",
         ),
         CheckConstraint(
+            "(candidate_session_id IS NULL) = (candidate_device_id IS NULL)",
+            name="existing_candidate_binding_complete",
+        ),
+        CheckConstraint(
+            "candidate_proof_hash IS NULL OR candidate_session_id IS NULL",
+            name="candidate_binding_modes_exclusive",
+        ),
+        CheckConstraint(
             "(status = 'authorized') = (authorized_at IS NOT NULL) AND "
             "(status = 'authorized') = (authorized_session_id IS NOT NULL) AND "
             "(status = 'authorized') = (authorized_device_id IS NOT NULL)",
@@ -57,6 +65,7 @@ class DevicePairingModel(Base):
         ),
         Index("ix_device_pairings_expires_at", "expires_at"),
         Index("ix_device_pairings_trusted_session_id", "trusted_session_id"),
+        Index("ix_device_pairings_candidate_session_id", "candidate_session_id"),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
@@ -66,6 +75,12 @@ class DevicePairingModel(Base):
     scan_token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     candidate_proof_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
     candidate_device_name: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    candidate_session_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("sessions.id", ondelete="RESTRICT"), nullable=True
+    )
+    candidate_device_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("devices.id", ondelete="RESTRICT"), nullable=True
+    )
     user_id: Mapped[UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=True
     )
