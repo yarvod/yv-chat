@@ -969,8 +969,10 @@ conversation sync invalidates cached reconciliation. Durable `conversation_updat
 startup и sync reset bounded последовательно проверяют все direct conversations.
 Поэтому любой online previous leaf может автоматически стать coordinator вместо
 случайного ожидания, пока peer вручную откроет тот же чат. Stable READY result
-кэшируется до такого explicit sync invalidation: protect/unprotect одного history
-batch не выполняют bootstrap и KeyPackage inventory request для каждого envelope.
+кэшируется до такого explicit sync invalidation: protect всегда требует READY,
+а unprotect никогда сам не запускает bootstrap/reconciliation. Иначе сама попытка
+прочитать retained ciphertext могла бы сначала применить roster Commit и удалить
+нужный previous-epoch secret.
 Backend exact-current-generation gate остаётся authoritative для stale send.
 Outgoing router использует v2, а v1 остаётся только read-only historical adapter.
 
@@ -992,6 +994,16 @@ roster mismatch дают typed `local-state-lost`; direct остаётся fail-
 fallback. Реальная потеря sealed vault требует explicit re-enrollment новой device
 identity, а старая история может вернуться только отдельным encrypted device-to-device
 transfer flow.
+
+Перед cold-start, sync-reset и durable roster-change reconciliation каждый
+direct conversation выполняет retention drain: client читает server envelopes
+по возрастанию authoritative sequence, расшифровывает всё, что ещё доступно
+его current/past MLS state, и сразу сохраняет content в encrypted device-local vault.
+Только после окончания drain разрешён Commit/Welcome advance. Новые OpenMLS
+groups и joins дополнительно хранят count-bounded 128 past epochs: это страховка
+от delivery/Commit ordering для OpenMLS 0.8, а не unlimited key archive и не замена
+30-day server TTL. Legacy groups с нулевым window защищает drain; уже
+удалённые в прошлом secrets server восстановить не может.
 
 Каждый v2 message transport содержит `crypto_generation_id` и `crypto_epoch`,
 полученные от того же reconciliation/protect operation. Backend под conversation

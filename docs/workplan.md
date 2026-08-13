@@ -4,55 +4,53 @@
 завершённая работа фиксируется отдельным коммитом, а новый пункт переносится
 сюда из `backlog.md`.
 
-## WP-076 — Independent TLS certificates for production origins
+## WP-077 — Retention-aligned MLS epoch continuity and device-logout isolation
 
-Статус: **completed and production verified** (`5083743`, workflow
-`31704063495`)
+Статус: **implemented and full-CI verified; production rollout pending**
+(`BL-064`, `BUG-073`)
 
-Цель: отказ DNS/регистрации или ACME validation одного production-домена не мешает
-автоматическому продлению и работе TLS второго домена.
+Цель: logout/relogin/revoke одного device не ломает чтение уже доступной E2EE-
+истории на другом авторизованном device, а долго offline device догоняет
+ещё хранящиеся server messages до необратимого MLS epoch advance.
 
 ### Scope
 
-- отдельный Certbot certificate lineage для `chat.yoowee.ru`;
-- отдельный Certbot certificate lineage для `chat.yoowee.com.de`;
-- два HTTPS `server`-блока выбирают сертификат по exact `server_name`;
-- единый project-owned Nginx snippet содержит общие security headers, rate limit,
-  API/WebSocket и frontend proxy rules без копирования конфигурации;
-- общий port-80 server сохраняет ACME webroot и exact HTTPS redirect для обоих имён.
+- direct-message decrypt не запускает скрытый roster reconciliation;
+- перед каждым explicit reconciliation client постранично получает всю ещё
+  retained server history, decrypts доступные current/old-epoch messages и сохраняет
+  content только в device-local AES-GCM vault;
+- новые OpenMLS group/join config используют bounded `max_past_epochs = 128`;
+  это safety window, а не unlimited key archive, и он не отменяет pre-advance drain;
+- existing groups с историческим `max_past_epochs = 0` защищаются pre-advance drain;
+  уже выброшенные secrets без другой локальной копии не восстанавливаются;
+- active/inactive conversation, startup, cursor reset и durable `conversation_updated` идут через
+  один и тот же drain-before-advance flow;
+- QR linking/history union остаются следующим отдельным slice `BL-015`: эта
+  работа делает передаваемое состояние устойчивым.
 
-### Security and rollout invariants
+### Security invariants
 
-- private keys не читаются, не копируются в repository и не выводятся;
-- каждый renewal config содержит только свой domain и `webroot` authenticator;
-- chat vhost и shared snippet устанавливаются с отдельными backups;
-- общий `nginx -t` выполняется до graceful reload; при ошибке оба файла
-  восстанавливаются как единый rollback set;
-- strict Origin allowlist и origin-scoped cookie/PWA/E2EE semantics не меняются;
-- соседние vhost, certificates и containers не изменяются.
-
-### Definition of Done
-
-- TLS handshake каждого имени отдаёт сертификат только с соответствующим DNS SAN;
-- Certbot показывает две независимые lineage и renewal configs;
-- API/frontend отвечают `200`, WebSocket без session — `403` на обоих доменах;
-- registration rate limit и security headers одинаковы через shared snippet;
-- старый combined `.ru` certificate безопасно заменён на `.ru`-only после
-  переключения `.com.de` на собственный certificate;
-- full CI, deploy checks и production acceptance проходят.
+- server не получает plaintext, message key, past epoch secret или device-local storage key;
+- removed device не decrypt-ит messages из epochs после Remove Commit;
+- позднее добавленный device не получает pre-membership MLS secrets;
+- повреждённый ciphertext не блокирует drain остальной retained history и не
+  приводит к plaintext fallback;
+- pagination обязана monotonic progress; malformed/non-progressing response fail closed;
+- count-bounded past-epoch window дополняет, а не заменяет 30-day server TTL.
 
 ### Verification
 
-- full repository CI и production workflow `31704063495` прошли; immutable tag —
-  `sha-5083743982e407791478511b107a12da622de8e6`;
-- active `.ru` certificate содержит только `DNS:chat.yoowee.ru`, active `.com.de`
-  certificate — только `DNS:chat.yoowee.com.de`; SNI serial каждого ответа совпал
-  с соответствующей lineage на disk;
-- отдельные `certbot renew --dry-run --no-random-sleep-on-renew` успешно прошли для
-  каждой lineage; обе используют `webroot` `/var/www/html`;
-- общий `nginx -t` и graceful reload прошли; rollback set сохранён как
-  `chat.yoowee.ru.conf.before-5083743` и `yv-chat-server.conf.before-5083743`;
-- оба public/loopback HTTPS origin вернули API/frontend `200`, unauthenticated
-  WebSocket `403`, HSTS присутствует; shared registration rule вернул `429` после
-  bounded burst;
-- yv-chat healthy, соседние `infra-*` containers сохранили uptime.
+- Rust regression: unread epoch-N ciphertext decrypts after a roster Commit and sealed-state reload;
+- Rust security regression: removed leaf cannot decrypt future ciphertext;
+- frontend protocol regression: decrypt never triggers reconciliation, send still requires READY;
+- frontend orchestration regression: retained-history pages finish before active and inactive conversation
+  reconciliation, including durable roster-change event;
+- frontend lint/typecheck/tests/build, Rust fmt/clippy/tests and repository checks pass.
+
+### Definition of Done
+
+- reproduced logout/relogin sequence remains readable on the unaffected device without opening the chat first;
+- subsequent deploy/service restart does not alter device-local MLS state or require peer presence;
+- legacy groups survive future rotations once the fixed client has completed at least one pre-advance drain;
+- limits and unrecoverable already-lost-history case are documented honestly;
+- focused commit, CI and production acceptance complete before `BL-015` begins.

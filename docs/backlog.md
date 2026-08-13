@@ -20,12 +20,9 @@
 
 ### P0 — безопасность истории и сохранность production-данных
 
-1. `BL-064` — retention-aligned multi-epoch offline recovery. Без него корректный
-   ciphertext в пределах server TTL может стать нечитаемым после нескольких MLS
-   rotations, поэтому это следующий большой security/correctness slice.
-2. `BL-031` — encrypted offsite backup + проверяемый restore. Local browser archive
+1. `BL-031` — encrypted offsite backup + проверяемый restore. Local browser archive
    не заменяет backup account, membership и server sync state.
-3. `BL-019` — global quota, low-disk admission и storage visibility. Group media уже
+2. `BL-019` — global quota, low-disk admission и storage visibility. Group media уже
    доступно production, поэтому disk-full защита нужна до дальнейшего роста media UX.
 
 ### P1 — настоящее local-first приложение и безопасные вложения
@@ -82,9 +79,9 @@ messages, cursor sync, receipts/presence/typing и authenticated WebSocket пе�
 
 ### BL-064 — Retention-aligned multi-epoch offline recovery
 
-Статус: **next P0 feature after current release gate**. `WP-063` уже deployed;
-`BUG-063` закрыл обнаруженную parallel-ratchet prerequisite локально и требует
-production verification до начала этого slice.
+Статус: **implemented and full-CI verified in `WP-077`; production rollout pending**.
+Исправление закрывает `BUG-073` и дополняет deployed serial-ratchet prerequisite
+`BUG-063`.
 
 Результат: уже авторизованный MLS device с сохранённым sealed local state после
 долгого offline периода последовательно догоняет все пропущенные generations и

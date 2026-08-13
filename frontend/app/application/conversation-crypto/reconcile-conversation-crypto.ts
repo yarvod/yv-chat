@@ -24,6 +24,10 @@ export interface ReconcileConversationCryptoResult {
   readonly epoch: number | null
 }
 
+export interface ReconcileConversationCryptoHooks {
+  readonly beforeEpochAdvance?: (conversationId: string) => Promise<void>
+}
+
 export class ReconcileConversationCrypto {
   constructor(
     private readonly server: ConversationCryptoGateway,
@@ -35,6 +39,7 @@ export class ReconcileConversationCrypto {
 
   async execute(
     command: ReconcileConversationCryptoCommand,
+    hooks: ReconcileConversationCryptoHooks = {},
   ): Promise<ReconcileConversationCryptoResult> {
     if (!command.conversationId || !command.deviceId) {
       throw new TypeError('conversation and device binding is required')
@@ -57,11 +62,22 @@ export class ReconcileConversationCrypto {
       return result(generation)
     }
     local = await this.recoverCheckpointFromSealedGroup(command, local, generation.generationNumber)
-    local = await this.catchUpReadyGenerations(command, local, generation.generationNumber)
+    local = await this.catchUpReadyGenerations(
+      command,
+      local,
+      generation.generationNumber,
+      hooks,
+    )
     if (generation.coordinatorDeviceId === command.deviceId) {
-      return await this.reconcileCoordinator(command, generation, local, bootstrapRequestId)
+      return await this.reconcileCoordinator(
+        command,
+        generation,
+        local,
+        bootstrapRequestId,
+        hooks,
+      )
     }
-    return await this.reconcileMember(command, generation, local)
+    return await this.reconcileMember(command, generation, local, hooks)
   }
 
   private async recoverCheckpointFromSealedGroup(
@@ -137,6 +153,7 @@ export class ReconcileConversationCrypto {
     command: ReconcileConversationCryptoCommand,
     initial: ConversationCryptoLocalState,
     observedGenerationNumber: number,
+    hooks: ReconcileConversationCryptoHooks,
   ): Promise<ConversationCryptoLocalState> {
     let local = initial
     let cursor = local.generationNumber ?? 0
@@ -157,7 +174,7 @@ export class ReconcileConversationCrypto {
           advanced = true
           continue
         }
-        local = await this.applyReadyGeneration(command, local, generation)
+        local = await this.applyReadyGeneration(command, local, generation, hooks)
         cursor = generation.generationNumber
         advanced = true
         if (cursor === observedGenerationNumber) break
@@ -171,6 +188,7 @@ export class ReconcileConversationCrypto {
     command: ReconcileConversationCryptoCommand,
     local: ConversationCryptoLocalState,
     generation: ConversationCryptoGeneration,
+    hooks: ReconcileConversationCryptoHooks,
   ): Promise<ConversationCryptoLocalState> {
     const welcome = generation.welcome
     let checkpoint: ConversationCryptoLocalState
@@ -184,6 +202,9 @@ export class ReconcileConversationCrypto {
         priorGenerationNumber !== null
         && generation.generationNumber <= priorGenerationNumber + 1
       ) throw new DeviceCryptoError('conflict')
+      if (priorGenerationNumber !== null) {
+        await hooks.beforeEpochAdvance?.(command.conversationId)
+      }
       const joined = priorGenerationNumber === null
         ? await this.mls.joinConversation({
             conversationId: command.conversationId,
@@ -210,6 +231,7 @@ export class ReconcileConversationCrypto {
       ) throw new DeviceCryptoError(
         local.phase === 'bootstrap-requested' ? 'local-state-lost' : 'conflict',
       )
+      await hooks.beforeEpochAdvance?.(command.conversationId)
       const applied = await this.mls.applyCommit({
         conversationId: command.conversationId,
         commit: generation.commit,
@@ -229,6 +251,7 @@ export class ReconcileConversationCrypto {
     generation: ConversationCryptoGeneration,
     local: ConversationCryptoLocalState | null,
     bootstrapRequestId: string,
+    hooks: ReconcileConversationCryptoHooks,
   ): Promise<ReconcileConversationCryptoResult> {
     if (generation.status === 'ready') {
       if (!sameGeneration(local, generation) || !(
@@ -270,6 +293,7 @@ export class ReconcileConversationCrypto {
       const previousReady = local?.phase === 'ready'
         && local.generationNumber !== null
         && local.generationNumber < generation.generationNumber
+      if (previousReady) await hooks.beforeEpochAdvance?.(command.conversationId)
       const created = previousReady
         ? await this.mls.updateConversation({
             conversationId: command.conversationId,
@@ -327,6 +351,7 @@ export class ReconcileConversationCrypto {
     command: ReconcileConversationCryptoCommand,
     generation: ConversationCryptoGeneration,
     local: ConversationCryptoLocalState | null,
+    hooks: ReconcileConversationCryptoHooks,
   ): Promise<ReconcileConversationCryptoResult> {
     if (generation.status === 'pending') return result(generation)
     if (sameGeneration(local, generation) && local.phase === 'ready') {
@@ -347,6 +372,7 @@ export class ReconcileConversationCrypto {
       ) throw new DeviceCryptoError(
         local?.phase === 'bootstrap-requested' ? 'local-state-lost' : 'conflict',
       )
+      await hooks.beforeEpochAdvance?.(command.conversationId)
       const applied = await this.mls.applyCommit({
         conversationId: command.conversationId,
         commit: generation.commit,

@@ -115,6 +115,9 @@ export interface MessengerDependencies extends MessageOutboxDependencies {
   reconcileConversationCrypto?: (
     conversationId: string,
   ) => Promise<ReconcileConversationCryptoResult>
+  configureCryptoEpochDrainer?: (
+    drainer: (conversationId: string) => Promise<void>,
+  ) => void
   invalidateConversationCrypto?: (conversationId: string) => void
 }
 
@@ -156,6 +159,9 @@ export function useMessenger(
       }),
       reconcileConversationCrypto: conversationId => (
         $frontend.deviceCryptoSession.reconcileConversation(conversationId)
+      ),
+      configureCryptoEpochDrainer: drainer => (
+        $frontend.deviceCryptoSession.setBeforeEpochAdvance(drainer)
       ),
       invalidateConversationCrypto: conversationId => (
         $frontend.deviceCryptoSession.invalidateConversation(conversationId)
@@ -213,6 +219,9 @@ export function useMessenger(
     gateway,
     messageArchive,
     messageProtection,
+  )
+  dependencies.configureCryptoEpochDrainer?.(
+    conversationId => history.cacheRetainedBeforeEpochAdvance(conversationId),
   )
   let polling = false
   let snapshotAvailable = true

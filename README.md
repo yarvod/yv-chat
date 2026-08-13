@@ -49,6 +49,10 @@ event/conversation/message IDs; имя отправителя и текст со
 Runtime v7 восстанавливает утраченный conversation control-checkpoint по exact
 совпадению public local MLS epoch/roster с server generation без logout/login.
 Permanent primary device нет: coordinator — временная роль одной MLS generation.
+Перед roster epoch advance client последовательно кэширует всю ещё retained
+history в encrypted local vault; новые groups также хранят bounded 128
+past epochs. Logout/relogin одного device не должен ломать ранее доступную
+history другого device.
 
 Install assets адаптированы для Android circle/squircle и Apple Dock. После смены
 launcher icon уже установленную Android PWA может потребоваться удалить и установить

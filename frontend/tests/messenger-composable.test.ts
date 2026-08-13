@@ -497,6 +497,45 @@ describe('messenger orchestration', () => {
     expect(reconcileConversationCrypto).toHaveBeenCalledWith('direct-inactive')
   })
 
+  it('caches retained direct history before advancing its MLS generation', async () => {
+    const directs = [
+      { ...conversation, conversationId: 'direct-active', conversationType: 'direct' as const, title: null },
+      { ...conversation, conversationId: 'direct-inactive', conversationType: 'direct' as const, title: null },
+    ]
+    vi.mocked(gateway.listConversations).mockResolvedValue(directs)
+    const order: string[] = []
+    vi.mocked(gateway.listMessages).mockImplementation(async (conversationId) => {
+      order.push(`drain:${conversationId}`)
+      return []
+    })
+    let drainBeforeAdvance: ((conversationId: string) => Promise<void>) | undefined
+    const reconcileConversationCrypto = vi.fn(async (conversationId: string) => {
+      await drainBeforeAdvance?.(conversationId)
+      order.push(`reconcile:${conversationId}`)
+      return {
+        status: 'ready' as const,
+        generationId: `generation-${conversationId}`,
+        generationNumber: 2,
+        blockReason: null,
+        epoch: 2,
+      }
+    })
+    const messenger = useMessenger('alice-id', 'device-existing-leaf', vi.fn(), {
+      ...messengerDependencies(),
+      reconcileConversationCrypto,
+      configureCryptoEpochDrainer: drainer => {
+        drainBeforeAdvance = drainer
+      },
+    })
+
+    await messenger.load('direct-active')
+
+    expect(order.indexOf('drain:direct-active'))
+      .toBeLessThan(order.indexOf('reconcile:direct-active'))
+    expect(order.indexOf('drain:direct-inactive'))
+      .toBeLessThan(order.indexOf('reconcile:direct-inactive'))
+  })
+
   it('reconciles an inactive direct after its durable roster-change event', async () => {
     const directs = [
       { ...conversation, conversationId: 'direct-active', conversationType: 'direct' as const, title: null },

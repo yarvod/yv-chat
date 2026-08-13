@@ -62,7 +62,21 @@ describe('MLS v2 message protocol adapter', () => {
     })).resolves.toBe('привет')
     expect(session.unprotectMessage.mock.calls[0]?.[0].ciphertext)
       .toEqual(new Uint8Array([1, 2, 3]))
-    expect(session.reconcileConversation).toHaveBeenCalledTimes(2)
+    expect(session.reconcileConversation).toHaveBeenCalledTimes(1)
+  })
+
+  it('decrypts retained ciphertext without advancing the MLS epoch first', async () => {
+    const session = new FakeSession()
+    session.reconcileConversation.mockRejectedValue(new Error('must not reconcile on decrypt'))
+    const protocol = new MlsMessageProtocol(session)
+
+    await expect(protocol.unprotectText({
+      conversationId,
+      clientMessageId,
+      ciphertextBase64: 'AQID',
+    })).resolves.toBe('привет')
+    expect(session.reconcileConversation).not.toHaveBeenCalled()
+    expect(session.unprotectMessage).toHaveBeenCalledOnce()
   })
 
   it('fails closed while bootstrap is pending and never falls back to v1', async () => {

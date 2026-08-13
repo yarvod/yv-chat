@@ -4,6 +4,7 @@ import { EnsureDeviceKeyPackagePool } from '../application/device-crypto/ensure-
 import {
   ReconcileConversationCrypto,
   type ReconcileConversationCryptoCommand,
+  type ReconcileConversationCryptoHooks,
   type ReconcileConversationCryptoResult,
 } from '../application/conversation-crypto/reconcile-conversation-crypto'
 import { DeviceCryptoError } from '../application/device-crypto/errors'
@@ -48,6 +49,7 @@ export class DeviceCryptoSession implements MlsConversationGateway {
   >()
   private readonly readyConversations = new Map<string, ReconcileConversationCryptoResult>()
   private poolRefresh: Promise<void> | null = null
+  private beforeEpochAdvance: ReconcileConversationCryptoHooks['beforeEpochAdvance'] = undefined
 
   constructor(
     private readonly registry: DeviceCryptoRegistryGateway,
@@ -70,6 +72,12 @@ export class DeviceCryptoSession implements MlsConversationGateway {
     } finally {
       if (this.initializing?.promise === promise) this.initializing = null
     }
+  }
+
+  setBeforeEpochAdvance(
+    callback: ReconcileConversationCryptoHooks['beforeEpochAdvance'],
+  ): void {
+    this.beforeEpochAdvance = callback
   }
 
   reconcileConversation(conversationId: string): Promise<ReconcileConversationCryptoResult> {
@@ -191,10 +199,13 @@ export class DeviceCryptoSession implements MlsConversationGateway {
     conversationId: string,
   ): Promise<ReconcileConversationCryptoResult> {
     await this.ensurePool(active)
-    return await active.reconcile.execute({
-      conversationId,
-      deviceId: active.initialized.identity.deviceId,
-    })
+    return await active.reconcile.execute(
+      {
+        conversationId,
+        deviceId: active.initialized.identity.deviceId,
+      },
+      { beforeEpochAdvance: this.beforeEpochAdvance },
+    )
   }
 
   private ensurePool(active: ActiveDeviceCryptoScope): Promise<void> {

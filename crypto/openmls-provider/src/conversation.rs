@@ -25,6 +25,11 @@ const APPLICATION_AAD_LABEL: &[u8] = b"yv-chat-mls-v2\0";
 const MAX_WIRE_BYTES: usize = 1024 * 1024;
 const MAX_APPLICATION_BYTES: usize = 256 * 1024;
 const MAX_ADD_MEMBERS: usize = 49;
+// OpenMLS 0.8 exposes a count-bounded policy rather than a time-based one.
+// Retained server history is drained into the encrypted device-local content
+// cache before every epoch advance; this window is an additional guard against
+// message/Commit reordering, not a replacement for the 30-day server TTL.
+const MAX_PAST_EPOCHS: usize = 128;
 
 #[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]
 pub enum ConversationError {
@@ -130,6 +135,7 @@ impl DeviceBootstrap {
             .with_group_id(group_id)
             .ciphersuite(CIPHERSUITE)
             .with_wire_format_policy(PURE_CIPHERTEXT_WIRE_FORMAT_POLICY)
+            .max_past_epochs(MAX_PAST_EPOCHS)
             .build(&self._provider, &self.signer, self.credential.clone())
             .map_err(|_| ConversationError::StorageUnavailable)?;
         Ok(group.epoch().as_u64())
@@ -325,6 +331,7 @@ impl DeviceBootstrap {
         let ratchet_tree = parse_ratchet_tree(serialized_ratchet_tree)?;
         let join_config = MlsGroupJoinConfig::builder()
             .wire_format_policy(PURE_CIPHERTEXT_WIRE_FORMAT_POLICY)
+            .max_past_epochs(MAX_PAST_EPOCHS)
             .build();
         let group = StagedWelcome::new_from_welcome(
             &self._provider,
@@ -763,6 +770,42 @@ mod tests {
             bob.unprotect_application_message(CONVERSATION, MESSAGE_ONE, &after_rejoin.ciphertext,)
                 .unwrap(),
             b"after rejoin",
+        );
+    }
+
+    #[test]
+    fn unread_previous_epoch_survives_roster_commit_and_sealed_reload() {
+        let (mut alice, mut bob) = joined_pair();
+        let unread = alice
+            .protect_application_message(CONVERSATION, MESSAGE_ONE, b"unread before logout")
+            .unwrap();
+        assert_eq!(unread.epoch, 1);
+
+        let charlie = DeviceBootstrap::generate(CHARLIE_USER, CHARLIE_DEVICE).unwrap();
+        let roster = vec![
+            ALICE_DEVICE.to_owned(),
+            BOB_DEVICE.to_owned(),
+            CHARLIE_DEVICE.to_owned(),
+        ];
+        let update = alice
+            .update_members_and_merge(CONVERSATION, &roster, &[charlie.key_package().to_vec()])
+            .unwrap();
+        assert_eq!(
+            bob.apply_commit_and_merge(CONVERSATION, &update.commit, &roster)
+                .unwrap(),
+            2,
+        );
+
+        let snapshot = bob.snapshot_for_sealing(12).unwrap();
+        let (mut restored, revision) =
+            DeviceBootstrap::restore_from_unsealed_snapshot(&snapshot, BOB_USER, BOB_DEVICE)
+                .unwrap();
+        assert_eq!(revision, 12);
+        assert_eq!(
+            restored
+                .unprotect_application_message(CONVERSATION, MESSAGE_ONE, &unread.ciphertext)
+                .unwrap(),
+            b"unread before logout",
         );
     }
 }

@@ -299,6 +299,13 @@ clients наблюдали одинаковый epoch order. Welcome остаё�
   local group не reconcile-ит pending security transition.
 - Commit меняет epoch; removed leaves не получают new epoch secrets. Уже полученный
   plaintext/keys уничтожить удалённо нельзя.
+- Operational recovery amendment `WP-077`: before an authorized epoch advance
+  client drains still-retained messages in authoritative sequence order into its
+  encrypted local content vault. New create/join state uses OpenMLS
+  `max_past_epochs = 128` as a bounded reordering/offline safety window. Decrypt
+  itself never initiates reconciliation. This deliberately trades a bounded amount
+  of forward-secrecy erasure latency for 30-day offline delivery correctness; it
+  does not expose secrets to the server or permit a removed leaf to read future epochs.
 - Active clients выполняют periodic/usage-triggered Update Commit для PCS; exact
   cadence определяется `BL-014` и тестируется. Persistently offline clients могут
   ослаблять FS/PCS и после bounded policy удаляются/re-enroll.

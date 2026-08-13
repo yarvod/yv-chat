@@ -4,6 +4,23 @@
 
 ## Active
 
+### BUG-073 — Logout одного device делал историю другого device нечитаемой
+
+- Статус: `fixed locally; full CI passed; production acceptance pending` (`WP-077`).
+- Severity: `critical direct-message history availability`.
+- Production reproduction: direct conversation имеет не прочитанные/не закэшированные
+  MLS messages на Mac; logout/relogin phone того же account меняет device roster;
+  Mac применяет Commit, после чего этот один conversation показывает всю не
+  закэшированную историю как недоступную; у peer его independent state/cache читается.
+- Причина: OpenMLS group/join создавались с default `max_past_epochs = 0`, а startup
+  и durable roster-change path применяли Commit **до** загрузки/локального
+  encrypted caching retained messages. Decrypt дополнительно запускал hidden
+  reconciliation, поэтом само открытие истории могло уничтожить нужный epoch secret.
+- Почему не все chats: MLS state и encrypted content cache раздельны для каждого
+  conversation/device; уже открытые cached messages оставались читаемыми.
+- Исправление: explicit retained-history drain до epoch advance, decrypt без hidden
+  reconciliation и bounded OpenMLS past-epoch window для новых groups.
+
 ### BUG-072 — Первый mobile tap по диалогу выглядел как hover без открытия
 
 - Статус: `fixed locally; physical mobile acceptance pending` (`WP-073`).

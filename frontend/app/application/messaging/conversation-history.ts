@@ -10,6 +10,7 @@ const ANCHOR_BEFORE_LIMIT = 50
 const ANCHOR_AFTER_LIMIT = 50
 const MAX_SEARCH_MESSAGES = 2_000
 const MAX_SEARCH_RESULTS = 100
+const MAX_RETENTION_DRAIN_PAGES = 1_000
 
 export interface ConversationHistoryWindow {
   messages: TimelineMessage[]
@@ -44,6 +45,30 @@ export class ConversationHistory {
 
   get archiveStatus(): 'ready' | 'unavailable' {
     return this.archiveAvailable ? 'ready' : 'unavailable'
+  }
+
+  /**
+   * Cache every still-retained message while the local MLS group is still on
+   * its current epoch.  The forward endpoint is intentional: processing the
+   * sender ratchet in authoritative sequence order avoids turning a backwards
+   * history pagination request into artificial out-of-order delivery.
+   */
+  async cacheRetainedBeforeEpochAdvance(conversationId: string): Promise<void> {
+    let afterSequence = 0
+    for (let pageNumber = 0; pageNumber < MAX_RETENTION_DRAIN_PAGES; pageNumber += 1) {
+      const messages = await this.gateway.listMessages(conversationId, afterSequence)
+      if (messages.length === 0) return
+      const ordered = [...messages].sort((left, right) => left.sequence - right.sequence)
+      const nextSequence = ordered.at(-1)?.sequence ?? afterSequence
+      if (nextSequence <= afterSequence) {
+        throw new TypeError('message retention drain did not advance')
+      }
+      await this.persist(conversationId, ordered)
+      await this.prepare(ordered)
+      if (messages.length < HISTORY_PAGE_SIZE) return
+      afterSequence = nextSequence
+    }
+    throw new TypeError('message retention drain exceeded its safety bound')
   }
 
   async loadCachedLatest(conversationId: string): Promise<ConversationHistoryWindow | null> {

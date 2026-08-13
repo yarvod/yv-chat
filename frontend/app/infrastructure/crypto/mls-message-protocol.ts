@@ -73,7 +73,6 @@ export class MlsMessageProtocol implements MessageProtocolAdapter {
   }
 
   async unprotectText(input: UnprotectTextInput): Promise<string> {
-    await this.requireReady(input.conversationId)
     try {
       const result = await this.session.unprotectMessage({
         conversationId: input.conversationId,

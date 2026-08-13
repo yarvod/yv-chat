@@ -403,9 +403,15 @@ describe('conversation crypto reconciliation', () => {
       mls,
       new FixedIds([requestId]),
     )
+    const beforeEpochAdvance = vi.fn(async () => undefined)
 
-    await expect(useCase.execute({ conversationId, deviceId: memberDeviceId }))
+    await expect(useCase.execute(
+      { conversationId, deviceId: memberDeviceId },
+      { beforeEpochAdvance },
+    ))
       .resolves.toMatchObject({ status: 'ready', generationNumber: 2, epoch: 3 })
+    expect(beforeEpochAdvance).toHaveBeenCalledOnce()
+    expect(beforeEpochAdvance).toHaveBeenCalledWith(conversationId)
     expect(mls.applyCommit).toHaveBeenCalledWith({
       conversationId,
       commit: new Uint8Array([9]),
@@ -413,6 +419,55 @@ describe('conversation crypto reconciliation', () => {
     })
     expect(mls.joinConversation).not.toHaveBeenCalled()
     expect(state.saveCalls.map(item => item.phase)).toEqual(['commit-applied', 'ready'])
+  })
+
+  it('drains retained history before every one of more than 100 missed generations', async () => {
+    const state = new MemoryState()
+    state.value = readyLocalState(memberDeviceId)
+    const updates = Array.from(
+      { length: 101 },
+      (_, index) => readyIncrementalGeneration(index + 2),
+    )
+    const current = updates.at(-1)!
+    const server: ConversationCryptoGateway = {
+      getCurrent: vi.fn(),
+      begin: vi.fn(async () => current),
+      listReadyAfter: vi.fn(async (_conversation, after) => (
+        updates.filter(item => item.generationNumber > after).slice(0, 100)
+      )),
+      finalize: vi.fn(),
+      acknowledgeWelcome: vi.fn(),
+    }
+    const mls = new FakeMls()
+    mls.applyCommit.mockImplementation(async () => ({
+      epoch: mls.applyCommit.mock.calls.length + 2,
+      revision: mls.applyCommit.mock.calls.length + 2,
+    }))
+    const drainAtAppliedCount: number[] = []
+    const useCase = new ReconcileConversationCrypto(
+      server,
+      state,
+      new FakeDeviceCrypto(),
+      mls,
+      new FixedIds([requestId]),
+    )
+
+    await expect(useCase.execute(
+      { conversationId, deviceId: memberDeviceId },
+      {
+        beforeEpochAdvance: async () => {
+          drainAtAppliedCount.push(mls.applyCommit.mock.calls.length)
+        },
+      },
+    )).resolves.toMatchObject({
+      status: 'ready',
+      generationNumber: 102,
+      epoch: 103,
+    })
+
+    expect(mls.applyCommit).toHaveBeenCalledTimes(101)
+    expect(drainAtAppliedCount).toEqual(Array.from({ length: 101 }, (_, index) => index))
+    expect(state.value).toMatchObject({ phase: 'ready', generationNumber: 102, epoch: 103 })
   })
 
   it('rebuilds a lost control checkpoint from the exact sealed MLS epoch and roster', async () => {
@@ -646,6 +701,16 @@ function incrementalGeneration(status: 'pending' | 'ready'): ConversationCryptoG
         keyPackage: new Uint8Array([12]),
       },
     ],
+  }
+}
+
+function readyIncrementalGeneration(generationNumber: number): ConversationCryptoGeneration {
+  return {
+    ...incrementalGeneration('ready'),
+    generationId: `generation-${generationNumber}`,
+    generationNumber,
+    epoch: generationNumber + 1,
+    commit: new Uint8Array([generationNumber % 256]),
   }
 }
 
