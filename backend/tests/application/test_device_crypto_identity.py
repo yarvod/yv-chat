@@ -1,7 +1,7 @@
 """Application specifications for immutable device crypto registration."""
 
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import pytest
@@ -19,7 +19,8 @@ from messenger.application.errors import (
     DeviceCryptoIdentityNotFoundError,
     OwnedDeviceNotFoundError,
 )
-from messenger.domain.entities import Device
+from messenger.application.sync.policy import SyncPolicy
+from messenger.domain.entities import Conversation, Device
 from messenger.domain.entities.device_crypto_identity import expected_credential_identity
 from tests.application.fakes import (
     FakeDeviceCryptoUnitOfWorkFactory,
@@ -30,6 +31,8 @@ from tests.application.fakes import (
 NOW = datetime(2026, 8, 11, 12, 0, tzinfo=UTC)
 USER_ID = UUID("1b0a32e8-144f-4f60-bcb6-112f71bd5316")
 DEVICE_ID = UUID("50d6b08a-84ae-4bd7-829a-f40f38e9a2c1")
+OTHER_USER_ID = UUID("ce1ecf72-b414-4e65-901f-18ebc7fe3cee")
+SYNC_POLICY = SyncPolicy(retention=timedelta(days=30))
 
 
 def command(*, signature_key: bytes = bytes(range(32))) -> RegisterDeviceCryptoIdentityCommand:
@@ -49,13 +52,25 @@ def active_state() -> IdentityState:
         now=NOW,
         device_id=DEVICE_ID,
     )
-    return IdentityState(devices={DEVICE_ID: device})
+    conversation = Conversation.create_direct(
+        created_by=USER_ID,
+        other_user_id=OTHER_USER_ID,
+        now=NOW,
+    )
+    return IdentityState(
+        devices={DEVICE_ID: device},
+        conversations={conversation.id: conversation},
+    )
 
 
 async def test_register_is_atomic_and_exact_retry_is_idempotent() -> None:
     state = active_state()
     factory = FakeDeviceCryptoUnitOfWorkFactory(state)
-    use_case = RegisterDeviceCryptoIdentity(unit_of_work=factory, clock=FixedClock(NOW))
+    use_case = RegisterDeviceCryptoIdentity(
+        unit_of_work=factory,
+        clock=FixedClock(NOW),
+        sync_policy=SYNC_POLICY,
+    )
 
     created = await use_case.execute(command())
     retried = await use_case.execute(command())
@@ -64,6 +79,10 @@ async def test_register_is_atomic_and_exact_retry_is_idempotent() -> None:
     assert state.commits == 1
     assert len(state.device_crypto_identities) == 1
     assert len(state.device_key_packages) == 1
+    assert {(event.user_id, event.conversation_id) for event in state.sync_events} == {
+        (USER_ID, next(iter(state.conversations))),
+        (OTHER_USER_ID, next(iter(state.conversations))),
+    }
     assert (
         created.initial_key_package_ref
         == next(iter(state.device_key_packages.values())).package_ref
@@ -73,7 +92,11 @@ async def test_register_is_atomic_and_exact_retry_is_idempotent() -> None:
 async def test_registration_rejects_identity_replacement_and_wrong_owner() -> None:
     state = active_state()
     factory = FakeDeviceCryptoUnitOfWorkFactory(state)
-    use_case = RegisterDeviceCryptoIdentity(unit_of_work=factory, clock=FixedClock(NOW))
+    use_case = RegisterDeviceCryptoIdentity(
+        unit_of_work=factory,
+        clock=FixedClock(NOW),
+        sync_policy=SYNC_POLICY,
+    )
     await use_case.execute(command())
 
     with pytest.raises(DeviceCryptoIdentityConflictError):
@@ -93,7 +116,11 @@ async def test_get_current_requires_active_owned_device_and_complete_registry() 
     with pytest.raises(DeviceCryptoIdentityNotFoundError):
         await get_current.execute(query)
 
-    register = RegisterDeviceCryptoIdentity(unit_of_work=factory, clock=FixedClock(NOW))
+    register = RegisterDeviceCryptoIdentity(
+        unit_of_work=factory,
+        clock=FixedClock(NOW),
+        sync_policy=SYNC_POLICY,
+    )
     registered = await register.execute(command())
     assert await get_current.execute(query) == registered
 

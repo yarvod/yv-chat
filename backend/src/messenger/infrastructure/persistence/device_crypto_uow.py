@@ -11,11 +11,13 @@ from messenger.application.ports.device_crypto import (
     DeviceKeyPackageRepository,
 )
 from messenger.application.ports.identity import DeviceRepository
+from messenger.application.ports.sync import SyncRepository
 from messenger.infrastructure.persistence.repositories import (
     SqlAlchemyConversationRepository,
     SqlAlchemyDeviceCryptoIdentityRepository,
     SqlAlchemyDeviceKeyPackageRepository,
     SqlAlchemyDeviceRepository,
+    SqlAlchemySyncRepository,
 )
 
 
@@ -27,6 +29,7 @@ class SqlAlchemyDeviceCryptoUnitOfWork:
         self.conversations: ConversationRepository
         self.identities: DeviceCryptoIdentityRepository
         self.key_packages: DeviceKeyPackageRepository
+        self.sync_events: SyncRepository
 
     async def __aenter__(self) -> "SqlAlchemyDeviceCryptoUnitOfWork":
         self._session = self._session_factory()
@@ -34,6 +37,7 @@ class SqlAlchemyDeviceCryptoUnitOfWork:
         self.conversations = SqlAlchemyConversationRepository(self._session)
         self.identities = SqlAlchemyDeviceCryptoIdentityRepository(self._session)
         self.key_packages = SqlAlchemyDeviceKeyPackageRepository(self._session)
+        self.sync_events = SqlAlchemySyncRepository(self._session)
         return self
 
     async def __aexit__(

@@ -2,7 +2,7 @@
 
 import asyncio
 import os
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
@@ -23,6 +23,7 @@ from messenger.application.device_crypto.replenish_key_packages import (
 )
 from messenger.application.errors import DeviceKeyPackageUnavailableError
 from messenger.application.ports.device_crypto import DeviceCryptoUnitOfWork
+from messenger.application.sync.policy import SyncPolicy
 from messenger.domain.entities import Conversation
 from messenger.domain.entities.device_crypto_identity import expected_credential_identity
 from messenger.infrastructure.persistence.database import create_engine, create_session_factory
@@ -35,6 +36,8 @@ from messenger.infrastructure.persistence.models import (
     DeviceCryptoIdentityModel,
     DeviceKeyPackageModel,
     DeviceModel,
+    SyncEventModel,
+    SyncStreamModel,
     UserModel,
 )
 from messenger.infrastructure.persistence.repositories import SqlAlchemyConversationRepository
@@ -47,6 +50,7 @@ ALICE_DEVICE_TWO = UUID("b7920cfa-3c11-4b32-abff-1855b264f259")
 BOB_ID = UUID("ce1ecf72-b414-4e65-901f-18ebc7fe3cee")
 BOB_DEVICE = UUID("912608ec-8e20-497d-a55b-ec5d260480cc")
 CONVERSATION_ID = UUID("d959239f-8a90-45b6-ae27-e8216cea1681")
+SYNC_POLICY = SyncPolicy(retention=timedelta(days=30))
 
 
 def configured_database_url() -> str:
@@ -59,6 +63,12 @@ def configured_database_url() -> str:
 async def cleanup(session_factory: async_sessionmaker[AsyncSession]) -> None:
     device_ids = {ALICE_DEVICE_ONE, ALICE_DEVICE_TWO, BOB_DEVICE}
     async with session_factory.begin() as session:
+        await session.execute(
+            delete(SyncEventModel).where(SyncEventModel.conversation_id == CONVERSATION_ID)
+        )
+        await session.execute(
+            delete(SyncStreamModel).where(SyncStreamModel.user_id.in_({ALICE_ID, BOB_ID}))
+        )
         await session.execute(
             delete(DeviceKeyPackageModel).where(DeviceKeyPackageModel.device_id.in_(device_ids))
         )
@@ -134,7 +144,11 @@ async def test_claim_concurrency_preserves_exact_retry_and_single_consumption() 
             await session.flush()
             await SqlAlchemyConversationRepository(session).add(conversation)
 
-        register = RegisterDeviceCryptoIdentity(unit_of_work=unit_of_work, clock=FixedClock(NOW))
+        register = RegisterDeviceCryptoIdentity(
+            unit_of_work=unit_of_work,
+            clock=FixedClock(NOW),
+            sync_policy=SYNC_POLICY,
+        )
         for user_id, device_id, package in (
             (ALICE_ID, ALICE_DEVICE_ONE, b"alice-one"),
             (ALICE_ID, ALICE_DEVICE_TWO, b"alice-two"),

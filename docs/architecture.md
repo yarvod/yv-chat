@@ -1057,6 +1057,18 @@ device revoke и logout в одной transaction добавляют durable `co
 для каждого active recipient; realtime остаётся только wake-up, cursor stream —
 source of truth. Следующий reconciliation создаёт Commit и rotation.
 
+Первая immutable identity registration вместе с initial KeyPackage теперь в той же
+PostgreSQL transaction добавляет `conversation_updated` каждому active participant
+каждого conversation пользователя. Exact registration retry не дублирует события.
+Это закрывает промежуток между созданием HTTP `Device` и появлением MLS-capable leaf:
+restart API или потерянный WebSocket не оставляют previous leaves со stale READY
+cache. Во время QR linking approving leaf дополнительно запускает bounded background
+pass по всем direct, инвалидирует cache и считает conversation готовым только когда
+server current generation имеет `status=ready` и содержит exact candidate device.
+Перед каждым таким Commit используется тот же retention drain, что и chat workspace.
+Authenticated app-layout выполняет безопасный all-direct foreground pass даже на
+Settings, поэтому открытие конкретного чата не является trigger correctness.
+
 Подготовка history page параллельна, поэтому `DeviceCryptoSession` применяет
 single-flight по conversation: concurrent decrypt делят одну reconciliation, а
 только результат `ready` кэшируется на срок жизни authenticated runtime. Blocked,

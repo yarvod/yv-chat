@@ -9,6 +9,7 @@ from messenger.application.ports.device_crypto.repositories import (
     DeviceKeyPackageRepository,
 )
 from messenger.application.ports.identity.devices import DeviceRepository
+from messenger.application.ports.sync import SyncRepository
 
 
 class DeviceCryptoUnitOfWork(Protocol):
@@ -16,6 +17,7 @@ class DeviceCryptoUnitOfWork(Protocol):
     conversations: ConversationRepository
     identities: DeviceCryptoIdentityRepository
     key_packages: DeviceKeyPackageRepository
+    sync_events: SyncRepository
 
     async def __aenter__(self) -> Self: ...
 

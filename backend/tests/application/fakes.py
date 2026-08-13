@@ -762,6 +762,7 @@ class FakeDeviceCryptoUnitOfWork:
         self.conversations: ConversationRepository = FakeConversationRepository(state)
         self.identities: DeviceCryptoIdentityRepository = FakeDeviceCryptoIdentityRepository(state)
         self.key_packages: DeviceKeyPackageRepository = FakeDeviceKeyPackageRepository(state)
+        self.sync_events: SyncRepository = FakeSyncRepository(state)
 
     async def __aenter__(self) -> Self:
         return self

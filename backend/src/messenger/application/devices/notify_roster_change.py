@@ -1,16 +1,23 @@
 """Create durable wake-up events after a user's active device roster changes."""
 
 from datetime import datetime
+from typing import Protocol
 from uuid import UUID
 
-from messenger.application.ports.identity import IdentityUnitOfWork
+from messenger.application.ports.conversations import ConversationRepository
+from messenger.application.ports.sync import SyncRepository
 from messenger.application.sync import SyncEventType, SyncPolicy
 from messenger.application.sync.emission import events_for_users
 from messenger.application.sync.events import PendingSyncEvent
 
 
+class DeviceRosterEventUnitOfWork(Protocol):
+    conversations: ConversationRepository
+    sync_events: SyncRepository
+
+
 async def append_device_roster_events(
-    unit_of_work: IdentityUnitOfWork,
+    unit_of_work: DeviceRosterEventUnitOfWork,
     *,
     user_id: UUID,
     now: datetime,

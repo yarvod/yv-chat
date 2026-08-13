@@ -121,6 +121,9 @@ export function useDeviceCryptoLifecycle(user: ComputedRef<CurrentAccount | null
       if (operation === generation) {
         state.status = 'ready'
         state.issue = null
+        void $frontend.linkedDeviceEnrollment
+          .reconcileCurrentRoster(current.userId)
+          .catch(() => undefined)
       }
     } catch (error) {
       if (operation === generation) {
@@ -141,6 +144,7 @@ export function useDeviceCryptoLifecycle(user: ComputedRef<CurrentAccount | null
   onBeforeUnmount(() => {
     generation += 1
     stopWatching?.()
+    $frontend.linkedDeviceEnrollment.cancelAll()
     void $frontend.deviceCryptoSession.dispose()
   })
 

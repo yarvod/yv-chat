@@ -122,7 +122,8 @@
 
 ### BUG-067 — MLS roster обновлялся только при открытии того же личного чата
 
-- Статус: `fixed locally; production rollout pending` (`WP-069`).
+- Статус: `fixed locally; QR enrollment extension verified; production rollout pending`
+  (`WP-069`, `WP-080`).
 - Severity: `critical multi-device E2EE availability`.
 - Production reproduction: новый Mac PWA создаёт `blocked/device_roster_changed`, а
   старые валидные leaves остаются online. Пока на одном из них вручную не открыт этот
@@ -131,11 +132,15 @@
 - Причина: durable `conversation_updated` инвалидировал crypto cache любого
   conversation, но messenger запускал reconcile только для активного. Дополнительно
   message protocol сам инвалидировал READY cache перед каждым envelope и создавал
-  bootstrap/KeyPackage request storm при загрузке истории.
+  bootstrap/KeyPackage request storm при загрузке истории. Оставшийся QR/new-device
+  gap: первая crypto identity registration создавала новый capable leaf, но сама не
+  публиковала durable roster event; Settings вне chat workspace не запускал enrollment.
 - Исправление: startup и sync reset последовательно reconciles все direct chats, а
   обычный durable event — каждый изменившийся direct независимо от active selection.
   READY cache живёт до sync invalidation; server exact-generation gate остаётся
-  authoritative и не допускает stale send.
+  authoritative и не допускает stale send. `WP-080` атомарно публикует события при
+  первой identity registration и запускает target-verified background enrollment из
+  QR settings с retention drain до каждого Commit.
 - Проверка: два frontend regression теста покрывают cold inactive direct и inactive
   roster event; production metadata доказала, что `Julproh` Welcome создал собственный
   Android leaf и новый Mac отправил v2 сообщение без участия peer.

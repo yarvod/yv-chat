@@ -99,12 +99,14 @@ additive: старые клиенты продолжают password login и с�
 
 ## 6. MLS и history boundary
 
-`authorized` означает только HTTP/device trust bootstrap. Затем отдельный worker/slice:
+`authorized` означает только HTTP/device trust bootstrap. Реализованный `WP-080`
+затем выполняет:
 
 1. генерирует новую independent MLS identity/KeyPackages на candidate;
 2. атомарно enroll-ит pending leaf во все доступные direct без остановки healthy
    generation и без online собеседника;
-3. запускает authenticated bidirectional history manifest/chunk union.
+3. оставляет authenticated bidirectional history manifest/chunk union следующему
+   изолированному `WP-081`.
 
 Существующий signer, sealed provider, current/past MLS state и device-local storage key
 не передаются. Старые epochs не перешифровываются. Пока эти slices не завершены, UI
@@ -127,7 +129,7 @@ additive: старые клиенты продолжают password login и с�
 ## 8. Consequences и gates
 
 Плюсы: passwordless bootstrap, hash-only persistence, restart-safe idempotency, camera
-только на телефоне, отсутствие влияния на current MLS groups.
+только на телефоне и target-verified background add-leaf через обычный MLS Commit.
 
 Ограничения: trusted server всё ещё управляет account sessions и может отказать в
 service; защита от malicious Authentication Service требует linked-device

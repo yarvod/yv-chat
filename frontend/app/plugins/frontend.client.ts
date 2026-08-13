@@ -43,6 +43,8 @@ import { GetDeviceCryptoRegistration } from '../application/device-crypto/get-de
 import { ListDeviceKeyPackages } from '../application/device-crypto/list-device-key-packages'
 import { ReplenishDeviceKeyPackages } from '../application/device-crypto/replenish-device-key-packages'
 import { RegisterDeviceCrypto } from '../application/device-crypto/register-device-crypto'
+import { EnrollLinkedDevice } from '../application/device-crypto/enroll-linked-device'
+import { ConversationHistory } from '../application/messaging/conversation-history'
 import { ProtocolMessageProtection } from '../application/messaging/message-protection'
 import { PresenceIndicatorService } from '../application/messaging/presence-indicator-service'
 import { RealtimeSyncService } from '../application/messaging/realtime-sync-service'
@@ -145,6 +147,26 @@ export default defineNuxtPlugin(() => {
   const messageProtection = new ProtocolMessageProtection(
     [new SyntheticMessageProtocol(), new MlsMessageProtocol(deviceCryptoSession)],
   )
+  const epochHistories = new Map<string, ConversationHistory>()
+  const linkedDeviceEnrollment = new EnrollLinkedDevice(
+    messagingGateway,
+    conversationCryptoGateway,
+    deviceCryptoSession,
+    scheduler,
+    async (ownerUserId, conversationId) => {
+      let history = epochHistories.get(ownerUserId)
+      if (!history) {
+        history = new ConversationHistory(
+          ownerUserId,
+          messagingGateway,
+          messageArchive,
+          messageProtection,
+        )
+        epochHistories.set(ownerUserId, history)
+      }
+      await history.cacheRetainedBeforeEpochAdvance(conversationId)
+    },
+  )
   themePreferences.apply(themePreference)
 
   return {
@@ -233,6 +255,7 @@ export default defineNuxtPlugin(() => {
         ),
         videoNoteRecorder: new BrowserVideoNoteRecorder(),
         deviceCryptoSession,
+        linkedDeviceEnrollment,
         getDeviceCryptoRegistration: new GetDeviceCryptoRegistration(deviceCryptoRegistryGateway),
         registerDeviceCrypto: new RegisterDeviceCrypto(deviceCryptoRegistryGateway),
         listDeviceKeyPackages: new ListDeviceKeyPackages(deviceKeyPackageGateway),

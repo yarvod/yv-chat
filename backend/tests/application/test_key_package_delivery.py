@@ -27,6 +27,7 @@ from messenger.application.errors import (
     DeviceKeyPackageConflictError,
     DeviceKeyPackageUnavailableError,
 )
+from messenger.application.sync.policy import SyncPolicy
 from messenger.domain.entities import Conversation, Device
 from messenger.domain.entities.device_crypto_identity import expected_credential_identity
 from messenger.domain.exceptions import DomainValidationError
@@ -41,6 +42,7 @@ ALICE_ID = UUID("1b0a32e8-144f-4f60-bcb6-112f71bd5316")
 ALICE_DEVICE_ID = UUID("50d6b08a-84ae-4bd7-829a-f40f38e9a2c1")
 BOB_ID = UUID("ce1ecf72-b414-4e65-901f-18ebc7fe3cee")
 BOB_DEVICE_ID = UUID("912608ec-8e20-497d-a55b-ec5d260480cc")
+SYNC_POLICY = SyncPolicy(retention=timedelta(days=30))
 
 
 async def registered_state() -> tuple[IdentityState, Conversation]:
@@ -61,6 +63,7 @@ async def registered_state() -> tuple[IdentityState, Conversation]:
     register = RegisterDeviceCryptoIdentity(
         unit_of_work=FakeDeviceCryptoUnitOfWorkFactory(state),
         clock=FixedClock(NOW),
+        sync_policy=SYNC_POLICY,
     )
     for user_id, device_id, package in (
         (ALICE_ID, ALICE_DEVICE_ID, b"alice-initial-package"),

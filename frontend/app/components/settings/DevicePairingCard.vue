@@ -3,10 +3,13 @@ import QrcodeVue from 'qrcode.vue'
 import { computed, onBeforeUnmount, ref } from 'vue'
 
 import type { DisplayedPairing } from '../../application/accounts/device-pairing'
+import type { LinkedDeviceEnrollmentProgress } from '../../application/device-crypto/enroll-linked-device'
 import type { DevicePairingView } from '../../domain/accounts/device-pairing'
+import { useAuth } from '../../presentation/composables/useAuth'
 import DeviceQrScanner from './DeviceQrScanner.vue'
 
 const { $frontend } = useNuxtApp()
+const auth = useAuth()
 const isPhone = computed(() => $frontend.deviceInfo.current().deviceClass !== 'desktop')
 const displayed = ref<DisplayedPairing | null>(null)
 const view = ref<DevicePairingView | null>(null)
@@ -33,16 +36,47 @@ async function pollTrusted(pairingId: string): Promise<void> {
     view.value = await $frontend.devicePairing.trustedStatus(pairingId)
     if (activePairingId !== pairingId) return
     if (view.value.status === 'authorized') {
-      message.value = `Устройство «${view.value.candidateDeviceName ?? 'новое устройство'}» подключено.`
+      const linked = view.value
+      message.value = `Устройство «${linked.candidateDeviceName ?? 'новое устройство'}» подключено. Готовим защищённые чаты…`
       displayed.value = null
       activePairingId = null
       stopPolling()
+      startEnrollment(linked)
       return
     }
     if (!['cancelled', 'expired'].includes(view.value.status)) scheduleTrustedPoll(pairingId)
   } catch {
     scheduleTrustedPoll(pairingId)
   }
+}
+
+function enrollmentMessage(progress: LinkedDeviceEnrollmentProgress): string {
+  if (progress.complete) {
+    return progress.totalConversations === 0
+      ? 'Устройство подключено. Личных чатов для синхронизации пока нет.'
+      : `Устройство подключено к ${progress.totalConversations} защищённым чатам.`
+  }
+  return `Подключаем защищённые чаты: ${progress.readyConversations} из ${progress.totalConversations}.`
+}
+
+function startEnrollment(linked: DevicePairingView): void {
+  const owner = auth.user.value
+  const targetDeviceId = linked.authorizedDeviceId
+  if (!owner || !targetDeviceId) {
+    message.value = 'Сессия устройства создана, но MLS enrollment ещё не подтверждён.'
+    return
+  }
+  void $frontend.linkedDeviceEnrollment.enroll(
+    owner.userId,
+    targetDeviceId,
+    progress => { message.value = enrollmentMessage(progress) },
+  ).then((progress) => {
+    message.value = progress.complete
+      ? enrollmentMessage(progress)
+      : `Сессия создана; ${progress.pendingConversationIds.length} чатов продолжат безопасный retry при следующей синхронизации.`
+  }).catch(() => {
+    message.value = 'Сессия создана; MLS enrollment продолжится при следующей синхронизации.'
+  })
 }
 
 async function createOffer(): Promise<void> {
@@ -142,6 +176,6 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </section>
-    <small class="muted">Это создаёт отдельную сессию устройства. MLS enrollment и перенос локальной истории выполняются следующими этапами.</small>
+    <small class="muted">Устройство получает отдельную сессию и independent MLS leaf. Перенос локального архива выполняется следующим этапом.</small>
   </article>
 </template>

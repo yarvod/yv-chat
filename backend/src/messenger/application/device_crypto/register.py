@@ -4,12 +4,14 @@ from dataclasses import dataclass
 from uuid import UUID
 
 from messenger.application.device_crypto.dto import DeviceCryptoIdentityResult
+from messenger.application.devices.notify_roster_change import append_device_roster_events
 from messenger.application.errors import (
     DeviceCryptoIdentityConflictError,
     OwnedDeviceNotFoundError,
 )
 from messenger.application.ports.clock import Clock
 from messenger.application.ports.device_crypto import DeviceCryptoUnitOfWorkFactory
+from messenger.application.sync.policy import SyncPolicy
 from messenger.domain.entities import DeviceCryptoIdentity, DeviceKeyPackage
 
 
@@ -23,9 +25,16 @@ class RegisterDeviceCryptoIdentityCommand:
 
 
 class RegisterDeviceCryptoIdentity:
-    def __init__(self, *, unit_of_work: DeviceCryptoUnitOfWorkFactory, clock: Clock) -> None:
+    def __init__(
+        self,
+        *,
+        unit_of_work: DeviceCryptoUnitOfWorkFactory,
+        clock: Clock,
+        sync_policy: SyncPolicy,
+    ) -> None:
         self._unit_of_work = unit_of_work
         self._clock = clock
+        self._sync_policy = sync_policy
 
     async def execute(
         self,
@@ -70,5 +79,11 @@ class RegisterDeviceCryptoIdentity:
 
             await uow.identities.add(candidate)
             await uow.key_packages.add(candidate_package)
+            await append_device_roster_events(
+                uow,
+                user_id=command.user_id,
+                now=now,
+                policy=self._sync_policy,
+            )
             await uow.commit()
             return DeviceCryptoIdentityResult.from_entities(candidate, candidate_package)

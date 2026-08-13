@@ -1,95 +1,84 @@
-# Workplan
+# Текущий workplan
 
-Этот файл содержит только одну текущую фичу. Перед началом следующей фичи
-завершённая работа фиксируется отдельным коммитом, а новый пункт переносится
-сюда из `backlog.md`.
+## WP-080 — Automatic MLS enrollment after trusted QR pairing
 
-## WP-079 — Durable QR device pairing and passwordless session bootstrap
+Статус: **implemented and locally verified; production rollout held for `WP-081`**
+(`BL-015`, ADR-0001, ADR-0003)
 
-Статус: **implemented and locally verified; production rollout held for `WP-080`**
-(`BL-015`, ADR-0003)
-
-Цель первого QR-slice: компьютер всегда показывает QR, телефон всегда сканирует,
-а уже доверенное устройство явно подтверждает новый browser install. Новый install
-получает отдельные `Device` и opaque HttpOnly session без передачи пароля, cookie,
-MLS signer, storage key или чужой device identity. Pairing переживает restart API и
-не требует online собеседника или открытия чата.
+Цель: после успешного QR pairing уже доверенное устройство автоматически добавляет
+новый independent MLS leaf во все доступные direct conversations. Пользователь не
+открывает каждый чат, не ждёт online собеседника и не делает повторный password login.
+Ни existing leaf state, ни signer/storage key между устройствами не копируются.
 
 ### Scope
 
-- принять ADR/threat model для двух ролей:
-  `enrollment_request` (новый компьютер показывает QR доверенному телефону) и
-  `enrollment_offer` (доверенный компьютер показывает QR новому телефону);
-- добавить PostgreSQL-backed одноразовую state machine
-  `created → confirmation_pending → approved → authorized` с terminal
-  `cancelled/expired`, configurable TTL и monotonic/idempotent transitions;
-- разделить QR scan token и candidate proof: QR не даёт права получить session, а
-  candidate должен доказать владение локальным 256-bit secret, чей SHA-256 commitment
-  был привязан до approval;
-- exact trusted session/device сканирует request или создаёт offer и только он может
-  approve/cancel; cross-account и revoked-session операции fail closed;
-- после approval candidate atomically создаёт собственные `Device` + `Session` и
-  получает обычные `__Host-` session/CSRF cookies; lost HTTP response допускает
-  bounded idempotent authorize retry с тем же candidate proof;
-- добавить versioned `/api/v1/device-pairings` transport, runtime validation и UI:
-  QR на login/settings, in-app camera scanner и paste fallback на телефоне, одинаковый short
-  authentication code на обоих экранах, progress/cancel/error states;
-- не менять MLS group membership, не копировать local history и не выдавать готовность
-  E2EE в этом slice: это следующие `BL-015` workplans после безопасного pairing base.
+- при первой immutable crypto-identity регистрации нового active device атомарно
+  записывать durable `conversation_updated` для всех его active conversations;
+- событие должно будить все устройства участников, переживать WebSocket loss/restart
+  и не создаваться повторно при exact idempotent identity registration;
+- после QR authorization approving device запускает bounded background enrollment:
+  ждёт регистрации identity/KeyPackages candidate, инвалидирует stale READY cache,
+  reconciles каждый direct и проверяет, что exact candidate device вошёл в READY
+  required roster;
+- сохранять multi-epoch invariant: перед каждым Commit существующий leaf сначала
+  скачивает/расшифровывает ещё retained messages текущего epoch в encrypted archive;
+- обработка независима от выбранного UI chat: Settings может оставаться открытым,
+  scanner/display role не задаёт permanent primary device;
+- ошибки одного direct не блокируют остальные; unfinished список явно отображается и
+  retry-ится по durable events/повторному foreground pass;
+- не менять OpenMLS ciphersuite, credential identity, signer ownership, Welcome/
+  Commit framing и server ciphertext opacity.
 
 ### Security invariants
 
-- QR/URL не содержит password, session credential, candidate proof, MLS/private key,
-  archive/storage key или plaintext;
-- backend хранит только SHA-256 digests scan/proof tokens; candidate proof существует
-  в browser memory/session storage только до exchange на HttpOnly session cookie;
-- scan/manual code сами не создают session/device; требуется explicit approval exact
-  active trusted device и candidate preimage proof;
-- state-changing authenticated endpoints сохраняют strict Origin + CSRF; anonymous
-  pairing endpoints требуют strict Origin, bounded payloads/TTL и не раскрывают
-  account/session data без candidate proof;
-- logs/errors не содержат QR token, proof, authentication code или issued session;
-- restart/retry не создаёт второй device/session и не позволяет повторно использовать
-  pairing для другого browser/account.
+- только устройство, уже являющееся leaf latest READY generation, может author-ить
+  add-leaf Commit; candidate не перепрыгивает это правило;
+- backend `Device` или pairing approval сами по себе не означают MLS membership;
+- candidate учитывается в roster только после immutable public identity и валидного
+  one-time KeyPackage; missing package остаётся fail-closed;
+- перед epoch advance выполняется retention drain; network/storage/decrypt failure
+  останавливает конкретный Commit, а не уничтожает local state;
+- никакие private keys, epoch secrets, plaintext или archive keys не проходят server,
+  QR payload, Vue component state, logs или sync events;
+- device/session revoke и logout по-прежнему создают отдельный removal reconciliation,
+  а pairing не меняет чужие conversations/accounts.
 
 ### Verification
 
-- domain/application tests: both roles, wrong proof, wrong approver/account, expiry,
-  cancel, replay, concurrent/double approve and idempotent authorize;
-- HTTP tests: Origin/CSRF/cookie flags, anonymous vs authenticated boundary, bounded
-  response disclosure and no session before approval;
-- migration tests: fresh database → head и upgrade from `0023`;
-- PostgreSQL integration regression пересоздаёт engine/session factory между
-  `created`, `confirmation_pending/approved` и `authorized`, затем проверяет
-  idempotent authorize и отсутствие duplicate device/session;
-- frontend tests: QR payload validation, request/offer UI, code comparison, scanner
-  denial/paste fallback and authorize retry after transient network failure;
-- backend Ruff/format/mypy/pytest, frontend lint/typecheck/test/build, Compose config
-  and full CI pass before rollout.
+- application test: first identity registration emits one event per affected user /
+  conversation, exact retry emits none, wrong/revoked device emits none;
+- PostgreSQL integration: identity + initial KeyPackage + roster events commit одной
+  транзакцией и доступны после нового engine lifecycle;
+- frontend service tests: candidate identity delay, stale READY cache, several direct,
+  partial failure/retry, target roster verification и bounded timeout;
+- component test: successful pairing starts enrollment without navigation/open-chat;
+- existing messenger startup/durable roster-event regressions remain green;
+- Ruff/format/mypy/pytest, frontend lint/typecheck/test/build, Compose and full CI.
 
-### Exclusions / next slices
+### Exclusions / next slice
 
-- background pending-device MLS enrollment во все direct (`WP-080`);
-- authenticated bidirectional history manifests/chunks/merge (`WP-081`);
-- media archive transfer и External Commit recovery;
-- Safari ↔ installed PWA private-state merging without explicit pairing.
+- pre-membership history/old epoch secrets не выдаются новому leaf;
+- двусторонний archive manifest/chunk union остаётся `WP-081`;
+- media archive transfer, key transparency и External Commit recovery не входят;
+- physical iOS/macOS pairing acceptance и production rollout выполняются после
+  `WP-081`, чтобы UI не обещал полную history sync раньше реализации.
 
 ### Definition of Done
 
-- оба направления pairing создают отдельную revocable device-bound session только
-  после mutual confirmation и candidate proof;
-- компьютер нигде не использует камеру; iOS scanner принадлежит установленной PWA;
-- API/PostgreSQL restart на каждом durable state продолжает flow без password relogin;
-- existing devices/MLS chats не меняются до следующего atomic enrollment slice;
-- focused commit, migration/security review, CI/CD и production-like restart checks
-  завершены.
+- QR-linked candidate появляется в READY roster каждого доступного direct без открытия
+  чатов и без online собеседника;
+- restart/missed WebSocket не теряет enrollment wake-up;
+- approving existing leaf сохраняет retained history до каждого epoch advance;
+- partial failures видимы, безопасно повторяемы и не вызывают downgrade/reset;
+- focused commit и полный verification suite завершены.
 
 ### Verification result
 
-- backend Ruff/format/mypy и `259 passed, 11 skipped` прошли локально;
-- отдельный PostgreSQL integration test после fresh `alembic upgrade head` прошёл,
-  включая три независимых engine lifecycle и повтор `authorize`;
-- frontend lint/typecheck, `281 passed` и production build прошли;
-- Compose/deploy config checks и `git diff --check` прошли;
-- production deploy намеренно отложен: до `WP-080` пользовательский QR login не должен
-  обещать автоматическую MLS-готовность всех личных чатов.
+- backend Ruff/format/mypy и `259 passed, 12 skipped` прошли;
+- PostgreSQL integration после fresh migration подтвердил atomic durable events,
+  exact retry без дублей и чтение после нового engine lifecycle;
+- frontend lint/typecheck, `285 passed` и production build прошли;
+- service regressions покрывают delayed candidate identity, stale READY, target roster,
+  bounded incomplete result, independent direct failures и epoch drain callback;
+- component regression подтверждает запуск enrollment прямо из Settings без перехода
+  в chat; Compose/deploy checks и `git diff --check` прошли.
