@@ -76,4 +76,6 @@
   общий mobile shell; keyboard text-entry скрывает bottom tabs, а PWA canvas и
   `theme-color` совпадают с фоном выбранной темы при iOS rubber-band (`BUG-071`);
 - bottom navigation получила общий press animation на iOS/Android и короткий
-  `selection` vibration на поддерживающем Vibration API Android при смене раздела.
+  `selection` vibration на поддерживающем Vibration API Android при смене раздела;
+- первый mobile tap по строке диалога теперь сразу открывает optimistic chat pane,
+  пока history/crypto selection завершается; hover ограничен mouse input (`BUG-072`).

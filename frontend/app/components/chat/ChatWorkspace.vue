@@ -30,8 +30,11 @@ const typingIndicators = ref<readonly TypingIndicator[]>([])
 const presenceIndicators = ref<readonly PresenceIndicator[]>([])
 const connectionState = ref<RealtimeConnectionState>('connecting')
 const groupDetailsOpen = ref(false)
+const openingConversationId = ref<string | null>(null)
 const mobilePane = computed<'list' | 'conversation'>(() => (
-  selectedConversationId(route.query.conversation) ? 'conversation' : 'list'
+  selectedConversationId(route.query.conversation) || openingConversationId.value
+    ? 'conversation'
+    : 'list'
 ))
 let unsubscribeVisibility: (() => void) | null = null
 let unsubscribeTyping: (() => void) | null = null
@@ -66,12 +69,18 @@ async function applyRouteSelection(): Promise<void> {
 }
 
 async function selectConversation(conversationId: string): Promise<void> {
+  if (openingConversationId.value !== null) return
   groupDetailsOpen.value = false
-  await messenger.selectConversation(conversationId)
-  await navigateTo(
-    { path: '/chat', query: { conversation: conversationId } },
-    { replace: selectedConversationId(route.query.conversation) !== null },
-  )
+  openingConversationId.value = conversationId
+  try {
+    await messenger.selectConversation(conversationId)
+    await navigateTo(
+      { path: '/chat', query: { conversation: conversationId } },
+      { replace: selectedConversationId(route.query.conversation) !== null },
+    )
+  } finally {
+    openingConversationId.value = null
+  }
 }
 
 async function openMessage(messageId: string): Promise<void> {

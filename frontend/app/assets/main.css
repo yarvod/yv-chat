@@ -175,8 +175,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .conversation-search button { display: grid; width: 28px; height: 28px; place-items: center; padding: 0; border: 0; border-radius: 50%; color: var(--muted); background: var(--surface-hover); }
 .conversation-search button .app-icon { width: 14px; height: 14px; }
 .conversation-list { display: flex; min-height: 0; flex: 1; flex-direction: column; gap: 2px; overflow-y: auto; overscroll-behavior: contain; padding: 6px 8px 10px; scrollbar-gutter: stable; }
-.conversation-row { display: grid; grid-template-columns: 50px minmax(0, 1fr) auto; align-items: center; gap: 11px; width: 100%; min-height: 70px; padding: 8px 9px; border: 0; border-radius: 14px; color: var(--text-soft); background: transparent; text-align: left; transition: background .15s ease, transform .15s ease; }
-.conversation-row:hover { background: var(--surface-hover); }
+.conversation-row { display: grid; grid-template-columns: 50px minmax(0, 1fr) auto; align-items: center; gap: 11px; width: 100%; min-height: 70px; padding: 8px 9px; border: 0; border-radius: 14px; color: var(--text-soft); background: transparent; text-align: left; touch-action: manipulation; transition: background .15s ease, transform .15s ease; }
+@media (hover: hover) and (pointer: fine) { .conversation-row:hover { background: var(--surface-hover); } }
 .conversation-row:active { transform: scale(.985); }
 .conversation-row.active { color: var(--text); background: color-mix(in srgb, var(--primary) 12%, var(--surface-raised)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 25%, transparent); }
 .conversation-avatar { position: relative; display: grid; width: 50px; height: 50px; place-items: center; border-radius: 50%; color: var(--primary); background: linear-gradient(145deg, color-mix(in srgb, var(--primary) 18%, var(--surface-raised)), color-mix(in srgb, var(--secondary) 11%, var(--surface-raised))); font-weight: 850; }

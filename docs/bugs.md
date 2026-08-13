@@ -4,6 +4,23 @@
 
 ## Active
 
+### BUG-072 — Первый mobile tap по диалогу выглядел как hover без открытия
+
+- Статус: `fixed locally; physical mobile acceptance pending` (`WP-073`).
+- Severity: `high mobile conversation navigation usability`.
+- Production reproduction: на iOS/Android тапнуть строку диалога; строка получает
+  визуальное состояние, но chat pane появляется только после завершения async history
+  и crypto refresh, из-за чего пользователь успевает нажать второй раз.
+- Причина: mobile pane определялась только route query, который обновлялся после
+  `await messenger.selectConversation(...)`; общий `:hover` дополнительно оставлял
+  sticky mouse-style feedback на touch browser.
+- Исправление: первый tap сразу переводит mobile workspace в optimistic conversation
+  pane, блокирует повторный selection до завершения и затем синхронизирует route;
+  row hover ограничен `(hover: hover) and (pointer: fine)`, а touch использует
+  `touch-action: manipulation` и существующий `:active` press feedback.
+- Проверка: frontend regression фиксирует optimistic pane state, cleanup и mouse-only
+  hover; physical iOS/Android acceptance остаётся после rollout.
+
 ### BUG-071 — Safe area и PWA canvas применялись локально
 
 - Статус: `fixed locally; physical iOS acceptance pending` (`WP-073`).

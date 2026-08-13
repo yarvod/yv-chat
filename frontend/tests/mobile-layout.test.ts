@@ -85,6 +85,17 @@ describe('mobile application shell', () => {
     expect(layout).toMatch(/function performMobileTabSelection\(to: string\): void \{\s+if \(isNavigationItemActive\(to\)\) return\s+\$frontend\.haptics\.perform\('selection'\)/)
   })
 
+  it('opens a tapped conversation optimistically and keeps hover mouse-only', () => {
+    const css = readFileSync(resolve(process.cwd(), 'app/assets/main.css'), 'utf8')
+    const workspace = readFileSync(resolve(process.cwd(), 'app/components/chat/ChatWorkspace.vue'), 'utf8')
+
+    expect(css).toMatch(/\.conversation-row \{[^}]*touch-action: manipulation;/)
+    expect(css).toContain('@media (hover: hover) and (pointer: fine) { .conversation-row:hover')
+    expect(workspace).toMatch(/selectedConversationId\(route\.query\.conversation\) \|\| openingConversationId\.value/)
+    expect(workspace).toMatch(/openingConversationId\.value = conversationId\s+try \{\s+await messenger\.selectConversation/)
+    expect(workspace).toMatch(/finally \{\s+openingConversationId\.value = null/)
+  })
+
   it('keeps the PWA rubber-band canvas aligned with the selected page theme', () => {
     const css = readFileSync(resolve(process.cwd(), 'app/assets/main.css'), 'utf8')
     const config = readFileSync(resolve(process.cwd(), 'nuxt.config.ts'), 'utf8')
