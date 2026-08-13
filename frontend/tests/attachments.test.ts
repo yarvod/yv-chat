@@ -229,7 +229,12 @@ describe('group attachment download use case', () => {
       clear: vi.fn().mockResolvedValue({ usedBytes: 0, entryCount: 0, limitBytes: 1024 }),
       close: vi.fn(),
     }
-    const useCase = new DownloadGroupAttachment(gateway, cache)
+    const useCase = new DownloadGroupAttachment(
+      gateway,
+      cache,
+      1024,
+      () => Date.parse('2026-08-13T11:59:00Z'),
+    )
     const item = { ...attachment, byteSize: body.size }
 
     const first = useCase.execute('user-1', 'device-1', 'conversation-1', item, expiresAt)
