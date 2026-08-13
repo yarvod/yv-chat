@@ -6,7 +6,8 @@
 
 ## WP-076 — Independent TLS certificates for production origins
 
-Статус: **in progress**
+Статус: **completed and production verified** (`5083743`, workflow
+`31704063495`)
 
 Цель: отказ DNS/регистрации или ACME validation одного production-домена не мешает
 автоматическому продлению и работе TLS второго домена.
@@ -39,3 +40,19 @@
 - старый combined `.ru` certificate безопасно заменён на `.ru`-only после
   переключения `.com.de` на собственный certificate;
 - full CI, deploy checks и production acceptance проходят.
+
+### Verification
+
+- full repository CI и production workflow `31704063495` прошли; immutable tag —
+  `sha-5083743982e407791478511b107a12da622de8e6`;
+- active `.ru` certificate содержит только `DNS:chat.yoowee.ru`, active `.com.de`
+  certificate — только `DNS:chat.yoowee.com.de`; SNI serial каждого ответа совпал
+  с соответствующей lineage на disk;
+- отдельные `certbot renew --dry-run --no-random-sleep-on-renew` успешно прошли для
+  каждой lineage; обе используют `webroot` `/var/www/html`;
+- общий `nginx -t` и graceful reload прошли; rollback set сохранён как
+  `chat.yoowee.ru.conf.before-5083743` и `yv-chat-server.conf.before-5083743`;
+- оба public/loopback HTTPS origin вернули API/frontend `200`, unauthenticated
+  WebSocket `403`, HSTS присутствует; shared registration rule вернул `429` после
+  bounded burst;
+- yv-chat healthy, соседние `infra-*` containers сохранили uptime.
