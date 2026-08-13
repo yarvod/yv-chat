@@ -1513,8 +1513,11 @@ Production runtime изолирован explicit Compose project `yv-chat`. Ед
 API подключён одновременно к non-internal project-owned ingress network `172.30.243.0/24` (иначе Docker published loopback port не активируется в проверенном runtime) и к internal private network `172.30.242.0/24` с PostgreSQL. Frontend подключён только к ingress network, cleanup и PostgreSQL — только к private. Host proxy приходит в API от фактически проверенного bridge gateway `172.30.243.1`; backend доверяет forwarding chain только от этого exact `/32`, не доверяет произвольному клиентскому `X-Forwarded-For` и выбирает первый справа untrusted address. Оба subnet обязательно проверяются на конфликт при переносе на другой host.
 
 Host Nginx владеет TLS/Certbot, HTTP→HTTPS, security headers и WebSocket upgrade для
-двух production origins — `chat.yoowee.ru` и `chat.yoowee.com.de` — в одном
-yv-chat vhost и SAN-сертификате; backend strict Origin allowlist содержит оба имени.
+двух production origins — `chat.yoowee.ru` и `chat.yoowee.com.de` — в двух exact
+HTTPS server blocks с отдельной Certbot lineage на каждый domain; backend strict
+Origin allowlist содержит оба имени. Общие security headers, rate limit и
+API/WebSocket/frontend proxy rules находятся в одном project-owned Nginx snippet,
+поэтому certificate independence не создаёт drift transport policy.
 Cookies с `__Host-`, Service Worker, IndexedDB и E2EE device state не разделяются
 между origins, поэтому вход через второе имя создаёт отдельную browser session/device,
 не копируя local crypto state. Соседние `yoowee.ru`/`s3.yoowee.ru` vhost не

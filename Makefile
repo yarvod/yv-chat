@@ -149,20 +149,25 @@ deploy-check:
 	grep -q 'compose up -d --wait --wait-timeout 120 frontend' deploy/remote-deploy.sh
 	grep -q 'YV_CHAT_API_BIND_PORT:-18081' deploy/remote-deploy.sh
 	grep -q 'YV_CHAT_FRONTEND_BIND_PORT:-18082' deploy/remote-deploy.sh
+	grep -q 'deploy/nginx/host-chat.server.conf' .github/workflows/deploy.yml
 	grep -q 'server_name chat.yoowee.ru chat.yoowee.com.de' deploy/nginx/host-chat.http.conf
-	grep -q 'server_name chat.yoowee.ru chat.yoowee.com.de' deploy/nginx/host-chat.conf
-	grep -q 'Strict-Transport-Security' deploy/nginx/host-chat.conf
-	grep -q 'Permissions-Policy "camera=(self), geolocation=(), microphone=(self)"' deploy/nginx/host-chat.conf
-	! grep -q 'Permissions-Policy "camera=(),.*microphone=()"' deploy/nginx/host-chat.conf
-	grep -q "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'" deploy/nginx/host-chat.conf
-	! grep -q "script-src.*'unsafe-eval'" deploy/nginx/host-chat.conf
-	grep -q 'proxy_pass http://127.0.0.1:18081' deploy/nginx/host-chat.conf
-	grep -q 'proxy_pass http://127.0.0.1:18082' deploy/nginx/host-chat.conf
-	grep -q 'Connection \$$yv_chat_connection_upgrade' deploy/nginx/host-chat.conf
+	grep -q 'server_name chat.yoowee.ru;' deploy/nginx/host-chat.conf
+	grep -q 'server_name chat.yoowee.com.de;' deploy/nginx/host-chat.conf
+	grep -q '/live/chat.yoowee.ru/fullchain.pem' deploy/nginx/host-chat.conf
+	grep -q '/live/chat.yoowee.com.de/fullchain.pem' deploy/nginx/host-chat.conf
+	test "$$(grep -c 'include /etc/nginx/snippets/yv-chat-server.conf' deploy/nginx/host-chat.conf)" -eq 2
+	grep -q 'Strict-Transport-Security' deploy/nginx/host-chat.server.conf
+	grep -q 'Permissions-Policy "camera=(self), geolocation=(), microphone=(self)"' deploy/nginx/host-chat.server.conf
+	! grep -q 'Permissions-Policy "camera=(),.*microphone=()"' deploy/nginx/host-chat.server.conf
+	grep -q "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'" deploy/nginx/host-chat.server.conf
+	! grep -q "script-src.*'unsafe-eval'" deploy/nginx/host-chat.server.conf
+	grep -q 'proxy_pass http://127.0.0.1:18081' deploy/nginx/host-chat.server.conf
+	grep -q 'proxy_pass http://127.0.0.1:18082' deploy/nginx/host-chat.server.conf
+	grep -q 'Connection \$$yv_chat_connection_upgrade' deploy/nginx/host-chat.server.conf
 	grep -q 'limit_req_zone \$$binary_remote_addr zone=yv_chat_registration_per_ip:1m rate=10r/m' deploy/nginx/host-chat.conf
-	grep -q 'location = /api/v1/auth/register' deploy/nginx/host-chat.conf
-	grep -q 'limit_req zone=yv_chat_registration_per_ip burst=5 nodelay' deploy/nginx/host-chat.conf
-	grep -q 'limit_req_status 429' deploy/nginx/host-chat.conf
+	grep -q 'location = /api/v1/auth/register' deploy/nginx/host-chat.server.conf
+	grep -q 'limit_req zone=yv_chat_registration_per_ip burst=5 nodelay' deploy/nginx/host-chat.server.conf
+	grep -q 'limit_req_status 429' deploy/nginx/host-chat.server.conf
 	ssh-keygen -l -f deploy/ssh_known_hosts >/dev/null
 	! grep -q 'StrictHostKeyChecking=no' .github/workflows/deploy.yml
 	! grep -Eq 'docker system prune|docker compose down|--remove-orphans' deploy/remote-deploy.sh deploy/bootstrap-server.sh

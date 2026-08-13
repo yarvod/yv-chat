@@ -201,6 +201,7 @@ jobs:
           scp "${ssh_options[@]}" -P "$DEPLOY_PORT" \
             deploy/nginx/host-chat.http.conf \
             deploy/nginx/host-chat.conf \
+            deploy/nginx/host-chat.server.conf \
             "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_ROOT/deploy/nginx/"
       - name: Migrate and roll out isolated stack
         shell: bash

@@ -555,6 +555,14 @@ generic background notification, focus/navigation и invalid-subscription cleanu
 
 ## Completed
 
+### BL-076 — Independent TLS certificates for production origins
+
+Статус: **in progress** (`WP-076`).
+
+- отдельные Certbot lineages для `.ru` и `.com.de` исключают общий renewal failure;
+- два exact HTTPS server используют общий project-owned proxy/security snippet;
+- scoped install, rollback и acceptance не затрагивают соседние Nginx services.
+
 ### BL-075 — Dual production origins
 
 Статус: **completed and production verified** (`WP-075`, `dda65a4`, workflow

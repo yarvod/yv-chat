@@ -131,10 +131,13 @@ owns the certificate. Versioned source files are:
 The production vhost routes API/WebSocket and frontend separately. It preserves
 `Host`, scheme and the forwarding chain; a conditional `Connection` map upgrades
 actual WebSocket requests without forcing upgrade semantics on ordinary HTTP.
-Both production names use the same vhost and one Certbot certificate whose SAN list
-contains both names. Browser cookies, Service Worker, IndexedDB and E2EE device state
-remain origin-scoped: signing in on the second domain creates a separate browser
-session/device and does not copy local crypto state from the first domain.
+Both production names share one port-80 ACME/redirect server. Each HTTPS name has its
+own exact server block and Certbot certificate; both include the project-owned
+`/etc/nginx/snippets/yv-chat-server.conf` so security headers, registration rate
+limit, API/WebSocket and frontend routing cannot drift. Browser cookies, Service
+Worker, IndexedDB and E2EE device state remain origin-scoped: signing in on the
+second domain creates a separate browser session/device and does not copy local
+crypto state from the first domain.
 
 `Permissions-Policy` allows `camera` and `microphone` only for the top-level
 same-origin PWA because group video notes call `getUserMedia` after an explicit user
@@ -145,20 +148,23 @@ browser permission prompt entirely and must be rejected by `make deploy-check`.
 Never run Certbot/Nginx in the yv-chat production Compose. Never edit neighboring
 `yoowee.ru` or `s3.yoowee.ru` vhosts as part of chat deployment.
 
-When adding or restoring the second production name, first install the reviewed
-dual-name chat vhost so its port-80 ACME webroot is reachable, then expand only the
-existing chat certificate without letting Certbot rewrite Nginx configs:
+When adding or restoring a production name, first install the reviewed dual-name
+port-80 chat vhost so its ACME webroot is reachable. Issue each certificate through
+the existing webroot without letting Certbot rewrite Nginx configs:
 
 ```bash
 certbot certonly --webroot --webroot-path /var/www/html \
-  --cert-name chat.yoowee.ru --expand --non-interactive \
-  -d chat.yoowee.ru -d chat.yoowee.com.de
+  --cert-name chat.yoowee.ru --non-interactive -d chat.yoowee.ru
+certbot certonly --webroot --webroot-path /var/www/html \
+  --cert-name chat.yoowee.com.de --non-interactive -d chat.yoowee.com.de
 certbot certificates
 nginx -t
 systemctl reload nginx
 ```
 
-The resulting renewal file must retain both domains and the `webroot` authenticator.
+Each resulting renewal file must contain only its own domain and the `webroot`
+authenticator. A combined SAN lineage couples renewal availability and is not the
+steady-state configuration.
 
 ## Safe vhost change
 
@@ -180,6 +186,9 @@ cp -p /etc/nginx/conf.d/chat.yoowee.ru.conf \
 install -o root -g root -m 0644 \
   /home/devuser/yv-chat/deploy/nginx/host-chat.conf \
   /etc/nginx/conf.d/chat.yoowee.ru.conf
+install -o root -g root -m 0644 \
+  /home/devuser/yv-chat/deploy/nginx/host-chat.server.conf \
+  /etc/nginx/snippets/yv-chat-server.conf
 nginx -t
 systemctl reload nginx
 ```
