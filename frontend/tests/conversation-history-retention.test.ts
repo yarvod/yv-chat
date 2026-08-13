@@ -69,7 +69,11 @@ describe('retained history epoch drain', () => {
 
     expect(listMessages.mock.calls.map(call => call[1])).toEqual([0, 100])
     expect(decrypted).toEqual(Array.from({ length: 101 }, (_, index) => index + 1))
-    expect(put).toHaveBeenCalledTimes(2)
+    expect(put).toHaveBeenCalledTimes(4)
+    const recoveredPages = put.mock.calls
+      .map(call => call[2] as Array<OpaqueMessage & { localPlaintext?: string }>)
+      .filter(page => page.some(item => item.localPlaintext !== undefined))
+    expect(recoveredPages.flat()).toHaveLength(101)
   })
 
   it('fails closed if a server page cannot make sequence progress', async () => {

@@ -522,10 +522,10 @@ digests двух независимых 256-bit values: scan capability из QR 
 proof только в памяти/`sessionStorage` незавершённого flow и удаляет после установки
 HttpOnly cookie; `localStorage`/IndexedDB/URL запрещены. Подробнее: ADR-0003.
 
-QR pairing transport не меняет MLS roster и не копирует signer, provider state,
-archive/storage key или message history. Он лишь создаёт независимую authenticated
-device boundary. Background MLS enrollment и bidirectional archive union идут
-отдельными `BL-015` slices, чтобы deployment QR UI не мог остановить healthy chats.
+QR pairing bootstrap не копирует signer, provider state или archive/storage key. Он
+создаёт независимую authenticated device boundary; следующий background slice
+добавляет leaf стандартным MLS Commit/Welcome, а history slice переносит только
+доступные canonical records стандартными MLS application `PrivateMessage`.
 PostgreSQL state переживает API restart; polling является latency mechanism, а не
 источником correctness. Компьютер всегда display, телефон scanner; камера внутри PWA
 имеет paste/manual fallback, а обычная iOS Camera landing не получает trust сама.
@@ -1056,6 +1056,22 @@ generation со stale capable roster не создаёт окно отправк
 device revoke и logout в одной transaction добавляют durable `conversation_updated`
 для каждого active recipient; realtime остаётся только wake-up, cursor stream —
 source of truth. Следующий reconciliation создаёт Commit и rotation.
+
+После target-verified READY enrollment `device_history_chunks` служит durable
+TTL-bounded почтовым ящиком для opaque MLS application messages. Row привязан к exact
+authorized pairing, sender/target devices и direct conversation; direction имеет
+жёсткий лимит 20 chunks, retry использует stable client chunk ID, target ACK-ит row
+только после durable local import. PostgreSQL restart не теряет relay, а HTTP/WS не
+получают plaintext, archive key, signer или epoch secret. Оба devices экспортируют
+доступные records, поэтому merge образует union и не назначает primary archive.
+
+Canonical content хранится как optional local-only поле рядом с immutable server
+envelope внутри существующей non-extractable AES-GCM archive key. Успешный decrypt и
+исходящий encrypted outbox выполняют write-through; одинаковый server refresh не
+стирает local copy, tombstone стирает её, contradictory immutable record fail-closed.
+Transfer job содержит в `localStorage` только несекретные UUID/expiry, периодически
+resume-ится в authenticated runtime и истекает вместе с relay retention. Формат и
+ограничения зафиксированы в ADR-0004.
 
 Первая immutable identity registration вместе с initial KeyPackage теперь в той же
 PostgreSQL transaction добавляет `conversation_updated` каждому active participant

@@ -36,6 +36,7 @@ function view(purpose: CreatedDevicePairing['purpose'], status = 'confirmation_p
     authenticationCode: '123456',
     expiresAt: future,
     authorizedDeviceId: null,
+    trustedDeviceId: 'trusted-device',
   }
 }
 
@@ -94,6 +95,10 @@ class FakeGateway implements DevicePairingGateway {
   async approve() { return view('enrollment_offer', 'approved') }
   async cancelCandidate() { return view('enrollment_request', 'cancelled') }
   async cancelTrusted() { return view('enrollment_offer', 'cancelled') }
+  async uploadHistoryChunk() { throw new Error('not used') }
+  async listHistoryChunks() { return [] }
+  async listOutboundHistoryChunks() { return [] }
+  async acknowledgeHistoryChunk() { return undefined }
 
   async authorize(id: string, candidateProof: string): Promise<void> {
     this.authorized = [id, candidateProof]
@@ -188,7 +193,10 @@ describe('device pairing', () => {
     await expect(pairing.authorize(pairingId)).rejects.toThrow('network')
     expect(secrets.load(pairingId)).toBe(proof)
     failCurrent = false
-    expect(await pairing.authorize(pairingId)).toEqual(account)
+    expect(await pairing.authorize(pairingId)).toEqual({
+      account,
+      pairing: view('enrollment_request'),
+    })
     expect(gateway.authorized).toEqual([pairingId, proof])
     expect(secrets.load(pairingId)).toBeNull()
   })

@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from messenger.application.ports.identity import (
     ActivationTokenRepository,
+    DeviceHistoryChunkRepository,
     DevicePairingRepository,
     DeviceRepository,
     IdentityUnitOfWork,
@@ -21,6 +22,7 @@ from messenger.application.ports.identity import (
 from messenger.infrastructure.persistence.repositories import (
     SqlAlchemyActivationTokenRepository,
     SqlAlchemyConversationRepository,
+    SqlAlchemyDeviceHistoryChunkRepository,
     SqlAlchemyDevicePairingRepository,
     SqlAlchemyDeviceRepository,
     SqlAlchemyPasswordResetTokenRepository,
@@ -46,6 +48,7 @@ class SqlAlchemyIdentityUnitOfWork:
         self.activation_tokens: ActivationTokenRepository
         self.devices: DeviceRepository
         self.device_pairings: DevicePairingRepository
+        self.device_history_chunks: DeviceHistoryChunkRepository
         self.password_reset_tokens: PasswordResetTokenRepository
         self.registration_invitations: RegistrationInvitationRepository
         self.sessions: SessionRepository
@@ -59,6 +62,7 @@ class SqlAlchemyIdentityUnitOfWork:
         self.activation_tokens = SqlAlchemyActivationTokenRepository(self._session)
         self.devices = SqlAlchemyDeviceRepository(self._session)
         self.device_pairings = SqlAlchemyDevicePairingRepository(self._session)
+        self.device_history_chunks = SqlAlchemyDeviceHistoryChunkRepository(self._session)
         self.password_reset_tokens = SqlAlchemyPasswordResetTokenRepository(self._session)
         self.registration_invitations = SqlAlchemyRegistrationInvitationRepository(self._session)
         self.sessions = SqlAlchemySessionRepository(self._session)

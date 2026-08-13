@@ -20,11 +20,13 @@ export async function prepareOutgoingMessageView(
   protection: ProtocolMessageProtection,
 ): Promise<OutgoingMessageView> {
   try {
-    const content = await protection.unprotectText(message.protocolVersion, {
-      conversationId: message.conversationId,
-      clientMessageId: message.clientMessageId,
-      ciphertextBase64: message.ciphertextBase64,
-    })
+    const content = message.localPlaintext
+      ? { plaintext: message.localPlaintext, secure: message.protocolVersion === 2 }
+      : await protection.unprotectText(message.protocolVersion, {
+          conversationId: message.conversationId,
+          clientMessageId: message.clientMessageId,
+          ciphertextBase64: message.ciphertextBase64,
+        })
     const decoded = message.protocolVersion === 1
       ? decodeGroupMessageContent(content.plaintext)
       : { text: content.plaintext, attachments: [] }

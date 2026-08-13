@@ -550,15 +550,16 @@ export function useMessenger(
     receipt: SendMessageReceipt,
   ): Promise<void> {
     bumpConversationActivity(message.conversationId, receipt.createdAt)
+    const authoritative: OpaqueMessage = {
+      ...receipt,
+      ciphertextBase64: message.ciphertextBase64,
+      deletionReason: null,
+      deletedAt: null,
+    }
     if (message.conversationId === state.activeConversationId) {
-      const authoritative: OpaqueMessage = {
-        ...receipt,
-        ciphertextBase64: message.ciphertextBase64,
-        deletionReason: null,
-        deletedAt: null,
-      }
       const window = await history.acceptAuthoritativeOutgoing(
         authoritative,
+        message.localPlaintext,
         state.messages,
         state.historyHasMore,
         state.historyHasNewer,
@@ -567,6 +568,11 @@ export function useMessenger(
       applyHistoryWindow(window)
       await advanceDelivery(message.conversationId)
       await advanceActiveReadIfVisible()
+    } else {
+      await history.persist(message.conversationId, [{
+        ...authoritative,
+        ...(message.localPlaintext ? { localPlaintext: message.localPlaintext } : {}),
+      }])
     }
   }
 

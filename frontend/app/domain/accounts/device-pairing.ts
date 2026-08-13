@@ -26,6 +26,20 @@ export interface DevicePairingView {
   authenticationCode: string | null
   expiresAt: string
   authorizedDeviceId: string | null
+  trustedDeviceId: string | null
+}
+
+export interface DeviceHistoryRelayChunk {
+  chunkId: string
+  serverSequence: number
+  senderDeviceId: string
+  targetDeviceId: string
+  conversationId: string
+  clientChunkId: string
+  ciphertextBase64: string
+  createdAt: string
+  expiresAt: string
+  acknowledgedAt: string | null
 }
 
 export interface DevicePairingQrPayload {

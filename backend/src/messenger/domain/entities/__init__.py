@@ -22,6 +22,7 @@ from messenger.domain.entities.device_crypto_identity import (
     DeviceCryptoIdentity,
     DeviceKeyPackage,
 )
+from messenger.domain.entities.device_history_chunk import DeviceHistoryChunk
 from messenger.domain.entities.device_pairing import (
     DevicePairing,
     DevicePairingPurpose,
@@ -65,6 +66,7 @@ __all__ = [
     "DevicePairing",
     "DevicePairingPurpose",
     "DevicePairingStatus",
+    "DeviceHistoryChunk",
     "DeviceCryptoIdentity",
     "DeviceKeyPackage",
     "SecurityEvent",

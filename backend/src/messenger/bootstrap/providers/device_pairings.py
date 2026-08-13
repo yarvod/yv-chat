@@ -10,6 +10,12 @@ from messenger.application.device_pairings.cancel import (
 )
 from messenger.application.device_pairings.create_offer import CreatePairingOffer
 from messenger.application.device_pairings.create_request import CreatePairingRequest
+from messenger.application.device_pairings.history import (
+    AcknowledgeHistoryChunk,
+    ListHistoryChunks,
+    ListOutboundHistoryChunks,
+    UploadHistoryChunk,
+)
 from messenger.application.device_pairings.policy import DevicePairingPolicy
 from messenger.application.device_pairings.scan import ScanPairingOffer, ScanPairingRequest
 from messenger.application.device_pairings.status import (
@@ -34,3 +40,7 @@ class DevicePairingUseCaseProvider(Provider):
     authorize_pairing = provide(AuthorizeDevicePairing, scope=Scope.REQUEST)
     cancel_candidate_pairing = provide(CancelCandidatePairing, scope=Scope.REQUEST)
     cancel_trusted_pairing = provide(CancelTrustedPairing, scope=Scope.REQUEST)
+    upload_history_chunk = provide(UploadHistoryChunk, scope=Scope.REQUEST)
+    list_history_chunks = provide(ListHistoryChunks, scope=Scope.REQUEST)
+    list_outbound_history_chunks = provide(ListOutboundHistoryChunks, scope=Scope.REQUEST)
+    acknowledge_history_chunk = provide(AcknowledgeHistoryChunk, scope=Scope.REQUEST)

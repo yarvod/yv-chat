@@ -9,6 +9,8 @@ export interface OutboxMessage {
   conversationId: string
   protocolVersion: number
   ciphertextBase64: string
+  /** Canonical content, sealed inside the local encrypted outbox only. */
+  localPlaintext?: string
   cryptoGenerationId: string | null
   cryptoEpoch: number | null
   attachmentIds?: readonly string[]

@@ -4,6 +4,25 @@
 
 ## Active
 
+### BUG-075 — Server refresh снова делал уже прочитанное MLS-сообщение недоступным
+
+- Статус: `fixed locally; production rollout pending` (`WP-081`).
+- Severity: `critical multi-device history availability`.
+- Reproduction: device успешно расшифровывает retained MLS message, затем обычный
+  history refresh возвращает тот же opaque server envelope; после epoch advance или
+  reload sender key уже удалён, timeline заменяет локально доступный экземпляр на
+  «защищённое сообщение недоступно».
+- Причина: encrypted local archive сохранял только server ciphertext envelope и не
+  фиксировал canonical content после успешного decrypt; для собственного MLS sender
+  повторный decrypt по правилам OpenMLS вообще невозможен.
+- Исправление: successful decrypt и encrypted outbox делают local AES-GCM
+  write-through; identical server refresh сохраняет local content, tombstone его
+  удаляет, contradictory envelope fail-closed. Это же является source для bounded
+  QR history union.
+- Проверка: archive regression покрывает encrypted-at-rest round-trip, refresh,
+  contradiction и tombstone; bidirectional transfer regression объединяет независимо
+  сохранённые own-sent records двух devices.
+
 ### BUG-074 — Installed PWA сама перезагружала active UI после deployment
 
 - Статус: `fixed and production deployed` (`WP-078`, `053bfd7`).

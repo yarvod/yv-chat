@@ -55,6 +55,7 @@ export class QueueOutgoingMessage {
       conversationId: command.conversationId,
       protocolVersion: protectedMessage.protocolVersion,
       ciphertextBase64: protectedMessage.ciphertextBase64,
+      localPlaintext: plaintext,
       cryptoGenerationId: protectedMessage.cryptoGenerationId,
       cryptoEpoch: protectedMessage.cryptoEpoch,
       ...(attachmentIds.length > 0 ? { attachmentIds } : {}),

@@ -31,6 +31,7 @@ from messenger.application.ports.device_crypto import (
 )
 from messenger.application.ports.identity import (
     ActivationTokenRepository,
+    DeviceHistoryChunkRepository,
     DevicePairingRepository,
     DeviceRepository,
     DeviceSessionRecord,
@@ -78,6 +79,7 @@ from messenger.domain.entities import (
     ConversationReadState,
     Device,
     DeviceCryptoIdentity,
+    DeviceHistoryChunk,
     DeviceKeyPackage,
     DevicePairing,
     Message,
@@ -101,6 +103,7 @@ class IdentityState:
     password_hashes: dict[UUID, str] = field(default_factory=dict)
     devices: dict[UUID, Device] = field(default_factory=dict)
     device_pairings: dict[UUID, DevicePairing] = field(default_factory=dict)
+    device_history_chunks: dict[UUID, DeviceHistoryChunk] = field(default_factory=dict)
     device_crypto_identities: dict[UUID, DeviceCryptoIdentity] = field(default_factory=dict)
     device_key_packages: dict[UUID, DeviceKeyPackage] = field(default_factory=dict)
     conversation_crypto_generations: dict[UUID, ConversationCryptoGeneration] = field(
@@ -681,6 +684,93 @@ class FakeDevicePairingRepository:
         }
 
 
+class FakeDeviceHistoryChunkRepository:
+    def __init__(self, state: IdentityState) -> None:
+        self._state = state
+
+    async def add(self, chunk: DeviceHistoryChunk) -> DeviceHistoryChunk:
+        stored = replace(chunk, server_sequence=len(self._state.device_history_chunks) + 1)
+        self._state.device_history_chunks[stored.id] = stored
+        return stored
+
+    async def get_by_client_id(
+        self,
+        *,
+        pairing_id: UUID,
+        sender_device_id: UUID,
+        client_chunk_id: UUID,
+    ) -> DeviceHistoryChunk | None:
+        return next(
+            (
+                chunk
+                for chunk in self._state.device_history_chunks.values()
+                if chunk.pairing_id == pairing_id
+                and chunk.sender_device_id == sender_device_id
+                and chunk.client_chunk_id == client_chunk_id
+            ),
+            None,
+        )
+
+    async def get_by_id_for_update(self, chunk_id: UUID) -> DeviceHistoryChunk | None:
+        return self._state.device_history_chunks.get(chunk_id)
+
+    async def count_direction_conversation(
+        self,
+        *,
+        pairing_id: UUID,
+        sender_device_id: UUID,
+        conversation_id: UUID,
+    ) -> int:
+        return sum(
+            chunk.pairing_id == pairing_id
+            and chunk.sender_device_id == sender_device_id
+            and chunk.conversation_id == conversation_id
+            for chunk in self._state.device_history_chunks.values()
+        )
+
+    async def list_pending_for_target(
+        self,
+        *,
+        pairing_id: UUID,
+        target_device_id: UUID,
+        after_sequence: int,
+        now: datetime,
+        limit: int,
+    ) -> list[DeviceHistoryChunk]:
+        chunks = [
+            chunk
+            for chunk in self._state.device_history_chunks.values()
+            if chunk.pairing_id == pairing_id
+            and chunk.target_device_id == target_device_id
+            and (chunk.server_sequence or 0) > after_sequence
+            and chunk.expires_at > now
+            and chunk.acknowledged_at is None
+        ]
+        return sorted(chunks, key=lambda chunk: chunk.server_sequence or 0)[:limit]
+
+    async def update(self, chunk: DeviceHistoryChunk) -> None:
+        if chunk.id not in self._state.device_history_chunks:
+            raise RuntimeError("history chunk disappeared during update")
+        self._state.device_history_chunks[chunk.id] = chunk
+
+    async def list_for_sender(
+        self,
+        *,
+        pairing_id: UUID,
+        sender_device_id: UUID,
+        now: datetime,
+        limit: int,
+    ) -> list[DeviceHistoryChunk]:
+        chunks = [
+            chunk
+            for chunk in self._state.device_history_chunks.values()
+            if chunk.pairing_id == pairing_id
+            and chunk.sender_device_id == sender_device_id
+            and chunk.expires_at > now
+        ]
+        return sorted(chunks, key=lambda chunk: chunk.server_sequence or 0)[:limit]
+
+
 class FakeSecurityEventRepository:
     def __init__(self, state: IdentityState) -> None:
         self._state = state
@@ -727,6 +817,9 @@ class FakeIdentityUnitOfWork:
         )
         self.devices: DeviceRepository = FakeDeviceRepository(state)
         self.device_pairings: DevicePairingRepository = FakeDevicePairingRepository(state)
+        self.device_history_chunks: DeviceHistoryChunkRepository = FakeDeviceHistoryChunkRepository(
+            state
+        )
         self.sessions: SessionRepository = FakeSessionRepository(state)
         self.security_events: SecurityEventRepository = FakeSecurityEventRepository(state)
         self.conversations: ConversationRepository = FakeConversationRepository(state)

@@ -1,11 +1,13 @@
 """HTTP security contract for QR device pairing."""
 
+import base64
 import hashlib
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from httpx import ASGITransport, AsyncClient
 
-from tests.test_auth_http import build_test_application, login
+from messenger.domain.entities import Conversation, User
+from tests.test_auth_http import NOW, build_test_application, login
 
 CANDIDATE_PROOF = "candidate-http-proof-secret-with-at-least-32-bytes"
 
@@ -116,3 +118,99 @@ async def test_request_pairing_needs_origin_csrf_approval_and_candidate_proof() 
         assert retry.status_code == 200
         assert retry.json()["session_id"] == authorized.json()["session_id"]
         assert len(state.devices) == 2
+
+
+async def test_authorized_pair_can_relay_only_opaque_chunks_to_exact_target() -> None:
+    application, state, _ = build_test_application()
+    transport = ASGITransport(app=application, client=("203.0.113.7", 443))
+    async with (
+        AsyncClient(transport=transport, base_url="https://test") as candidate,
+        AsyncClient(transport=transport, base_url="https://test") as trusted,
+    ):
+        created = await candidate.post(
+            "/api/v1/device-pairings/requests",
+            headers={"Origin": "https://test"},
+            json={
+                "candidate_proof_hash": proof_hash(CANDIDATE_PROOF),
+                "candidate_device_name": "New Mac PWA",
+            },
+        )
+        pairing_id = UUID(created.json()["pairing_id"])
+        login_response = await login(trusted)
+        trusted_device_id = UUID(login_response.json()["device_id"])
+        await trusted.post(
+            f"/api/v1/device-pairings/{pairing_id}/scan-request",
+            headers=csrf_headers(trusted),
+            json={"scan_token": created.json()["scan_token"]},
+        )
+        await trusted.post(
+            f"/api/v1/device-pairings/{pairing_id}/approve",
+            headers=csrf_headers(trusted),
+        )
+        authorized = await candidate.post(
+            f"/api/v1/device-pairings/{pairing_id}/authorize",
+            headers={"Origin": "https://test"},
+            json={"candidate_proof": CANDIDATE_PROOF},
+        )
+        candidate_device_id = UUID(authorized.json()["device_id"])
+        user = next(iter(state.users.values()))
+        peer = User.create(username="relay-peer", display_name="Relay peer", now=NOW)
+        conversation = Conversation.create_direct(
+            created_by=user.id,
+            other_user_id=peer.id,
+            now=NOW,
+        )
+        state.users[peer.id] = peer
+        state.conversations[conversation.id] = conversation
+        ciphertext = base64.b64encode(b"opaque MLS private message").decode()
+
+        missing_csrf = await trusted.post(
+            f"/api/v1/device-pairings/{pairing_id}/history-chunks",
+            headers={"Origin": "https://test"},
+            json={
+                "target_device_id": str(candidate_device_id),
+                "conversation_id": str(conversation.id),
+                "client_chunk_id": str(uuid4()),
+                "ciphertext_base64": ciphertext,
+            },
+        )
+        assert missing_csrf.status_code == 403
+
+        client_chunk_id = uuid4()
+        uploaded = await trusted.post(
+            f"/api/v1/device-pairings/{pairing_id}/history-chunks",
+            headers=csrf_headers(trusted),
+            json={
+                "target_device_id": str(candidate_device_id),
+                "conversation_id": str(conversation.id),
+                "client_chunk_id": str(client_chunk_id),
+                "ciphertext_base64": ciphertext,
+            },
+        )
+        assert uploaded.status_code == 200
+        assert uploaded.json()["ciphertext_base64"] == ciphertext
+        assert uploaded.json()["sender_device_id"] == str(trusted_device_id)
+
+        wrong_target = await trusted.post(
+            f"/api/v1/device-pairings/{pairing_id}/history-chunks",
+            headers=csrf_headers(trusted),
+            json={
+                "target_device_id": str(uuid4()),
+                "conversation_id": str(conversation.id),
+                "client_chunk_id": str(uuid4()),
+                "ciphertext_base64": ciphertext,
+            },
+        )
+        assert wrong_target.status_code == 404
+
+        incoming = await candidate.get(f"/api/v1/device-pairings/{pairing_id}/history-chunks")
+        assert incoming.status_code == 200
+        assert [item["client_chunk_id"] for item in incoming.json()] == [str(client_chunk_id)]
+        ack = await candidate.post(
+            f"/api/v1/device-pairings/{pairing_id}/history-chunks/{uploaded.json()['chunk_id']}/ack",
+            headers=csrf_headers(candidate),
+        )
+        assert ack.status_code == 200
+        assert (
+            await candidate.get(f"/api/v1/device-pairings/{pairing_id}/history-chunks")
+        ).json() == []

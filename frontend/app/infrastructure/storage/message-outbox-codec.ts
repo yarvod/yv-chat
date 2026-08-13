@@ -6,6 +6,7 @@ export const OUTBOX_SCHEMA_VERSION = 1
 const IV_LENGTH = 12
 const MAX_SERIALIZED_BYTES = 65_536
 const MAX_CIPHERTEXT_BASE64_LENGTH = 48_000
+const MAX_LOCAL_PLAINTEXT_LENGTH = 32_000
 
 export interface OutboxKeyRecord {
   ownerUserId: string
@@ -95,6 +96,9 @@ function parseOutboxMessage(
       'ciphertextBase64',
       MAX_CIPHERTEXT_BASE64_LENGTH,
     ),
+    ...(item.localPlaintext === undefined
+      ? {}
+      : { localPlaintext: requiredString(item, 'localPlaintext', MAX_LOCAL_PLAINTEXT_LENGTH) }),
     cryptoGenerationId,
     cryptoEpoch: cryptoEpoch === null ? null : Number(cryptoEpoch),
     ...(attachmentIds.length > 0 ? { attachmentIds: attachmentIds.map(String) } : {}),

@@ -136,13 +136,14 @@ cross-browser/security assurance gates.
 
 ### BL-015 — Secure QR device linking, MLS enrollment и двусторонняя history sync
 
-Статус: **in progress; `WP-079` durable pairing/session bootstrap и `WP-080`
-background MLS enrollment завершены локально, rollout held; следующий slice —
-bidirectional encrypted archive merge (`WP-081`)**.
+Статус: **in progress; `WP-079` durable pairing/session bootstrap, `WP-080`
+background MLS enrollment и `WP-081` bidirectional encrypted text/tombstone archive
+merge завершены локально; production rollout held до compatibility/physical gate**.
 `BL-064` и первый deployment-safe slice `BL-025` завершены; pairing реализуется
 итерациями с отдельным security/ADR review до изменения MLS membership semantics.
 Это не UI-задача «нарисовать QR»: `WP-079` не менял MLS roster, `WP-080` добавил
-durable wake-up + automatic add-leaf, а `WP-081` добавит archive merge.
+durable wake-up + automatic add-leaf, а `WP-081` добавил MLS application-message
+relay, local canonical-content write-through и двусторонний archive union.
 
 Результат: пользователь связывает компьютер и телефон без камеры на компьютере,
 подтверждает новое crypto-device уже доверенным устройством, автоматически получает

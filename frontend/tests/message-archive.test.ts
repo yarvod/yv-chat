@@ -179,4 +179,28 @@ describe('encrypted IndexedDB message archive', () => {
     await expect(archive.loadLatest(ownerUserId, conversationId, 100))
       .rejects.toMatchObject({ kind: 'corrupt' })
   })
+
+  it('preserves encrypted local plaintext across an identical server refresh', async () => {
+    const local = { ...message(1), localPlaintext: 'canonical local content' }
+    await archive.put(ownerUserId, conversationId, [local])
+    await archive.put(ownerUserId, conversationId, [message(1)])
+
+    await expect(archive.loadLatest(ownerUserId, conversationId, 100))
+      .resolves.toEqual([local])
+
+    await expect(archive.put(ownerUserId, conversationId, [{
+      ...message(1),
+      messageId: 'contradictory-message',
+    }])).rejects.toMatchObject({ kind: 'corrupt' })
+
+    const tombstone = {
+      ...message(1),
+      ciphertextBase64: null,
+      deletionReason: 'manual' as const,
+      deletedAt: '2026-08-11T12:01:00Z',
+    }
+    await archive.put(ownerUserId, conversationId, [tombstone])
+    await expect(archive.loadLatest(ownerUserId, conversationId, 100))
+      .resolves.toEqual([tombstone])
+  })
 })

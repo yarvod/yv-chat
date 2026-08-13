@@ -30,6 +30,15 @@ from messenger.application.device_pairings.create_request import (
     CreatePairingRequest,
     CreatePairingRequestCommand,
 )
+from messenger.application.device_pairings.history import (
+    AcknowledgeHistoryChunk,
+    AcknowledgeHistoryChunkCommand,
+    ListHistoryChunks,
+    ListHistoryChunksQuery,
+    ListOutboundHistoryChunks,
+    UploadHistoryChunk,
+    UploadHistoryChunkCommand,
+)
 from messenger.application.device_pairings.scan import (
     ScanPairingOffer,
     ScanPairingOfferCommand,
@@ -49,6 +58,7 @@ from messenger.application.errors import (
 )
 from messenger.application.sessions.authenticate import AuthenticateSession
 from messenger.bootstrap.settings import AppSettings
+from messenger.domain.entities import DeviceHistoryChunk
 from messenger.domain.exceptions import DomainValidationError
 from messenger.presentation.http.auth import (
     SessionResponse,
@@ -101,6 +111,45 @@ class PairingStatusResponse(BaseModel):
     authentication_code: str | None
     expires_at: datetime
     authorized_device_id: UUID | None
+    trusted_device_id: UUID | None
+
+
+class UploadHistoryChunkBody(BaseModel):
+    target_device_id: UUID
+    conversation_id: UUID
+    client_chunk_id: UUID
+    ciphertext_base64: str = Field(min_length=1, max_length=700_000)
+
+
+class HistoryChunkResponse(BaseModel):
+    chunk_id: UUID
+    server_sequence: int
+    sender_device_id: UUID
+    target_device_id: UUID
+    conversation_id: UUID
+    client_chunk_id: UUID
+    ciphertext_base64: str
+    created_at: datetime
+    expires_at: datetime
+    acknowledged_at: datetime | None
+
+
+def history_chunk_response(chunk: DeviceHistoryChunk) -> HistoryChunkResponse:
+    # Keep transport naming explicit instead of leaking a persistence object.
+    if chunk.server_sequence is None:
+        raise RuntimeError("persisted history chunk lacks a server sequence")
+    return HistoryChunkResponse(
+        chunk_id=chunk.id,
+        server_sequence=chunk.server_sequence,
+        sender_device_id=chunk.sender_device_id,
+        target_device_id=chunk.target_device_id,
+        conversation_id=chunk.conversation_id,
+        client_chunk_id=chunk.client_chunk_id,
+        ciphertext_base64=chunk.ciphertext_base64,
+        created_at=chunk.created_at,
+        expires_at=chunk.expires_at,
+        acknowledged_at=chunk.acknowledged_at,
+    )
 
 
 def status_response(view: DevicePairingView) -> PairingStatusResponse:
@@ -116,6 +165,126 @@ def translate_pairing_error(error: Exception) -> HTTPException:
         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         detail="invalid pairing data",
     )
+
+
+@router.post(
+    "/{pairing_id}/history-chunks",
+    response_model=HistoryChunkResponse,
+)
+async def upload_history_chunk(
+    pairing_id: UUID,
+    payload: UploadHistoryChunkBody,
+    request: Request,
+    response: Response,
+    settings: FromDishka[AppSettings],
+    authenticate_session: FromDishka[AuthenticateSession],
+    use_case: FromDishka[UploadHistoryChunk],
+) -> HistoryChunkResponse:
+    require_csrf(request, settings)
+    principal = await authenticate_request(request, response, settings, authenticate_session)
+    try:
+        chunk = await use_case.execute(
+            UploadHistoryChunkCommand(
+                pairing_id=pairing_id,
+                user_id=principal.user_id,
+                session_id=principal.session_id,
+                device_id=principal.device_id,
+                target_device_id=payload.target_device_id,
+                conversation_id=payload.conversation_id,
+                client_chunk_id=payload.client_chunk_id,
+                ciphertext_base64=payload.ciphertext_base64,
+            )
+        )
+    except (DevicePairingNotFoundError, DevicePairingStateError, DomainValidationError) as error:
+        raise translate_pairing_error(error) from error
+    return history_chunk_response(chunk)
+
+
+@router.get(
+    "/{pairing_id}/history-chunks/outbound",
+    response_model=list[HistoryChunkResponse],
+)
+async def list_outbound_history_chunks(
+    pairing_id: UUID,
+    request: Request,
+    response: Response,
+    settings: FromDishka[AppSettings],
+    authenticate_session: FromDishka[AuthenticateSession],
+    use_case: FromDishka[ListOutboundHistoryChunks],
+) -> list[HistoryChunkResponse]:
+    principal = await authenticate_request(request, response, settings, authenticate_session)
+    try:
+        chunks = await use_case.execute(
+            ListHistoryChunksQuery(
+                pairing_id=pairing_id,
+                user_id=principal.user_id,
+                session_id=principal.session_id,
+                device_id=principal.device_id,
+                after_sequence=0,
+            )
+        )
+    except DevicePairingNotFoundError as error:
+        raise translate_pairing_error(error) from error
+    return [history_chunk_response(chunk) for chunk in chunks]
+
+
+@router.get(
+    "/{pairing_id}/history-chunks",
+    response_model=list[HistoryChunkResponse],
+)
+async def list_history_chunks(
+    pairing_id: UUID,
+    request: Request,
+    response: Response,
+    settings: FromDishka[AppSettings],
+    authenticate_session: FromDishka[AuthenticateSession],
+    use_case: FromDishka[ListHistoryChunks],
+    after_sequence: int = 0,
+) -> list[HistoryChunkResponse]:
+    principal = await authenticate_request(request, response, settings, authenticate_session)
+    try:
+        chunks = await use_case.execute(
+            ListHistoryChunksQuery(
+                pairing_id=pairing_id,
+                user_id=principal.user_id,
+                session_id=principal.session_id,
+                device_id=principal.device_id,
+                after_sequence=after_sequence,
+            )
+        )
+    except (DevicePairingNotFoundError, DomainValidationError) as error:
+        raise translate_pairing_error(error) from error
+    return [history_chunk_response(chunk) for chunk in chunks]
+
+
+@router.post(
+    "/{pairing_id}/history-chunks/{chunk_id}/ack",
+    response_model=HistoryChunkResponse,
+)
+async def acknowledge_history_chunk(
+    pairing_id: UUID,
+    chunk_id: UUID,
+    request: Request,
+    response: Response,
+    settings: FromDishka[AppSettings],
+    authenticate_session: FromDishka[AuthenticateSession],
+    use_case: FromDishka[AcknowledgeHistoryChunk],
+) -> HistoryChunkResponse:
+    require_csrf(request, settings)
+    principal = await authenticate_request(request, response, settings, authenticate_session)
+    try:
+        chunk = await use_case.execute(
+            AcknowledgeHistoryChunkCommand(
+                pairing_id=pairing_id,
+                chunk_id=chunk_id,
+                user_id=principal.user_id,
+                session_id=principal.session_id,
+                device_id=principal.device_id,
+            )
+        )
+    except DevicePairingNotFoundError as error:
+        raise translate_pairing_error(error) from error
+    return history_chunk_response(chunk)
 
 
 @router.post("/requests", response_model=CreatePairingResponse)

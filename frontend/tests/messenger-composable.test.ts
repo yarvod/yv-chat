@@ -1108,7 +1108,9 @@ describe('messenger orchestration', () => {
     expect(gateway.listMessageHistory).toHaveBeenNthCalledWith(
       3, 'conversation-1', 6, 100,
     )
-    expect(messageArchive.put).toHaveBeenCalledTimes(3)
+    // Each server page is first persisted as an opaque envelope and then updated
+    // with canonical content after successful authenticated decrypt.
+    expect(messageArchive.put).toHaveBeenCalledTimes(6)
   })
 
   it('does not let a stale archive cursor skip server history pages', async () => {

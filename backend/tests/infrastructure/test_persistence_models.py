@@ -32,6 +32,7 @@ def test_persistence_metadata_contains_expected_tables() -> None:
         "device_crypto_identities",
         "device_key_packages",
         "device_pairings",
+        "device_history_chunks",
         "messages",
         "message_reactions",
         "password_reset_tokens",

@@ -1,4 +1,4 @@
-import type { MessageArchive } from '../ports/message-archive'
+import type { ArchivedMessage, MessageArchive } from '../ports/message-archive'
 import type { MessagingGateway } from '../ports/messaging-gateway'
 import type { OpaqueMessage } from '../../domain/messaging/models'
 import type { ProtocolMessageProtection } from './message-protection'
@@ -107,9 +107,10 @@ export class ConversationHistory {
     onCached?: HistoryListener,
   ): Promise<ConversationHistoryWindow> {
     const cached = await this.readLatest(conversationId)
+    const cachedPrepared = cached.length > 0 ? await this.prepare(cached) : []
     if (cached.length > 0) {
       onCached?.({
-        messages: this.latestWindow(await this.prepare(cached)),
+        messages: this.latestWindow(cachedPrepared),
         hasMore: cached.length === HISTORY_PAGE_SIZE,
         hasNewer: false,
       })
@@ -121,7 +122,7 @@ export class ConversationHistory {
     )
     await this.persist(conversationId, page.messages)
     return {
-      messages: this.latestWindow(await this.prepare(page.messages)),
+      messages: this.latestWindow(await this.prepare(page.messages, cachedPrepared)),
       hasMore: page.hasMore,
       hasNewer: false,
     }
@@ -144,7 +145,7 @@ export class ConversationHistory {
       if (page.messages.length > 0) {
         return this.mergeOlder(
           current,
-          await this.prepare(page.messages),
+          await this.prepare(page.messages, current),
           page.hasMore,
           alreadyHasNewer,
         )
@@ -181,7 +182,7 @@ export class ConversationHistory {
     for (let pageNumber = 0; pageNumber < 10; pageNumber += 1) {
       const incoming = await this.gateway.listMessages(conversationId, afterSequence)
       await this.persist(conversationId, incoming)
-      const merged = mergeById(messages, await this.prepare(incoming))
+      const merged = mergeById(messages, await this.prepare(incoming, messages))
       hasMore ||= merged.length > MAX_TIMELINE_MESSAGES
       messages = merged.slice(-MAX_TIMELINE_MESSAGES)
       if (incoming.length < HISTORY_PAGE_SIZE) {
@@ -310,13 +311,18 @@ export class ConversationHistory {
 
   async acceptAuthoritativeOutgoing(
     message: OpaqueMessage,
+    localPlaintext: string | undefined,
     current: readonly TimelineMessage[],
     hasMore: boolean,
     hasNewer: boolean,
   ): Promise<ConversationHistoryWindow> {
-    await this.persist(message.conversationId, [message])
+    const archived: ArchivedMessage = {
+      ...message,
+      ...(localPlaintext ? { localPlaintext } : {}),
+    }
+    await this.persist(message.conversationId, [archived])
     if (hasNewer) return { messages: [...current], hasMore, hasNewer }
-    const merged = mergeById(current, [await prepareTimelineMessage(message, this.protection)])
+    const merged = mergeById(current, [await prepareTimelineMessage(archived, this.protection)])
     return {
       messages: this.latestWindow(merged),
       hasMore: hasMore || merged.length > MAX_TIMELINE_MESSAGES,
@@ -324,7 +330,7 @@ export class ConversationHistory {
     }
   }
 
-  async persist(conversationId: string, messages: readonly OpaqueMessage[]): Promise<void> {
+  async persist(conversationId: string, messages: readonly ArchivedMessage[]): Promise<void> {
     if (!this.archiveAvailable || messages.length === 0) return
     try {
       await this.archive.put(this.ownerUserId, conversationId, messages)
@@ -333,7 +339,7 @@ export class ConversationHistory {
     }
   }
 
-  private async readLatest(conversationId: string): Promise<OpaqueMessage[]> {
+  private async readLatest(conversationId: string): Promise<ArchivedMessage[]> {
     if (!this.archiveAvailable) return []
     try {
       return await this.archive.loadLatest(
@@ -351,7 +357,7 @@ export class ConversationHistory {
     conversationId: string,
     beforeSequence: number,
     limit: number = HISTORY_PAGE_SIZE,
-  ): Promise<OpaqueMessage[]> {
+  ): Promise<ArchivedMessage[]> {
     if (!this.archiveAvailable) return []
     try {
       return await this.archive.loadBefore(
@@ -370,7 +376,7 @@ export class ConversationHistory {
     conversationId: string,
     afterSequence: number,
     limit: number,
-  ): Promise<OpaqueMessage[]> {
+  ): Promise<ArchivedMessage[]> {
     if (!this.archiveAvailable) return []
     try {
       return await this.archive.loadAfter(
@@ -386,11 +392,12 @@ export class ConversationHistory {
   }
 
   private async prepare(
-    messages: readonly OpaqueMessage[],
+    messages: readonly ArchivedMessage[],
     reusable: readonly TimelineMessage[] = [],
   ): Promise<TimelineMessage[]> {
     const reusableById = new Map(reusable.map(message => [message.messageId, message]))
     const prepared: TimelineMessage[] = []
+    const recoveredForArchive: ArchivedMessage[] = []
     for (const message of messages) {
       const existing = reusableById.get(message.messageId)
       if (
@@ -407,7 +414,33 @@ export class ConversationHistory {
         prepared.push(existing)
         continue
       }
-      prepared.push(await prepareTimelineMessage(message, this.protection))
+      let recoverable = message
+      if (message.ciphertextBase64 !== null && message.localPlaintext === undefined) {
+        try {
+          const content = await this.protection.unprotectText(message.protocolVersion, {
+            conversationId: message.conversationId,
+            clientMessageId: message.clientMessageId,
+            ciphertextBase64: message.ciphertextBase64,
+          })
+          recoverable = { ...message, localPlaintext: content.plaintext }
+          recoveredForArchive.push(recoverable)
+        } catch {
+          // Missing/deleted MLS sender keys remain an explicit unavailable gap.
+        }
+      }
+      prepared.push(await prepareTimelineMessage(recoverable, this.protection))
+    }
+    if (this.archiveAvailable) {
+      try {
+        for (let offset = 0; offset < recoveredForArchive.length; offset += HISTORY_PAGE_SIZE) {
+          const page = recoveredForArchive.slice(offset, offset + HISTORY_PAGE_SIZE)
+          if (page.length > 0) {
+            await this.archive.put(this.ownerUserId, page[0]!.conversationId, page)
+          }
+        }
+      } catch {
+        this.archiveAvailable = false
+      }
     }
     return prepared
   }

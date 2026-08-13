@@ -67,6 +67,7 @@ describe('device pairing settings flow', () => {
       authenticationCode: '123456',
       expiresAt: '2099-08-13T18:10:00Z',
       authorizedDeviceId: 'candidate-device',
+      trustedDeviceId: 'trusted-device',
     })
     vi.stubGlobal('useNuxtApp', () => ({
       $frontend: {
@@ -77,6 +78,15 @@ describe('device pairing settings flow', () => {
           cancelTrusted: vi.fn(),
         },
         linkedDeviceEnrollment: { enroll },
+        deviceHistorySync: {
+          queue: vi.fn(),
+          synchronize: vi.fn().mockResolvedValue({
+            exportedRecords: 2,
+            importedRecords: 2,
+            gaps: 0,
+            complete: true,
+          }),
+        },
       },
     }))
     states.set('auth-session', ref({ phase: 'authenticated', user, message: null }))
@@ -94,9 +104,11 @@ describe('device pairing settings flow', () => {
     await flushPromises()
     await vi.advanceTimersByTimeAsync(1_400)
     await flushPromises()
+    await flushPromises()
 
     expect(trustedStatus).toHaveBeenCalledWith('pairing-id')
     expect(enroll).toHaveBeenCalledWith('alice-user', 'candidate-device', expect.any(Function))
     expect(wrapper.text()).toContain('Устройство подключено к 2 защищённым чатам')
+    expect(wrapper.text()).toContain('локальная история объединяется')
   })
 })

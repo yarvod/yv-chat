@@ -4,6 +4,7 @@ import type {
   DevicePairingPurpose,
   DevicePairingStatus,
   DevicePairingView,
+  DeviceHistoryRelayChunk,
 } from '../../domain/accounts/device-pairing'
 import type { ApiClient } from './api-client'
 import {
@@ -56,6 +57,27 @@ function parseStatus(value: unknown): DevicePairingView {
     authenticationCode: nullableStringField(item, 'authentication_code'),
     expiresAt: stringField(item, 'expires_at'),
     authorizedDeviceId: nullableStringField(item, 'authorized_device_id'),
+    trustedDeviceId: nullableStringField(item, 'trusted_device_id'),
+  }
+}
+
+function parseHistoryChunk(value: unknown): DeviceHistoryRelayChunk {
+  const item = record(value)
+  const serverSequence = item.server_sequence
+  if (!Number.isSafeInteger(serverSequence) || Number(serverSequence) <= 0) {
+    throw new Error('invalid history chunk sequence')
+  }
+  return {
+    chunkId: stringField(item, 'chunk_id'),
+    serverSequence: Number(serverSequence),
+    senderDeviceId: stringField(item, 'sender_device_id'),
+    targetDeviceId: stringField(item, 'target_device_id'),
+    conversationId: stringField(item, 'conversation_id'),
+    clientChunkId: stringField(item, 'client_chunk_id'),
+    ciphertextBase64: stringField(item, 'ciphertext_base64'),
+    createdAt: stringField(item, 'created_at'),
+    expiresAt: stringField(item, 'expires_at'),
+    acknowledgedAt: nullableStringField(item, 'acknowledged_at'),
   }
 }
 
@@ -149,5 +171,51 @@ export class HttpDevicePairingGateway implements DevicePairingGateway {
       `/api/v1/device-pairings/${pairingId}/cancel-trusted`,
       { method: 'POST' },
     ))
+  }
+
+  async uploadHistoryChunk(
+    pairingId: string,
+    targetDeviceId: string,
+    conversationId: string,
+    clientChunkId: string,
+    ciphertextBase64: string,
+  ): Promise<DeviceHistoryRelayChunk> {
+    return parseHistoryChunk(await this.apiClient.request(
+      `/api/v1/device-pairings/${pairingId}/history-chunks`,
+      {
+        method: 'POST',
+        body: {
+          target_device_id: targetDeviceId,
+          conversation_id: conversationId,
+          client_chunk_id: clientChunkId,
+          ciphertext_base64: ciphertextBase64,
+        },
+      },
+    ))
+  }
+
+  async listHistoryChunks(pairingId: string): Promise<readonly DeviceHistoryRelayChunk[]> {
+    const value = await this.apiClient.request(
+      `/api/v1/device-pairings/${pairingId}/history-chunks`,
+    )
+    if (!Array.isArray(value)) throw new Error('invalid history chunk page')
+    return value.map(parseHistoryChunk)
+  }
+
+  async listOutboundHistoryChunks(
+    pairingId: string,
+  ): Promise<readonly DeviceHistoryRelayChunk[]> {
+    const value = await this.apiClient.request(
+      `/api/v1/device-pairings/${pairingId}/history-chunks/outbound`,
+    )
+    if (!Array.isArray(value)) throw new Error('invalid outbound history chunk page')
+    return value.map(parseHistoryChunk)
+  }
+
+  async acknowledgeHistoryChunk(pairingId: string, chunkId: string): Promise<void> {
+    await this.apiClient.request(
+      `/api/v1/device-pairings/${pairingId}/history-chunks/${chunkId}/ack`,
+      { method: 'POST' },
+    )
   }
 }

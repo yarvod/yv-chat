@@ -44,6 +44,7 @@ import { ListDeviceKeyPackages } from '../application/device-crypto/list-device-
 import { ReplenishDeviceKeyPackages } from '../application/device-crypto/replenish-device-key-packages'
 import { RegisterDeviceCrypto } from '../application/device-crypto/register-device-crypto'
 import { EnrollLinkedDevice } from '../application/device-crypto/enroll-linked-device'
+import { SynchronizeDeviceHistory } from '../application/device-crypto/synchronize-device-history'
 import { ConversationHistory } from '../application/messaging/conversation-history'
 import { ProtocolMessageProtection } from '../application/messaging/message-protection'
 import { PresenceIndicatorService } from '../application/messaging/presence-indicator-service'
@@ -73,6 +74,7 @@ import { BrowserVideoNoteRecorder } from '../infrastructure/browser/video-note-r
 import { IndexedDbMessageArchive } from '../infrastructure/storage/indexeddb-message-archive'
 import { IndexedDbMessengerSnapshotStore } from '../infrastructure/storage/indexeddb-messenger-snapshot-store'
 import { IndexedDbMessageOutbox } from '../infrastructure/storage/indexeddb-message-outbox'
+import { BrowserDeviceHistorySyncJobStore } from '../infrastructure/storage/browser-device-history-sync-jobs'
 import { EncryptedMediaCache } from '../infrastructure/storage/encrypted-media-cache'
 import { SyntheticMessageProtocol } from '../infrastructure/crypto/synthetic-message-protocol'
 import { MlsMessageProtocol } from '../infrastructure/crypto/mls-message-protocol'
@@ -167,6 +169,14 @@ export default defineNuxtPlugin(() => {
       await history.cacheRetainedBeforeEpochAdvance(conversationId)
     },
   )
+  const deviceHistorySync = new SynchronizeDeviceHistory(
+    devicePairingGateway,
+    messagingGateway,
+    messageArchive,
+    messageProtection,
+    new BrowserDeviceHistorySyncJobStore(),
+    scheduler,
+  )
   themePreferences.apply(themePreference)
 
   return {
@@ -256,6 +266,7 @@ export default defineNuxtPlugin(() => {
         videoNoteRecorder: new BrowserVideoNoteRecorder(),
         deviceCryptoSession,
         linkedDeviceEnrollment,
+        deviceHistorySync,
         getDeviceCryptoRegistration: new GetDeviceCryptoRegistration(deviceCryptoRegistryGateway),
         registerDeviceCrypto: new RegisterDeviceCrypto(deviceCryptoRegistryGateway),
         listDeviceKeyPackages: new ListDeviceKeyPackages(deviceKeyPackageGateway),

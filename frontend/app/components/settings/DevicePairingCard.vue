@@ -66,6 +66,14 @@ function startEnrollment(linked: DevicePairingView): void {
     message.value = 'Сессия устройства создана, но MLS enrollment ещё не подтверждён.'
     return
   }
+  const job = {
+    ownerUserId: owner.userId,
+    currentDeviceId: owner.deviceId,
+    pairingId: linked.pairingId,
+    targetDeviceId,
+    expiresAt: new Date(Date.parse(linked.expiresAt) + 86_400_000).toISOString(),
+  }
+  $frontend.deviceHistorySync.queue(job)
   void $frontend.linkedDeviceEnrollment.enroll(
     owner.userId,
     targetDeviceId,
@@ -74,6 +82,15 @@ function startEnrollment(linked: DevicePairingView): void {
     message.value = progress.complete
       ? enrollmentMessage(progress)
       : `Сессия создана; ${progress.pendingConversationIds.length} чатов продолжат безопасный retry при следующей синхронизации.`
+    if (progress.complete) {
+      void $frontend.deviceHistorySync.synchronize(job, history => {
+        message.value = history.complete
+          ? `История объединена: получено ${history.importedRecords}, отправлено ${history.exportedRecords}${history.gaps ? `, пропусков ${history.gaps}` : ''}.`
+          : `Синхронизация истории: получено ${history.importedRecords}, отправлено ${history.exportedRecords}.`
+      }).catch(() => {
+        message.value = 'Защищённые чаты готовы; перенос истории продолжится в фоне.'
+      })
+    }
   }).catch(() => {
     message.value = 'Сессия создана; MLS enrollment продолжится при следующей синхронизации.'
   })
@@ -176,6 +193,6 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </section>
-    <small class="muted">Устройство получает отдельную сессию и independent MLS leaf. Перенос локального архива выполняется следующим этапом.</small>
+    <small class="muted">Устройство получает отдельную сессию и independent MLS leaf. Доступная локальная история объединяется в обе стороны через зашифрованный MLS relay.</small>
   </article>
 </template>

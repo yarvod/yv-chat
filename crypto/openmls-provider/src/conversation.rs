@@ -600,6 +600,29 @@ mod tests {
     }
 
     #[test]
+    fn receiver_tolerates_the_bounded_hidden_history_relay_generation_gap() {
+        let (mut alice, mut bob) = joined_pair();
+        for index in 1..=20 {
+            let relay_chunk_id = format!("00000000-0000-4000-8000-{index:012}");
+            alice
+                .protect_application_message(
+                    CONVERSATION,
+                    &relay_chunk_id,
+                    b"opaque history relay chunk",
+                )
+                .unwrap();
+        }
+        let visible = alice
+            .protect_application_message(CONVERSATION, MESSAGE_TWO, b"visible after relay")
+            .unwrap();
+        assert_eq!(
+            bob.unprotect_application_message(CONVERSATION, MESSAGE_TWO, &visible.ciphertext)
+                .unwrap(),
+            b"visible after relay",
+        );
+    }
+
+    #[test]
     fn wrong_message_routing_aad_fails_closed() {
         let (mut alice, mut bob) = joined_pair();
         let protected = alice

@@ -1,8 +1,10 @@
 """PostgreSQL-backed device pairing survives process-local state loss."""
 
+import base64
 import os
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import delete, func, select
@@ -21,6 +23,12 @@ from messenger.application.device_pairings.create_request import (
     CreatePairingRequest,
     CreatePairingRequestCommand,
 )
+from messenger.application.device_pairings.history import (
+    ListHistoryChunks,
+    ListHistoryChunksQuery,
+    UploadHistoryChunk,
+    UploadHistoryChunkCommand,
+)
 from messenger.application.device_pairings.policy import DevicePairingPolicy
 from messenger.application.device_pairings.scan import (
     ScanPairingRequest,
@@ -34,12 +42,16 @@ from messenger.application.ports.identity import IdentityUnitOfWork
 from messenger.application.security_events.policy import SecurityEventPolicy
 from messenger.application.sessions.login import Login, LoginCommand
 from messenger.application.sessions.policy import SessionPolicy
+from messenger.domain.entities import Conversation, User
 from messenger.infrastructure.auth.passwords import Argon2PasswordHasher
 from messenger.infrastructure.auth.session_credentials import SecureSessionCredentialService
 from messenger.infrastructure.persistence.database import create_engine, create_session_factory
 from messenger.infrastructure.persistence.identity_uow import SqlAlchemyIdentityUnitOfWork
 from messenger.infrastructure.persistence.models import (
     ActivationTokenModel,
+    ConversationMemberModel,
+    ConversationModel,
+    DeviceHistoryChunkModel,
     DeviceModel,
     DevicePairingModel,
     SecurityEventModel,
@@ -70,7 +82,10 @@ def configured_database_url() -> str:
 
 async def reset_tables(session_factory: async_sessionmaker[AsyncSession]) -> None:
     async with session_factory.begin() as session:
+        await session.execute(delete(DeviceHistoryChunkModel))
         await session.execute(delete(DevicePairingModel))
+        await session.execute(delete(ConversationMemberModel))
+        await session.execute(delete(ConversationModel))
         await session.execute(delete(SecurityEventModel))
         await session.execute(delete(SessionModel))
         await session.execute(delete(DeviceModel))
@@ -205,8 +220,55 @@ async def run_flow(database_url: str) -> None:
         assert session_count == 2
         assert device_count == 2
         assert pairing is not None and pairing.status == "authorized"
+
+        async with third_uow() as uow:
+            peer = User.create(username="bob", display_name="Bob", now=NOW)
+            await uow.users.add_active(peer, await passwords.hash(PASSWORD))
+            conversation = Conversation.create_direct(
+                created_by=trusted.user_id,
+                other_user_id=peer.id,
+                now=NOW,
+            )
+            await uow.conversations.add(conversation)
+            await uow.commit()
+        uploaded = await UploadHistoryChunk(
+            unit_of_work=third_uow,
+            clock=FixedClock(NOW + timedelta(seconds=7)),
+            pairing_policy=PAIRING_POLICY,
+        ).execute(
+            UploadHistoryChunkCommand(
+                pairing_id=created.pairing_id,
+                user_id=trusted.user_id,
+                session_id=trusted.session_id,
+                device_id=trusted.device_id,
+                target_device_id=issued.device_id,
+                conversation_id=conversation.id,
+                client_chunk_id=uuid4(),
+                ciphertext_base64=base64.b64encode(b"opaque MLS relay").decode(),
+            )
+        )
     finally:
         await third_engine.dispose()
+
+    fourth_engine = create_engine(database_url)
+    fourth_sessions = create_session_factory(fourth_engine)
+    try:
+        incoming = await ListHistoryChunks(
+            unit_of_work=unit_of_work_factory(fourth_sessions),
+            clock=FixedClock(NOW + timedelta(seconds=8)),
+            pairing_policy=PAIRING_POLICY,
+        ).execute(
+            ListHistoryChunksQuery(
+                pairing_id=created.pairing_id,
+                user_id=trusted.user_id,
+                session_id=issued.session_id,
+                device_id=issued.device_id,
+                after_sequence=0,
+            )
+        )
+        assert [chunk.id for chunk in incoming] == [uploaded.id]
+    finally:
+        await fourth_engine.dispose()
 
 
 @pytest.mark.integration

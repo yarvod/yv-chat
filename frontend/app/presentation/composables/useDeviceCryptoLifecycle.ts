@@ -123,6 +123,7 @@ export function useDeviceCryptoLifecycle(user: ComputedRef<CurrentAccount | null
         state.issue = null
         void $frontend.linkedDeviceEnrollment
           .reconcileCurrentRoster(current.userId)
+          .then(() => $frontend.deviceHistorySync.start(current.userId, current.deviceId))
           .catch(() => undefined)
       }
     } catch (error) {
@@ -145,6 +146,7 @@ export function useDeviceCryptoLifecycle(user: ComputedRef<CurrentAccount | null
     generation += 1
     stopWatching?.()
     $frontend.linkedDeviceEnrollment.cancelAll()
+    $frontend.deviceHistorySync.stop()
     void $frontend.deviceCryptoSession.dispose()
   })
 

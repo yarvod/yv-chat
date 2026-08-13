@@ -15,6 +15,11 @@ export interface DisplayedPairing {
   qrValue: string
 }
 
+export interface AuthorizedDevicePairing {
+  account: CurrentAccount
+  pairing: DevicePairingView
+}
+
 export class DevicePairingService {
   constructor(
     private readonly gateway: DevicePairingGateway,
@@ -72,12 +77,15 @@ export class DevicePairingService {
     return this.gateway.approve(pairingId)
   }
 
-  async authorize(pairingId: string): Promise<CurrentAccount> {
+  async authorize(pairingId: string): Promise<AuthorizedDevicePairing> {
     const proof = this.requireProof(pairingId)
     await this.gateway.authorize(pairingId, proof)
-    const account = await this.authGateway.current()
+    const [account, pairing] = await Promise.all([
+      this.authGateway.current(),
+      this.gateway.candidateStatus(pairingId, proof),
+    ])
     this.secrets.remove(pairingId)
-    return account
+    return { account, pairing }
   }
 
   async cancelCandidate(pairingId: string): Promise<void> {

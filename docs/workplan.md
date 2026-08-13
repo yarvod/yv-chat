@@ -1,84 +1,87 @@
 # Текущий workplan
 
-## WP-080 — Automatic MLS enrollment after trusted QR pairing
+## WP-081 — Bidirectional encrypted history merge for QR-linked devices
 
-Статус: **implemented and locally verified; production rollout held for `WP-081`**
-(`BL-015`, ADR-0001, ADR-0003)
+Статус: **completed locally; production rollout held** (`BL-015`, ADR-0004)
 
-Цель: после успешного QR pairing уже доверенное устройство автоматически добавляет
-новый independent MLS leaf во все доступные direct conversations. Пользователь не
-открывает каждый чат, не ждёт online собеседника и не делает повторный password login.
-Ни existing leaf state, ни signer/storage key между устройствами не копируются.
+Цель: после `WP-080` оба связанных device обмениваются доступной text/tombstone
+history в обе стороны. Server хранит только TTL-bounded opaque MLS application
+messages. Target проверяет, расшифровывает и заново сохраняет content под собственной
+non-extractable archive key; MLS signer/group state/storage key не копируются.
 
 ### Scope
 
-- при первой immutable crypto-identity регистрации нового active device атомарно
-  записывать durable `conversation_updated` для всех его active conversations;
-- событие должно будить все устройства участников, переживать WebSocket loss/restart
-  и не создаваться повторно при exact idempotent identity registration;
-- после QR authorization approving device запускает bounded background enrollment:
-  ждёт регистрации identity/KeyPackages candidate, инвалидирует stale READY cache,
-  reconciles каждый direct и проверяет, что exact candidate device вошёл в READY
-  required roster;
-- сохранять multi-epoch invariant: перед каждым Commit существующий leaf сначала
-  скачивает/расшифровывает ещё retained messages текущего epoch в encrypted archive;
-- обработка независима от выбранного UI chat: Settings может оставаться открытым,
-  scanner/display role не задаёт permanent primary device;
-- ошибки одного direct не блокируют остальные; unfinished список явно отображается и
-  retry-ится по durable events/повторному foreground pass;
-- не менять OpenMLS ciphersuite, credential identity, signer ownership, Welcome/
-  Commit framing и server ciphertext opacity.
+- сохранять расшифрованный canonical text payload вместе с immutable envelope только
+  внутри существующего AES-GCM encrypted local archive; server refresh не стирает
+  уже восстановленную local copy;
+- сохранять plaintext исходящего MLS message в encrypted outbox/archive, потому что
+  OpenMLS по правилам forward secrecy не может расшифровать message собственного
+  sender ratchet после отправки;
+- добавить PostgreSQL relay rows, привязанные к authorized pairing, exact sender /
+  counterpart target device, direct conversation, monotonic sequence, idempotent
+  chunk ID, ACK, byte/record limit и TTL;
+- transfer payload защищать стандартным MLS `PrivateMessage` текущего READY epoch;
+  не добавлять самостоятельный AES/ECDH/ratchet. Один chunk = один MLS application
+  generation, максимум 20 chunks на direction/conversation — значительно ниже
+  OpenMLS `maximum_forward_distance=1000`;
+- source экспортирует только сообщения, которые уже может локально показать, и
+  authenticated tombstones; недоступные записи считаются gap и не угадываются;
+- target валидирует version, pairing/conversation/chunk binding, bounded ordered
+  records, immutable IDs/sequences/metadata и duplicate consistency до archive put;
+- обе стороны запускают export + inbound import; retries/resume используют server
+  chunk sequence/ACK и не требуют одновременного peer connection после upload;
+- UI различает `history syncing`, `partial/gaps`, `ready`; отсутствие history не
+  откатывает успешный MLS enrollment и не блокирует future messages.
 
 ### Security invariants
 
-- только устройство, уже являющееся leaf latest READY generation, может author-ить
-  add-leaf Commit; candidate не перепрыгивает это правило;
-- backend `Device` или pairing approval сами по себе не означают MLS membership;
-- candidate учитывается в roster только после immutable public identity и валидного
-  one-time KeyPackage; missing package остаётся fail-closed;
-- перед epoch advance выполняется retention drain; network/storage/decrypt failure
-  останавливает конкретный Commit, а не уничтожает local state;
-- никакие private keys, epoch secrets, plaintext или archive keys не проходят server,
-  QR payload, Vue component state, logs или sync events;
-- device/session revoke и logout по-прежнему создают отдельный removal reconciliation,
-  а pairing не меняет чужие conversations/accounts.
+- server не получает plaintext, archive key, signer, epoch secret или candidate proof;
+- relay доступен только двум active sessions/devices exact authorized pairing и только
+  для direct, где paired account является active member;
+- MLS authentication остаётся cryptographic source authentication; HTTP binding не
+  заменяет проверку `PrivateMessage`;
+- hidden transfer generations bounded; target обрабатывает их по relay sequence, ACK
+  только после durable encrypted local commit;
+- contradictory duplicate, malformed payload, wrong conversation/target/pairing,
+  revoked session/device и expired transfer fail closed без удаления local archive;
+- transferred plaintext никогда не попадает в logs, URLs, analytics, Vue debug state
+  или обычную message API; memory очищается после encode/decode насколько позволяет JS;
+- server ciphertext retention и local archive retention остаются разными политиками.
 
 ### Verification
 
-- application test: first identity registration emits one event per affected user /
-  conversation, exact retry emits none, wrong/revoked device emits none;
-- PostgreSQL integration: identity + initial KeyPackage + roster events commit одной
-  транзакцией и доступны после нового engine lifecycle;
-- frontend service tests: candidate identity delay, stale READY cache, several direct,
-  partial failure/retry, target roster verification и bounded timeout;
-- component test: successful pairing starts enrollment without navigation/open-chat;
-- existing messenger startup/durable roster-event regressions remain green;
-- Ruff/format/mypy/pytest, frontend lint/typecheck/test/build, Compose and full CI.
+- archive/outbox codec tests: local plaintext encrypted at rest, survives reload,
+  server envelope refresh preserves it, corruption fails closed;
+- backend application/HTTP/PostgreSQL tests: both directions, wrong device/account /
+  conversation, duplicate exact/conflict, byte limits, ACK authorization, TTL/restart;
+- frontend transfer tests: mutually missing ranges, own-sent content, tombstone,
+  duplicate/out-of-order relay, partial undecryptable source, restart/resume and gaps;
+- MLS runtime regression: hidden chunks remain below forward-distance bound and normal
+  visible message decrypts after skipped relay generations;
+- full backend/frontend/crypto/Compose CI before rollout.
 
-### Exclusions / next slice
+### Exclusions
 
-- pre-membership history/old epoch secrets не выдаются новому leaf;
-- двусторонний archive manifest/chunk union остаётся `WP-081`;
-- media archive transfer, key transparency и External Commit recovery не входят;
-- physical iOS/macOS pairing acceptance и production rollout выполняются после
-  `WP-081`, чтобы UI не обещал полную history sync раньше реализации.
+- attachments/media, preferences/read receipts and history beyond available local/server
+  sources;
+- peer-to-peer WebRTC optimization, External Commit, key transparency;
+- transfer from revoked device or automatic plaintext backup;
+- production flag before physical iOS/macOS/Android/browser matrix.
 
 ### Definition of Done
 
-- QR-linked candidate появляется в READY roster каждого доступного direct без открытия
-  чатов и без online собеседника;
-- restart/missed WebSocket не теряет enrollment wake-up;
-- approving existing leaf сохраняет retained history до каждого epoch advance;
-- partial failures видимы, безопасно повторяемы и не вызывают downgrade/reset;
-- focused commit и полный verification suite завершены.
+- both QR directions perform union, not source overwrite;
+- available sent/received text and tombstones survive target reload encrypted at rest;
+- duplicate/restart is idempotent and server remains opaque;
+- gaps are explicit and future MLS messaging remains usable;
+- focused commit, migration, tests and security documentation complete.
 
 ### Verification result
 
-- backend Ruff/format/mypy и `259 passed, 12 skipped` прошли;
-- PostgreSQL integration после fresh migration подтвердил atomic durable events,
-  exact retry без дублей и чтение после нового engine lifecycle;
-- frontend lint/typecheck, `285 passed` и production build прошли;
-- service regressions покрывают delayed candidate identity, stale READY, target roster,
-  bounded incomplete result, independent direct failures и epoch drain callback;
-- component regression подтверждает запуск enrollment прямо из Settings без перехода
-  в chat; Compose/deploy checks и `git diff --check` прошли.
+- backend Ruff/format/mypy и полный pytest green;
+- frontend lint/typecheck, 287 tests и production Nuxt/PWA build green;
+- HTTP negative checks подтверждают CSRF и exact target binding;
+- fresh PostgreSQL migrations до `0025`, upload, полный engine restart и target
+  retrieval прошли на отдельном временном PostgreSQL 17 container;
+- rollout удерживается до additive migration/deploy checks и physical
+  iOS/macOS/Android PWA matrix; attachment/media transfer остаётся вне этого slice.

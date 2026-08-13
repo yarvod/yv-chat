@@ -1,6 +1,7 @@
 import type {
   CreatedDevicePairing,
   DevicePairingView,
+  DeviceHistoryRelayChunk,
 } from '../../domain/accounts/device-pairing'
 
 export interface DevicePairingGateway {
@@ -19,4 +20,14 @@ export interface DevicePairingGateway {
   authorize(pairingId: string, candidateProof: string): Promise<void>
   cancelCandidate(pairingId: string, candidateProof: string): Promise<DevicePairingView>
   cancelTrusted(pairingId: string): Promise<DevicePairingView>
+  uploadHistoryChunk(
+    pairingId: string,
+    targetDeviceId: string,
+    conversationId: string,
+    clientChunkId: string,
+    ciphertextBase64: string,
+  ): Promise<DeviceHistoryRelayChunk>
+  listHistoryChunks(pairingId: string): Promise<readonly DeviceHistoryRelayChunk[]>
+  listOutboundHistoryChunks(pairingId: string): Promise<readonly DeviceHistoryRelayChunk[]>
+  acknowledgeHistoryChunk(pairingId: string, chunkId: string): Promise<void>
 }

@@ -1,5 +1,7 @@
-import { MessageArchiveError } from '../../application/ports/message-archive'
-import type { OpaqueMessage } from '../../domain/messaging/models'
+import {
+  type ArchivedMessage,
+  MessageArchiveError,
+} from '../../application/ports/message-archive'
 
 export const ARCHIVE_RECORD_SCHEMA_VERSION = 1
 export const ARCHIVE_IV_LENGTH = 12
@@ -53,7 +55,7 @@ function isNullableString(value: unknown): value is string | null {
   return value === null || typeof value === 'string'
 }
 
-function parseMessage(value: unknown): OpaqueMessage {
+function parseMessage(value: unknown): ArchivedMessage {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new MessageArchiveError('corrupt')
   }
@@ -86,6 +88,7 @@ function parseMessage(value: unknown): OpaqueMessage {
   const deletionReason = item.deletionReason as 'manual' | 'expired' | null
   const cryptoGenerationId = item.cryptoGenerationId ?? null
   const cryptoEpoch = item.cryptoEpoch ?? null
+  const localPlaintext = item.localPlaintext
   if (
     (ciphertextBase64 !== null && (deletionReason !== null || deletedAt !== null))
     || (ciphertextBase64 === null && (deletionReason === null || deletedAt === null))
@@ -98,6 +101,12 @@ function parseMessage(value: unknown): OpaqueMessage {
     )
     || (Number(item.protocolVersion) !== 2 && (
       cryptoGenerationId !== null || cryptoEpoch !== null
+    ))
+    || (localPlaintext !== undefined && (
+      typeof localPlaintext !== 'string'
+      || localPlaintext.length === 0
+      || localPlaintext.length > 32_000
+      || ciphertextBase64 === null
     ))
   ) {
     throw new MessageArchiveError('corrupt')
@@ -117,10 +126,11 @@ function parseMessage(value: unknown): OpaqueMessage {
     ciphertextBase64,
     deletionReason,
     deletedAt,
+    ...(typeof localPlaintext === 'string' ? { localPlaintext } : {}),
   }
 }
 
-function transportSnapshot(message: OpaqueMessage): OpaqueMessage {
+function transportSnapshot(message: ArchivedMessage): ArchivedMessage {
   return {
     messageId: message.messageId,
     clientMessageId: message.clientMessageId,
@@ -136,6 +146,7 @@ function transportSnapshot(message: OpaqueMessage): OpaqueMessage {
     ciphertextBase64: message.ciphertextBase64,
     deletionReason: message.deletionReason,
     deletedAt: message.deletedAt,
+    ...(message.localPlaintext ? { localPlaintext: message.localPlaintext } : {}),
   }
 }
 
@@ -162,7 +173,7 @@ export class MessageArchiveCodec {
     key: CryptoKey,
     ownerUserId: string,
     conversationId: string,
-    message: OpaqueMessage,
+    message: ArchivedMessage,
   ): Promise<EncryptedMessageRecord> {
     const iv = this.randomValues(new Uint8Array(ARCHIVE_IV_LENGTH))
     const encoded = this.encoder.encode(JSON.stringify(transportSnapshot(message)))
@@ -200,7 +211,7 @@ export class MessageArchiveCodec {
     record: EncryptedMessageRecord,
     ownerUserId: string,
     conversationId: string,
-  ): Promise<OpaqueMessage> {
+  ): Promise<ArchivedMessage> {
     try {
       this.validateRecord(record, ownerUserId, conversationId)
       const decryptedBuffer = await this.subtle.decrypt(

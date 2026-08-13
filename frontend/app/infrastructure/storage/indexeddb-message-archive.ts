@@ -1,8 +1,8 @@
 import type {
+  ArchivedMessage,
   MessageArchive,
 } from '../../application/ports/message-archive'
 import { MessageArchiveError } from '../../application/ports/message-archive'
-import type { OpaqueMessage } from '../../domain/messaging/models'
 import { requestResult, transactionDone } from './indexeddb-operations'
 import {
   type ArchiveKeyRecord,
@@ -73,7 +73,7 @@ export class IndexedDbMessageArchive implements MessageArchive {
     ownerUserId: string,
     conversationId: string,
     limit: number,
-  ): Promise<OpaqueMessage[]> {
+  ): Promise<ArchivedMessage[]> {
     return this.load(ownerUserId, conversationId, MAX_SEQUENCE, limit)
   }
 
@@ -82,7 +82,7 @@ export class IndexedDbMessageArchive implements MessageArchive {
     conversationId: string,
     beforeSequence: number,
     limit: number,
-  ): Promise<OpaqueMessage[]> {
+  ): Promise<ArchivedMessage[]> {
     if (!Number.isSafeInteger(beforeSequence) || beforeSequence <= 0) {
       throw new MessageArchiveError('corrupt')
     }
@@ -98,7 +98,7 @@ export class IndexedDbMessageArchive implements MessageArchive {
     conversationId: string,
     afterSequence: number,
     limit: number,
-  ): Promise<OpaqueMessage[]> {
+  ): Promise<ArchivedMessage[]> {
     if (!Number.isSafeInteger(afterSequence) || afterSequence < 0) {
       throw new MessageArchiveError('corrupt')
     }
@@ -118,7 +118,7 @@ export class IndexedDbMessageArchive implements MessageArchive {
   async put(
     ownerUserId: string,
     conversationId: string,
-    messages: readonly OpaqueMessage[],
+    messages: readonly ArchivedMessage[],
   ): Promise<void> {
     if (!validScope(ownerUserId, conversationId)) throw new MessageArchiveError('corrupt')
     if (messages.length === 0) return
@@ -131,7 +131,14 @@ export class IndexedDbMessageArchive implements MessageArchive {
     }
     try {
       const [database, key] = await Promise.all([this.open(), this.ensureKey(ownerUserId)])
-      const encrypted = await Promise.all(messages.map(message => this.codec.seal(
+      const merged = await Promise.all(messages.map(message => this.mergeExistingLocalCopy(
+        database,
+        key,
+        ownerUserId,
+        conversationId,
+        message,
+      )))
+      const encrypted = await Promise.all(merged.map(message => this.codec.seal(
         key,
         ownerUserId,
         conversationId,
@@ -160,7 +167,7 @@ export class IndexedDbMessageArchive implements MessageArchive {
     conversationId: string,
     upperSequence: number,
     limit: number,
-  ): Promise<OpaqueMessage[]> {
+  ): Promise<ArchivedMessage[]> {
     return this.loadRange(
       ownerUserId,
       conversationId,
@@ -176,7 +183,7 @@ export class IndexedDbMessageArchive implements MessageArchive {
     range: IDBKeyRange,
     limit: number,
     direction: IDBCursorDirection,
-  ): Promise<OpaqueMessage[]> {
+  ): Promise<ArchivedMessage[]> {
     if (!validScope(ownerUserId, conversationId) || !validPage(limit)) {
       throw new MessageArchiveError('corrupt')
     }
@@ -240,6 +247,45 @@ export class IndexedDbMessageArchive implements MessageArchive {
       throw new MessageArchiveError('corrupt')
     }
     return record.key
+  }
+
+  private async mergeExistingLocalCopy(
+    database: IDBDatabase,
+    key: CryptoKey,
+    ownerUserId: string,
+    conversationId: string,
+    incoming: ArchivedMessage,
+  ): Promise<ArchivedMessage> {
+    const transaction = database.transaction(MESSAGES_STORE, 'readonly')
+    const completed = transactionDone(transaction)
+    const record = await requestResult(transaction.objectStore(MESSAGES_STORE).get([
+      ownerUserId,
+      conversationId,
+      incoming.sequence,
+    ])) as EncryptedMessageRecord | undefined
+    await completed
+    if (!record) return incoming
+    const existing = await this.codec.open(key, record, ownerUserId, conversationId)
+    const sameIdentity = existing.messageId === incoming.messageId
+      && existing.clientMessageId === incoming.clientMessageId
+      && existing.conversationId === incoming.conversationId
+      && existing.senderUserId === incoming.senderUserId
+      && existing.senderDeviceId === incoming.senderDeviceId
+      && existing.protocolVersion === incoming.protocolVersion
+      && existing.cryptoGenerationId === incoming.cryptoGenerationId
+      && existing.cryptoEpoch === incoming.cryptoEpoch
+      && existing.sequence === incoming.sequence
+      && existing.createdAt === incoming.createdAt
+      && existing.expiresAt === incoming.expiresAt
+    if (!sameIdentity) throw new MessageArchiveError('corrupt')
+    if (incoming.ciphertextBase64 === null) return incoming
+    if (existing.ciphertextBase64 === null) throw new MessageArchiveError('corrupt')
+    if (existing.ciphertextBase64 !== incoming.ciphertextBase64) {
+      throw new MessageArchiveError('corrupt')
+    }
+    return incoming.localPlaintext || !existing.localPlaintext
+      ? incoming
+      : { ...incoming, localPlaintext: existing.localPlaintext }
   }
 
   private readRecords(

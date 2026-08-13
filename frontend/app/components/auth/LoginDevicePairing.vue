@@ -55,7 +55,18 @@ async function authorize(pairingId: string): Promise<void> {
   busy.value = true
   error.value = null
   try {
-    auth.replaceCurrentUser(await $frontend.devicePairing.authorize(pairingId))
+    const authorized = await $frontend.devicePairing.authorize(pairingId)
+    auth.replaceCurrentUser(authorized.account)
+    const trustedDeviceId = authorized.pairing.trustedDeviceId
+    if (trustedDeviceId) {
+      $frontend.deviceHistorySync.queue({
+        ownerUserId: authorized.account.userId,
+        currentDeviceId: authorized.account.deviceId,
+        pairingId,
+        targetDeviceId: trustedDeviceId,
+        expiresAt: new Date(Date.parse(authorized.pairing.expiresAt) + 86_400_000).toISOString(),
+      })
+    }
     activePairingId = null
     stopPolling()
     emit('authorized')

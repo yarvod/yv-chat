@@ -1,4 +1,5 @@
 import type { MessageAttachment, OpaqueMessage } from '../../domain/messaging/models'
+import type { ArchivedMessage } from '../ports/message-archive'
 import { decodeGroupMessageContent } from './group-message-content'
 import { decodeTextMessageContent } from './text-message-content'
 import {
@@ -30,28 +31,31 @@ function unavailableLabel(error: unknown): string {
 }
 
 export async function prepareTimelineMessage(
-  message: OpaqueMessage,
+  message: ArchivedMessage,
   protection: ProtocolMessageProtection,
 ): Promise<TimelineMessage> {
+  const { localPlaintext: _localPlaintext, ...envelope } = message
   if (message.ciphertextBase64 === null) {
     return {
-      ...message,
+      ...envelope,
       contentState: 'deleted',
       displayBody: null,
       contentSecure: false,
     }
   }
   try {
-    const content = await protection.unprotectText(message.protocolVersion, {
-      conversationId: message.conversationId,
-      clientMessageId: message.clientMessageId,
-      ciphertextBase64: message.ciphertextBase64,
-    })
+    const content = message.localPlaintext
+      ? { plaintext: message.localPlaintext, secure: message.protocolVersion === 2 }
+      : await protection.unprotectText(message.protocolVersion, {
+          conversationId: message.conversationId,
+          clientMessageId: message.clientMessageId,
+          ciphertextBase64: message.ciphertextBase64,
+        })
     const decoded = message.protocolVersion === 1
       ? decodeGroupMessageContent(content.plaintext)
       : { ...decodeTextMessageContent(content.plaintext), attachments: [] }
     return {
-      ...message,
+      ...envelope,
       contentState: 'available',
       displayBody: decoded.text,
       ...(decoded.attachments.length > 0 ? { displayAttachments: decoded.attachments } : {}),
@@ -63,7 +67,7 @@ export async function prepareTimelineMessage(
     }
   } catch (error) {
     return {
-      ...message,
+      ...envelope,
       contentState: 'unavailable',
       displayBody: unavailableLabel(error),
       contentSecure: false,

@@ -29,6 +29,7 @@ class DevicePairingView:
     authentication_code: str | None
     expires_at: datetime
     authorized_device_id: UUID | None
+    trusted_device_id: UUID | None
 
 
 def pairing_authentication_code(pairing: DevicePairing) -> str | None:
@@ -109,6 +110,7 @@ async def build_pairing_view(
         ),
         expires_at=pairing.expires_at,
         authorized_device_id=pairing.authorized_device_id,
+        trusted_device_id=pairing.trusted_device_id,
     )
 
 
