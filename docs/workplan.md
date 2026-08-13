@@ -6,7 +6,8 @@
 
 ## WP-074 — Standalone managed registration invitations
 
-Статус: **implemented and locally verified; production rollout pending**
+Статус: **completed and production verified** (`50d0b6d`, workflow
+`31701582705`)
 
 Цель: администратор выпускает и управляет одноразовыми приглашениями без создания
 псевдопользователя, а приглашённый сам выбирает уникальный username, display name и
@@ -74,6 +75,11 @@
 - локальная browser-проверка на viewport `390x844` подтвердила отсутствие
   horizontal overflow, token/code input в DOM и console errors; username/password
   autocomplete hints корректны, fragment очищается;
-- production acceptance для фактического `429` остаётся частью rollout: перед
-  reload выполняются scoped config install и `nginx -t`; другие virtual hosts и
-  общий Nginx не изменяются без успешной проверки.
+- production migration находится на `0023_registration_invitations`; immutable
+  backend/frontend tag — `sha-50d0b6db9526f83fb5e5dbdc6622108a6e8002b1`;
+- scoped `chat.yoowee.ru` vhost установлен после успешного общего `nginx -t` с
+  backup `chat.yoowee.ru.conf.before-50d0b6d`; graceful reload и повторный
+  `nginx -t` прошли;
+- HTTPS acceptance: API/frontend `200`, unauthenticated WebSocket `403` без `502`,
+  шесть invalid-registration requests получили bounded `400`, следующие два —
+  ожидаемый `429`; соседние `infra-*` containers сохранили uptime.

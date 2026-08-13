@@ -557,8 +557,8 @@ generic background notification, focus/navigation и invalid-subscription cleanu
 
 ### BL-074 — Standalone managed registration invitations
 
-Статус: **implemented, full-CI/database/browser verified; production rollout
-pending** (`WP-074`).
+Статус: **completed and production verified** (`WP-074`, `50d0b6d`, workflow
+`31701582705`).
 
 - standalone invitation lifecycle без inactive pseudo-user;
 - admin list/revoke, transient link/QR и self-chosen unique username;
