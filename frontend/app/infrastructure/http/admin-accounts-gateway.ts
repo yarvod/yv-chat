@@ -6,6 +6,10 @@ import type {
   ManagedUserUpdate,
   PasswordResetIssue,
 } from '../../domain/accounts/managed-user'
+import type {
+  CreatedRegistrationInvitation,
+  RegistrationInvitationsPage,
+} from '../../domain/accounts/registration-invitation'
 import type { ApiClient } from './api-client'
 import {
   parseActivationReissue,
@@ -13,6 +17,8 @@ import {
   parseManagedUsers,
   parseManagedUserUpdate,
   parsePasswordResetIssue,
+  parseCreatedRegistrationInvitation,
+  parseRegistrationInvitations,
 } from './admin-accounts-parsers'
 
 export class HttpAdminAccountsGateway implements AdminAccountsGateway {
@@ -52,5 +58,25 @@ export class HttpAdminAccountsGateway implements AdminAccountsGateway {
       `/api/v1/admin/users/${userId}/password-reset`,
       { method: 'POST' },
     ))
+  }
+
+  async listInvitations(limit: number, offset: number): Promise<RegistrationInvitationsPage> {
+    return parseRegistrationInvitations(await this.apiClient.request(
+      `/api/v1/admin/invitations?limit=${limit}&offset=${offset}`,
+    ))
+  }
+
+  async createInvitation(label: string | null): Promise<CreatedRegistrationInvitation> {
+    return parseCreatedRegistrationInvitation(await this.apiClient.request(
+      '/api/v1/admin/invitations',
+      { method: 'POST', body: { label } },
+    ))
+  }
+
+  async revokeInvitation(invitationId: string): Promise<void> {
+    await this.apiClient.request(
+      `/api/v1/admin/invitations/${encodeURIComponent(invitationId)}/revoke`,
+      { method: 'POST' },
+    )
   }
 }

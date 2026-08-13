@@ -3,6 +3,7 @@ import { onBeforeUnmount, onMounted, ref } from 'vue'
 
 import { ApplicationError } from '../../application/errors'
 import type { ManagedUser } from '../../domain/accounts/managed-user'
+import type { RegistrationInvitation } from '../../domain/accounts/registration-invitation'
 import ManagedUserRow from './ManagedUserRow.vue'
 import TransientCredentialCard from './TransientCredentialCard.vue'
 
@@ -13,8 +14,13 @@ withDefaults(defineProps<{ embedded?: boolean, currentUserId?: string | null }>(
 const emit = defineEmits<{ close: [] }>()
 const { $frontend } = useNuxtApp()
 const users = ref<ManagedUser[]>([])
-const username = ref('')
-const displayName = ref('')
+const invitationLabel = ref('')
+const invitations = ref<RegistrationInvitation[]>([])
+const invitationsTotal = ref(0)
+const invitationOffset = ref(0)
+const invitationPageSize = 20
+const invitationsLoading = ref(true)
+const invitationBusyId = ref<string | null>(null)
 const search = ref('')
 const total = ref(0)
 const offset = ref(0)
@@ -31,6 +37,7 @@ const credential = ref<{
   expiresAt: string
 } | null>(null)
 const pendingAction = ref<{ kind: 'toggle' | 'reset', item: ManagedUser } | null>(null)
+const pendingInvitation = ref<RegistrationInvitation | null>(null)
 
 function clearCredential(): void {
   credential.value = null
@@ -56,30 +63,61 @@ async function load(nextOffset = offset.value): Promise<void> {
   }
 }
 
-async function invite(): Promise<void> {
+async function loadInvitations(nextOffset = invitationOffset.value): Promise<void> {
+  invitationsLoading.value = true
+  try {
+    const page = await $frontend.listRegistrationInvitations.execute(
+      invitationPageSize,
+      nextOffset,
+    )
+    invitations.value = page.items
+    invitationsTotal.value = page.total
+    invitationOffset.value = page.offset
+  } catch {
+    message.value = 'Не удалось загрузить приглашения.'
+  } finally {
+    invitationsLoading.value = false
+  }
+}
+
+async function createInvitation(): Promise<void> {
   inviteBusy.value = true
   message.value = null
   clearCredential()
   try {
-    const invitation = await $frontend.inviteUser.execute(
-      username.value.trim().toLowerCase(),
-      displayName.value.trim(),
+    const invitation = await $frontend.createRegistrationInvitation.execute(
+      invitationLabel.value.trim() || null,
     )
     credential.value = {
-      title: `Одноразовое приглашение для @${invitation.username}`,
-      description: 'Секрет находится после # и не отправляется серверу при открытии ссылки.',
+      title: invitation.label
+        ? `Одноразовое приглашение: ${invitation.label}`
+        : 'Одноразовое приглашение',
+      description: 'Ссылка и QR показываются только сейчас. После закрытия их нельзя восстановить.',
       link: $frontend.buildInvitationLink.execute(invitation.activationSecret),
       expiresAt: invitation.expiresAt,
     }
-    username.value = ''
-    displayName.value = ''
-    await load(0)
-  } catch (error) {
-    message.value = error instanceof ApplicationError && error.status === 409
-      ? 'Это имя пользователя уже занято.'
-      : 'Не удалось создать приглашение.'
+    invitationLabel.value = ''
+    await loadInvitations(0)
+  } catch {
+    message.value = 'Не удалось создать приглашение.'
   } finally {
     inviteBusy.value = false
+  }
+}
+
+async function revokeInvitation(): Promise<void> {
+  const invitation = pendingInvitation.value
+  if (!invitation) return
+  pendingInvitation.value = null
+  invitationBusyId.value = invitation.invitationId
+  message.value = null
+  try {
+    await $frontend.revokeRegistrationInvitation.execute(invitation.invitationId)
+    await loadInvitations()
+  } catch {
+    message.value = 'Не удалось отозвать приглашение.'
+  } finally {
+    invitationBusyId.value = null
   }
 }
 
@@ -155,7 +193,7 @@ async function copyCredential(): Promise<void> {
   }
 }
 
-onMounted(load)
+onMounted(() => Promise.all([load(), loadInvitations()]))
 onBeforeUnmount(clearCredential)
 </script>
 
@@ -170,19 +208,52 @@ onBeforeUnmount(clearCredential)
         <button v-if="!embedded" class="icon-button" type="button" aria-label="Закрыть" @click="close">×</button>
       </header>
 
-      <form class="invite-form" @submit.prevent="invite">
-        <label>
-          <span>Имя пользователя</span>
-          <input v-model="username" required minlength="3" maxlength="32" pattern="[a-z0-9_.-]+" autocomplete="off">
-        </label>
-        <label>
-          <span>Отображаемое имя</span>
-          <input v-model="displayName" required maxlength="80" autocomplete="off">
-        </label>
-        <button class="primary-button compact" type="submit" :disabled="inviteBusy">
-          {{ inviteBusy ? 'Создаём…' : 'Создать приглашение' }}
-        </button>
-      </form>
+      <section class="admin-subsection" aria-labelledby="invitations-title">
+        <div class="admin-subsection-heading">
+          <div>
+            <h3 id="invitations-title">Приглашения</h3>
+            <p>Пользователь сам выберет username, имя и пароль.</p>
+          </div>
+          <small>{{ invitationsTotal }} всего</small>
+        </div>
+        <form class="invite-form invite-form--standalone" @submit.prevent="createInvitation">
+          <label>
+            <span>Метка для себя (необязательно)</span>
+            <input v-model="invitationLabel" maxlength="80" placeholder="Например, для Васи" autocomplete="off">
+          </label>
+          <button class="primary-button compact" type="submit" :disabled="inviteBusy">
+            {{ inviteBusy ? 'Создаём…' : 'Создать ссылку и QR' }}
+          </button>
+        </form>
+
+        <p v-if="invitationsLoading" class="muted">Загружаем приглашения…</p>
+        <div v-else class="registration-invitations">
+          <p v-if="invitations.length === 0" class="muted">Приглашений пока нет.</p>
+          <article v-for="item in invitations" v-else :key="item.invitationId" class="registration-invitation-row">
+            <span class="managed-user-identity">
+              <strong>{{ item.label || 'Без метки' }}</strong>
+              <small>Создал @{{ item.createdByUsername }} · {{ new Date(item.createdAt).toLocaleString() }}</small>
+              <small v-if="item.registeredUsername">Аккаунт: @{{ item.registeredUsername }}</small>
+              <small v-else>Истекает {{ new Date(item.expiresAt).toLocaleString() }}</small>
+            </span>
+            <span class="status-pill" :class="{ active: item.status === 'active' }">
+              {{ item.status === 'active' ? 'активно' : item.status === 'used' ? 'использовано' : item.status === 'expired' ? 'истекло' : 'отозвано' }}
+            </span>
+            <button
+              v-if="item.status === 'active'"
+              class="text-button"
+              type="button"
+              :disabled="invitationBusyId === item.invitationId"
+              @click="pendingInvitation = item"
+            >Отозвать</button>
+          </article>
+        </div>
+        <nav v-if="invitationsTotal > invitationPageSize" class="admin-pagination" aria-label="Страницы приглашений">
+          <button class="button button--secondary button--compact" type="button" :disabled="invitationOffset === 0 || invitationsLoading" @click="loadInvitations(Math.max(0, invitationOffset - invitationPageSize))">Назад</button>
+          <span>{{ invitationOffset + 1 }}–{{ Math.min(invitationOffset + invitations.length, invitationsTotal) }} из {{ invitationsTotal }}</span>
+          <button class="button button--secondary button--compact" type="button" :disabled="invitationOffset + invitationPageSize >= invitationsTotal || invitationsLoading" @click="loadInvitations(invitationOffset + invitationPageSize)">Дальше</button>
+        </nav>
+      </section>
 
       <p v-if="message" class="form-message notice" role="alert">{{ message }}</p>
 
@@ -208,6 +279,17 @@ onBeforeUnmount(clearCredential)
         <div class="inline-actions">
           <button class="text-button" type="button" @click="pendingAction = null">Отмена</button>
           <button class="button button--primary button--compact" type="button" @click="executePending">Подтвердить</button>
+        </div>
+      </section>
+
+      <section v-if="pendingInvitation" class="admin-confirm" role="alertdialog" aria-labelledby="revoke-invitation-title">
+        <div>
+          <strong id="revoke-invitation-title">Отозвать приглашение?</strong>
+          <p>Открытая у получателя форма сразу перестанет работать. Вернуть эту ссылку будет нельзя.</p>
+        </div>
+        <div class="inline-actions">
+          <button class="text-button" type="button" @click="pendingInvitation = null">Отмена</button>
+          <button class="button button--primary button--compact" type="button" @click="revokeInvitation">Отозвать</button>
         </div>
       </section>
 

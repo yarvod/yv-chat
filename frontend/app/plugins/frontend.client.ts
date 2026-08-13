@@ -2,6 +2,12 @@ import { ActivateAccount } from '../application/accounts/activate-account'
 import { ChangePassword } from '../application/accounts/change-password'
 import { BuildInvitationLink, ConsumeActivationFragment } from '../application/accounts/invitation-links'
 import { InviteUser } from '../application/accounts/invite-user'
+import {
+  CreateRegistrationInvitation,
+  ListRegistrationInvitations,
+  RevokeRegistrationInvitation,
+} from '../application/accounts/manage-registration-invitations'
+import { RegisterAccount } from '../application/accounts/register-account'
 import { IssuePasswordReset } from '../application/accounts/issue-password-reset'
 import { ListManagedUsers } from '../application/accounts/list-managed-users'
 import { ListDeviceSessions } from '../application/accounts/list-device-sessions'
@@ -171,8 +177,18 @@ export default defineNuxtPlugin(() => {
         login: new Login(authGateway, deviceInfo, haptics),
         logout: new Logout(authGateway),
         activateAccount: new ActivateAccount(authGateway, haptics),
+        registerAccount: new RegisterAccount(authGateway, deviceInfo, haptics),
         listManagedUsers: new ListManagedUsers(adminAccountsGateway),
         inviteUser: new InviteUser(adminAccountsGateway, haptics),
+        listRegistrationInvitations: new ListRegistrationInvitations(adminAccountsGateway),
+        createRegistrationInvitation: new CreateRegistrationInvitation(
+          adminAccountsGateway,
+          haptics,
+        ),
+        revokeRegistrationInvitation: new RevokeRegistrationInvitation(
+          adminAccountsGateway,
+          haptics,
+        ),
         setManagedUserActive: new SetManagedUserActive(adminAccountsGateway, haptics),
         reissueActivation: new ReissueActivation(adminAccountsGateway, haptics),
         issuePasswordReset: new IssuePasswordReset(adminAccountsGateway, haptics),

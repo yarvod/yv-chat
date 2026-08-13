@@ -27,6 +27,9 @@ from messenger.infrastructure.persistence.models.message import MessageModel
 from messenger.infrastructure.persistence.models.message_reaction import MessageReactionModel
 from messenger.infrastructure.persistence.models.password_reset_token import PasswordResetTokenModel
 from messenger.infrastructure.persistence.models.push_subscription import PushSubscriptionModel
+from messenger.infrastructure.persistence.models.registration_invitation import (
+    RegistrationInvitationModel,
+)
 from messenger.infrastructure.persistence.models.security_event import SecurityEventModel
 from messenger.infrastructure.persistence.models.session import SessionModel
 from messenger.infrastructure.persistence.models.sync import SyncEventModel, SyncStreamModel
@@ -50,6 +53,7 @@ __all__ = [
     "MessageReactionModel",
     "PasswordResetTokenModel",
     "PushSubscriptionModel",
+    "RegistrationInvitationModel",
     "SecurityEventModel",
     "SessionModel",
     "SyncEventModel",

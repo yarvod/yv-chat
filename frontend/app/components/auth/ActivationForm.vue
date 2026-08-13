@@ -1,69 +1,103 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref } from 'vue'
 
 import { ApplicationError } from '../../application/errors'
 
 const props = defineProps<{
-  initialSecret?: string
-  activate: (secret: string, password: string) => Promise<void>
+  hasInvitation: boolean
+  register: (
+    username: string,
+    displayName: string,
+    password: string,
+  ) => Promise<void>
 }>()
-const emit = defineEmits<{ cancel: [], activated: [] }>()
-const activationSecret = ref(props.initialSecret ?? '')
+const emit = defineEmits<{ cancel: [], registered: [] }>()
+const username = ref('')
+const displayName = ref('')
 const password = ref('')
 const confirmation = ref('')
 const busy = ref(false)
 const message = ref<string | null>(null)
 
 async function submit(): Promise<void> {
+  if (!props.hasInvitation) {
+    message.value = 'Ссылка приглашения отсутствует или уже была очищена.'
+    return
+  }
   if (password.value !== confirmation.value) {
     message.value = 'Пароли не совпадают.'
     return
   }
-  const submittedSecret = activationSecret.value.trim()
   const submittedPassword = password.value
   password.value = ''
   confirmation.value = ''
   busy.value = true
   message.value = null
   try {
-    await props.activate(submittedSecret, submittedPassword)
-    activationSecret.value = ''
-    emit('activated')
+    await props.register(
+      username.value.trim().toLowerCase(),
+      displayName.value.trim(),
+      submittedPassword,
+    )
+    emit('registered')
   } catch (error) {
-    message.value = error instanceof ApplicationError && error.kind === 'network'
-      ? 'Сервер недоступен. Повторите попытку.'
-      : 'Не удалось активировать приглашение. Проверьте код и пароль.'
+    if (error instanceof ApplicationError && error.kind === 'network') {
+      message.value = 'Сервер недоступен. Повторите попытку.'
+    } else if (error instanceof ApplicationError && error.status === 409) {
+      message.value = 'Этот username уже занят. Выберите другой — приглашение сохранено.'
+    } else if (error instanceof ApplicationError && error.status === 429) {
+      message.value = 'Слишком много попыток. Подождите минуту и попробуйте снова.'
+    } else {
+      message.value = 'Не удалось принять приглашение. Возможно, ссылка истекла или отозвана.'
+    }
   } finally {
     busy.value = false
   }
 }
-
-watch(() => props.initialSecret, value => {
-  if (value) activationSecret.value = value
-})
 </script>
 
 <template>
   <form class="auth-card" @submit.prevent="submit">
     <header>
-      <p class="eyebrow">Активация</p>
-      <h2>Принять приглашение</h2>
-      <p>Вставьте одноразовый код администратора и задайте пароль.</p>
+      <p class="eyebrow">Регистрация по приглашению</p>
+      <h2>Создайте аккаунт</h2>
+      <p>Выберите свой username, имя и пароль. После регистрации вход выполнится автоматически.</p>
     </header>
-    <label class="field">
-      <span>Код активации</span>
-      <textarea v-model="activationSecret" name="activation-secret" required minlength="32" maxlength="512" rows="3" autocomplete="off" />
-    </label>
-    <label class="field">
-      <span>Новый пароль</span>
-      <input v-model="password" name="new-password" type="password" required minlength="12" maxlength="128" autocomplete="new-password">
-    </label>
-    <label class="field">
-      <span>Повторите пароль</span>
-      <input v-model="confirmation" name="password-confirmation" type="password" required minlength="12" maxlength="128" autocomplete="new-password">
-    </label>
+    <p v-if="!hasInvitation" class="notice notice--error" role="alert">
+      Откройте полную одноразовую ссылку, которую выдал администратор.
+    </p>
+    <template v-else>
+      <label class="field">
+        <span>Username</span>
+        <input
+          v-model="username"
+          name="username"
+          required
+          minlength="3"
+          maxlength="32"
+          pattern="[a-zA-Z0-9_.-]+"
+          autocapitalize="none"
+          spellcheck="false"
+          autocomplete="username"
+        >
+      </label>
+      <label class="field">
+        <span>Отображаемое имя</span>
+        <input v-model="displayName" name="name" required maxlength="80" autocomplete="name">
+      </label>
+      <label class="field">
+        <span>Новый пароль</span>
+        <input v-model="password" name="new-password" type="password" required minlength="12" maxlength="128" autocomplete="new-password">
+      </label>
+      <label class="field">
+        <span>Повторите пароль</span>
+        <input v-model="confirmation" name="password-confirmation" type="password" required minlength="12" maxlength="128" autocomplete="new-password">
+      </label>
+    </template>
     <p v-if="message" class="notice notice--error" role="alert">{{ message }}</p>
-    <button class="button button--primary" type="submit" :disabled="busy">{{ busy ? 'Активируем…' : 'Активировать' }}</button>
+    <button v-if="hasInvitation" class="button button--primary" type="submit" :disabled="busy">
+      {{ busy ? 'Создаём аккаунт…' : 'Зарегистрироваться' }}
+    </button>
     <button class="text-link text-link--button" type="button" @click="emit('cancel')">Вернуться ко входу</button>
   </form>
 </template>

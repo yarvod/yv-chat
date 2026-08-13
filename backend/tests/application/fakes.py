@@ -37,6 +37,7 @@ from messenger.application.ports.identity import (
     ManagedUserPageRecord,
     ManagedUserRecord,
     PasswordResetTokenRepository,
+    RegistrationInvitationRepository,
     SecurityEventRepository,
     SessionCredentialMatch,
     SessionRepository,
@@ -80,6 +81,7 @@ from messenger.domain.entities import (
     Message,
     MessageReaction,
     PasswordResetToken,
+    RegistrationInvitation,
     SecurityEvent,
     Session,
     User,
@@ -93,6 +95,7 @@ class IdentityState:
     users: dict[UUID, User] = field(default_factory=dict)
     tokens: dict[UUID, ActivationToken] = field(default_factory=dict)
     password_reset_tokens: dict[UUID, PasswordResetToken] = field(default_factory=dict)
+    registration_invitations: dict[UUID, RegistrationInvitation] = field(default_factory=dict)
     password_hashes: dict[UUID, str] = field(default_factory=dict)
     devices: dict[UUID, Device] = field(default_factory=dict)
     device_crypto_identities: dict[UUID, DeviceCryptoIdentity] = field(default_factory=dict)
@@ -348,6 +351,49 @@ class FakePasswordResetTokenRepository:
 
     async def update_lifecycle(self, token: PasswordResetToken) -> None:
         self._state.password_reset_tokens[token.id] = token
+
+
+class FakeRegistrationInvitationRepository:
+    def __init__(self, state: IdentityState) -> None:
+        self._state = state
+
+    async def add(self, invitation: RegistrationInvitation) -> None:
+        self._state.registration_invitations[invitation.id] = invitation
+
+    async def get_by_hash_for_update(
+        self,
+        token_hash: str,
+    ) -> RegistrationInvitation | None:
+        return next(
+            (
+                invitation
+                for invitation in self._state.registration_invitations.values()
+                if invitation.token_hash == token_hash
+            ),
+            None,
+        )
+
+    async def get_by_id_for_update(
+        self,
+        invitation_id: UUID,
+    ) -> RegistrationInvitation | None:
+        return self._state.registration_invitations.get(invitation_id)
+
+    async def list_recent(
+        self,
+        *,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[RegistrationInvitation], int]:
+        items = sorted(
+            self._state.registration_invitations.values(),
+            key=lambda invitation: (invitation.created_at, invitation.id),
+            reverse=True,
+        )
+        return items[offset : offset + limit], len(items)
+
+    async def update_lifecycle(self, invitation: RegistrationInvitation) -> None:
+        self._state.registration_invitations[invitation.id] = invitation
 
 
 class FakeDeviceRepository:
@@ -649,6 +695,9 @@ class FakeIdentityUnitOfWork:
         self.activation_tokens: ActivationTokenRepository = FakeActivationTokenRepository(state)
         self.password_reset_tokens: PasswordResetTokenRepository = FakePasswordResetTokenRepository(
             state
+        )
+        self.registration_invitations: RegistrationInvitationRepository = (
+            FakeRegistrationInvitationRepository(state)
         )
         self.devices: DeviceRepository = FakeDeviceRepository(state)
         self.sessions: SessionRepository = FakeSessionRepository(state)

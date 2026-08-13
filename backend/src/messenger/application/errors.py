@@ -13,6 +13,18 @@ class DuplicateUsernameError(ApplicationError):
     """A normalized username is already in use."""
 
 
+class InvalidRegistrationInvitationError(ApplicationError):
+    """A registration invitation is unknown or no longer redeemable."""
+
+
+class RegistrationInvitationNotFoundError(ApplicationError):
+    """An administrator referenced an invitation that does not exist."""
+
+
+class RegistrationInvitationStateError(ApplicationError):
+    """An invitation cannot perform the requested lifecycle transition."""
+
+
 class InvalidActivationSecretError(ApplicationError):
     """The supplied activation credential is unknown."""
 

@@ -535,9 +535,19 @@ legend { padding: 0 6px; color: var(--muted); font-size: .8rem; }
 .admin-header h2 { margin: 0; font-size: clamp(2rem, 5vw, 3.5rem); letter-spacing: -.06em; }
 .invite-form { display: grid; grid-template-columns: minmax(160px, 1fr) minmax(200px, 1.2fr) auto; align-items: end; gap: 10px; padding: 18px; border: 1px solid var(--border); border-radius: 18px; background: var(--surface); }
 .invite-form label { margin: 0; }
+.invite-form--standalone { grid-template-columns: minmax(200px, 1fr) auto; }
+.admin-subsection { display: grid; gap: 12px; margin-bottom: 18px; }
+.admin-subsection-heading { display: flex; align-items: end; justify-content: space-between; gap: 16px; }
+.admin-subsection-heading h3, .admin-subsection-heading p { margin: 0; }
+.admin-subsection-heading p { color: var(--muted); }
+.registration-invitations { display: grid; gap: 8px; }
+.registration-invitation-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 12px; padding: 12px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
+.registration-invitation-row .managed-user-identity { display: grid; min-width: 0; gap: 3px; }
+.registration-invitation-row small { color: var(--muted); }
 .invitation-result { display: grid; gap: 10px; margin-top: 16px; padding: 17px; border: 1px solid color-mix(in srgb, var(--warning) 35%, var(--border)); border-radius: 17px; background: color-mix(in srgb, var(--warning) 8%, var(--surface-solid)); }
 .invitation-result p, .invitation-result small { margin: 0; color: var(--text-soft); line-height: 1.45; }
 .invitation-result code { padding: 12px; overflow-wrap: anywhere; border-radius: 10px; color: var(--warning); background: var(--field); user-select: all; }
+.invitation-qr { width: fit-content; padding: 12px; border-radius: 14px; background: #fff; }
 .managed-users { display: grid; gap: 8px; margin-top: 18px; }
 .managed-user-row { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto minmax(220px, auto); align-items: center; gap: 11px; padding: 11px; border: 1px solid transparent; border-radius: 15px; background: var(--surface); }
 .managed-user-row > span:nth-child(2) { display: grid; min-width: 0; gap: 3px; }
@@ -621,6 +631,8 @@ legend { padding: 0 6px; color: var(--muted); font-size: .8rem; }
   .device-session-actions { grid-column: 2; justify-content: flex-start; flex-wrap: wrap; }
   .settings-confirm { align-items: flex-start; flex-direction: column; }
   .invite-form { grid-template-columns: 1fr; }
+  .registration-invitation-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .registration-invitation-row .text-button { grid-column: 1 / -1; justify-self: start; }
   .admin-panel { padding: 18px; }
   .admin-panel--embedded { padding: 0; }
   .managed-user-row { grid-template-columns: 42px minmax(0, 1fr) auto; }

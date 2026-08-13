@@ -4,78 +4,76 @@
 завершённая работа фиксируется отдельным коммитом, а новый пункт переносится
 сюда из `backlog.md`.
 
-## WP-073 — Telegram-style group video notes
+## WP-074 — Standalone managed registration invitations
 
-Статус: **production permission and iOS safe-area blockers fixed locally; rollout pending**
+Статус: **implemented and locally verified; production rollout pending**
 
-Цель: участник server-readable group v1 записывает компактное круглое видео прямо
-из composer, управляет записью привычными мобильными жестами и получает устойчивое
-воспроизведение через уже существующие media TTL/cache/sync boundaries.
+Цель: администратор выпускает и управляет одноразовыми приглашениями без создания
+псевдопользователя, а приглашённый сам выбирает уникальный username, display name и
+пароль и сразу получает защищённую device-bound session.
 
 ### Scope
 
-- browser camera/microphone capture только после user gesture и только в group;
-- удержание кнопки начинает запись, swipe-left отменяет, swipe-up фиксирует запись;
-- locked mode предоставляет явные stop/send, cancel и front/back camera controls;
-- квадратный 480×480 capture, максимум 60 секунд и bounded low-bitrate encoding;
-- runtime MIME negotiation для MP4/WebM без предположения одного browser codec;
-- `video_note` presentation metadata внутри version-tolerant group content;
-- круглый player с play/pause, progress и duration без server thumbnail/transcoding;
-- существующие authorized upload, quota, TTL, cleanup и encrypted device cache
-  переиспользуются без нового media backend или schema migration.
+- отдельная `registration_invitations` persistence model с label, creator, TTL,
+  `used_at`, `revoked_at` и ссылкой на созданного пользователя;
+- admin-only create/list/revoke API; plaintext secret возвращается только при create;
+- admin UI показывает active/used/expired/revoked invitations и позволяет копировать
+  одноразовую ссылку, показать QR и немедленно отозвать active invitation;
+- activation fragment удаляется из address bar сразу после чтения и живёт только в
+  памяти до HTTPS request body; DOM input для token отсутствует;
+- приглашённый вводит username, display name и пароль дважды с корректными
+  `autocomplete=username/new-password` hints;
+- username проверяется case-insensitively и атомарно; conflict не потребляет invite;
+- успешная регистрация создаёт user, device и opaque session в одной transaction и
+  сразу открывает приложение без повторного login;
+- legacy user-bound activation links продолжают работать до естественного expiry,
+  но новые pseudo-user invitations больше не создаются;
+- public registration endpoint защищён per-IP Nginx rate limit, строгим Origin,
+  bounded body и дешёвой проверкой invitation до Argon2id.
 
-### Security and data invariants
+### Security and abuse invariants
 
-- video note доступен только в явно non-E2EE group v1 и сохраняет warning в UI;
-- direct MLS composer не получает camera control и не обходит `BL-017`;
-- camera/microphone tracks останавливаются при cancel, error, unmount, conversation
-  switch и background visibility transition;
-- backend получает group plaintext media как и для существующего group video, но
-  никогда не получает browser path или произвольный filesystem key;
-- запись не логируется, не сохраняется в `localStorage` и не добавляет plaintext push;
-- server не декодирует, не crop-ит и не транскодирует media.
+- публичная self-registration отсутствует: без active server-issued secret user не
+  создаётся;
+- БД хранит только SHA-256 digest secret; API list/HTML/logs никогда не содержат
+  secret или digest, старую ссылку невозможно восстановить после закрытия карточки;
+- revoked, expired и used invitations дают одинаковый bounded public failure;
+- username conflict сообщается только после валидного invite, чтобы endpoint не стал
+  общедоступным username-enumeration oracle;
+- row lock и database constraints допускают не более одного successful redemption;
+- rate limit защищает application/Argon2 от обычного abuse, но не обещает выдержать
+  volumetric distributed DDoS без upstream filtering.
 
 ### Exclusions
 
-- direct MLS/E2EE video notes и attachment keys;
-- persisted offline video-note draft/background upload;
-- filters, beauty effects, server thumbnails и server transcoding;
-- unbounded recording, HD/4K capture и calls/WebRTC signaling.
+- public signup без invitation;
+- хранение plaintext links для повторного просмотра;
+- IP/device blacklist как identity/authorization boundary;
+- CAPTCHA, email/SMS delivery и внешняя invitation infrastructure;
+- удаление legacy activation schema до окончания compatibility window.
 
 ### Definition of Done
 
-- hold/release отправляет один `video_note`; swipe-left не отправляет байты;
-- swipe-up сохраняет запись после release и позволяет переключить camera;
-- 60-second boundary автоматически завершает запись;
-- permission denial, unsupported recorder, capture error и too-large output имеют
-  понятный recoverable UI, а active tracks всегда остановлены;
-- повторный PWA capture после уже отклонённого native prompt объясняет, что browser
-  больше не может открыть prompt сам, и направляет в настройки PWA/site;
-- старый metadata consumer безопасно воспринимает video note как обычное video;
-- получатель видит круглый player, а generic video rendering не меняется;
-- frontend tests/lint/typecheck/build и полный repository CI проходят.
+- admin может создать, увидеть status и отозвать invite; non-admin не может;
+- QR/copy доступны только в transient create result;
+- valid invite регистрирует выбранный unique username и автоматически логинит device;
+- duplicate username не расходует invite; retry с другим username succeeds;
+- invalid/expired/revoked/used invite не запускает password hash и не создаёт user;
+- concurrent redemption создаёт ровно одного user/session;
+- Nginx возвращает 429 сверх bounded registration burst;
+- migration проходит fresh `base -> head` и upgrade с previous head;
+- backend/frontend tests, lint, typecheck, build и repository CI проходят.
 
-### Verification evidence
+### Verification
 
-- targeted recorder/gesture/metadata/rendering/message-panel suite: `41 passed`;
-- full frontend: `48 files / 260 tests`, lint/typecheck/production build green;
-- full `make ci`: backend `241 passed / 9 skipped`, Rust `21 passed`, frontend
-  `48 files / 260 tests`, lint/typecheck/build/docs/config checks green;
-- physical Android/iOS installed-PWA camera, permission and codec acceptance не
-  запускались в текущем environment и остаются обязательным pre-deploy smoke.
-- production rollout `31645619731` успешно развернул основной video-note flow;
-  последующий permission-recovery и same-origin Permissions Policy fix закрывают
-  `BUG-068` локально;
-- iPhone 13/iOS 18 acceptance выявил top safe-area overlap и keyboard viewport pan;
-  mobile shell теперь следует за размером и offset visual viewport, а list toolbar
-  резервирует верхний safe area (`BUG-069`);
-- Pixel acceptance выявил native long-press conflict и generic square bubble вокруг
-  круглого player; gesture zone теперь подавляет selection/callout только локально,
-  а standalone video note отображается без общей rectangular card (`BUG-070`);
-- дополнительный iPhone acceptance перенёс top safe area с отдельных chat headers на
-  общий mobile shell; keyboard text-entry скрывает bottom tabs, а PWA canvas и
-  `theme-color` совпадают с фоном выбранной темы при iOS rubber-band (`BUG-071`);
-- bottom navigation получила общий press animation на iOS/Android и короткий
-  `selection` vibration на поддерживающем Vibration API Android при смене раздела;
-- первый mobile tap по строке диалога теперь сразу открывает optimistic chat pane,
-  пока history/crypto selection завершается; hover ограничен mouse input (`BUG-072`).
+- полный `make ci` проходит: backend Ruff/import contracts/mypy и 255 pytest,
+  frontend lint/typecheck/Vitest/build, Rust fmt/clippy/21 tests, Compose/deploy/docs
+  checks;
+- отдельная PostgreSQL database прошла fresh `base -> head`, downgrade
+  `0023 -> 0022`, повторный upgrade и concurrent redemption integration tests;
+- локальная browser-проверка на viewport `390x844` подтвердила отсутствие
+  horizontal overflow, token/code input в DOM и console errors; username/password
+  autocomplete hints корректны, fragment очищается;
+- production acceptance для фактического `429` остаётся частью rollout: перед
+  reload выполняются scoped config install и `nginx -t`; другие virtual hosts и
+  общий Nginx не изменяются без успешной проверки.

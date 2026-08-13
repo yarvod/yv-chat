@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import QrcodeVue from 'qrcode.vue'
+
 defineProps<{
   title: string
   description: string
@@ -14,6 +16,9 @@ defineEmits<{ copy: [], hide: [] }>()
     <strong>{{ title }}</strong>
     <p>{{ description }}</p>
     <code>{{ link }}</code>
+    <div class="invitation-qr" aria-label="QR-код одноразового приглашения">
+      <QrcodeVue :value="link" :size="184" level="M" render-as="svg" />
+    </div>
     <small>Действует до {{ new Date(expiresAt).toLocaleString() }}</small>
     <div class="inline-actions">
       <button class="button button--primary button--compact" type="button" @click="$emit('copy')">{{ copied ? 'Скопировано' : 'Скопировать ссылку' }}</button>

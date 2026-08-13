@@ -9,6 +9,10 @@ from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 
 from messenger.application.accounts.activate import ActivateAccount, ActivateAccountCommand
+from messenger.application.accounts.register_with_invitation import (
+    RegisterWithInvitation,
+    RegisterWithInvitationCommand,
+)
 from messenger.application.accounts.reset_password import (
     ResetPasswordWithToken,
     ResetPasswordWithTokenCommand,
@@ -17,9 +21,11 @@ from messenger.application.errors import (
     AccountAlreadyActiveError,
     ActivationAlreadyUsedError,
     ActivationExpiredError,
+    DuplicateUsernameError,
     InvalidActivationSecretError,
     InvalidCredentialsError,
     InvalidPasswordResetSecretError,
+    InvalidRegistrationInvitationError,
     SessionNotAuthenticatedError,
     WeakPasswordError,
 )
@@ -55,6 +61,14 @@ class ActivateAccountRequest(BaseModel):
 class ActivateAccountResponse(BaseModel):
     user_id: UUID
     activated_at: datetime
+
+
+class RegisterWithInvitationRequest(BaseModel):
+    activation_secret: str = Field(min_length=32, max_length=512)
+    username: str = Field(min_length=3, max_length=32, pattern=r"^[a-zA-Z0-9_.-]+$")
+    display_name: str = Field(min_length=1, max_length=80)
+    password: str = Field(min_length=12, max_length=128)
+    device_name: str = Field(min_length=1, max_length=80)
 
 
 class ResetPasswordRequest(BaseModel):
@@ -107,6 +121,78 @@ def delete_auth_cookies(response: Response, settings: AppSettings) -> None:
         secure=True,
         httponly=False,
         samesite="strict",
+    )
+
+
+def set_new_session_cookies(
+    response: Response,
+    settings: AppSettings,
+    credential: str,
+    expires_at: datetime,
+) -> None:
+    set_session_cookie(response, settings, credential, expires_at)
+    response.set_cookie(
+        key=settings.csrf_cookie_name,
+        value=secrets.token_urlsafe(32),
+        expires=expires_at,
+        secure=True,
+        httponly=False,
+        samesite="strict",
+        path="/",
+    )
+
+
+@router.post("/register", response_model=SessionResponse)
+async def register_with_invitation(
+    request: Request,
+    response: Response,
+    payload: RegisterWithInvitationRequest,
+    settings: FromDishka[AppSettings],
+    use_case: FromDishka[RegisterWithInvitation],
+) -> SessionResponse:
+    require_allowed_origin(request, settings)
+    try:
+        result = await use_case.execute(
+            RegisterWithInvitationCommand(
+                activation_secret=payload.activation_secret,
+                username=payload.username,
+                display_name=payload.display_name,
+                password=payload.password,
+                device_name=payload.device_name,
+                client_ip=client_ip(request, settings),
+            )
+        )
+    except InvalidRegistrationInvitationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="registration failed",
+        ) from error
+    except DuplicateUsernameError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="username unavailable",
+        ) from error
+    except WeakPasswordError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="password does not meet policy",
+        ) from error
+    except DomainValidationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="invalid registration data",
+        ) from error
+    set_new_session_cookies(
+        response,
+        settings,
+        result.session_credential,
+        result.absolute_expires_at,
+    )
+    return SessionResponse(
+        user_id=result.user_id,
+        session_id=result.session_id,
+        device_id=result.device_id,
+        absolute_expires_at=result.absolute_expires_at,
     )
 
 
@@ -232,21 +318,11 @@ async def login(
             detail="invalid login data",
         ) from error
 
-    set_session_cookie(
+    set_new_session_cookies(
         response,
         settings,
         result.session_credential,
         result.absolute_expires_at,
-    )
-    csrf_value = secrets.token_urlsafe(32)
-    response.set_cookie(
-        key=settings.csrf_cookie_name,
-        value=csrf_value,
-        expires=result.absolute_expires_at,
-        secure=True,
-        httponly=False,
-        samesite="strict",
-        path="/",
     )
     return SessionResponse(
         user_id=result.user_id,

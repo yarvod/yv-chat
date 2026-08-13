@@ -35,6 +35,7 @@ def test_persistence_metadata_contains_expected_tables() -> None:
         "message_reactions",
         "password_reset_tokens",
         "push_subscriptions",
+        "registration_invitations",
         "security_events",
         "sessions",
         "sync_events",
@@ -193,6 +194,18 @@ def test_password_reset_schema_is_purpose_bound_and_stores_only_digest() -> None
     assert "used_at" in reset_tokens.columns
     assert "revoked_at" in reset_tokens.columns
     assert reset_tokens.columns["token_hash"].unique is True
+
+
+def test_registration_invitation_schema_stores_only_digest_and_lifecycle() -> None:
+    invitations = Base.metadata.tables["registration_invitations"]
+
+    assert "token_hash" in invitations.columns
+    assert "activation_secret" not in invitations.columns
+    assert "token" not in invitations.columns
+    assert "used_at" in invitations.columns
+    assert "revoked_at" in invitations.columns
+    assert "registered_user_id" in invitations.columns
+    assert invitations.columns["token_hash"].unique is True
 
 
 def test_session_schema_stores_only_hashes_and_binds_device_owner() -> None:

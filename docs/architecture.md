@@ -429,32 +429,56 @@ Public registration отсутствует:
 ```text
 initial admin bootstrap
         ↓
-admin creates invitation
+admin creates standalone invitation (no pseudo-user)
         ↓
-one-time hashed activation secret
+one-time hashed registration secret
         ↓
-user sets Argon2id password
+user chooses unique username/display name + Argon2id password
+        ↓
+account + device + opaque session are committed atomically
 ```
 
 Versioned account lifecycle transport:
 
 ```text
 active admin session
+  ├── /api/v1/admin/invitations
+      ├── create standalone invitation → plaintext secret returned once
+      ├── list safe metadata/status without secret or digest
+      └── revoke active invitation immediately
   └── /api/v1/admin/users
-      ├── list bounded account state
-      ├── create invitation → plaintext secret returned once
+      ├── list bounded activated/legacy account state
       ├── reissue → previous unconsumed secrets revoked atomically
       ├── deactivate → all target sessions/devices revoked atomically
       └── password-reset → target sessions/devices revoked + secret returned once
 
 invited user
-  └── /api/v1/auth/activate → one-time secret + new password
+  ├── /api/v1/auth/register → one-time secret + chosen identity + new password
+  │   └── protected session cookies returned without a second login
+  └── /api/v1/auth/activate → legacy user-bound invitation compatibility
 
 activated user after admin recovery action
   └── /api/v1/auth/reset-password → separate one-time secret + new password
 ```
 
-Activation-token persistence различает `used_at` и `revoked_at`; состояния взаимоисключающие. List/update DTO не содержат password hash или activation digest. Reactivation через admin API разрешена только account с уже настроенным password; первоначальное приглашение нельзя обойти выставлением `is_active`.
+`registration_invitations` существует отдельно от `users`: label/creator/TTL и
+взаимоисключающие `used_at`/`revoked_at` управляются администратором, а
+`registered_user_id` появляется только при успешном consume. Plaintext secret
+возвращается только один раз; persistence и list DTO содержат только digest либо
+безопасную metadata соответственно. URL использует fragment, который PWA удаляет из
+address bar и держит только в памяти до HTTPS body; token input в DOM отсутствует.
+Case-insensitive username uniqueness обеспечивается PostgreSQL и transaction: conflict
+не потребляет invitation. Token/state проверяются до Argon2id, поэтому invalid abuse
+не запускает дорогой password hash. Exact Nginx location `/api/v1/auth/register`
+имеет отдельный per-IP rate limit/малый body limit и не влияет на другие API routes или
+virtual hosts; volumetric DDoS всё равно требует upstream filtering.
+
+Legacy activation-token persistence различает `used_at` и `revoked_at`; уже выпущенная
+user-bound ссылка может быть принята новым экраном с выбранной пользователем identity
+либо прежним `/auth/activate` до compatibility cleanup. List/update DTO не содержат
+password hash или activation digest. Reactivation через admin API разрешена только
+account с уже настроенным password; первоначальное приглашение нельзя обойти
+выставлением `is_active`.
 
 Password recovery purpose-bound и не переиспользует activation credential. `password_reset_tokens` хранит только SHA-256 digest, TTL и взаимоисключающие `used_at`/`revoked_at`; row lock делает consume single-use при concurrent requests. Admin не задаёт чужой пароль: выдача reset-link немедленно завершает все target sessions/devices, пользователь сам задаёт новый Argon2id password, а blocked account не активируется скрыто. Admin self-reset запрещён этим transport и выполняется через authenticated step-up current-account flow. Typed `password_reset_issued`/`password_reset_completed` events не содержат secret или password.
 

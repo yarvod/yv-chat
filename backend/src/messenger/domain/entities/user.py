@@ -102,6 +102,28 @@ class User:
             raise DomainValidationError("activation time must not be before created_at")
         return replace(self, is_active=True, updated_at=timestamp)
 
+    def activate_with_identity(
+        self,
+        *,
+        username: str,
+        display_name: str,
+        now: datetime,
+    ) -> "User":
+        """Let a legacy invited account claim its identity during activation."""
+        if self.is_active:
+            raise DomainValidationError("user is already active")
+        claimed = User.create(
+            user_id=self.id,
+            username=username,
+            display_name=display_name,
+            now=self.created_at,
+            is_admin=self.is_admin,
+        )
+        timestamp = require_aware_datetime(now, "now")
+        if timestamp < self.created_at:
+            raise DomainValidationError("activation time must not be before created_at")
+        return replace(claimed, updated_at=timestamp)
+
     def rename(self, display_name: str, now: datetime) -> "User":
         """Change the user-visible name without changing identity or authorization."""
         normalized_name = normalize_bounded_text(

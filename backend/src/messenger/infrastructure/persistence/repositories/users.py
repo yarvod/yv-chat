@@ -180,9 +180,14 @@ class SqlAlchemyUserRepository:
         if model is None:
             raise RuntimeError("locked user disappeared during activation")
         model.password_hash = password_hash
+        model.username = user.username
+        model.display_name = user.display_name
         model.is_active = True
         model.updated_at = user.updated_at
-        await self._session.flush()
+        try:
+            await self._session.flush()
+        except IntegrityError as error:
+            raise DuplicateUsernameError("username is already in use") from error
 
     async def update(self, user: User) -> None:
         model = await self._session.get(UserModel, user.id)

@@ -10,6 +10,9 @@ from messenger.application.ports.identity.records import (
     SessionCredentialMatch,
     UserAuthenticationRecord,
 )
+from messenger.application.ports.identity.registration_invitations import (
+    RegistrationInvitationRepository,
+)
 from messenger.application.ports.identity.security_events import SecurityEventRepository
 from messenger.application.ports.identity.sessions import SessionRepository
 from messenger.application.ports.identity.unit_of_work import (
@@ -27,6 +30,7 @@ __all__ = [
     "ManagedUserRecord",
     "ManagedUserPageRecord",
     "PasswordResetTokenRepository",
+    "RegistrationInvitationRepository",
     "SecurityEventRepository",
     "SessionCredentialMatch",
     "SessionRepository",

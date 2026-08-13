@@ -9,7 +9,7 @@
 
 ## Статус
 
-Готовы закрытый invitation/activation/session lifecycle, admin user management и
+Готовы закрытый standalone invitation/registration/session lifecycle, admin user management и
 purpose-bound password recovery, authorized direct/group conversations,
 ordered/idempotent transport, cursor sync и usable local-first PWA. История,
 conversation index и offline outbox хранятся в bounded AES-GCM encrypted IndexedDB.

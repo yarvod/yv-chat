@@ -6,6 +6,7 @@ from messenger.domain.entities import (
     DeviceCryptoIdentity,
     DeviceKeyPackage,
     PasswordResetToken,
+    RegistrationInvitation,
     SecurityEvent,
     SecurityEventType,
     Session,
@@ -17,6 +18,7 @@ from messenger.infrastructure.persistence.models import (
     DeviceKeyPackageModel,
     DeviceModel,
     PasswordResetTokenModel,
+    RegistrationInvitationModel,
     SecurityEventModel,
     SessionModel,
     UserModel,
@@ -54,6 +56,22 @@ def map_password_reset_token(model: PasswordResetTokenModel) -> PasswordResetTok
         token_hash=model.token_hash,
         expires_at=model.expires_at,
         created_at=model.created_at,
+        used_at=model.used_at,
+        revoked_at=model.revoked_at,
+    )
+
+
+def map_registration_invitation(
+    model: RegistrationInvitationModel,
+) -> RegistrationInvitation:
+    return RegistrationInvitation(
+        id=model.id,
+        token_hash=model.token_hash,
+        label=model.label,
+        created_by_user_id=model.created_by_user_id,
+        registered_user_id=model.registered_user_id,
+        created_at=model.created_at,
+        expires_at=model.expires_at,
         used_at=model.used_at,
         revoked_at=model.revoked_at,
     )

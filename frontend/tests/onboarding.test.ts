@@ -10,19 +10,21 @@ afterEach(() => {
 })
 
 describe('closed onboarding UI', () => {
-  it('clears activation credentials after a successful activation', async () => {
-    const activate = vi.fn().mockResolvedValue(undefined)
-    const wrapper = mount(ActivationForm, { props: { activate } })
-    await wrapper.get('textarea[name="activation-secret"]').setValue('a'.repeat(48))
+  it('registers without rendering the invitation secret and clears passwords', async () => {
+    const register = vi.fn().mockResolvedValue(undefined)
+    const wrapper = mount(ActivationForm, { props: { hasInvitation: true, register } })
+    await wrapper.get('input[name="username"]').setValue('Alice')
+    await wrapper.get('input[name="name"]').setValue('Alice Smith')
     await wrapper.get('input[name="new-password"]').setValue('strong local password')
     await wrapper.get('input[name="password-confirmation"]').setValue('strong local password')
     await wrapper.get('form').trigger('submit')
     await flushPromises()
 
-    expect(activate).toHaveBeenCalledWith('a'.repeat(48), 'strong local password')
-    expect(wrapper.emitted('activated')).toHaveLength(1)
+    expect(register).toHaveBeenCalledWith('alice', 'Alice Smith', 'strong local password')
+    expect(wrapper.emitted('registered')).toHaveLength(1)
     expect(wrapper.html()).not.toContain('strong local password')
-    expect(wrapper.html()).not.toContain('a'.repeat(48))
+    expect(wrapper.find('[name="activation-secret"]').exists()).toBe(false)
+    expect(wrapper.get('input[name="username"]').attributes('autocomplete')).toBe('username')
   })
 
   it('shows an invitation secret transiently and removes it on demand', async () => {
@@ -30,17 +32,21 @@ describe('closed onboarding UI', () => {
     const listManagedUsers = vi.fn().mockResolvedValue({
       items: [], total: 0, limit: 20, offset: 0,
     })
-    const inviteUser = vi.fn().mockResolvedValue({
-      userId: 'bob-id',
-      username: 'bob',
-      displayName: 'Bob',
+    const createRegistrationInvitation = vi.fn().mockResolvedValue({
+      invitationId: 'invite-id',
+      label: 'Для Боба',
       activationSecret: 'one-time-secret-value',
+      createdAt: '2026-08-11T12:00:00Z',
       expiresAt: '2026-08-12T12:00:00Z',
     })
     vi.stubGlobal('useNuxtApp', () => ({
       $frontend: {
         listManagedUsers: { execute: listManagedUsers },
-        inviteUser: { execute: inviteUser },
+        listRegistrationInvitations: {
+          execute: vi.fn().mockResolvedValue({ items: [], total: 0, limit: 20, offset: 0 }),
+        },
+        createRegistrationInvitation: { execute: createRegistrationInvitation },
+        revokeRegistrationInvitation: { execute: vi.fn() },
         buildInvitationLink: { execute: buildInvitationLink },
         clipboard: { writeText: vi.fn() },
         haptics: { perform: vi.fn() },
@@ -48,17 +54,62 @@ describe('closed onboarding UI', () => {
     }))
     const wrapper = mount(AdminUsersPanel)
     await flushPromises()
-    const inputs = wrapper.findAll('input')
-    await inputs[0]?.setValue('bob')
-    await inputs[1]?.setValue('Bob')
-    await wrapper.get('form').trigger('submit')
+    await wrapper.get('.invite-form--standalone input').setValue('Для Боба')
+    await wrapper.get('.invite-form--standalone').trigger('submit')
     await flushPromises()
 
-    expect(inviteUser).toHaveBeenCalledWith('bob', 'Bob')
+    expect(createRegistrationInvitation).toHaveBeenCalledWith('Для Боба')
     expect(buildInvitationLink).toHaveBeenCalledWith('one-time-secret-value')
     expect(wrapper.text()).toContain('https://chat.example/activate#token=one-time-secret-value')
+    expect(wrapper.find('.invitation-qr svg').exists()).toBe(true)
     await wrapper.get('.invitation-result .text-button').trigger('click')
     expect(wrapper.text()).not.toContain('one-time-secret-value')
+  })
+
+  it('lists and explicitly revokes an active standalone invitation', async () => {
+    const activeInvitation = {
+      invitationId: 'invite-id',
+      label: 'Для Боба',
+      status: 'active',
+      createdByUsername: 'admin',
+      registeredUserId: null,
+      registeredUsername: null,
+      createdAt: '2026-08-12T12:00:00Z',
+      expiresAt: '2026-08-13T12:00:00Z',
+      usedAt: null,
+      revokedAt: null,
+    }
+    const listInvitations = vi.fn()
+      .mockResolvedValueOnce({ items: [activeInvitation], total: 1, limit: 20, offset: 0 })
+      .mockResolvedValueOnce({
+        items: [{ ...activeInvitation, status: 'revoked', revokedAt: '2026-08-12T13:00:00Z' }],
+        total: 1,
+        limit: 20,
+        offset: 0,
+      })
+    const revokeInvitation = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('useNuxtApp', () => ({
+      $frontend: {
+        listManagedUsers: {
+          execute: vi.fn().mockResolvedValue({ items: [], total: 0, limit: 20, offset: 0 }),
+        },
+        listRegistrationInvitations: { execute: listInvitations },
+        createRegistrationInvitation: { execute: vi.fn() },
+        revokeRegistrationInvitation: { execute: revokeInvitation },
+        clipboard: { writeText: vi.fn() },
+        haptics: { perform: vi.fn() },
+      },
+    }))
+    const wrapper = mount(AdminUsersPanel)
+    await flushPromises()
+
+    await wrapper.get('.registration-invitation-row .text-button').trigger('click')
+    expect(wrapper.text()).toContain('Отозвать приглашение?')
+    await wrapper.get('[role="alertdialog"] .button--primary').trigger('click')
+    await flushPromises()
+
+    expect(revokeInvitation).toHaveBeenCalledWith('invite-id')
+    expect(wrapper.text()).toContain('отозвано')
   })
 
   it('clears reset credentials and passwords after successful recovery', async () => {
@@ -101,6 +152,11 @@ describe('closed onboarding UI', () => {
         listManagedUsers: {
           execute: vi.fn().mockResolvedValue({ items: [user], total: 1, limit: 20, offset: 0 }),
         },
+        listRegistrationInvitations: {
+          execute: vi.fn().mockResolvedValue({ items: [], total: 0, limit: 20, offset: 0 }),
+        },
+        createRegistrationInvitation: { execute: vi.fn() },
+        revokeRegistrationInvitation: { execute: vi.fn() },
         inviteUser: { execute: vi.fn() },
         reissueActivation: { execute: vi.fn() },
         setManagedUserActive: { execute: vi.fn() },

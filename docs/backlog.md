@@ -555,10 +555,21 @@ generic background notification, focus/navigation и invalid-subscription cleanu
 
 ## Completed
 
+### BL-074 — Standalone managed registration invitations
+
+Статус: **implemented, full-CI/database/browser verified; production rollout
+pending** (`WP-074`).
+
+- standalone invitation lifecycle без inactive pseudo-user;
+- admin list/revoke, transient link/QR и self-chosen unique username;
+- atomic registration + device-bound session, abuse-resistant public endpoint;
+- legacy activation compatibility только для уже выпущенных ссылок.
+
 ### BL-073 — Telegram-style compact group video notes
 
-Статус: **implemented and full-CI verified** (`WP-073`); physical Android/iOS
-installed-PWA camera/codec acceptance остаётся pre-deploy smoke.
+Статус: **implemented, full-CI verified and production deployed** (`WP-073`,
+`dc14858`); physical Android/iOS acceptance подтвердила permission/capture flow,
+safe-area fixes и gesture/presentation polish.
 
 - hold/release отправляет, swipe-left отменяет, swipe-up фиксирует запись;
 - locked mode поддерживает cancel/send и best-effort front/back camera switch;

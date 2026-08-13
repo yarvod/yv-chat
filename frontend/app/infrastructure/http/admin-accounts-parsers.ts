@@ -7,7 +7,69 @@ import type {
   ManagedUserUpdate,
   PasswordResetIssue,
 } from '../../domain/accounts/managed-user'
-import { booleanField, integerField, record, stringField } from './runtime-parsers'
+import type {
+  CreatedRegistrationInvitation,
+  RegistrationInvitation,
+  RegistrationInvitationsPage,
+  RegistrationInvitationStatus,
+} from '../../domain/accounts/registration-invitation'
+import {
+  booleanField,
+  integerField,
+  nullableStringField,
+  record,
+  stringField,
+} from './runtime-parsers'
+
+const INVITATION_STATUSES = new Set<RegistrationInvitationStatus>([
+  'active', 'used', 'expired', 'revoked',
+])
+
+function parseRegistrationInvitation(value: unknown): RegistrationInvitation {
+  const item = record(value)
+  const status = stringField(item, 'status') as RegistrationInvitationStatus
+  if (!INVITATION_STATUSES.has(status)) {
+    throw new ApplicationError(200, 'invalid-response', 'invalid invitation status')
+  }
+  return {
+    invitationId: stringField(item, 'invitation_id'),
+    label: nullableStringField(item, 'label'),
+    status,
+    createdByUsername: stringField(item, 'created_by_username'),
+    registeredUserId: nullableStringField(item, 'registered_user_id'),
+    registeredUsername: nullableStringField(item, 'registered_username'),
+    createdAt: stringField(item, 'created_at'),
+    expiresAt: stringField(item, 'expires_at'),
+    usedAt: nullableStringField(item, 'used_at'),
+    revokedAt: nullableStringField(item, 'revoked_at'),
+  }
+}
+
+export function parseRegistrationInvitations(value: unknown): RegistrationInvitationsPage {
+  const page = record(value)
+  if (!Array.isArray(page.items)) {
+    throw new ApplicationError(200, 'invalid-response', 'invalid invitations')
+  }
+  return {
+    items: page.items.map(parseRegistrationInvitation),
+    total: integerField(page, 'total'),
+    limit: integerField(page, 'limit'),
+    offset: integerField(page, 'offset'),
+  }
+}
+
+export function parseCreatedRegistrationInvitation(
+  value: unknown,
+): CreatedRegistrationInvitation {
+  const item = record(value)
+  return {
+    invitationId: stringField(item, 'invitation_id'),
+    label: nullableStringField(item, 'label'),
+    activationSecret: stringField(item, 'activation_secret'),
+    createdAt: stringField(item, 'created_at'),
+    expiresAt: stringField(item, 'expires_at'),
+  }
+}
 
 function parseManagedUser(value: unknown): ManagedUser {
   const item = record(value)

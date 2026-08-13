@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from messenger.bootstrap.container import create_container
 from messenger.bootstrap.settings import AppSettings
+from messenger.presentation.http.admin_invitations import router as admin_invitations_router
 from messenger.presentation.http.admin_users import router as admin_users_router
 from messenger.presentation.http.attachments import router as attachments_router
 from messenger.presentation.http.auth import router as auth_router
@@ -73,6 +74,7 @@ def create_app(
     application.include_router(key_package_device_router)
     application.include_router(key_package_conversation_router)
     application.include_router(admin_users_router)
+    application.include_router(admin_invitations_router)
     application.include_router(me_router)
     application.include_router(users_router)
     application.include_router(conversations_router)
