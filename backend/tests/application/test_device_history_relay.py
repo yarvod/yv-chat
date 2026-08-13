@@ -223,3 +223,43 @@ async def test_relay_rejects_wrong_target_and_non_direct_conversation() -> None:
                 ciphertext_base64=base64.b64encode(b"opaque").decode(),
             )
         )
+
+
+@pytest.mark.asyncio
+async def test_relay_allows_twenty_record_chunks_plus_one_completion_marker() -> None:
+    state, user, trusted, candidate, trusted_session, _ = relay_state()
+    pairing = next(iter(state.device_pairings.values()))
+    conversation = next(iter(state.conversations.values()))
+    upload = UploadHistoryChunk(
+        unit_of_work=FakeIdentityUnitOfWorkFactory(state),
+        clock=FixedClock(NOW),
+        pairing_policy=POLICY,
+    )
+
+    for index in range(21):
+        await upload.execute(
+            UploadHistoryChunkCommand(
+                pairing_id=pairing.id,
+                user_id=user.id,
+                session_id=trusted_session.id,
+                device_id=trusted.id,
+                target_device_id=candidate.id,
+                conversation_id=conversation.id,
+                client_chunk_id=uuid4(),
+                ciphertext_base64=base64.b64encode(f"opaque-{index}".encode()).decode(),
+            )
+        )
+
+    with pytest.raises(DevicePairingStateError):
+        await upload.execute(
+            UploadHistoryChunkCommand(
+                pairing_id=pairing.id,
+                user_id=user.id,
+                session_id=trusted_session.id,
+                device_id=trusted.id,
+                target_device_id=candidate.id,
+                conversation_id=conversation.id,
+                client_chunk_id=uuid4(),
+                ciphertext_base64=base64.b64encode(b"overflow").decode(),
+            )
+        )

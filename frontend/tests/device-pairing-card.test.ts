@@ -3,7 +3,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 
 import DevicePairingCard from '../app/components/settings/DevicePairingCard.vue'
-import type { LinkedDeviceEnrollmentProgress } from '../app/application/device-crypto/enroll-linked-device'
 
 afterEach(() => {
   vi.useRealTimers()
@@ -12,7 +11,69 @@ afterEach(() => {
 })
 
 describe('device pairing settings flow', () => {
-  it('starts MLS enrollment after the candidate receives its independent session', async () => {
+  it('restores durable progress after Settings remount and explains safe navigation', async () => {
+    const user = {
+      userId: 'alice-user', deviceId: 'phone-device', username: 'alice',
+      displayName: 'Alice', role: 'user', deviceDisplayName: 'iPhone · Телефон',
+    }
+    const states = new Map<string, ReturnType<typeof ref>>()
+    vi.stubGlobal('useState', (key: string, factory: () => unknown) => {
+      let state = states.get(key)
+      if (!state) {
+        state = ref(factory())
+        states.set(key, state)
+      }
+      return state
+    })
+    const current = vi.fn().mockReturnValue([{
+      ownerUserId: 'alice-user',
+      currentDeviceId: 'phone-device',
+      pairingId: 'pairing-id',
+      targetDeviceId: 'mac-device',
+      stage: 'waiting_peer',
+      totalConversations: 3,
+      readyConversations: 3,
+      confirmedConversations: 1,
+      exportedRecords: 12,
+      importedRecords: 4,
+      importRevision: 1,
+      gaps: 0,
+      complete: false,
+      importedConversationIds: ['conversation-id'],
+    }])
+    const subscribe = vi.fn().mockReturnValue(() => undefined)
+    vi.stubGlobal('useNuxtApp', () => ({
+      $frontend: {
+        deviceInfo: { current: () => ({ deviceClass: 'mobile' }) },
+        deviceHistorySync: { current, subscribe },
+      },
+    }))
+    states.set('auth-session', ref({ phase: 'authenticated', user, message: null }))
+    states.set('auth-initialized', ref(true))
+    const mountCard = () => mount(DevicePairingCard, {
+      global: {
+        stubs: {
+          QrcodeVue: { template: '<div />' },
+          DeviceQrScanner: { template: '<div />' },
+        },
+      },
+    })
+
+    const first = mountCard()
+    await flushPromises()
+    expect(first.text()).toContain('Ждём второе устройство')
+    expect(first.text()).toContain('Подтверждено вторым устройством: 1 из 3 чатов')
+    expect(first.text()).toContain('Можно уйти из настроек')
+    first.unmount()
+
+    const remounted = mountCard()
+    await flushPromises()
+    expect(remounted.text()).toContain('Ждём второе устройство')
+    expect(current).toHaveBeenCalledTimes(2)
+    remounted.unmount()
+  })
+
+  it('queues durable MLS preparation after the candidate receives its independent session', async () => {
     vi.useFakeTimers()
     const user = {
       userId: 'alice-user',
@@ -31,21 +92,9 @@ describe('device pairing settings flow', () => {
       }
       return state
     })
-    const enroll = vi.fn(async (
-      _owner: string,
-      _target: string,
-      onProgress: (progress: LinkedDeviceEnrollmentProgress) => void,
-    ) => {
-      const progress: LinkedDeviceEnrollmentProgress = {
-        targetDeviceId: 'candidate-device',
-        totalConversations: 2,
-        readyConversations: 2,
-        pendingConversationIds: [],
-        complete: true,
-      }
-      onProgress(progress)
-      return progress
-    })
+    const enroll = vi.fn()
+    const queue = vi.fn()
+    const resume = vi.fn()
     const createOffer = vi.fn().mockResolvedValue({
       created: {
         pairingId: 'pairing-id',
@@ -80,7 +129,10 @@ describe('device pairing settings flow', () => {
         },
         linkedDeviceEnrollment: { enroll },
         deviceHistorySync: {
-          queue: vi.fn(),
+          queue,
+          resume,
+          current: vi.fn().mockReturnValue([]),
+          subscribe: vi.fn().mockReturnValue(() => undefined),
           synchronize: vi.fn().mockResolvedValue({
             exportedRecords: 2,
             importedRecords: 2,
@@ -108,8 +160,13 @@ describe('device pairing settings flow', () => {
     await flushPromises()
 
     expect(trustedStatus).toHaveBeenCalledWith('pairing-id')
-    expect(enroll).toHaveBeenCalledWith('alice-user', 'candidate-device', expect.any(Function))
-    expect(wrapper.text()).toContain('Устройство подключено к 2 защищённым чатам')
+    expect(enroll).not.toHaveBeenCalled()
+    expect(queue).toHaveBeenCalledWith(expect.objectContaining({
+      targetDeviceId: 'candidate-device',
+      prepareTarget: true,
+    }))
+    expect(resume).toHaveBeenCalledWith('alice-user', 'trusted-device')
+    expect(wrapper.text()).not.toContain('завершаем вход')
     expect(wrapper.text()).toContain('локальная история объединяется')
   })
 
@@ -154,12 +211,6 @@ describe('device pairing settings flow', () => {
     const scan = vi.fn().mockResolvedValue(pending)
     const existingCandidateStatus = vi.fn().mockResolvedValue(authorized)
     const queue = vi.fn()
-    const synchronize = vi.fn().mockResolvedValue({
-      exportedRecords: 3,
-      importedRecords: 4,
-      gaps: 0,
-      complete: true,
-    })
     const enroll = vi.fn()
     vi.stubGlobal('useNuxtApp', () => ({
       $frontend: {
@@ -170,7 +221,12 @@ describe('device pairing settings flow', () => {
           cancelExistingCandidate: vi.fn(),
         },
         linkedDeviceEnrollment: { enroll },
-        deviceHistorySync: { queue, synchronize },
+        deviceHistorySync: {
+          queue,
+          resume: vi.fn(),
+          current: vi.fn().mockReturnValue([]),
+          subscribe: vi.fn().mockReturnValue(() => undefined),
+        },
       },
     }))
     states.set('auth-session', ref({ phase: 'authenticated', user, message: null }))
@@ -203,6 +259,7 @@ describe('device pairing settings flow', () => {
       targetDeviceId: 'mac-device',
       pairingId: 'pairing-id',
     }))
-    expect(synchronize).toHaveBeenCalled()
+    expect(queue).toHaveBeenCalledWith(expect.objectContaining({ prepareTarget: false }))
+    expect(wrapper.text()).not.toContain('завершаем вход')
   })
 })

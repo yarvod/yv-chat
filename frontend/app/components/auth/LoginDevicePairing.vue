@@ -65,6 +65,8 @@ async function authorize(pairingId: string): Promise<void> {
         pairingId,
         targetDeviceId: trustedDeviceId,
         expiresAt: new Date(Date.parse(authorized.pairing.expiresAt) + 86_400_000).toISOString(),
+        prepareTarget: false,
+        peerCompletedConversationIds: [],
       })
     }
     activePairingId = null

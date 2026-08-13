@@ -138,13 +138,17 @@ cross-browser/security assurance gates.
 
 Статус: **in progress; `WP-079` durable pairing/session bootstrap, `WP-080`
 background MLS enrollment и `WP-081` bidirectional encrypted text/tombstone archive
-merge развернуты; `WP-082` automatic existing-device pairing/union завершён локально,
-production rollout held до compatibility/physical gate**.
+merge развернуты; `WP-082` automatic existing-device pairing развернут, а `WP-083`
+ACK-gated observable MLS/history union завершён локально; production rollout held до
+physical iOS/macOS gate**.
 `BL-064` и первый deployment-safe slice `BL-025` завершены; pairing реализуется
 итерациями с отдельным security/ADR review до изменения MLS membership semantics.
 Это не UI-задача «нарисовать QR»: `WP-079` не менял MLS roster, `WP-080` добавил
-durable wake-up + automatic add-leaf, а `WP-081` добавил MLS application-message
-relay, local canonical-content write-through и двусторонний archive union.
+durable wake-up + automatic add-leaf, `WP-081` добавил MLS application-message
+relay/local canonical-content write-through, а `WP-083` устраняет false completion:
+trusted side сначала проверяет exact target roster, обе стороны обмениваются
+encrypted per-conversation completion markers/ACK и показывают общий progress вне
+Settings.
 
 Результат: пользователь связывает компьютер и телефон без камеры на компьютере,
 подтверждает новое crypto-device уже доверенным устройством, автоматически получает

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { SynchronizeDeviceHistory } from '../app/application/device-crypto/synchronize-device-history'
 import { ProtocolMessageProtection } from '../app/application/messaging/message-protection'
@@ -122,6 +122,8 @@ class RelayGateway {
 
   async acknowledgeHistoryChunk(_pairingId: string, chunkId: string) {
     this.state.acknowledged.add(chunkId)
+    const chunk = this.state.chunks.find(item => item.chunkId === chunkId)
+    if (chunk) chunk.acknowledgedAt = '2026-08-13T12:01:00Z'
   }
 }
 
@@ -172,6 +174,7 @@ function service(
   archive: MessageArchive,
   relay: RelayState,
   jobs: DeviceHistorySyncJobStore,
+  prepareTarget: ConstructorParameters<typeof SynchronizeDeviceHistory>[7] = null,
 ) {
   return new SynchronizeDeviceHistory(
     new RelayGateway(relay, currentDeviceId) as unknown as DevicePairingGateway,
@@ -191,10 +194,40 @@ function service(
     jobs,
     scheduler,
     4,
+    prepareTarget,
   )
 }
 
 describe('QR-linked bidirectional device history sync', () => {
+  it('prepares the exact target MLS leaf before a trusted device exports history', async () => {
+    const relay: RelayState = { chunks: [], acknowledged: new Set() }
+    const prepareTarget = vi.fn(async (_owner, _target, onProgress) => {
+      onProgress({ totalConversations: 1, readyConversations: 1 })
+      return { complete: true, totalConversations: 1, readyConversations: 1 }
+    })
+    const sync = service(
+      trusted,
+      new MemoryArchive([archived(1, trusted, 'trusted copy')]),
+      relay,
+      new MemoryJobs(),
+      prepareTarget,
+    )
+
+    const result = await sync.synchronize({
+      ownerUserId: owner,
+      currentDeviceId: trusted,
+      pairingId: pairing,
+      targetDeviceId: candidate,
+      expiresAt: '2099-08-14T12:00:00Z',
+      prepareTarget: true,
+      peerCompletedConversationIds: [],
+    })
+
+    expect(prepareTarget).toHaveBeenCalledWith(owner, candidate, expect.any(Function))
+    expect(relay.chunks).toHaveLength(2)
+    expect(result.stage).toBe('waiting_peer')
+  })
+
   it('merges independently available sent history without overwriting either side', async () => {
     const trustedArchive = new MemoryArchive([archived(1, trusted, 'from phone')])
     const candidateArchive = new MemoryArchive([archived(2, candidate, 'from mac')])
@@ -232,7 +265,7 @@ describe('QR-linked bidirectional device history sync', () => {
     ])
     expect(trustedProgress.complete).toBe(true)
     expect(candidateProgress.complete).toBe(true)
-    expect(relay.acknowledged.size).toBe(2)
+    expect(relay.acknowledged.size).toBe(4)
   })
 
   it('completes union when the second device starts only after the first polling pass', async () => {
@@ -252,16 +285,25 @@ describe('QR-linked bidirectional device history sync', () => {
       expiresAt,
     }
 
-    await trustedService.synchronize(trustedInput)
+    const firstTrusted = await trustedService.synchronize(trustedInput)
+    expect(firstTrusted.complete).toBe(false)
+    expect(firstTrusted.stage).toBe('waiting_peer')
     expect([...trustedArchive.records.keys()]).toEqual([1])
-    await candidateService.synchronize({
+    const candidateInput = {
       ...trustedInput,
       currentDeviceId: candidate,
       targetDeviceId: trusted,
-    })
+    }
+    const firstCandidate = await candidateService.synchronize(candidateInput)
+    expect(firstCandidate.complete).toBe(false)
     expect([...candidateArchive.records.keys()].sort()).toEqual([1, 2])
-    await trustedService.synchronize(trustedInput)
+    const finalTrusted = await trustedService.synchronize(trustedInput)
+    expect(finalTrusted.complete).toBe(true)
     expect([...trustedArchive.records.keys()].sort()).toEqual([1, 2])
-    expect(relay.acknowledged.size).toBe(2)
+    const resumedCandidate = candidateJobs.load(owner, candidate).at(0)
+    expect(resumedCandidate?.peerCompletedConversationIds).toEqual([conversation])
+    const finalCandidate = await candidateService.synchronize(resumedCandidate!)
+    expect(finalCandidate.complete).toBe(true)
+    expect(relay.acknowledged.size).toBe(4)
   })
 })

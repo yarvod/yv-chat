@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import QrcodeVue from 'qrcode.vue'
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import type { DisplayedPairing } from '../../application/accounts/device-pairing'
-import type { LinkedDeviceEnrollmentProgress } from '../../application/device-crypto/enroll-linked-device'
+import type { DeviceHistorySyncProgress } from '../../application/device-crypto/synchronize-device-history'
 import type { DevicePairingView } from '../../domain/accounts/device-pairing'
 import { useAuth } from '../../presentation/composables/useAuth'
 import DeviceQrScanner from './DeviceQrScanner.vue'
@@ -16,8 +16,10 @@ const view = ref<DevicePairingView | null>(null)
 const scanning = ref(false)
 const busy = ref(false)
 const message = ref<string | null>(null)
+const syncStatuses = ref<readonly DeviceHistorySyncProgress[]>([])
 let pollTimer: number | null = null
 let activePairingId: string | null = null
+let unsubscribeSync: (() => void) | null = null
 const activeRole = ref<'trusted' | 'existing_candidate' | null>(null)
 
 function stopPolling(): void {
@@ -46,6 +48,7 @@ async function pollTrusted(pairingId: string): Promise<void> {
       const linked = view.value
       message.value = `Устройство «${linked.candidateDeviceName ?? 'новое устройство'}» подключено. Готовим защищённые чаты…`
       displayed.value = null
+      view.value = null
       activePairingId = null
       stopPolling()
       startLinkedSync(linked)
@@ -65,9 +68,10 @@ async function pollExistingCandidate(pairingId: string): Promise<void> {
     if (view.value.status === 'authorized') {
       const linked = view.value
       message.value = `Компьютер «${linked.trustedDeviceName ?? 'доверенное устройство'}» подтвердил синхронизацию.`
+      view.value = null
       activePairingId = null
       stopPolling()
-      startExistingHistorySync(linked)
+      startHistorySync(linked, false)
       return
     }
     if (!['cancelled', 'expired'].includes(view.value.status)) {
@@ -78,16 +82,11 @@ async function pollExistingCandidate(pairingId: string): Promise<void> {
   }
 }
 
-function enrollmentMessage(progress: LinkedDeviceEnrollmentProgress): string {
-  if (progress.complete) {
-    return progress.totalConversations === 0
-      ? 'Устройство подключено. Личных чатов для синхронизации пока нет.'
-      : `Устройство подключено к ${progress.totalConversations} защищённым чатам.`
-  }
-  return `Подключаем защищённые чаты: ${progress.readyConversations} из ${progress.totalConversations}.`
-}
-
-function historyJob(linked: DevicePairingView, targetDeviceId: string) {
+function historyJob(
+  linked: DevicePairingView,
+  targetDeviceId: string,
+  prepareTarget: boolean,
+) {
   const owner = auth.user.value
   if (!owner) return null
   return {
@@ -96,10 +95,12 @@ function historyJob(linked: DevicePairingView, targetDeviceId: string) {
     pairingId: linked.pairingId,
     targetDeviceId,
     expiresAt: new Date(Date.parse(linked.expiresAt) + 86_400_000).toISOString(),
+    prepareTarget,
+    peerCompletedConversationIds: [],
   }
 }
 
-function startExistingHistorySync(linked: DevicePairingView): void {
+function startHistorySync(linked: DevicePairingView, prepareTarget: boolean): void {
   const owner = auth.user.value
   const targetDeviceId = owner?.deviceId === linked.trustedDeviceId
     ? linked.authorizedDeviceId
@@ -108,56 +109,42 @@ function startExistingHistorySync(linked: DevicePairingView): void {
     message.value = 'Устройства связаны, но counterpart для истории не подтверждён.'
     return
   }
-  const job = historyJob(linked, targetDeviceId)
+  const job = historyJob(linked, targetDeviceId, prepareTarget)
   if (!job) return
   $frontend.deviceHistorySync.queue(job)
-  void $frontend.deviceHistorySync.synchronize(job, history => {
-    message.value = history.complete
-      ? `История объединена: получено ${history.importedRecords}, отправлено ${history.exportedRecords}${history.gaps ? `, пропусков ${history.gaps}` : ''}.`
-      : `Синхронизация истории: получено ${history.importedRecords}, отправлено ${history.exportedRecords}.`
-  }).catch(() => {
-    message.value = 'Устройства связаны; перенос истории продолжится в фоне.'
-  })
+  $frontend.deviceHistorySync.resume(job.ownerUserId, job.currentDeviceId)
 }
 
 function startLinkedSync(linked: DevicePairingView): void {
-  if (linked.candidateDeviceId) {
-    startExistingHistorySync(linked)
-    return
-  }
-  startEnrollment(linked)
+  startHistorySync(linked, true)
 }
 
-function startEnrollment(linked: DevicePairingView): void {
+function refreshSyncStatuses(): void {
   const owner = auth.user.value
-  const targetDeviceId = linked.authorizedDeviceId
-  if (!owner || !targetDeviceId) {
-    message.value = 'Сессия устройства создана, но MLS enrollment ещё не подтверждён.'
-    return
+  syncStatuses.value = owner
+    ? $frontend.deviceHistorySync.current(owner.userId, owner.deviceId)
+    : []
+}
+
+function syncTitle(progress: DeviceHistorySyncProgress): string {
+  if (progress.stage === 'queued') return 'Синхронизация поставлена в очередь'
+  if (progress.stage === 'preparing_crypto') {
+    return `Подготавливаем защищённые чаты: ${progress.readyConversations} из ${progress.totalConversations}`
   }
-  const job = historyJob(linked, targetDeviceId)
-  if (!job) return
-  $frontend.deviceHistorySync.queue(job)
-  void $frontend.linkedDeviceEnrollment.enroll(
-    owner.userId,
-    targetDeviceId,
-    progress => { message.value = enrollmentMessage(progress) },
-  ).then((progress) => {
-    message.value = progress.complete
-      ? enrollmentMessage(progress)
-      : `Сессия создана; ${progress.pendingConversationIds.length} чатов продолжат безопасный retry при следующей синхронизации.`
-    if (progress.complete) {
-      void $frontend.deviceHistorySync.synchronize(job, history => {
-        message.value = history.complete
-          ? `История объединена: получено ${history.importedRecords}, отправлено ${history.exportedRecords}${history.gaps ? `, пропусков ${history.gaps}` : ''}.`
-          : `Синхронизация истории: получено ${history.importedRecords}, отправлено ${history.exportedRecords}.`
-      }).catch(() => {
-        message.value = 'Защищённые чаты готовы; перенос истории продолжится в фоне.'
-      })
-    }
-  }).catch(() => {
-    message.value = 'Сессия создана; MLS enrollment продолжится при следующей синхронизации.'
-  })
+  if (progress.stage === 'transferring') return 'Передаём и проверяем историю'
+  if (progress.stage === 'waiting_peer') return 'Ждём второе устройство'
+  if (progress.stage === 'retrying') return 'Временно не получилось — повторяем автоматически'
+  return 'Синхронизация завершена на обоих устройствах'
+}
+
+function syncDetails(progress: DeviceHistorySyncProgress): string {
+  const transfer = `Доступно к отправке: ${progress.exportedRecords}; получено сейчас: ${progress.importedRecords}.`
+  const chats = progress.totalConversations > 0
+    ? ` Подтверждено вторым устройством: ${progress.confirmedConversations} из ${progress.totalConversations} чатов.`
+    : ''
+  const gaps = progress.gaps > 0 ? ` Недоступных источнику записей: ${progress.gaps}.` : ''
+  if (progress.complete) return `${transfer}${chats}${gaps} Можно открыть чаты.`
+  return `${transfer}${chats}${gaps} Можно уйти из настроек; перенос продолжится, пока приложение открыто.`
 }
 
 async function createOffer(): Promise<void> {
@@ -230,6 +217,13 @@ async function close(): Promise<void> {
 onBeforeUnmount(() => {
   activePairingId = null
   stopPolling()
+  unsubscribeSync?.()
+  unsubscribeSync = null
+})
+
+onMounted(() => {
+  refreshSyncStatuses()
+  unsubscribeSync = $frontend.deviceHistorySync.subscribe(() => refreshSyncStatuses())
 })
 </script>
 
@@ -240,6 +234,25 @@ onBeforeUnmount(() => {
       <div><h2>Подключить или синхронизировать по QR</h2><p>Один QR подключает новое устройство либо объединяет историю уже авторизованных устройств.</p></div>
     </div>
     <p v-if="message" class="settings-message" role="status">{{ message }}</p>
+    <section
+      v-for="progress in syncStatuses"
+      :key="progress.pairingId"
+      class="pairing-sync-progress"
+      :class="{ 'pairing-sync-progress--complete': progress.complete }"
+      role="status"
+      aria-live="polite"
+    >
+      <div class="pairing-sync-progress__title">
+        <strong>{{ syncTitle(progress) }}</strong>
+        <span>{{ progress.complete ? 'Готово' : 'В процессе' }}</span>
+      </div>
+      <progress
+        v-if="progress.totalConversations > 0"
+        :max="progress.totalConversations"
+        :value="progress.stage === 'preparing_crypto' ? progress.readyConversations : progress.confirmedConversations"
+      />
+      <p>{{ syncDetails(progress) }}</p>
+    </section>
     <div v-if="!displayed && !view && !scanning" class="settings-inline-actions">
       <button v-if="!isPhone" class="button button--primary button--compact" type="button" :disabled="busy" @click="createOffer">Показать QR</button>
       <button v-if="isPhone" class="button button--secondary button--compact" type="button" :disabled="busy" @click="scanning = true">Сканировать QR компьютера</button>

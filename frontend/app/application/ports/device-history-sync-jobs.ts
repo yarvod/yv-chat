@@ -4,6 +4,8 @@ export interface DeviceHistorySyncJob {
   pairingId: string
   targetDeviceId: string
   expiresAt: string
+  prepareTarget?: boolean
+  peerCompletedConversationIds?: readonly string[]
 }
 
 export interface DeviceHistorySyncJobStore {

@@ -176,6 +176,10 @@ export default defineNuxtPlugin(() => {
     messageProtection,
     new BrowserDeviceHistorySyncJobStore(),
     scheduler,
+    12,
+    (ownerUserId, targetDeviceId, onProgress) => (
+      linkedDeviceEnrollment.enroll(ownerUserId, targetDeviceId, onProgress)
+    ),
   )
   themePreferences.apply(themePreference)
 

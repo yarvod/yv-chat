@@ -2,6 +2,7 @@ import { computed, reactive, readonly } from 'vue'
 
 import { ApplicationError } from '../../application/errors'
 import { DeviceCryptoError } from '../../application/device-crypto/errors'
+import type { DeviceHistorySyncProgress } from '../../application/device-crypto/synchronize-device-history'
 import type { ReconcileConversationCryptoResult } from '../../application/conversation-crypto/reconcile-conversation-crypto'
 import {
   ConversationHistory,
@@ -119,6 +120,9 @@ export interface MessengerDependencies extends MessageOutboxDependencies {
     drainer: (conversationId: string) => Promise<void>,
   ) => void
   invalidateConversationCrypto?: (conversationId: string) => void
+  subscribeDeviceHistorySync?: (
+    listener: (progress: DeviceHistorySyncProgress) => void,
+  ) => () => void
 }
 
 export function useMessenger(
@@ -166,6 +170,7 @@ export function useMessenger(
       invalidateConversationCrypto: conversationId => (
         $frontend.deviceCryptoSession.invalidateConversation(conversationId)
       ),
+      subscribeDeviceHistorySync: listener => $frontend.deviceHistorySync.subscribe(listener),
     }
   })()
   const {
@@ -229,6 +234,27 @@ export function useMessenger(
   const readAdvances = new Map<string, number>()
   const deliveryAdvances = new Map<string, number>()
   const hotHistoryWindows = new Map<string, ConversationHistoryWindow>()
+  const importedRevisions = new Map<string, number>()
+  let historyImportRefresh = Promise.resolve()
+
+  const unsubscribeDeviceHistorySync = dependencies.subscribeDeviceHistorySync?.(progress => {
+    if (
+      progress.ownerUserId !== actorUserId
+      || progress.currentDeviceId !== actorDeviceId
+      || progress.importRevision <= (importedRevisions.get(progress.pairingId) ?? 0)
+    ) return
+    importedRevisions.set(progress.pairingId, progress.importRevision)
+    const active = state.activeConversationId
+    if (
+      !active
+      || state.historyHasNewer
+      || !progress.importedConversationIds.includes(active)
+    ) return
+    historyImportRefresh = historyImportRefresh.then(async () => {
+      const cached = await history.loadCachedLatest(active)
+      if (cached && state.activeConversationId === active) applyHistoryWindow(cached)
+    }).catch(() => undefined)
+  }) ?? null
 
   const activeConversation = computed(() => (
     state.conversations.find(item => item.conversationId === state.activeConversationId) ?? null
@@ -1280,6 +1306,7 @@ export function useMessenger(
   }
 
   function dispose(): void {
+    unsubscribeDeviceHistorySync?.()
     downloadGroupAttachment?.clearMemory(actorUserId, actorDeviceId)
   }
 

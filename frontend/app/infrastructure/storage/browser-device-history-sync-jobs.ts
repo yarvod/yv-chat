@@ -13,6 +13,13 @@ function validJob(value: unknown): value is DeviceHistorySyncJob {
     .every(field => typeof item[field] === 'string' && UUID.test(item[field]))
     && typeof item.expiresAt === 'string'
     && Number.isFinite(Date.parse(item.expiresAt))
+    && (item.prepareTarget === undefined || typeof item.prepareTarget === 'boolean')
+    && (item.peerCompletedConversationIds === undefined || (
+      Array.isArray(item.peerCompletedConversationIds)
+      && item.peerCompletedConversationIds.every(
+        value => typeof value === 'string' && UUID.test(value),
+      )
+    ))
 }
 
 export class BrowserDeviceHistorySyncJobStore implements DeviceHistorySyncJobStore {

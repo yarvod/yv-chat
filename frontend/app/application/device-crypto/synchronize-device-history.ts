@@ -13,23 +13,48 @@ const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$
 
 interface HistoryTransferPayload {
   type: 'yv-chat-device-history'
-  version: 1
+  version: 1 | 2
   pairingId: string
   senderDeviceId: string
   targetDeviceId: string
   conversationId: string
   clientChunkId: string
   records: ArchivedMessage[]
+  complete?: true
 }
 
+export type DeviceHistorySyncStage =
+  | 'queued'
+  | 'preparing_crypto'
+  | 'transferring'
+  | 'waiting_peer'
+  | 'retrying'
+  | 'complete'
+
 export interface DeviceHistorySyncProgress {
+  ownerUserId: string
+  currentDeviceId: string
+  pairingId: string
+  targetDeviceId: string
+  stage: DeviceHistorySyncStage
+  totalConversations: number
+  readyConversations: number
+  confirmedConversations: number
   exportedRecords: number
   importedRecords: number
+  importRevision: number
   gaps: number
   complete: boolean
+  importedConversationIds: readonly string[]
 }
 
 type ProgressListener = (progress: DeviceHistorySyncProgress) => void
+type StatusListener = (progress: DeviceHistorySyncProgress) => void
+type TargetPreparer = (
+  ownerUserId: string,
+  targetDeviceId: string,
+  onProgress: (progress: { totalConversations: number, readyConversations: number }) => void,
+) => Promise<{ complete: boolean, totalConversations: number, readyConversations: number }>
 
 function chunks<T>(values: readonly T[], size: number): T[][] {
   const result: T[][] = []
@@ -39,20 +64,27 @@ function chunks<T>(values: readonly T[], size: number): T[][] {
   return result
 }
 
-function transferRecords(value: unknown, expected: Omit<HistoryTransferPayload, 'records'>): ArchivedMessage[] {
+function transferRecords(
+  value: unknown,
+  expected: Omit<HistoryTransferPayload, 'version' | 'records' | 'complete'>,
+): { records: ArchivedMessage[], complete: boolean } {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error()
   const payload = value as Record<string, unknown>
   if (
     payload.type !== expected.type
-    || payload.version !== 1
+    || (payload.version !== 1 && payload.version !== 2)
     || payload.pairingId !== expected.pairingId
     || payload.senderDeviceId !== expected.senderDeviceId
     || payload.targetDeviceId !== expected.targetDeviceId
     || payload.conversationId !== expected.conversationId
     || payload.clientChunkId !== expected.clientChunkId
     || !Array.isArray(payload.records)
-    || payload.records.length === 0
-    || payload.records.length > CHUNK_RECORD_LIMIT
+    || (payload.version === 1 && (
+      payload.records.length === 0 || payload.records.length > CHUNK_RECORD_LIMIT
+    ))
+    || (payload.version === 2 && (
+      payload.records.length !== 0 || payload.complete !== true
+    ))
   ) throw new Error()
   const records: ArchivedMessage[] = []
   let previousSequence = 0
@@ -123,7 +155,7 @@ function transferRecords(value: unknown, expected: Omit<HistoryTransferPayload, 
       ...(typeof localPlaintext === 'string' ? { localPlaintext } : {}),
     })
   }
-  return records
+  return { records, complete: payload.version === 2 }
 }
 
 async function stableChunkId(parts: readonly string[]): Promise<string> {
@@ -137,6 +169,9 @@ async function stableChunkId(parts: readonly string[]): Promise<string> {
 
 export class SynchronizeDeviceHistory {
   private readonly running = new Map<string, Promise<DeviceHistorySyncProgress>>()
+  private readonly statuses = new Map<string, DeviceHistorySyncProgress>()
+  private readonly listeners = new Set<StatusListener>()
+  private importRevision = 0
   private recurring: ScheduledTask | null = null
 
   constructor(
@@ -147,10 +182,23 @@ export class SynchronizeDeviceHistory {
     private readonly jobs: DeviceHistorySyncJobStore,
     private readonly scheduler: Scheduler,
     private readonly attempts = 12,
+    private readonly prepareTarget: TargetPreparer | null = null,
   ) {}
 
   queue(job: DeviceHistorySyncJob): void {
     this.jobs.save(job)
+    this.emit(this.initialProgress(job, 'queued'))
+  }
+
+  current(ownerUserId: string, currentDeviceId: string): readonly DeviceHistorySyncProgress[] {
+    return [...this.statuses.values()].filter(progress => (
+      progress.ownerUserId === ownerUserId && progress.currentDeviceId === currentDeviceId
+    ))
+  }
+
+  subscribe(listener: StatusListener): () => void {
+    this.listeners.add(listener)
+    return () => this.listeners.delete(listener)
   }
 
   resume(ownerUserId: string, currentDeviceId: string): void {
@@ -176,9 +224,15 @@ export class SynchronizeDeviceHistory {
   private async retryJob(job: DeviceHistorySyncJob): Promise<void> {
     for (let attempt = 0; attempt < this.attempts; attempt += 1) {
       try {
-        await this.synchronize(job)
+        const progress = await this.synchronize(job)
+        if (progress.complete) this.jobs.remove(job.pairingId)
         return
       } catch {
+        this.emit({
+          ...(this.statuses.get(job.pairingId) ?? this.initialProgress(job, 'retrying')),
+          stage: 'retrying',
+          complete: false,
+        })
         await new Promise<void>(resolve => this.scheduler.once(1_500, resolve))
       }
     }
@@ -189,7 +243,11 @@ export class SynchronizeDeviceHistory {
     onProgress: ProgressListener = () => undefined,
   ): Promise<DeviceHistorySyncProgress> {
     const existing = this.running.get(job.pairingId)
-    if (existing) return existing
+    if (existing) {
+      const current = this.statuses.get(job.pairingId)
+      if (current) onProgress(current)
+      return existing
+    }
     const operation = this.run(job, onProgress)
     this.running.set(job.pairingId, operation)
     void operation.finally(() => {
@@ -202,18 +260,54 @@ export class SynchronizeDeviceHistory {
     job: DeviceHistorySyncJob,
     onProgress: ProgressListener,
   ): Promise<DeviceHistorySyncProgress> {
-    let progress: DeviceHistorySyncProgress = {
-      exportedRecords: 0,
-      importedRecords: 0,
-      gaps: 0,
-      complete: false,
+    let progress = this.initialProgress(
+      job,
+      job.prepareTarget && this.prepareTarget ? 'preparing_crypto' : 'transferring',
+    )
+    this.report(progress, onProgress)
+    if (job.prepareTarget && this.prepareTarget) {
+      const prepared = await this.prepareTarget(
+        job.ownerUserId,
+        job.targetDeviceId,
+        state => {
+          progress = {
+            ...progress,
+            stage: 'preparing_crypto',
+            totalConversations: state.totalConversations,
+            readyConversations: state.readyConversations,
+          }
+          this.report(progress, onProgress)
+        },
+      )
+      progress = {
+        ...progress,
+        totalConversations: prepared.totalConversations,
+        readyConversations: prepared.readyConversations,
+      }
+      if (!prepared.complete) {
+        this.report({ ...progress, stage: 'retrying' }, onProgress)
+        throw new Error('target MLS enrollment is incomplete')
+      }
     }
     const conversations = (await this.messaging.listConversations())
       .filter(item => item.conversationType === 'direct')
-    const existingOutbound = new Set(
-      (await this.gateway.listOutboundHistoryChunks(job.pairingId))
-        .map(chunk => chunk.clientChunkId),
-    )
+    progress = {
+      ...progress,
+      stage: 'transferring',
+      totalConversations: conversations.length,
+      readyConversations: conversations.length,
+    }
+    this.report(progress, onProgress)
+    if (conversations.length === 0) {
+      progress = { ...progress, stage: 'complete', complete: true }
+      this.jobs.remove(job.pairingId)
+      this.report(progress, onProgress)
+      return progress
+    }
+    const outbound = await this.gateway.listOutboundHistoryChunks(job.pairingId)
+    const existingOutbound = new Set(outbound.map(chunk => chunk.clientChunkId))
+    const completionIds = new Map<string, string>()
+    const peerComplete = new Set(job.peerCompletedConversationIds ?? [])
     for (const conversation of conversations) {
       const records = await this.readTransferable(job.ownerUserId, conversation.conversationId)
       progress = { ...progress, gaps: progress.gaps + records.gaps }
@@ -230,32 +324,66 @@ export class SynchronizeDeviceHistory {
           first.messageId,
           last.messageId,
         ])
-        if (existingOutbound.has(chunkId)) continue
+        progress = { ...progress, exportedRecords: progress.exportedRecords + page.length }
+        this.report(progress, onProgress)
+        if (!existingOutbound.has(chunkId)) {
+          const payload: HistoryTransferPayload = {
+            type: 'yv-chat-device-history',
+            version: 1,
+            pairingId: job.pairingId,
+            senderDeviceId: job.currentDeviceId,
+            targetDeviceId: job.targetDeviceId,
+            conversationId: conversation.conversationId,
+            clientChunkId: chunkId,
+            records: page,
+          }
+          const protectedChunk = await this.protection.protectText(2, {
+            conversationId: conversation.conversationId,
+            clientMessageId: chunkId,
+            plaintext: JSON.stringify(payload),
+          })
+          await this.gateway.uploadHistoryChunk(
+            job.pairingId,
+            job.targetDeviceId,
+            conversation.conversationId,
+            chunkId,
+            protectedChunk.ciphertextBase64,
+          )
+          existingOutbound.add(chunkId)
+        }
+      }
+      const completionId = await stableChunkId([
+        job.pairingId,
+        job.currentDeviceId,
+        conversation.conversationId,
+        'history-complete-v2',
+      ])
+      completionIds.set(conversation.conversationId, completionId)
+      if (!existingOutbound.has(completionId)) {
         const payload: HistoryTransferPayload = {
           type: 'yv-chat-device-history',
-          version: 1,
+          version: 2,
           pairingId: job.pairingId,
           senderDeviceId: job.currentDeviceId,
           targetDeviceId: job.targetDeviceId,
           conversationId: conversation.conversationId,
-          clientChunkId: chunkId,
-          records: page,
+          clientChunkId: completionId,
+          records: [],
+          complete: true,
         }
         const protectedChunk = await this.protection.protectText(2, {
           conversationId: conversation.conversationId,
-          clientMessageId: chunkId,
+          clientMessageId: completionId,
           plaintext: JSON.stringify(payload),
         })
         await this.gateway.uploadHistoryChunk(
           job.pairingId,
           job.targetDeviceId,
           conversation.conversationId,
-          chunkId,
+          completionId,
           protectedChunk.ciphertextBase64,
         )
-        existingOutbound.add(chunkId)
-        progress = { ...progress, exportedRecords: progress.exportedRecords + page.length }
-        onProgress(progress)
+        existingOutbound.add(completionId)
       }
     }
 
@@ -273,27 +401,95 @@ export class SynchronizeDeviceHistory {
         })
         const expected = {
           type: 'yv-chat-device-history' as const,
-          version: 1 as const,
           pairingId: job.pairingId,
           senderDeviceId: job.targetDeviceId,
           targetDeviceId: job.currentDeviceId,
           conversationId: chunk.conversationId,
           clientChunkId: chunk.clientChunkId,
         }
-        const records = transferRecords(JSON.parse(content.plaintext), expected)
-        await this.archive.put(job.ownerUserId, chunk.conversationId, records)
+        const payload = transferRecords(JSON.parse(content.plaintext), expected)
+        if (payload.records.length > 0) {
+          await this.archive.put(job.ownerUserId, chunk.conversationId, payload.records)
+        }
+        if (payload.complete) {
+          peerComplete.add(chunk.conversationId)
+          this.jobs.save({
+            ...job,
+            peerCompletedConversationIds: [...peerComplete],
+          })
+        }
         await this.gateway.acknowledgeHistoryChunk(job.pairingId, chunk.chunkId)
-        progress = { ...progress, importedRecords: progress.importedRecords + records.length }
-        onProgress(progress)
+        progress = {
+          ...progress,
+          confirmedConversations: conversations.filter(
+            conversation => peerComplete.has(conversation.conversationId),
+          ).length,
+          importedRecords: progress.importedRecords + payload.records.length,
+          importRevision: payload.records.length > 0
+            ? ++this.importRevision
+            : progress.importRevision,
+          importedConversationIds: payload.records.length > 0
+            ? [...new Set([...progress.importedConversationIds, chunk.conversationId])]
+            : progress.importedConversationIds,
+        }
+        this.report(progress, onProgress)
       }
-      if (incoming.length === 0 && attempt >= 2) {
-        progress = { ...progress, complete: true }
-        onProgress(progress)
+      const latestOutbound = await this.gateway.listOutboundHistoryChunks(job.pairingId)
+      const acknowledgedCompletionIds = new Set(
+        latestOutbound
+          .filter(chunk => chunk.acknowledgedAt !== null)
+          .map(chunk => chunk.clientChunkId),
+      )
+      const localMarkersAcknowledged = [...completionIds.values()]
+        .every(id => acknowledgedCompletionIds.has(id))
+      const peerMarkersReceived = conversations.every(
+        conversation => peerComplete.has(conversation.conversationId),
+      )
+      if (localMarkersAcknowledged && peerMarkersReceived) {
+        progress = { ...progress, stage: 'complete', complete: true }
+        this.jobs.remove(job.pairingId)
+        this.report(progress, onProgress)
         return progress
       }
+      progress = { ...progress, stage: attempt === 0 ? 'transferring' : 'waiting_peer' }
+      this.report(progress, onProgress)
       await new Promise<void>(resolve => this.scheduler.once(1_500, resolve))
     }
+    progress = { ...progress, stage: 'waiting_peer' }
+    this.report(progress, onProgress)
     return progress
+  }
+
+  private initialProgress(
+    job: DeviceHistorySyncJob,
+    stage: DeviceHistorySyncStage,
+  ): DeviceHistorySyncProgress {
+    return {
+      ownerUserId: job.ownerUserId,
+      currentDeviceId: job.currentDeviceId,
+      pairingId: job.pairingId,
+      targetDeviceId: job.targetDeviceId,
+      stage,
+      totalConversations: 0,
+      readyConversations: 0,
+      confirmedConversations: 0,
+      exportedRecords: 0,
+      importedRecords: 0,
+      importRevision: 0,
+      gaps: 0,
+      complete: false,
+      importedConversationIds: [],
+    }
+  }
+
+  private report(progress: DeviceHistorySyncProgress, listener: ProgressListener): void {
+    this.emit(progress)
+    listener(progress)
+  }
+
+  private emit(progress: DeviceHistorySyncProgress): void {
+    this.statuses.set(progress.pairingId, progress)
+    for (const listener of this.listeners) listener(progress)
   }
 
   private async readTransferable(

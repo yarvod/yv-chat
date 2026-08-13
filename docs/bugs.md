@@ -4,9 +4,30 @@
 
 ## Active
 
+### BUG-077 — QR sync зависал после authorization и ложно объявлял перенос фоновым
+
+- Статус: `fixed locally; production rollout pending` (`WP-083`).
+- Severity: `critical multi-device history availability and UX`.
+- Production reproduction: залогиненный телефон сканирует QR залогиненного компьютера,
+  компьютер подтверждает; обе Settings cards навсегда остаются на
+  «Подтверждено, завершаем вход…»/«перенос продолжится в фоне», а расшифрованные на
+  компьютере direct messages на телефоне остаются недоступными.
+- Причина 1: existing-device branch сразу запускал history relay и, в отличие от
+  new-device branch, пропускал exact target MLS enrollment; target мог не уметь
+  decrypt импортируемые MLS PrivateMessages.
+- Причина 2: клиент считал три пустых poll завершением, не имея peer completion marker
+  или ACK, поэтому первая сторона могла вернуть `complete` до запуска второй.
+- Причина 3: прогресс жил только в локальном state Settings component; authorized
+  `view` не очищался, navigation скрывала статус, а импорт archive не обновлял уже
+  открытый timeline.
+- Исправление: `WP-083` вводит durable trusted enrollment + двусторонние encrypted
+  completion markers/ACK, observable background stages и refresh импортированного
+  active conversation.
+
 ### BUG-076 — Авторизованный scanner не мог синхронизировать историю с компьютером
 
-- Статус: `fixed locally; production rollout pending` (`WP-082`).
+- Статус: `pairing deployed; incomplete completion semantics superseded by BUG-077`
+  (`WP-082`, `WP-083`).
 - Severity: `critical multi-device history availability`.
 - Reproduction: телефон и компьютер уже авторизованы в одном account, но имеют
   mutually missing расшифрованные записи; компьютер показывает Settings

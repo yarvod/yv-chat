@@ -1,93 +1,84 @@
 # Текущий workplan
 
-## WP-082 — Unified QR pairing and existing-device history union
+## WP-083 — Observable and completion-safe QR history synchronization
 
-Статус: **completed locally; production rollout pending** (`BL-015`, `BUG-076`,
+Статус: **completed locally; production rollout pending** (`BUG-077`, `BL-015`,
 ADR-0003/ADR-0004)
 
-Цель: один `enrollment_offer` QR на авторизованном компьютере должен безопасно
-поддерживать два сценария без ручного выбора режима. Неавторизованная телефонная PWA
-подключается как новое independent device, а уже авторизованная PWA того же account
-привязывает две существующие device/session boundaries и запускает двустороннее
-объединение доступной encrypted local history. Открытие чата и online собеседника не
-требуются.
+Цель: QR pairing не должен объявлять существующие устройства синхронизированными
+сразу после server authorization. Trusted device сначала доводит target MLS leaf до
+READY во всех direct chats, затем обе стороны выполняют возобновляемый encrypted
+history union и подтверждают завершение взаимными relay markers/ACK. Пользователь на
+обоих устройствах видит точную стадию и может уйти из Settings без остановки работы.
 
 ### Scope
 
-- backend определяет режим только по authenticated principal сканера, а не по
-  client-supplied account/device IDs;
-- `enrollment_offer` сохраняет exact existing candidate session/device binding либо
-  новый candidate proof, но никогда оба варианта одновременно;
-- same-device и cross-account scan fail closed, revoked/expired session не участвует;
-- компьютер остаётся trusted approver и явно подтверждает отображаемое устройство;
-- для existing-device pairing approval сразу авторизует уже существующий exact device,
-  не создаёт новую Session/Device и не меняет его crypto identity;
-- scanner и display независимо восстанавливают один durable history-sync job и
-  выполняют union в обе стороны через существующий opaque MLS relay;
-- существующий anonymous `offer → authorize new phone` и
-  `request → trusted phone approves new computer` сохраняют обратную совместимость;
-- Settings на телефоне автоматически объясняет выбранный режим и ожидает approval
-  компьютера; Settings на компьютере использует один QR для подключения или sync;
-- доступная canonical text/tombstone history дополняет обе стороны; records не
-  затираются отсутствием на peer, gaps остаются явными.
+- existing-device и new-device trusted flows используют один durable background job;
+- job сохраняет, требуется ли trusted-side MLS enrollment, и возобновляется после
+  reload/PWA restart без повторного QR;
+- history protocol передаёт отдельный encrypted completion marker для каждого direct;
+- `complete` возможен только когда локальные markers подтверждены peer и markers peer
+  получены/применены для всех direct conversations;
+- UI различает `preparing_crypto`, `transferring`, `waiting_peer`, `retrying`,
+  `complete`; показывает числа chats/records/gaps и явное разрешение уйти из Settings;
+- authorized QR workspace закрывается и больше не зависает с текстом
+  «завершаем вход»;
+- импорт локального plaintext archive уведомляет открытый chat, чтобы недоступные
+  bubbles обновились без logout/relogin;
+- server restart и PWA navigation не сбрасывают pairing/job/progress semantics.
 
 ### Security invariants
 
-- raw session credential, candidate proof, archive/storage key, MLS signer/state и
-  plaintext не попадают в QR, PostgreSQL, logs или HTTP DTO;
-- exact candidate session/device подтверждается серверной cookie-authentication,
-  strict Origin/CSRF и row-locked monotonic transition;
-- pairing status/history relay доступны только exact active trusted/candidate
-  sessions одного account;
-- retry scan/approve/status idempotent; иной scanner после первого bind получает
-  conflict без раскрытия account/device state;
-- backend restart сохраняет pairing, authorization, relay chunks и ACK; PWA restart
-  восстанавливает local history job без повторного QR;
-- existing-device sync не копирует private crypto state и не выполняет скрытый MLS
-  roster change.
+- completion marker и canonical history остаются MLS PrivateMessages; server видит
+  только bounded opaque relay metadata/ciphertext;
+- imported record проходит прежнюю strict binding/schema validation до archive write;
+- trusted device не объявляет target готовым только по успешному reconcile: server
+  roster обязан содержать exact target device;
+- timeout/error не превращается в success; UI показывает retry/waiting state;
+- никакие MLS private keys, archive keys, session credentials или plaintext не
+  попадают в HTTP DTO/logs/QR.
 
 ### Verification
 
-- domain/application tests: existing offer scan/approval, exact retry, same-device,
-  cross-account, revoked session, competing scanner и new-device regression;
-- HTTP tests: CSRF/origin, exact candidate status/cancel, anonymous offer path и
-  отсутствие создания Session/Device для existing sync;
-- PostgreSQL integration + fresh migration to `0026`, persistence across engine
-  restart и authorization of existing device;
-- frontend tests: authenticated offer auto-routing, anonymous offer regression,
-  scanner waiting state, both peers queue same resumable job и mutually missing union;
-- lint/typecheck/build, full backend pytest and Compose config before rollout.
+- unit: asymmetric start, mutually missing history, encrypted completion markers,
+  ACK-gated completion, resume with persisted peer markers;
+- component: existing trusted flow invokes MLS enrollment, authorized workspace
+  closes, progress remains observable after component remount;
+- messenger: imported active-conversation records refresh visible timeline;
+- backend: bounded extra completion marker per direction/conversation;
+- isolated local Compose: pair existing devices, restart API between scan/approve,
+  navigate away/back, finish both peers, verify no duplicate Device/Session;
+- frontend lint/typecheck/tests/build, backend lint/mypy/pytest and full `make ci`.
 
 ### Exclusions
 
-- перенос direct attachments/media, preferences/read receipts и данных, отсутствующих
-  на server и обоих devices;
-- объединение Safari tab и installed PWA без явного pairing;
-- копирование MLS epoch/provider state либо создание общего archive key;
-- default-camera universal-link handoff и ручной six-digit fallback UI — отдельный
-  compatibility slice уже описан в `BL-015`.
+- attachments/media transfer;
+- history absent from server and both paired local archives;
+- merging Safari storage into installed PWA without explicit pairing;
+- redesign of MLS itself.
 
 ### Definition of Done
 
-- залогиненный телефон сканирует QR залогиненного компьютера, компьютер подтверждает,
-  после чего обе стороны автоматически дополняют доступные histories друг друга;
-- тот же QR по-прежнему подключает неавторизованный новый телефон;
-- same-device/cross-account/revoked actors не могут создать pairing или читать relay;
-- restart/retry не создаёт duplicate identity/job/chunk и не требует открытия чата;
-- migration, документация, security tests и production checks green.
+- both devices show an honest stage and terminal success/failure instead of a frozen
+  confirmation pill;
+- user can leave Settings while global background job continues;
+- records readable on computer become readable on phone after verified union and the
+  open timeline refreshes;
+- restart/reload resumes without new QR and cannot produce a false `complete`;
+- local realistic acceptance and full CI are green before production rollout.
 
 ### Verification result
 
-- backend Ruff/format/import-lint/mypy и 265 pytest tests green;
-- frontend ESLint/typecheck, 289 Vitest tests и production Nuxt/PWA build green;
-- full `make ci`, включая Rust fmt/clippy, 23 native crypto tests и WASM build, green;
-- anonymous new-device offer regression и authenticated existing-device
-  auto-routing/approval/status/CSRF/cross-account/same-device tests green;
-- bidirectional archive test покрывает mutually missing sent records и отдельно
-  сценарий, где computer завершил первый poll до запуска phone, а затем догнал
-  обратную половину через recurring durable job;
-- fresh PostgreSQL 17 upgrade `0001 → 0026` и integration flow с последовательным
-  пересозданием четырёх backend engines сохраняют pairing/relay и не создают лишние
-  Device/Session; временный test container после проверки удалён;
-- `docker compose -f compose.dev.yml config` green; physical iOS/macOS PWA acceptance
-  остаётся production rollout check, а не доказательством из unit/integration tests.
+- backend Ruff/format/import-lint/mypy и 266 pytest tests green;
+- frontend ESLint/typecheck, 292 Vitest tests и production PWA build green;
+- Rust fmt/clippy, 23 native crypto tests, WASM build и полный `make ci` green;
+- asymmetric device test доказывает: первая сторона остаётся `waiting_peer`, обе
+  становятся `complete` только после encrypted markers/ACK, persisted peer marker
+  переживает следующий retry;
+- component remount восстанавливает progress, existing trusted job требует MLS
+  preparation, а импорт active conversation обновляет timeline без relogin;
+- isolated Compose flow пережил API restart между scan/approve, сохранил exact
+  existing device и отклонил same-device scan без создания duplicate Device/Session;
+- финальная production PWA локально проверена в браузере на desktop и 390×844:
+  horizontal overflow/console warnings отсутствуют, старый frozen confirmation text
+  не рендерится. Физическая пара iOS/macOS остаётся production acceptance gate.

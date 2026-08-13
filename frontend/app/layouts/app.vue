@@ -5,6 +5,7 @@ import DeviceReenrollmentForm from '../components/auth/DeviceReenrollmentForm.vu
 import AppIcon from '../components/ui/AppIcon.vue'
 import BrandMark from '../components/ui/BrandMark.vue'
 import ConnectionStatus from '../components/ui/ConnectionStatus.vue'
+import DeviceHistorySyncBanner from '../components/ui/DeviceHistorySyncBanner.vue'
 import PushPermissionPrompt from '../components/ui/PushPermissionPrompt.vue'
 import { selectedConversationId } from '../presentation/chat/conversation-route'
 import type { AppIconName } from '../presentation/icons'
@@ -79,6 +80,7 @@ async function enrollReplacementDevice(password: string): Promise<void> {
 <template>
   <main class="product-shell" :class="{ 'product-shell--conversation': conversationFocused }">
     <ConnectionStatus />
+    <DeviceHistorySyncBanner />
     <PushPermissionPrompt />
     <section
       v-if="deviceCrypto.state.status === 'unavailable'"

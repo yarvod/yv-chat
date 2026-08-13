@@ -18,7 +18,8 @@ from messenger.domain.entities import (
 )
 from messenger.domain.exceptions import DomainValidationError
 
-MAX_CHUNKS_PER_DIRECTION_CONVERSATION = 20
+# Twenty bounded record chunks plus one encrypted per-conversation completion marker.
+MAX_CHUNKS_PER_DIRECTION_CONVERSATION = 21
 MAX_CIPHERTEXT_BYTES = 512_000
 LIST_LIMIT = 20
 OUTBOUND_LIST_LIMIT = 400

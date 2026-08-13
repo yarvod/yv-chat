@@ -240,6 +240,44 @@ beforeEach(() => {
 })
 
 describe('messenger orchestration', () => {
+  it('refreshes an open timeline when QR history import updates its local archive', async () => {
+    let historyListener: ((progress: {
+      ownerUserId: string
+      currentDeviceId: string
+      pairingId: string
+      importedRecords: number
+      importRevision: number
+      importedConversationIds: readonly string[]
+    }) => void) | null = null
+    const messenger = useMessenger('alice-id', 'device-alice', vi.fn(), {
+      ...messengerDependencies(),
+      subscribeDeviceHistorySync: (listener) => {
+        historyListener = listener
+        return () => { historyListener = null }
+      },
+    })
+
+    await messenger.load()
+    vi.mocked(messageArchive.loadLatest).mockResolvedValue([{
+      ...message,
+      ciphertextBase64: btoa('synced from paired device'),
+      localPlaintext: 'synced from paired device',
+    }])
+    historyListener?.({
+      ownerUserId: 'alice-id',
+      currentDeviceId: 'device-alice',
+      pairingId: 'pairing-id',
+      importedRecords: 1,
+      importRevision: 1,
+      importedConversationIds: ['conversation-1'],
+    })
+
+    await vi.waitFor(() => expect(messenger.state.messages.at(-1)?.displayBody)
+      .toBe('synced from paired device'))
+    messenger.dispose()
+    expect(historyListener).toBeNull()
+  })
+
   it('keeps groups usable without invoking MLS reconciliation and labels the downgrade', async () => {
     const reconcileConversationCrypto = vi.fn()
     const messenger = useMessenger('alice-id', 'device-alice', vi.fn(), {
