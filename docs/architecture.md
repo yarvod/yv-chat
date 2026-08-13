@@ -537,6 +537,24 @@ PostgreSQL state переживает API restart; polling является late
 источником correctness. Компьютер всегда display, телефон scanner; камера внутри PWA
 имеет paste/manual fallback, а обычная iOS Camera landing не получает trust сама.
 
+History synchronization имеет server-arbitrated single-flight boundary по
+`(user_id, least(device_a, device_b), greatest(device_a, device_b))`. Частичный
+unique index разрешает только один authorized и не отменённый relay для такой пары,
+а advisory transaction lock сериализует approval, supersede, relay access и cancel
+до проверки этого инварианта. Новый approved QR атомарно помечает предыдущий relay
+той же пары отменённым; migration сохраняет старые pairing rows как audit trail, но
+оставляет active только latest. Это не global worker queue: PostgreSQL хранит
+coordination state, а каждый client выполняет не более одной локальной MLS/history
+pipeline одновременно и дедуплицирует legacy jobs по owner/current/target device.
+
+Любая из двух exact bound active sessions может идемпотентно установить
+`history_sync_cancelled_at`. После этого все relay endpoints возвращают terminal
+`410`, поэтому peer прекращает transfer при следующем poll; guessed third device
+получает indistinguishable not-found. Cancel не отзывает session/device, не удаляет
+уже импортированную encrypted history и не может оживляться stale client. Если
+server временно недоступен, client сохраняет cancel intent и повторяет только cancel,
+а не history transfer.
+
 Выход с текущего устройства является security operation, а не обычной навигацией:
 он требует отдельного confirm step в Settings и backend атомарно отзывает current
 session вместе с device identity. Device-scoped IndexedDB records физически не

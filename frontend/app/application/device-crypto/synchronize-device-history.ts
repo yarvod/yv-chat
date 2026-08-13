@@ -4,6 +4,7 @@ import type { DevicePairingGateway } from '../ports/device-pairing-gateway'
 import type { MessagingGateway } from '../ports/messaging-gateway'
 import type { ScheduledTask, Scheduler } from '../ports/scheduler'
 import type { ProtocolMessageProtection } from '../messaging/message-protection'
+import { ApplicationError } from '../errors'
 
 const CHUNK_RECORD_LIMIT = 20
 const MAX_CHUNKS_PER_CONVERSATION = 20
@@ -29,7 +30,17 @@ export type DeviceHistorySyncStage =
   | 'transferring'
   | 'waiting_peer'
   | 'retrying'
+  | 'cancelling'
+  | 'cancelled'
+  | 'failed'
   | 'complete'
+
+export type DeviceHistorySyncFailure =
+  | 'network'
+  | 'server'
+  | 'pairing_unavailable'
+  | 'stopped'
+  | 'unknown'
 
 export interface DeviceHistorySyncProgress {
   ownerUserId: string
@@ -45,6 +56,7 @@ export interface DeviceHistorySyncProgress {
   importRevision: number
   gaps: number
   complete: boolean
+  failure: DeviceHistorySyncFailure | null
   importedConversationIds: readonly string[]
 }
 
@@ -55,6 +67,26 @@ type TargetPreparer = (
   targetDeviceId: string,
   onProgress: (progress: { totalConversations: number, readyConversations: number }) => void,
 ) => Promise<{ complete: boolean, totalConversations: number, readyConversations: number }>
+
+class DeviceHistorySyncCancelled extends Error {}
+
+function failureFrom(error: unknown): {
+  failure: DeviceHistorySyncFailure
+  terminal: boolean
+} {
+  if (error instanceof ApplicationError) {
+    if (error.status === 410) return { failure: 'stopped', terminal: true }
+    if ([401, 404, 409].includes(error.status ?? 0)) {
+      return { failure: 'pairing_unavailable', terminal: true }
+    }
+    if (error.kind === 'network') return { failure: 'network', terminal: false }
+    if (error.status !== null && error.status >= 500) {
+      return { failure: 'server', terminal: false }
+    }
+    return { failure: 'unknown', terminal: true }
+  }
+  return { failure: 'unknown', terminal: false }
+}
 
 function chunks<T>(values: readonly T[], size: number): T[][] {
   const result: T[][] = []
@@ -171,6 +203,10 @@ export class SynchronizeDeviceHistory {
   private readonly running = new Map<string, Promise<DeviceHistorySyncProgress>>()
   private readonly statuses = new Map<string, DeviceHistorySyncProgress>()
   private readonly listeners = new Set<StatusListener>()
+  private readonly cancelled = new Set<string>()
+  private readonly scheduled = new Set<string>()
+  private readonly cancelling = new Map<string, Promise<void>>()
+  private workQueue: Promise<void> = Promise.resolve()
   private importRevision = 0
   private recurring: ScheduledTask | null = null
 
@@ -186,6 +222,15 @@ export class SynchronizeDeviceHistory {
   ) {}
 
   queue(job: DeviceHistorySyncJob): void {
+    for (const progress of this.current(job.ownerUserId, job.currentDeviceId)) {
+      if (progress.targetDeviceId !== job.targetDeviceId || progress.pairingId === job.pairingId) {
+        continue
+      }
+      this.cancelled.add(progress.pairingId)
+      this.jobs.remove(progress.pairingId)
+      this.removeStatus(progress.pairingId)
+    }
+    this.cancelled.delete(job.pairingId)
     this.jobs.save(job)
     this.emit(this.initialProgress(job, 'queued'))
   }
@@ -203,8 +248,29 @@ export class SynchronizeDeviceHistory {
 
   resume(ownerUserId: string, currentDeviceId: string): void {
     for (const job of this.jobs.load(ownerUserId, currentDeviceId)) {
-      void this.retryJob(job)
+      this.schedule(job)
     }
+  }
+
+  async cancel(pairingId: string): Promise<void> {
+    const progress = this.statuses.get(pairingId)
+    if (!progress || progress.complete) return
+    const job = this.jobs.load(progress.ownerUserId, progress.currentDeviceId)
+      .find(item => item.pairingId === pairingId)
+    if (!job) {
+      this.removeStatus(pairingId)
+      return
+    }
+    const cancellingJob = { ...job, cancelRequested: true }
+    this.cancelled.add(pairingId)
+    this.jobs.save(cancellingJob)
+    this.emit({ ...progress, stage: 'cancelling', failure: null, complete: false })
+    await this.cancelJob(cancellingJob)
+  }
+
+  dismiss(pairingId: string): void {
+    this.jobs.remove(pairingId)
+    this.removeStatus(pairingId)
   }
 
   start(ownerUserId: string, currentDeviceId: string): void {
@@ -221,21 +287,83 @@ export class SynchronizeDeviceHistory {
     this.recurring = null
   }
 
+  private schedule(job: DeviceHistorySyncJob): void {
+    if (this.scheduled.has(job.pairingId)) return
+    this.scheduled.add(job.pairingId)
+    const operation = this.workQueue.then(async () => {
+      if (job.cancelRequested) await this.cancelJob(job)
+      else await this.retryJob(job)
+    })
+    this.workQueue = operation.catch(() => undefined)
+    void operation.finally(() => this.scheduled.delete(job.pairingId)).catch(() => undefined)
+  }
+
   private async retryJob(job: DeviceHistorySyncJob): Promise<void> {
     for (let attempt = 0; attempt < this.attempts; attempt += 1) {
+      if (this.cancelled.has(job.pairingId)) return
       try {
         const progress = await this.synchronize(job)
         if (progress.complete) this.jobs.remove(job.pairingId)
         return
-      } catch {
+      } catch (error) {
+        if (error instanceof DeviceHistorySyncCancelled || this.cancelled.has(job.pairingId)) {
+          return
+        }
+        const outcome = failureFrom(error)
+        const previous = this.statuses.get(job.pairingId) ?? this.initialProgress(job, 'retrying')
+        if (outcome.terminal) {
+          this.jobs.remove(job.pairingId)
+          this.emit({
+            ...previous,
+            stage: outcome.failure === 'stopped' ? 'cancelled' : 'failed',
+            failure: outcome.failure,
+            complete: false,
+          })
+          return
+        }
         this.emit({
-          ...(this.statuses.get(job.pairingId) ?? this.initialProgress(job, 'retrying')),
+          ...previous,
           stage: 'retrying',
+          failure: outcome.failure,
           complete: false,
         })
         await new Promise<void>(resolve => this.scheduler.once(1_500, resolve))
       }
     }
+  }
+
+  private cancelJob(job: DeviceHistorySyncJob): Promise<void> {
+    const existing = this.cancelling.get(job.pairingId)
+    if (existing) return existing
+    const operation = (async () => {
+      try {
+        await this.gateway.cancelHistorySync(job.pairingId)
+        this.jobs.remove(job.pairingId)
+        const previous = this.statuses.get(job.pairingId)
+          ?? this.initialProgress(job, 'cancelled')
+        this.emit({ ...previous, stage: 'cancelled', failure: 'stopped', complete: false })
+      } catch (error) {
+        const outcome = failureFrom(error)
+        if (outcome.terminal) {
+          this.jobs.remove(job.pairingId)
+          const previous = this.statuses.get(job.pairingId)
+            ?? this.initialProgress(job, 'cancelled')
+          this.emit({ ...previous, stage: 'cancelled', failure: 'stopped', complete: false })
+          return
+        }
+        const previous = this.statuses.get(job.pairingId)
+          ?? this.initialProgress(job, 'cancelling')
+        this.emit({
+          ...previous,
+          stage: 'cancelling',
+          failure: outcome.failure,
+          complete: false,
+        })
+      }
+    })()
+    this.cancelling.set(job.pairingId, operation)
+    void operation.finally(() => this.cancelling.delete(job.pairingId)).catch(() => undefined)
+    return operation
   }
 
   synchronize(
@@ -260,6 +388,7 @@ export class SynchronizeDeviceHistory {
     job: DeviceHistorySyncJob,
     onProgress: ProgressListener,
   ): Promise<DeviceHistorySyncProgress> {
+    this.ensureActive(job.pairingId)
     let progress = this.initialProgress(
       job,
       job.prepareTarget && this.prepareTarget ? 'preparing_crypto' : 'transferring',
@@ -279,6 +408,7 @@ export class SynchronizeDeviceHistory {
           this.report(progress, onProgress)
         },
       )
+      this.ensureActive(job.pairingId)
       progress = {
         ...progress,
         totalConversations: prepared.totalConversations,
@@ -291,6 +421,7 @@ export class SynchronizeDeviceHistory {
     }
     const conversations = (await this.messaging.listConversations())
       .filter(item => item.conversationType === 'direct')
+    this.ensureActive(job.pairingId)
     progress = {
       ...progress,
       stage: 'transferring',
@@ -305,11 +436,14 @@ export class SynchronizeDeviceHistory {
       return progress
     }
     const outbound = await this.gateway.listOutboundHistoryChunks(job.pairingId)
+    this.ensureActive(job.pairingId)
     const existingOutbound = new Set(outbound.map(chunk => chunk.clientChunkId))
     const completionIds = new Map<string, string>()
     const peerComplete = new Set(job.peerCompletedConversationIds ?? [])
     for (const conversation of conversations) {
+      this.ensureActive(job.pairingId)
       const records = await this.readTransferable(job.ownerUserId, conversation.conversationId)
+      this.ensureActive(job.pairingId)
       progress = { ...progress, gaps: progress.gaps + records.gaps }
       const pages = chunks(records.messages, CHUNK_RECORD_LIMIT)
         .slice(-MAX_CHUNKS_PER_CONVERSATION)
@@ -342,6 +476,7 @@ export class SynchronizeDeviceHistory {
             clientMessageId: chunkId,
             plaintext: JSON.stringify(payload),
           })
+          this.ensureActive(job.pairingId)
           await this.gateway.uploadHistoryChunk(
             job.pairingId,
             job.targetDeviceId,
@@ -349,6 +484,7 @@ export class SynchronizeDeviceHistory {
             chunkId,
             protectedChunk.ciphertextBase64,
           )
+          this.ensureActive(job.pairingId)
           existingOutbound.add(chunkId)
         }
       }
@@ -376,6 +512,7 @@ export class SynchronizeDeviceHistory {
           clientMessageId: completionId,
           plaintext: JSON.stringify(payload),
         })
+        this.ensureActive(job.pairingId)
         await this.gateway.uploadHistoryChunk(
           job.pairingId,
           job.targetDeviceId,
@@ -383,12 +520,15 @@ export class SynchronizeDeviceHistory {
           completionId,
           protectedChunk.ciphertextBase64,
         )
+        this.ensureActive(job.pairingId)
         existingOutbound.add(completionId)
       }
     }
 
     for (let attempt = 0; attempt < this.attempts; attempt += 1) {
+      this.ensureActive(job.pairingId)
       const incoming = await this.gateway.listHistoryChunks(job.pairingId)
+      this.ensureActive(job.pairingId)
       for (const chunk of incoming) {
         if (
           chunk.targetDeviceId !== job.currentDeviceId
@@ -399,6 +539,7 @@ export class SynchronizeDeviceHistory {
           clientMessageId: chunk.clientChunkId,
           ciphertextBase64: chunk.ciphertextBase64,
         })
+        this.ensureActive(job.pairingId)
         const expected = {
           type: 'yv-chat-device-history' as const,
           pairingId: job.pairingId,
@@ -410,15 +551,18 @@ export class SynchronizeDeviceHistory {
         const payload = transferRecords(JSON.parse(content.plaintext), expected)
         if (payload.records.length > 0) {
           await this.archive.put(job.ownerUserId, chunk.conversationId, payload.records)
+          this.ensureActive(job.pairingId)
         }
         if (payload.complete) {
           peerComplete.add(chunk.conversationId)
+          this.ensureActive(job.pairingId)
           this.jobs.save({
             ...job,
             peerCompletedConversationIds: [...peerComplete],
           })
         }
         await this.gateway.acknowledgeHistoryChunk(job.pairingId, chunk.chunkId)
+        this.ensureActive(job.pairingId)
         progress = {
           ...progress,
           confirmedConversations: conversations.filter(
@@ -435,6 +579,7 @@ export class SynchronizeDeviceHistory {
         this.report(progress, onProgress)
       }
       const latestOutbound = await this.gateway.listOutboundHistoryChunks(job.pairingId)
+      this.ensureActive(job.pairingId)
       const acknowledgedCompletionIds = new Set(
         latestOutbound
           .filter(chunk => chunk.acknowledgedAt !== null)
@@ -478,11 +623,13 @@ export class SynchronizeDeviceHistory {
       importRevision: 0,
       gaps: 0,
       complete: false,
+      failure: null,
       importedConversationIds: [],
     }
   }
 
   private report(progress: DeviceHistorySyncProgress, listener: ProgressListener): void {
+    this.ensureActive(progress.pairingId)
     this.emit(progress)
     listener(progress)
   }
@@ -490,6 +637,18 @@ export class SynchronizeDeviceHistory {
   private emit(progress: DeviceHistorySyncProgress): void {
     this.statuses.set(progress.pairingId, progress)
     for (const listener of this.listeners) listener(progress)
+  }
+
+  private ensureActive(pairingId: string): void {
+    if (this.cancelled.has(pairingId)) throw new DeviceHistorySyncCancelled()
+  }
+
+  private removeStatus(pairingId: string): void {
+    const previous = this.statuses.get(pairingId)
+    this.statuses.delete(pairingId)
+    if (previous) {
+      for (const listener of this.listeners) listener(previous)
+    }
   }
 
   private async readTransferable(

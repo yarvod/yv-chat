@@ -33,6 +33,9 @@ const label = computed(() => {
     return `Ждём второе устройство: ${progress.confirmedConversations}/${progress.totalConversations}`
   }
   if (progress.stage === 'retrying') return 'Синхронизация прервалась — повторяем'
+  if (progress.stage === 'cancelling') return 'Останавливаем синхронизацию устройств'
+  if (progress.stage === 'cancelled') return 'Синхронизация устройств остановлена'
+  if (progress.stage === 'failed') return 'Синхронизацию нужно запустить заново'
   if (progress.complete) return 'История устройств синхронизирована'
   return `Перенос истории: +${progress.importedRecords} получено`
 })

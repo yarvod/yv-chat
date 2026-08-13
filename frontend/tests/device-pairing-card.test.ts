@@ -39,13 +39,16 @@ describe('device pairing settings flow', () => {
       importRevision: 1,
       gaps: 0,
       complete: false,
+      failure: null,
       importedConversationIds: ['conversation-id'],
     }])
     const subscribe = vi.fn().mockReturnValue(() => undefined)
+    const cancel = vi.fn().mockResolvedValue(undefined)
+    const dismiss = vi.fn()
     vi.stubGlobal('useNuxtApp', () => ({
       $frontend: {
         deviceInfo: { current: () => ({ deviceClass: 'mobile' }) },
-        deviceHistorySync: { current, subscribe },
+        deviceHistorySync: { current, subscribe, cancel, dismiss },
       },
     }))
     states.set('auth-session', ref({ phase: 'authenticated', user, message: null }))
@@ -64,12 +67,16 @@ describe('device pairing settings flow', () => {
     expect(first.text()).toContain('Ждём второе устройство')
     expect(first.text()).toContain('Подтверждено вторым устройством: 1 из 3 чатов')
     expect(first.text()).toContain('Можно уйти из настроек')
+    expect(first.text()).toContain('Остановить на обоих устройствах')
+    await first.get('button').trigger('click')
+    await flushPromises()
+    expect(cancel).toHaveBeenCalledWith('pairing-id')
     first.unmount()
 
     const remounted = mountCard()
     await flushPromises()
     expect(remounted.text()).toContain('Ждём второе устройство')
-    expect(current).toHaveBeenCalledTimes(2)
+    expect(current).toHaveBeenCalledTimes(3)
     remounted.unmount()
   })
 

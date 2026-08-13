@@ -67,6 +67,7 @@ from messenger.application.device_pairings.approve import ApproveDevicePairing
 from messenger.application.device_pairings.authorize import AuthorizeDevicePairing
 from messenger.application.device_pairings.cancel import (
     CancelCandidatePairing,
+    CancelDeviceHistorySync,
     CancelExistingCandidatePairing,
     CancelTrustedPairing,
 )
@@ -351,6 +352,7 @@ class HttpTestProvider(Provider):
         scope=Scope.REQUEST,
     )
     cancel_trusted_pairing = provide(CancelTrustedPairing, scope=Scope.REQUEST)
+    cancel_device_history_sync = provide(CancelDeviceHistorySync, scope=Scope.REQUEST)
     upload_history_chunk = provide(UploadHistoryChunk, scope=Scope.REQUEST)
     list_history_chunks = provide(ListHistoryChunks, scope=Scope.REQUEST)
     list_outbound_history_chunks = provide(ListOutboundHistoryChunks, scope=Scope.REQUEST)

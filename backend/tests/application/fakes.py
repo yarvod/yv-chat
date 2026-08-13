@@ -82,6 +82,7 @@ from messenger.domain.entities import (
     DeviceHistoryChunk,
     DeviceKeyPackage,
     DevicePairing,
+    DevicePairingStatus,
     Message,
     MessageReaction,
     PasswordResetToken,
@@ -668,6 +669,9 @@ class FakeDevicePairingRepository:
     async def add(self, pairing: DevicePairing) -> None:
         self._state.device_pairings[pairing.id] = pairing
 
+    async def get_by_id(self, pairing_id: UUID) -> DevicePairing | None:
+        return self._state.device_pairings.get(pairing_id)
+
     async def get_by_id_for_update(self, pairing_id: UUID) -> DevicePairing | None:
         return self._state.device_pairings.get(pairing_id)
 
@@ -675,6 +679,35 @@ class FakeDevicePairingRepository:
         if pairing.id not in self._state.device_pairings:
             raise RuntimeError("pairing disappeared during update")
         self._state.device_pairings[pairing.id] = pairing
+
+    async def lock_history_pair(
+        self,
+        *,
+        user_id: UUID,
+        first_device_id: UUID,
+        second_device_id: UUID,
+    ) -> None:
+        del user_id, first_device_id, second_device_id
+
+    async def cancel_other_active_history_syncs(
+        self,
+        *,
+        pairing_id: UUID,
+        user_id: UUID,
+        first_device_id: UUID,
+        second_device_id: UUID,
+        now: datetime,
+    ) -> None:
+        pair = {first_device_id, second_device_id}
+        for current_id, pairing in list(self._state.device_pairings.items()):
+            if (
+                current_id != pairing_id
+                and pairing.user_id == user_id
+                and pairing.status is DevicePairingStatus.AUTHORIZED
+                and pairing.history_sync_cancelled_at is None
+                and {pairing.trusted_device_id, pairing.authorized_device_id} == pair
+            ):
+                self._state.device_pairings[current_id] = pairing.cancel_history_sync(now=now)
 
     async def prune_expired(self, *, before: datetime) -> None:
         self._state.device_pairings = {

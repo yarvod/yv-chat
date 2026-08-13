@@ -6,6 +6,7 @@ export interface DeviceHistorySyncJob {
   expiresAt: string
   prepareTarget?: boolean
   peerCompletedConversationIds?: readonly string[]
+  cancelRequested?: boolean
 }
 
 export interface DeviceHistorySyncJobStore {

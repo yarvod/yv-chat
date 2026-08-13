@@ -73,6 +73,10 @@ class DevicePairingStateError(ApplicationError):
     """The pairing cannot perform the requested monotonic transition."""
 
 
+class DeviceHistorySyncCancelledError(ApplicationError):
+    """The authorized pairing history relay was stopped by either bound device."""
+
+
 class DevicePairingProofError(ApplicationError):
     """A scan token or candidate proof does not match the pairing commitment."""
 

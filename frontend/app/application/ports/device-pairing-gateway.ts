@@ -23,6 +23,7 @@ export interface DevicePairingGateway {
   cancelCandidate(pairingId: string, candidateProof: string): Promise<DevicePairingView>
   cancelTrusted(pairingId: string): Promise<DevicePairingView>
   cancelExistingCandidate(pairingId: string): Promise<DevicePairingView>
+  cancelHistorySync(pairingId: string): Promise<void>
   uploadHistoryChunk(
     pairingId: string,
     targetDeviceId: string,

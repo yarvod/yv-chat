@@ -54,6 +54,7 @@ class DevicePairing:
     authorized_at: datetime | None
     cancelled_at: datetime | None
     expired_at: datetime | None
+    history_sync_cancelled_at: datetime | None
 
     def __post_init__(self) -> None:
         if self.protocol_version != 1:
@@ -83,6 +84,7 @@ class DevicePairing:
             ("authorized_at", self.authorized_at),
             ("cancelled_at", self.cancelled_at),
             ("expired_at", self.expired_at),
+            ("history_sync_cancelled_at", self.history_sync_cancelled_at),
         ):
             if value is not None and require_aware_datetime(value, field_name) < created_at:
                 raise DomainValidationError(f"{field_name} must not be before created_at")
@@ -152,6 +154,12 @@ class DevicePairing:
             raise DomainValidationError("cancelled_at must match cancelled status")
         if (self.status is DevicePairingStatus.EXPIRED) != (self.expired_at is not None):
             raise DomainValidationError("expired_at must match expired status")
+        if self.history_sync_cancelled_at is not None and (
+            self.status is not DevicePairingStatus.AUTHORIZED
+            or self.authorized_at is None
+            or self.history_sync_cancelled_at < self.authorized_at
+        ):
+            raise DomainValidationError("only an authorized history sync may be cancelled")
 
     @classmethod
     def create_request(
@@ -190,6 +198,7 @@ class DevicePairing:
             authorized_at=None,
             cancelled_at=None,
             expired_at=None,
+            history_sync_cancelled_at=None,
         )
 
     @classmethod
@@ -226,6 +235,7 @@ class DevicePairing:
             authorized_at=None,
             cancelled_at=None,
             expired_at=None,
+            history_sync_cancelled_at=None,
         )
 
     def is_expired(self, now: datetime) -> bool:
@@ -359,3 +369,11 @@ class DevicePairing:
             status=DevicePairingStatus.CANCELLED,
             cancelled_at=timestamp,
         )
+
+    def cancel_history_sync(self, *, now: datetime) -> "DevicePairing":
+        timestamp = require_aware_datetime(now, "now")
+        if self.status is not DevicePairingStatus.AUTHORIZED:
+            raise DomainValidationError("only an authorized pairing has history sync")
+        if self.history_sync_cancelled_at is not None:
+            return self
+        return replace(self, history_sync_cancelled_at=timestamp)

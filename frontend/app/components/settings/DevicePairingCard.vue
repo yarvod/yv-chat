@@ -17,6 +17,7 @@ const scanning = ref(false)
 const busy = ref(false)
 const message = ref<string | null>(null)
 const syncStatuses = ref<readonly DeviceHistorySyncProgress[]>([])
+const stoppingPairingId = ref<string | null>(null)
 let pollTimer: number | null = null
 let activePairingId: string | null = null
 let unsubscribeSync: (() => void) | null = null
@@ -134,7 +135,18 @@ function syncTitle(progress: DeviceHistorySyncProgress): string {
   if (progress.stage === 'transferring') return 'Передаём и проверяем историю'
   if (progress.stage === 'waiting_peer') return 'Ждём второе устройство'
   if (progress.stage === 'retrying') return 'Временно не получилось — повторяем автоматически'
+  if (progress.stage === 'cancelling') return 'Останавливаем синхронизацию на обоих устройствах'
+  if (progress.stage === 'cancelled') return 'Синхронизация остановлена'
+  if (progress.stage === 'failed') return 'Эта попытка больше не может продолжаться'
   return 'Синхронизация завершена на обоих устройствах'
+}
+
+function syncBadge(progress: DeviceHistorySyncProgress): string {
+  if (progress.complete) return 'Готово'
+  if (progress.stage === 'cancelled') return 'Остановлено'
+  if (progress.stage === 'failed') return 'Ошибка'
+  if (progress.stage === 'cancelling') return 'Остановка'
+  return 'В процессе'
 }
 
 function syncDetails(progress: DeviceHistorySyncProgress): string {
@@ -143,8 +155,37 @@ function syncDetails(progress: DeviceHistorySyncProgress): string {
     ? ` Подтверждено вторым устройством: ${progress.confirmedConversations} из ${progress.totalConversations} чатов.`
     : ''
   const gaps = progress.gaps > 0 ? ` Недоступных источнику записей: ${progress.gaps}.` : ''
+  const failure = progress.failure === 'network'
+    ? ' Нет сети; запрос остановки или перенос повторится после восстановления связи.'
+    : progress.failure === 'server'
+      ? ' Сервер временно не завершил запрос; повторим без параллельного запуска.'
+      : progress.failure === 'pairing_unavailable'
+        ? ' QR-сессия истекла либо была заменена новой попыткой.'
+        : progress.failure === 'stopped'
+          ? ' Остановка подтверждена сервером и действует для обоих устройств.'
+          : progress.failure === 'unknown'
+            ? ' Получена непредвиденная ошибка; эту попытку можно убрать и запустить заново.'
+            : ''
   if (progress.complete) return `${transfer}${chats}${gaps} Можно открыть чаты.`
-  return `${transfer}${chats}${gaps} Можно уйти из настроек; перенос продолжится, пока приложение открыто.`
+  if (progress.stage === 'cancelled' || progress.stage === 'failed') {
+    return `${transfer}${chats}${gaps}${failure}`
+  }
+  return `${transfer}${chats}${gaps}${failure} Можно уйти из настроек; перенос продолжится, пока приложение открыто.`
+}
+
+async function stopSync(progress: DeviceHistorySyncProgress): Promise<void> {
+  if (progress.stage === 'cancelled' || progress.stage === 'failed') {
+    $frontend.deviceHistorySync.dismiss(progress.pairingId)
+    refreshSyncStatuses()
+    return
+  }
+  stoppingPairingId.value = progress.pairingId
+  try {
+    await $frontend.deviceHistorySync.cancel(progress.pairingId)
+  } finally {
+    stoppingPairingId.value = null
+    refreshSyncStatuses()
+  }
 }
 
 async function createOffer(): Promise<void> {
@@ -244,7 +285,7 @@ onMounted(() => {
     >
       <div class="pairing-sync-progress__title">
         <strong>{{ syncTitle(progress) }}</strong>
-        <span>{{ progress.complete ? 'Готово' : 'В процессе' }}</span>
+        <span>{{ syncBadge(progress) }}</span>
       </div>
       <progress
         v-if="progress.totalConversations > 0"
@@ -252,6 +293,15 @@ onMounted(() => {
         :value="progress.stage === 'preparing_crypto' ? progress.readyConversations : progress.confirmedConversations"
       />
       <p>{{ syncDetails(progress) }}</p>
+      <button
+        v-if="!progress.complete"
+        class="button button--secondary button--compact"
+        type="button"
+        :disabled="stoppingPairingId === progress.pairingId || progress.stage === 'cancelling'"
+        @click="stopSync(progress)"
+      >
+        {{ progress.stage === 'cancelled' || progress.stage === 'failed' ? 'Убрать' : 'Остановить на обоих устройствах' }}
+      </button>
     </section>
     <div v-if="!displayed && !view && !scanning" class="settings-inline-actions">
       <button v-if="!isPhone" class="button button--primary button--compact" type="button" :disabled="busy" @click="createOffer">Показать QR</button>

@@ -7,7 +7,11 @@ from datetime import datetime
 from uuid import UUID
 
 from messenger.application.device_pairings.policy import DevicePairingPolicy
-from messenger.application.errors import DevicePairingNotFoundError, DevicePairingStateError
+from messenger.application.errors import (
+    DeviceHistorySyncCancelledError,
+    DevicePairingNotFoundError,
+    DevicePairingStateError,
+)
 from messenger.application.ports.clock import Clock
 from messenger.application.ports.identity import IdentityUnitOfWork, IdentityUnitOfWorkFactory
 from messenger.domain.entities import (
@@ -65,25 +69,36 @@ async def _load_pairing_actor(
     now: datetime,
     policy: DevicePairingPolicy,
 ) -> tuple[DevicePairing, UUID]:
+    preview = await uow.device_pairings.get_by_id(pairing_id)
+    target_device_id, _ = _resolve_pairing_actor(
+        preview,
+        user_id=user_id,
+        session_id=session_id,
+        device_id=device_id,
+        now=now,
+        policy=policy,
+    )
+    assert preview is not None
+    assert preview.trusted_device_id is not None
+    assert preview.authorized_device_id is not None
+    await uow.device_pairings.lock_history_pair(
+        user_id=user_id,
+        first_device_id=preview.trusted_device_id,
+        second_device_id=preview.authorized_device_id,
+    )
     pairing = await uow.device_pairings.get_by_id_for_update(pairing_id)
-    if (
-        pairing is None
-        or pairing.status is not DevicePairingStatus.AUTHORIZED
-        or pairing.user_id != user_id
-        or now >= pairing.expires_at + policy.retention
-    ):
-        raise DevicePairingNotFoundError("pairing not found")
-    if pairing.trusted_device_id is None or pairing.authorized_device_id is None:
-        raise DevicePairingNotFoundError("pairing not found")
-    if device_id == pairing.trusted_device_id and session_id == pairing.trusted_session_id:
-        target_device_id = pairing.authorized_device_id
-        counterpart_session_id = pairing.authorized_session_id
-    elif device_id == pairing.authorized_device_id and session_id == pairing.authorized_session_id:
-        target_device_id = pairing.trusted_device_id
-        counterpart_session_id = pairing.trusted_session_id
-    else:
-        raise DevicePairingNotFoundError("pairing not found")
+    locked_target_device_id, counterpart_session_id = _resolve_pairing_actor(
+        pairing,
+        user_id=user_id,
+        session_id=session_id,
+        device_id=device_id,
+        now=now,
+        policy=policy,
+    )
+    if locked_target_device_id != target_device_id:
+        raise DevicePairingNotFoundError("pairing binding changed")
 
+    assert pairing is not None
     current_session = await uow.sessions.get_by_id(session_id)
     current_device = await uow.devices.get_by_id(device_id)
     target_session = (
@@ -116,6 +131,38 @@ async def _load_pairing_actor(
     ):
         raise DevicePairingNotFoundError("pairing devices are inactive")
     return pairing, target_device_id
+
+
+def _resolve_pairing_actor(
+    pairing: DevicePairing | None,
+    *,
+    user_id: UUID,
+    session_id: UUID,
+    device_id: UUID,
+    now: datetime,
+    policy: DevicePairingPolicy,
+) -> tuple[UUID, UUID | None]:
+    if (
+        pairing is None
+        or pairing.status is not DevicePairingStatus.AUTHORIZED
+        or pairing.user_id != user_id
+        or now >= pairing.expires_at + policy.retention
+    ):
+        raise DevicePairingNotFoundError("pairing not found")
+    if pairing.trusted_device_id is None or pairing.authorized_device_id is None:
+        raise DevicePairingNotFoundError("pairing not found")
+    if device_id == pairing.trusted_device_id and session_id == pairing.trusted_session_id:
+        target_device_id = pairing.authorized_device_id
+        counterpart_session_id = pairing.authorized_session_id
+    elif device_id == pairing.authorized_device_id and session_id == pairing.authorized_session_id:
+        target_device_id = pairing.trusted_device_id
+        counterpart_session_id = pairing.trusted_session_id
+    else:
+        raise DevicePairingNotFoundError("pairing not found")
+
+    if pairing.history_sync_cancelled_at is not None:
+        raise DeviceHistorySyncCancelledError("history sync was cancelled")
+    return target_device_id, counterpart_session_id
 
 
 async def _require_direct_member(

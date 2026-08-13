@@ -194,6 +194,12 @@ export class HttpDevicePairingGateway implements DevicePairingGateway {
     ))
   }
 
+  async cancelHistorySync(pairingId: string): Promise<void> {
+    await this.apiClient.request(`/api/v1/device-pairings/${pairingId}/history-sync/cancel`, {
+      method: 'POST',
+    })
+  }
+
   async uploadHistoryChunk(
     pairingId: string,
     targetDeviceId: string,

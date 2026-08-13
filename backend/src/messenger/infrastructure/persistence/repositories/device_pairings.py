@@ -3,7 +3,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import and_, delete, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from messenger.domain.entities import DevicePairing
@@ -18,6 +18,10 @@ class SqlAlchemyDevicePairingRepository:
     async def add(self, pairing: DevicePairing) -> None:
         self._session.add(self._to_model(pairing))
         await self._session.flush()
+
+    async def get_by_id(self, pairing_id: UUID) -> DevicePairing | None:
+        model = await self._session.get(DevicePairingModel, pairing_id)
+        return map_device_pairing(model) if model is not None else None
 
     async def get_by_id_for_update(self, pairing_id: UUID) -> DevicePairing | None:
         model = await self._session.scalar(
@@ -44,6 +48,58 @@ class SqlAlchemyDevicePairingRepository:
         model.authorized_at = pairing.authorized_at
         model.cancelled_at = pairing.cancelled_at
         model.expired_at = pairing.expired_at
+        model.history_sync_cancelled_at = pairing.history_sync_cancelled_at
+        await self._session.flush()
+
+    async def lock_history_pair(
+        self,
+        *,
+        user_id: UUID,
+        first_device_id: UUID,
+        second_device_id: UUID,
+    ) -> None:
+        low, high = sorted((first_device_id, second_device_id), key=str)
+        pair_key = f"{user_id}:{low}:{high}"
+        await self._session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:pair_key, 0))"),
+            {"pair_key": pair_key},
+        )
+
+    async def cancel_other_active_history_syncs(
+        self,
+        *,
+        pairing_id: UUID,
+        user_id: UUID,
+        first_device_id: UUID,
+        second_device_id: UUID,
+        now: datetime,
+    ) -> None:
+        same_pair = or_(
+            and_(
+                DevicePairingModel.trusted_device_id == first_device_id,
+                DevicePairingModel.authorized_device_id == second_device_id,
+            ),
+            and_(
+                DevicePairingModel.trusted_device_id == second_device_id,
+                DevicePairingModel.authorized_device_id == first_device_id,
+            ),
+        )
+        models = list(
+            await self._session.scalars(
+                select(DevicePairingModel)
+                .where(
+                    DevicePairingModel.id != pairing_id,
+                    DevicePairingModel.user_id == user_id,
+                    DevicePairingModel.status == "authorized",
+                    DevicePairingModel.history_sync_cancelled_at.is_(None),
+                    same_pair,
+                )
+                .order_by(DevicePairingModel.id)
+                .with_for_update()
+            )
+        )
+        for model in models:
+            model.history_sync_cancelled_at = now
         await self._session.flush()
 
     async def prune_expired(self, *, before: datetime) -> None:
@@ -76,4 +132,5 @@ class SqlAlchemyDevicePairingRepository:
             authorized_at=pairing.authorized_at,
             cancelled_at=pairing.cancelled_at,
             expired_at=pairing.expired_at,
+            history_sync_cancelled_at=pairing.history_sync_cancelled_at,
         )

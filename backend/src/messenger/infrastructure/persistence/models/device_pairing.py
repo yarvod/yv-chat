@@ -3,7 +3,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String, Uuid
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String, Uuid, and_, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from messenger.infrastructure.persistence.models.base import Base
@@ -63,6 +63,12 @@ class DevicePairingModel(Base):
             "(status = 'expired') = (expired_at IS NOT NULL)",
             name="expired_binding_complete",
         ),
+        CheckConstraint(
+            "history_sync_cancelled_at IS NULL OR "
+            "(status = 'authorized' AND authorized_at IS NOT NULL "
+            "AND history_sync_cancelled_at >= authorized_at)",
+            name="history_sync_cancelled_only_after_authorization",
+        ),
         Index("ix_device_pairings_expires_at", "expires_at"),
         Index("ix_device_pairings_trusted_session_id", "trusted_session_id"),
         Index("ix_device_pairings_candidate_session_id", "candidate_session_id"),
@@ -103,3 +109,17 @@ class DevicePairingModel(Base):
     authorized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     expired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    history_sync_cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+Index(
+    "uq_device_pairings_active_history_pair",
+    DevicePairingModel.user_id,
+    func.least(DevicePairingModel.trusted_device_id, DevicePairingModel.authorized_device_id),
+    func.greatest(DevicePairingModel.trusted_device_id, DevicePairingModel.authorized_device_id),
+    unique=True,
+    postgresql_where=and_(
+        DevicePairingModel.status == "authorized",
+        DevicePairingModel.history_sync_cancelled_at.is_(None),
+    ),
+)

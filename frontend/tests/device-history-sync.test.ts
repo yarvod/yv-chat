@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { SynchronizeDeviceHistory } from '../app/application/device-crypto/synchronize-device-history'
+import { ApplicationError } from '../app/application/errors'
 import { ProtocolMessageProtection } from '../app/application/messaging/message-protection'
 import type { DeviceHistorySyncJob, DeviceHistorySyncJobStore } from '../app/application/ports/device-history-sync-jobs'
 import type { DevicePairingGateway } from '../app/application/ports/device-pairing-gateway'
@@ -8,6 +9,7 @@ import type { MessageArchive, ArchivedMessage } from '../app/application/ports/m
 import type { MessageProtocolAdapter } from '../app/application/ports/message-protocol-adapter'
 import type { Scheduler, ScheduledTask } from '../app/application/ports/scheduler'
 import type { DeviceHistoryRelayChunk } from '../app/domain/accounts/device-pairing'
+import { BrowserDeviceHistorySyncJobStore } from '../app/infrastructure/storage/browser-device-history-sync-jobs'
 
 const owner = '11111111-1111-4111-8111-111111111111'
 const trusted = '22222222-2222-4222-8222-222222222222'
@@ -71,6 +73,17 @@ class MemoryJobs implements DeviceHistorySyncJobStore {
     ))
   }
   remove(pairingId: string) { this.jobs.delete(pairingId) }
+}
+
+class MemoryStorage implements Storage {
+  private readonly values = new Map<string, string>()
+
+  get length() { return this.values.size }
+  clear() { this.values.clear() }
+  getItem(key: string) { return this.values.get(key) ?? null }
+  key(index: number) { return [...this.values.keys()][index] ?? null }
+  removeItem(key: string) { this.values.delete(key) }
+  setItem(key: string, value: string) { this.values.set(key, value) }
 }
 
 interface RelayState {
@@ -199,6 +212,104 @@ function service(
 }
 
 describe('QR-linked bidirectional device history sync', () => {
+  it('collapses legacy jobs for the same local/target pair to the newest QR attempt', () => {
+    const storage = new MemoryStorage()
+    const oldest = '44444444-4444-4444-8444-444444444441'
+    const newest = '44444444-4444-4444-8444-444444444443'
+    storage.setItem('yv-chat-device-history-sync-jobs-v1', JSON.stringify([
+      {
+        ownerUserId: owner, currentDeviceId: trusted, targetDeviceId: candidate,
+        pairingId: oldest, expiresAt: '2099-08-14T12:00:00Z',
+      },
+      {
+        ownerUserId: owner, currentDeviceId: trusted, targetDeviceId: candidate,
+        pairingId: '44444444-4444-4444-8444-444444444442',
+        expiresAt: '2099-08-14T12:01:00Z',
+      },
+      {
+        ownerUserId: owner, currentDeviceId: trusted, targetDeviceId: candidate,
+        pairingId: newest, expiresAt: '2099-08-14T12:02:00Z',
+      },
+    ]))
+
+    const jobs = new BrowserDeviceHistorySyncJobStore(storage)
+
+    expect(jobs.load(owner, trusted).map(job => job.pairingId)).toEqual([newest])
+    expect(JSON.parse(storage.getItem('yv-chat-device-history-sync-jobs-v1')!)).toHaveLength(1)
+  })
+
+  it('runs restored jobs serially instead of creating concurrent MLS/history pipelines', async () => {
+    const jobs = new MemoryJobs()
+    const secondTarget = '33333333-3333-4333-8333-333333333334'
+    for (const [pairingId, targetDeviceId] of [
+      [pairing, candidate],
+      ['44444444-4444-4444-8444-444444444445', secondTarget],
+    ]) {
+      jobs.save({
+        ownerUserId: owner,
+        currentDeviceId: trusted,
+        pairingId,
+        targetDeviceId,
+        expiresAt: '2099-08-14T12:00:00Z',
+      })
+    }
+    let active = 0
+    let maximum = 0
+    const sync = new SynchronizeDeviceHistory(
+      {} as DevicePairingGateway,
+      {
+        async listConversations() {
+          active += 1
+          maximum = Math.max(maximum, active)
+          await new Promise(resolve => setTimeout(resolve, 5))
+          active -= 1
+          return []
+        },
+      } as never,
+      new MemoryArchive([]),
+      new ProtocolMessageProtection([adapter]),
+      jobs,
+      scheduler,
+    )
+
+    sync.resume(owner, trusted)
+
+    await vi.waitFor(() => expect(jobs.jobs.size).toBe(0))
+    expect(maximum).toBe(1)
+  })
+
+  it('persists a cancel intent until the server confirms it for both devices', async () => {
+    const jobs = new MemoryJobs()
+    const cancelHistorySync = vi.fn()
+      .mockRejectedValueOnce(new ApplicationError(null, 'network', 'offline'))
+      .mockResolvedValueOnce(undefined)
+    const sync = new SynchronizeDeviceHistory(
+      { cancelHistorySync } as unknown as DevicePairingGateway,
+      {} as never,
+      new MemoryArchive([]),
+      new ProtocolMessageProtection([adapter]),
+      jobs,
+      scheduler,
+    )
+    const job = {
+      ownerUserId: owner,
+      currentDeviceId: trusted,
+      pairingId: pairing,
+      targetDeviceId: candidate,
+      expiresAt: '2099-08-14T12:00:00Z',
+    }
+    sync.queue(job)
+
+    await sync.cancel(pairing)
+
+    expect(jobs.load(owner, trusted).at(0)?.cancelRequested).toBe(true)
+    expect(sync.current(owner, trusted).at(0)?.stage).toBe('cancelling')
+    sync.resume(owner, trusted)
+    await vi.waitFor(() => expect(jobs.jobs.size).toBe(0))
+    expect(sync.current(owner, trusted).at(0)?.stage).toBe('cancelled')
+    expect(cancelHistorySync).toHaveBeenCalledTimes(2)
+  })
+
   it('prepares the exact target MLS leaf before a trusted device exports history', async () => {
     const relay: RelayState = { chunks: [], acknowledged: new Set() }
     const prepareTarget = vi.fn(async (_owner, _target, onProgress) => {

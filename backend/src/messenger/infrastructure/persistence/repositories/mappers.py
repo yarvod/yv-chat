@@ -117,6 +117,7 @@ def map_device_pairing(model: DevicePairingModel) -> DevicePairing:
         authorized_at=model.authorized_at,
         cancelled_at=model.cancelled_at,
         expired_at=model.expired_at,
+        history_sync_cancelled_at=model.history_sync_cancelled_at,
     )
 
 

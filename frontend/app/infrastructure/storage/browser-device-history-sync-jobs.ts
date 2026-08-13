@@ -14,6 +14,7 @@ function validJob(value: unknown): value is DeviceHistorySyncJob {
     && typeof item.expiresAt === 'string'
     && Number.isFinite(Date.parse(item.expiresAt))
     && (item.prepareTarget === undefined || typeof item.prepareTarget === 'boolean')
+    && (item.cancelRequested === undefined || typeof item.cancelRequested === 'boolean')
     && (item.peerCompletedConversationIds === undefined || (
       Array.isArray(item.peerCompletedConversationIds)
       && item.peerCompletedConversationIds.every(
@@ -27,13 +28,29 @@ export class BrowserDeviceHistorySyncJobStore implements DeviceHistorySyncJobSto
 
   save(job: DeviceHistorySyncJob): void {
     if (!validJob(job)) throw new TypeError('invalid device history sync job')
-    const jobs = this.read().filter(item => item.pairingId !== job.pairingId)
+    const jobs = this.read().filter(item => (
+      item.pairingId !== job.pairingId
+      && !(
+        item.ownerUserId === job.ownerUserId
+        && item.currentDeviceId === job.currentDeviceId
+        && item.targetDeviceId === job.targetDeviceId
+      )
+    ))
     this.storage.setItem(STORAGE_KEY, JSON.stringify([...jobs, job]))
   }
 
   load(ownerUserId: string, currentDeviceId: string): readonly DeviceHistorySyncJob[] {
     const now = Date.now()
-    const current = this.read().filter(job => Date.parse(job.expiresAt) > now)
+    const active = this.read().filter(job => Date.parse(job.expiresAt) > now)
+    const newest = new Map<string, DeviceHistorySyncJob>()
+    for (const job of active) {
+      const key = `${job.ownerUserId}:${job.currentDeviceId}:${job.targetDeviceId}`
+      const existing = newest.get(key)
+      if (!existing || Date.parse(job.expiresAt) > Date.parse(existing.expiresAt)) {
+        newest.set(key, job)
+      }
+    }
+    const current = [...newest.values()]
     this.storage.setItem(STORAGE_KEY, JSON.stringify(current))
     return current.filter(job => (
       job.ownerUserId === ownerUserId && job.currentDeviceId === currentDeviceId

@@ -1,10 +1,11 @@
 """PostgreSQL-backed device pairing survives process-local state loss."""
 
+import asyncio
 import base64
 import os
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import delete, func, select
@@ -347,8 +348,132 @@ async def run_flow(database_url: str) -> None:
         async with seventh_sessions() as session:
             session_count = await session.scalar(select(func.count()).select_from(SessionModel))
             device_count = await session.scalar(select(func.count()).select_from(DeviceModel))
+            original_pairing = await session.get(DevicePairingModel, created.pairing_id)
+            replacement_pairing = await session.get(
+                DevicePairingModel,
+                existing_created.pairing_id,
+            )
         assert session_count == 2
         assert device_count == 2
+        assert original_pairing is not None
+        assert original_pairing.history_sync_cancelled_at is not None
+        assert replacement_pairing is not None
+        assert replacement_pairing.history_sync_cancelled_at is None
+
+        competing_pairings = []
+        for offset in (13, 14):
+            offer = await CreatePairingOffer(
+                unit_of_work=seventh_uow,
+                clock=FixedClock(NOW + timedelta(seconds=offset)),
+                credentials=SecureSessionCredentialService(),
+                pairing_policy=PAIRING_POLICY,
+            ).execute(
+                CreatePairingOfferCommand(
+                    user_id=trusted.user_id,
+                    session_id=trusted.session_id,
+                    device_id=trusted.device_id,
+                )
+            )
+            await ScanExistingPairingOffer(
+                unit_of_work=seventh_uow,
+                clock=FixedClock(NOW + timedelta(seconds=offset)),
+                credentials=SecureSessionCredentialService(),
+            ).execute(
+                ScanExistingPairingOfferCommand(
+                    pairing_id=offer.pairing_id,
+                    scan_token=offer.scan_token,
+                    user_id=trusted.user_id,
+                    session_id=issued.session_id,
+                    device_id=issued.device_id,
+                )
+            )
+            competing_pairings.append(offer.pairing_id)
+
+        await asyncio.gather(
+            *(
+                ApproveDevicePairing(
+                    unit_of_work=seventh_uow,
+                    clock=FixedClock(NOW + timedelta(seconds=15)),
+                ).execute(
+                    ApproveDevicePairingCommand(
+                        pairing_id=pairing_id,
+                        user_id=trusted.user_id,
+                        session_id=trusted.session_id,
+                        device_id=trusted.device_id,
+                    )
+                )
+                for pairing_id in competing_pairings
+            )
+        )
+        async with seventh_sessions() as session:
+            active_pairings = await session.scalar(
+                select(func.count())
+                .select_from(DevicePairingModel)
+                .where(
+                    DevicePairingModel.status == "authorized",
+                    DevicePairingModel.history_sync_cancelled_at.is_(None),
+                )
+            )
+        assert active_pairings == 1
+
+        opposite_pairings: list[tuple[UUID, UUID, UUID, UUID]] = []
+        for offset, offer_session, offer_device, scan_session, scan_device in (
+            (16, trusted.session_id, trusted.device_id, issued.session_id, issued.device_id),
+            (17, issued.session_id, issued.device_id, trusted.session_id, trusted.device_id),
+        ):
+            offer = await CreatePairingOffer(
+                unit_of_work=seventh_uow,
+                clock=FixedClock(NOW + timedelta(seconds=offset)),
+                credentials=SecureSessionCredentialService(),
+                pairing_policy=PAIRING_POLICY,
+            ).execute(
+                CreatePairingOfferCommand(
+                    user_id=trusted.user_id,
+                    session_id=offer_session,
+                    device_id=offer_device,
+                )
+            )
+            await ScanExistingPairingOffer(
+                unit_of_work=seventh_uow,
+                clock=FixedClock(NOW + timedelta(seconds=offset)),
+                credentials=SecureSessionCredentialService(),
+            ).execute(
+                ScanExistingPairingOfferCommand(
+                    pairing_id=offer.pairing_id,
+                    scan_token=offer.scan_token,
+                    user_id=trusted.user_id,
+                    session_id=scan_session,
+                    device_id=scan_device,
+                )
+            )
+            opposite_pairings.append((offer.pairing_id, offer_session, offer_device, scan_device))
+
+        await asyncio.gather(
+            *(
+                ApproveDevicePairing(
+                    unit_of_work=seventh_uow,
+                    clock=FixedClock(NOW + timedelta(seconds=18)),
+                ).execute(
+                    ApproveDevicePairingCommand(
+                        pairing_id=pairing_id,
+                        user_id=trusted.user_id,
+                        session_id=offer_session,
+                        device_id=offer_device,
+                    )
+                )
+                for pairing_id, offer_session, offer_device, _ in opposite_pairings
+            )
+        )
+        async with seventh_sessions() as session:
+            opposite_active_pairings = await session.scalar(
+                select(func.count())
+                .select_from(DevicePairingModel)
+                .where(
+                    DevicePairingModel.status == "authorized",
+                    DevicePairingModel.history_sync_cancelled_at.is_(None),
+                )
+            )
+        assert opposite_active_pairings == 1
     finally:
         await seventh_engine.dispose()
 

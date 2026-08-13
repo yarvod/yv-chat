@@ -4,6 +4,27 @@
 
 ## Active
 
+### BUG-078 — Несколько QR jobs одной пары вызывали server deadlock без возможности отмены
+
+- Статус: `fixed locally; production rollout pending` (`WP-084`).
+- Severity: `critical multi-device synchronization availability`.
+- Production reproduction: после нескольких QR attempts новая PWA восстанавливает
+  три-четыре durable jobs одного телефона/компьютера, одновременно запускает для
+  каждой MLS preparation/history relay и показывает одинаковые retry cards.
+- Фактическая server ошибка: PostgreSQL `DeadlockDetectedError` на `devices FOR
+  UPDATE` во время concurrent history/crypto requests; API отвечает 500, но client
+  сворачивает причину в бесконечное «повторяем автоматически».
+- Причина: job identity равнялась `pairingId`, поэтому store/runtime не знали, что
+  разные QR относятся к одной unordered device pair; resume запускал все jobs
+  параллельно, server не имел unique active-pair invariant, а UI не имел cancel.
+- Требуемое исправление: server-arbitrated single active pairing per device pair,
+  peer-visible cancel, legacy job dedupe, sequential local execution и terminal
+  error state вместо бесконечного retry.
+- Проверено: concurrent PostgreSQL approvals, включая QR с противоположными ролями
+  trusted/candidate, оставляют один active relay без deadlock; migration сворачивает
+  четыре legacy duplicates в один active; frontend восстанавливает одну newest card,
+  исполняет jobs последовательно и сохраняет cancel intent до server ACK.
+
 ### BUG-077 — QR sync зависал после authorization и ложно объявлял перенос фоновым
 
 - Статус: `fixed locally; production rollout pending` (`WP-083`).

@@ -18,6 +18,8 @@ from messenger.application.device_pairings.authorize import (
 from messenger.application.device_pairings.cancel import (
     CancelCandidatePairing,
     CancelCandidatePairingCommand,
+    CancelDeviceHistorySync,
+    CancelDeviceHistorySyncCommand,
     CancelExistingCandidatePairing,
     CancelExistingCandidatePairingCommand,
     CancelTrustedPairing,
@@ -58,6 +60,7 @@ from messenger.application.device_pairings.status import (
     GetTrustedPairingStatusQuery,
 )
 from messenger.application.errors import (
+    DeviceHistorySyncCancelledError,
     DevicePairingNotFoundError,
     DevicePairingProofError,
     DevicePairingStateError,
@@ -164,6 +167,8 @@ def status_response(view: DevicePairingView) -> PairingStatusResponse:
 
 
 def translate_pairing_error(error: Exception) -> HTTPException:
+    if isinstance(error, DeviceHistorySyncCancelledError):
+        return HTTPException(status_code=status.HTTP_410_GONE, detail="history sync stopped")
     if isinstance(error, (DevicePairingNotFoundError, DevicePairingProofError)):
         return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="pairing not found")
     if isinstance(error, DevicePairingStateError):
@@ -202,7 +207,12 @@ async def upload_history_chunk(
                 ciphertext_base64=payload.ciphertext_base64,
             )
         )
-    except (DevicePairingNotFoundError, DevicePairingStateError, DomainValidationError) as error:
+    except (
+        DeviceHistorySyncCancelledError,
+        DevicePairingNotFoundError,
+        DevicePairingStateError,
+        DomainValidationError,
+    ) as error:
         raise translate_pairing_error(error) from error
     return history_chunk_response(chunk)
 
@@ -230,7 +240,7 @@ async def list_outbound_history_chunks(
                 after_sequence=0,
             )
         )
-    except DevicePairingNotFoundError as error:
+    except (DeviceHistorySyncCancelledError, DevicePairingNotFoundError) as error:
         raise translate_pairing_error(error) from error
     return [history_chunk_response(chunk) for chunk in chunks]
 
@@ -259,7 +269,11 @@ async def list_history_chunks(
                 after_sequence=after_sequence,
             )
         )
-    except (DevicePairingNotFoundError, DomainValidationError) as error:
+    except (
+        DeviceHistorySyncCancelledError,
+        DevicePairingNotFoundError,
+        DomainValidationError,
+    ) as error:
         raise translate_pairing_error(error) from error
     return [history_chunk_response(chunk) for chunk in chunks]
 
@@ -289,9 +303,34 @@ async def acknowledge_history_chunk(
                 device_id=principal.device_id,
             )
         )
-    except DevicePairingNotFoundError as error:
+    except (DeviceHistorySyncCancelledError, DevicePairingNotFoundError) as error:
         raise translate_pairing_error(error) from error
     return history_chunk_response(chunk)
+
+
+@router.post("/{pairing_id}/history-sync/cancel", status_code=status.HTTP_204_NO_CONTENT)
+async def cancel_device_history_sync(
+    pairing_id: UUID,
+    request: Request,
+    response: Response,
+    settings: FromDishka[AppSettings],
+    authenticate_session: FromDishka[AuthenticateSession],
+    use_case: FromDishka[CancelDeviceHistorySync],
+) -> Response:
+    require_csrf(request, settings)
+    principal = await authenticate_request(request, response, settings, authenticate_session)
+    try:
+        await use_case.execute(
+            CancelDeviceHistorySyncCommand(
+                pairing_id=pairing_id,
+                user_id=principal.user_id,
+                session_id=principal.session_id,
+                device_id=principal.device_id,
+            )
+        )
+    except DevicePairingNotFoundError as error:
+        raise translate_pairing_error(error) from error
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/requests", response_model=CreatePairingResponse)

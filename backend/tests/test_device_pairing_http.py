@@ -184,6 +184,31 @@ async def test_offer_binds_two_existing_sessions_without_creating_another_device
             await competing.get(f"/api/v1/device-pairings/{pairing_id}/existing-candidate-status")
         ).status_code == 404
 
+        replacement = await candidate.post(
+            "/api/v1/device-pairings/offers",
+            headers=csrf_headers(candidate),
+        )
+        replacement_id = replacement.json()["pairing_id"]
+        assert (
+            await trusted.post(
+                f"/api/v1/device-pairings/{replacement_id}/scan-existing-offer",
+                headers=csrf_headers(trusted),
+                json={"scan_token": replacement.json()["scan_token"]},
+            )
+        ).status_code == 200
+        assert (
+            await candidate.post(
+                f"/api/v1/device-pairings/{replacement_id}/approve",
+                headers=csrf_headers(candidate),
+            )
+        ).status_code == 200
+        assert (
+            await trusted.get(f"/api/v1/device-pairings/{pairing_id}/history-chunks/outbound")
+        ).status_code == 410
+        assert (
+            await trusted.get(f"/api/v1/device-pairings/{replacement_id}/history-chunks/outbound")
+        ).status_code == 200
+
 
 async def test_authorized_pair_can_relay_only_opaque_chunks_to_exact_target() -> None:
     application, state, _ = build_test_application()
@@ -191,6 +216,7 @@ async def test_authorized_pair_can_relay_only_opaque_chunks_to_exact_target() ->
     async with (
         AsyncClient(transport=transport, base_url="https://test") as candidate,
         AsyncClient(transport=transport, base_url="https://test") as trusted,
+        AsyncClient(transport=transport, base_url="https://test") as other_device,
     ):
         created = await candidate.post(
             "/api/v1/device-pairings/requests",
@@ -279,3 +305,25 @@ async def test_authorized_pair_can_relay_only_opaque_chunks_to_exact_target() ->
         assert (
             await candidate.get(f"/api/v1/device-pairings/{pairing_id}/history-chunks")
         ).json() == []
+
+        assert (await login(other_device)).status_code == 200
+        denied_cancel = await other_device.post(
+            f"/api/v1/device-pairings/{pairing_id}/history-sync/cancel",
+            headers=csrf_headers(other_device),
+        )
+        assert denied_cancel.status_code == 404
+
+        cancelled = await candidate.post(
+            f"/api/v1/device-pairings/{pairing_id}/history-sync/cancel",
+            headers=csrf_headers(candidate),
+        )
+        assert cancelled.status_code == 204
+        assert (
+            await trusted.get(f"/api/v1/device-pairings/{pairing_id}/history-chunks/outbound")
+        ).status_code == 410
+        assert (
+            await trusted.post(
+                f"/api/v1/device-pairings/{pairing_id}/history-sync/cancel",
+                headers=csrf_headers(trusted),
+            )
+        ).status_code == 204
