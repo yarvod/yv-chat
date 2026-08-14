@@ -140,10 +140,11 @@ cross-browser/security assurance gates.
 background MLS enrollment и `WP-081` bidirectional encrypted text/tombstone archive
 merge развернуты; `WP-082` automatic existing-device pairing, `WP-083` ACK-gated
 observable MLS/history union и `WP-084` single-flight/server cancellation развернуты;
-`WP-085` локально закрывает найденный после rollout остаточный defect: server cancel
-останавливал relay, но не уже запущенный peer MLS enrollment; `WP-086` локально
+`WP-085` закрывает найденный после rollout остаточный defect: server cancel
+останавливал relay, но не уже запущенный peer MLS enrollment; `WP-086`
 реализует partial completion, чтобы proof-backed `missing_identity` одного direct не
-блокировал доступные чаты; production rollout обоих локальных исправлений pending**.
+блокировал доступные чаты; оба исправления развернуты workflow `31761641522` в image
+`sha-5db642f`**.
 `BL-064` и первый deployment-safe slice `BL-025` завершены; pairing реализуется
 итерациями с отдельным security/ADR review до изменения MLS membership semantics.
 Это не UI-задача «нарисовать QR»: `WP-079` не менял MLS roster, `WP-080` добавил

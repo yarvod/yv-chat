@@ -6,7 +6,8 @@
 
 ### BUG-080 — Неподготавливаемый direct блокировал history sync всех чатов
 
-- Статус: `fixed locally; production rollout pending` (`WP-086`).
+- Статус: `fixed and production deployed` (`WP-086`, workflow `31761641522`,
+  image `sha-5db642f`).
 - Severity: `critical multi-device history availability`.
 - Production reproduction: у `admin` пять direct generations `ready`, а два чата с
   `test`/`test3` — `blocked / missing_identity`; QR history sync остаётся на `5 из 7`
@@ -26,7 +27,8 @@
 
 ### BUG-079 — Peer cancel не прерывал уже запущенную MLS-подготовку
 
-- Статус: `fixed locally; production rollout pending` (`WP-085`).
+- Статус: `fixed and production deployed` (`WP-085`, workflow `31761641522`,
+  image `sha-5db642f`).
 - Severity: `high multi-device cancellation correctness and resource usage`.
 - Production reproduction: trusted Mac показывает `Подготавливаем защищённые чаты:
   5 из 7`; Android нажимает `Остановить на обоих устройствах`; backend дважды

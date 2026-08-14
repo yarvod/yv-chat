@@ -2,7 +2,8 @@
 
 ## WP-086 — Partial QR history sync for provably unavailable chats
 
-Статус: **completed locally; production rollout pending** (`BUG-080`, `BL-015`)
+Статус: **completed and production deployed** (`BUG-080`, `BL-015`, workflow
+`31761641522`, image `sha-5db642f`)
 
 Цель: один direct-чат, который server crypto state доказуемо не позволяет
 синхронизировать, не блокирует объединение остальных чатов устройства.
