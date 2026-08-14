@@ -18,8 +18,11 @@
   готовый MLS direct; `missing_identity`/terminal `protocol_failure` исключаются из
   transfer, а pending/network/неизвестные состояния продолжают retry/error.
 - Проверка: двусторонний application test завершает ready+skipped transfer с ACK,
-  enrollment и UI regressions проверяют skip/pending; полный frontend suite/build и
-  изолированный Docker/browser smoke зелёные.
+  enrollment и UI regressions проверяют skip/pending; полный frontend suite/build
+  зелёные. Реальный existing-device QR flow между двумя изолированными browser
+  origins завершился на обеих сторонах как `1 из 2`, один `missing_identity` direct
+  был пропущен, ready-сообщение появилось на втором устройстве, а PostgreSQL получил
+  четыре history chunks и четыре ACK без browser errors или backend 5xx.
 
 ### BUG-079 — Peer cancel не прерывал уже запущенную MLS-подготовку
 

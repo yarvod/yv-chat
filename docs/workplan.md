@@ -46,10 +46,12 @@
 - backend contract не меняется;
 - full frontend lint/typecheck/tests/build;
 - isolated Docker stack: fresh migrations, healthy API/frontend/PostgreSQL;
-- real in-app browser against isolated Docker stack: authenticated Settings creates
-  and cancels a real QR offer through nginx/API without unexpected 5xx; exact
-  partial-completion copy/state is covered by the component regression because one
-  browser profile cannot represent both device-bound sessions at once.
+- real in-app browser against isolated Docker stack: two device-bound sessions on
+  isolated `localhost` origins complete an existing-device QR flow with one `ready`
+  direct and one `blocked / missing_identity` direct; both sides finish at `1 из 2`,
+  report one explicit skip, expose the transferred message, and remove the stop action;
+- PostgreSQL records four history chunks for the ready direct and four ACKs; browser
+  consoles are clean and the pairing/history API flow completes without 5xx.
 
 ### Exclusions
 
