@@ -65,7 +65,7 @@ describe('device pairing settings flow', () => {
     const first = mountCard()
     await flushPromises()
     expect(first.text()).toContain('Ждём второе устройство')
-    expect(first.text()).toContain('Подтверждено вторым устройством: 1 из 3 чатов')
+    expect(first.text()).toContain('Синхронизировано: 1 из 3 чатов')
     expect(first.text()).toContain('Можно уйти из настроек')
     expect(first.text()).toContain('Остановить на обоих устройствах')
     await first.get('button').trigger('click')
@@ -78,6 +78,74 @@ describe('device pairing settings flow', () => {
     expect(remounted.text()).toContain('Ждём второе устройство')
     expect(current).toHaveBeenCalledTimes(3)
     remounted.unmount()
+  })
+
+  it('reports partial completion without calling skipped chats synchronized', async () => {
+    const states = new Map<string, ReturnType<typeof ref>>()
+    vi.stubGlobal('useState', (key: string, factory: () => unknown) => {
+      let state = states.get(key)
+      if (!state) {
+        state = ref(factory())
+        states.set(key, state)
+      }
+      return state
+    })
+    vi.stubGlobal('useNuxtApp', () => ({
+      $frontend: {
+        deviceInfo: { current: () => ({ deviceClass: 'mobile' }) },
+        deviceHistorySync: {
+          current: () => [{
+            ownerUserId: 'alice-user',
+            currentDeviceId: 'phone-device',
+            pairingId: 'pairing-id',
+            targetDeviceId: 'mac-device',
+            stage: 'complete',
+            totalConversations: 7,
+            readyConversations: 5,
+            confirmedConversations: 7,
+            skippedConversations: 2,
+            exportedRecords: 12,
+            importedRecords: 4,
+            importRevision: 1,
+            gaps: 0,
+            complete: true,
+            failure: null,
+            importedConversationIds: ['conversation-id'],
+            skippedConversationIds: ['blocked-a', 'blocked-b'],
+          }],
+          subscribe: () => () => undefined,
+        },
+      },
+    }))
+    states.set('auth-session', ref({
+      phase: 'authenticated',
+      user: {
+        userId: 'alice-user',
+        deviceId: 'phone-device',
+        username: 'alice',
+        displayName: 'Alice',
+        role: 'user',
+        deviceDisplayName: 'iPhone · Телефон',
+      },
+      message: null,
+    }))
+    states.set('auth-initialized', ref(true))
+
+    const wrapper = mount(DevicePairingCard, {
+      global: {
+        stubs: {
+          QrcodeVue: { template: '<div />' },
+          DeviceQrScanner: { template: '<div />' },
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Синхронизация завершена на обоих устройствах')
+    expect(wrapper.text()).toContain('Синхронизировано: 5 из 7 чатов')
+    expect(wrapper.text()).toContain('Пропущено: 2')
+    expect(wrapper.text()).not.toContain('Остановить на обоих устройствах')
+    wrapper.unmount()
   })
 
   it('queues durable MLS preparation after the candidate receives its independent session', async () => {

@@ -1,6 +1,6 @@
 # ADR-0004: MLS application-message relay для device history transfer
 
-- Статус: **accepted for WP-081 text/tombstone slice**
+- Статус: **accepted for WP-081 text/tombstone slice; extended by WP-086 partial completion**
 - Дата решения: 2026-08-13
 - Связанные задачи: `BL-015`, `WP-081`, `WP-082`
 - Базовый протокол: [ADR-0001](0001-e2ee-mls.md)
@@ -28,6 +28,17 @@ target не удаляет записи, которых нет в manifest др�
 `WP-082` разрешает тем же relay связать два уже авторизованных same-account device:
 pairing authorization ссылается на их exact active sessions, поэтому новый leaf,
 session или crypto identity для archive union не создаётся.
+
+`WP-086` добавляет version 3 completion marker. Если authoritative current crypto
+generation имеет proof-backed terminal `missing_identity` или `protocol_failure`,
+conversation не получает record chunks, а его ID включается в bounded skip manifest
+внутри completion marker любого доступного READY direct. Manifest остаётся MLS
+`PrivateMessage`: server видит только прежние opaque bytes и conversation metadata.
+Обе стороны ACK-ят доступные per-conversation markers и считают manifest IDs явно
+пропущенными, а не синхронизированными. `pending`, network/parse error и retryable
+roster/key-package state skip-ом не становятся. Если все conversations доказуемо
+недоступны, обе стороны завершают локально с `0/N synchronized, N skipped` по одному
+authoritative server crypto state, не создавая фиктивный encryption channel.
 
 ## Почему MLS application messages
 
@@ -68,6 +79,8 @@ refresh с тем же immutable message сохраняет local copy; contradi
   если malicious Delivery Service отдаст ему bytes; это не расширяет confidentiality
   относительно участников самого direct, но relay API всё равно restrict-ит target;
 - доступна только history, которую source ещё может показать/имеет local copy;
+- proof-backed skipped conversation не объявляется синхронизированным и может быть
+  повторён отдельной будущей pairing после появления capable participant device;
 - text/tombstone first; media остаётся отдельным bounded protocol;
 - transfer повышает sender generation, поэтому строгие chunk/byte limits являются
   protocol invariant, а не tuning option.

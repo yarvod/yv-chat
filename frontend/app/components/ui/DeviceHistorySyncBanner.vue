@@ -27,7 +27,8 @@ const label = computed(() => {
   if (!progress) return null
   if (progress.stage === 'queued') return 'Синхронизация устройств в очереди'
   if (progress.stage === 'preparing_crypto') {
-    return `Подготовка E2EE: ${progress.readyConversations}/${progress.totalConversations}`
+    const processed = progress.readyConversations + (progress.skippedConversations ?? 0)
+    return `Подготовка E2EE: ${processed}/${progress.totalConversations}`
   }
   if (progress.stage === 'waiting_peer') {
     return `Ждём второе устройство: ${progress.confirmedConversations}/${progress.totalConversations}`
@@ -36,7 +37,11 @@ const label = computed(() => {
   if (progress.stage === 'cancelling') return 'Останавливаем синхронизацию устройств'
   if (progress.stage === 'cancelled') return 'Синхронизация устройств остановлена'
   if (progress.stage === 'failed') return 'Синхронизацию нужно запустить заново'
-  if (progress.complete) return 'История устройств синхронизирована'
+  if (progress.complete) {
+    return (progress.skippedConversations ?? 0) > 0
+      ? `История синхронизирована частично: пропущено ${progress.skippedConversations}`
+      : 'История устройств синхронизирована'
+  }
   return `Перенос истории: +${progress.importedRecords} получено`
 })
 

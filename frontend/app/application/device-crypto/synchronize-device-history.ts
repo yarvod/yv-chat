@@ -14,7 +14,7 @@ const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$
 
 interface HistoryTransferPayload {
   type: 'yv-chat-device-history'
-  version: 1 | 2
+  version: 1 | 2 | 3
   pairingId: string
   senderDeviceId: string
   targetDeviceId: string
@@ -22,6 +22,7 @@ interface HistoryTransferPayload {
   clientChunkId: string
   records: ArchivedMessage[]
   complete?: true
+  skippedConversationIds?: string[]
 }
 
 export type DeviceHistorySyncStage =
@@ -51,6 +52,7 @@ export interface DeviceHistorySyncProgress {
   totalConversations: number
   readyConversations: number
   confirmedConversations: number
+  skippedConversations: number
   exportedRecords: number
   importedRecords: number
   importRevision: number
@@ -58,6 +60,7 @@ export interface DeviceHistorySyncProgress {
   complete: boolean
   failure: DeviceHistorySyncFailure | null
   importedConversationIds: readonly string[]
+  skippedConversationIds: readonly string[]
 }
 
 type ProgressListener = (progress: DeviceHistorySyncProgress) => void
@@ -65,9 +68,24 @@ type StatusListener = (progress: DeviceHistorySyncProgress) => void
 type TargetPreparer = (
   ownerUserId: string,
   targetDeviceId: string,
-  onProgress: (progress: { totalConversations: number, readyConversations: number }) => void,
+  onProgress: (progress: {
+    totalConversations: number
+    readyConversations: number
+    skippedConversationIds?: readonly string[]
+  }) => void,
   ensureActive: () => Promise<void>,
-) => Promise<{ complete: boolean, totalConversations: number, readyConversations: number }>
+) => Promise<{
+  complete: boolean
+  totalConversations: number
+  readyConversations: number
+  skippedConversationIds?: readonly string[]
+}>
+type ConversationState = 'ready' | 'pending' | 'skipped'
+type ConversationClassifier = (
+  conversationId: string,
+  currentDeviceId: string,
+  targetDeviceId: string,
+) => Promise<ConversationState>
 
 class DeviceHistorySyncCancelled extends Error {}
 
@@ -100,12 +118,12 @@ function chunks<T>(values: readonly T[], size: number): T[][] {
 function transferRecords(
   value: unknown,
   expected: Omit<HistoryTransferPayload, 'version' | 'records' | 'complete'>,
-): { records: ArchivedMessage[], complete: boolean } {
+): { records: ArchivedMessage[], complete: boolean, skippedConversationIds: string[] } {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error()
   const payload = value as Record<string, unknown>
   if (
     payload.type !== expected.type
-    || (payload.version !== 1 && payload.version !== 2)
+    || (payload.version !== 1 && payload.version !== 2 && payload.version !== 3)
     || payload.pairingId !== expected.pairingId
     || payload.senderDeviceId !== expected.senderDeviceId
     || payload.targetDeviceId !== expected.targetDeviceId
@@ -116,7 +134,19 @@ function transferRecords(
       payload.records.length === 0 || payload.records.length > CHUNK_RECORD_LIMIT
     ))
     || (payload.version === 2 && (
-      payload.records.length !== 0 || payload.complete !== true
+      payload.records.length !== 0
+      || payload.complete !== true
+      || payload.skippedConversationIds !== undefined
+    ))
+    || (payload.version === 3 && (
+      payload.records.length !== 0
+      || payload.complete !== true
+      || !Array.isArray(payload.skippedConversationIds)
+      || payload.skippedConversationIds.length > 100
+      || payload.skippedConversationIds.some(
+        value => typeof value !== 'string' || !UUID.test(value),
+      )
+      || new Set(payload.skippedConversationIds).size !== payload.skippedConversationIds.length
     ))
   ) throw new Error()
   const records: ArchivedMessage[] = []
@@ -188,7 +218,13 @@ function transferRecords(
       ...(typeof localPlaintext === 'string' ? { localPlaintext } : {}),
     })
   }
-  return { records, complete: payload.version === 2 }
+  return {
+    records,
+    complete: payload.version === 2 || payload.version === 3,
+    skippedConversationIds: payload.version === 3
+      ? payload.skippedConversationIds as string[]
+      : [],
+  }
 }
 
 async function stableChunkId(parts: readonly string[]): Promise<string> {
@@ -220,6 +256,7 @@ export class SynchronizeDeviceHistory {
     private readonly scheduler: Scheduler,
     private readonly attempts = 12,
     private readonly prepareTarget: TargetPreparer | null = null,
+    private readonly classifyConversation: ConversationClassifier | null = null,
   ) {}
 
   queue(job: DeviceHistorySyncJob): void {
@@ -394,6 +431,7 @@ export class SynchronizeDeviceHistory {
       job,
       job.prepareTarget && this.prepareTarget ? 'preparing_crypto' : 'transferring',
     )
+    const locallySkipped = new Set<string>()
     this.report(progress, onProgress)
     if (job.prepareTarget && this.prepareTarget) {
       const prepared = await this.prepareTarget(
@@ -405,6 +443,8 @@ export class SynchronizeDeviceHistory {
             stage: 'preparing_crypto',
             totalConversations: state.totalConversations,
             readyConversations: state.readyConversations,
+            skippedConversations: state.skippedConversationIds?.length ?? 0,
+            skippedConversationIds: [...(state.skippedConversationIds ?? [])],
           }
           this.report(progress, onProgress)
         },
@@ -415,6 +455,11 @@ export class SynchronizeDeviceHistory {
         ...progress,
         totalConversations: prepared.totalConversations,
         readyConversations: prepared.readyConversations,
+        skippedConversations: prepared.skippedConversationIds?.length ?? 0,
+        skippedConversationIds: [...(prepared.skippedConversationIds ?? [])],
+      }
+      for (const conversationId of prepared.skippedConversationIds ?? []) {
+        locallySkipped.add(conversationId)
       }
       if (!prepared.complete) {
         this.report({ ...progress, stage: 'retrying' }, onProgress)
@@ -424,15 +469,46 @@ export class SynchronizeDeviceHistory {
     const conversations = (await this.messaging.listConversations())
       .filter(item => item.conversationType === 'direct')
     this.ensureActive(job.pairingId)
+    const conversationIds = new Set(conversations.map(item => item.conversationId))
+    if ([...locallySkipped].some(id => !conversationIds.has(id))) {
+      throw new Error('prepared history skip binding mismatch')
+    }
+    const pendingConversationIds: string[] = []
+    if (this.classifyConversation) {
+      for (const conversation of conversations) {
+        if (locallySkipped.has(conversation.conversationId)) continue
+        const state = await this.classifyConversation(
+          conversation.conversationId,
+          job.currentDeviceId,
+          job.targetDeviceId,
+        )
+        this.ensureActive(job.pairingId)
+        if (state === 'skipped') locallySkipped.add(conversation.conversationId)
+        else if (state === 'pending') pendingConversationIds.push(conversation.conversationId)
+      }
+    }
+    if (pendingConversationIds.length > 0) {
+      throw new Error('conversation crypto selection is pending')
+    }
+    const transferableConversations = conversations.filter(
+      conversation => !locallySkipped.has(conversation.conversationId),
+    )
     progress = {
       ...progress,
       stage: 'transferring',
       totalConversations: conversations.length,
-      readyConversations: conversations.length,
+      readyConversations: transferableConversations.length,
+      skippedConversations: locallySkipped.size,
+      skippedConversationIds: [...locallySkipped],
     }
     this.report(progress, onProgress)
-    if (conversations.length === 0) {
-      progress = { ...progress, stage: 'complete', complete: true }
+    if (conversations.length === 0 || transferableConversations.length === 0) {
+      progress = {
+        ...progress,
+        stage: 'complete',
+        confirmedConversations: conversations.length,
+        complete: true,
+      }
       this.jobs.remove(job.pairingId)
       this.report(progress, onProgress)
       return progress
@@ -442,7 +518,7 @@ export class SynchronizeDeviceHistory {
     const existingOutbound = new Set(outbound.map(chunk => chunk.clientChunkId))
     const completionIds = new Map<string, string>()
     const peerComplete = new Set(job.peerCompletedConversationIds ?? [])
-    for (const conversation of conversations) {
+    for (const conversation of transferableConversations) {
       this.ensureActive(job.pairingId)
       const records = await this.readTransferable(job.ownerUserId, conversation.conversationId)
       this.ensureActive(job.pairingId)
@@ -494,13 +570,13 @@ export class SynchronizeDeviceHistory {
         job.pairingId,
         job.currentDeviceId,
         conversation.conversationId,
-        'history-complete-v2',
+        'history-complete-v3',
       ])
       completionIds.set(conversation.conversationId, completionId)
       if (!existingOutbound.has(completionId)) {
         const payload: HistoryTransferPayload = {
           type: 'yv-chat-device-history',
-          version: 2,
+          version: 3,
           pairingId: job.pairingId,
           senderDeviceId: job.currentDeviceId,
           targetDeviceId: job.targetDeviceId,
@@ -508,6 +584,7 @@ export class SynchronizeDeviceHistory {
           clientChunkId: completionId,
           records: [],
           complete: true,
+          skippedConversationIds: [...locallySkipped],
         }
         const protectedChunk = await this.protection.protectText(2, {
           conversationId: conversation.conversationId,
@@ -536,6 +613,19 @@ export class SynchronizeDeviceHistory {
           chunk.targetDeviceId !== job.currentDeviceId
           || chunk.senderDeviceId !== job.targetDeviceId
         ) throw new Error('history relay binding mismatch')
+        if (locallySkipped.has(chunk.conversationId)) {
+          peerComplete.add(chunk.conversationId)
+          await this.gateway.acknowledgeHistoryChunk(job.pairingId, chunk.chunkId)
+          this.ensureActive(job.pairingId)
+          progress = {
+            ...progress,
+            confirmedConversations: conversations.filter(
+              conversation => peerComplete.has(conversation.conversationId),
+            ).length,
+          }
+          this.report(progress, onProgress)
+          continue
+        }
         const content = await this.protection.unprotectText(2, {
           conversationId: chunk.conversationId,
           clientMessageId: chunk.clientChunkId,
@@ -551,6 +641,13 @@ export class SynchronizeDeviceHistory {
           clientChunkId: chunk.clientChunkId,
         }
         const payload = transferRecords(JSON.parse(content.plaintext), expected)
+        if (payload.skippedConversationIds.some(id => !conversationIds.has(id))) {
+          throw new Error('history skip manifest binding mismatch')
+        }
+        for (const conversationId of payload.skippedConversationIds) {
+          locallySkipped.add(conversationId)
+          peerComplete.add(conversationId)
+        }
         if (payload.records.length > 0) {
           await this.archive.put(job.ownerUserId, chunk.conversationId, payload.records)
           this.ensureActive(job.pairingId)
@@ -577,6 +674,8 @@ export class SynchronizeDeviceHistory {
           importedConversationIds: payload.records.length > 0
             ? [...new Set([...progress.importedConversationIds, chunk.conversationId])]
             : progress.importedConversationIds,
+          skippedConversations: locallySkipped.size,
+          skippedConversationIds: [...locallySkipped],
         }
         this.report(progress, onProgress)
       }
@@ -620,6 +719,7 @@ export class SynchronizeDeviceHistory {
       totalConversations: 0,
       readyConversations: 0,
       confirmedConversations: 0,
+      skippedConversations: 0,
       exportedRecords: 0,
       importedRecords: 0,
       importRevision: 0,
@@ -627,6 +727,7 @@ export class SynchronizeDeviceHistory {
       complete: false,
       failure: null,
       importedConversationIds: [],
+      skippedConversationIds: [],
     }
   }
 

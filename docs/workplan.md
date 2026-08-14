@@ -1,57 +1,67 @@
 # Текущий workplan
 
-## WP-085 — Prompt peer cancellation during MLS history preparation
+## WP-086 — Partial QR history sync for provably unavailable chats
 
-Статус: **completed locally; production rollout pending** (`BUG-079`, `BL-015`)
+Статус: **completed locally; production rollout pending** (`BUG-080`, `BL-015`)
 
-Цель: server-confirmed QR history cancellation должна останавливать не только
-history relay и progress card, но и уже запущенную на втором устройстве подготовку
-MLS roster.
+Цель: один direct-чат, который server crypto state доказуемо не позволяет
+синхронизировать, не блокирует объединение остальных чатов устройства.
 
-### Production evidence
+### Production reproduction
 
-- у `admin` последняя pairing получила два `POST .../history-sync/cancel` с `204`;
-- PostgreSQL сохранил `history_sync_cancelled_at`, а после отмены relay-запросы
-  прекратились;
-- trusted client при этом продолжал локальный `EnrollLinkedDevice` и показывал
-  `5 из 7`, потому что prepare callback не проверял pairing relay;
-- два оставшихся direct-чата имеют server state `blocked / missing_identity`:
-  у пользователей `test` и `test3` нет активного MLS-capable device. Это отдельное
-  корректное fail-closed условие, а не причина продолжения после cancel.
+- `admin` связывает Android и Mac с семью direct conversations;
+- пять current MLS generations имеют `ready` и содержат оба device leaf;
+- чаты с `test` и `test3` имеют `blocked / missing_identity`, потому что у второго
+  participant нет активного MLS-capable device;
+- current all-or-nothing enrollment остаётся на `5 из 7`, затем вся history job
+  уходит в retry вместо завершения доступных пяти чатов.
 
 ### Scope
 
-- history sync передаёт enrollment-операции async activity guard;
-- guard проверяет local cancel и server relay state между чатами и retry passes;
-- server `410` от peer cancellation завершает durable job как `cancelled/stopped`;
-- rejected single-flight cleanup promises не создают unhandled rejection;
-- tests фиксируют остановку до следующей per-conversation MLS operation.
+- оба устройства одинаково классифицируют conversation как `ready`, временно
+  `pending` или доказуемо `skipped` по authoritative crypto generation;
+- `missing_identity` и terminal `protocol_failure` можно пропустить; network,
+  malformed response и retryable roster/key-package state нельзя молча скрывать;
+- encrypted completion manifest передаёт skipped conversation IDs через любой
+  доступный MLS conversation, не раскрывая их relay server-у как новое поле;
+- peer ACK и local durable job различают полностью и частично успешный transfer;
+- Settings показывает `синхронизировано N`, `пропущено M` и понятную причину;
+- skipped chat остаётся доступен для отдельной будущей попытки после исправления
+  participant crypto state.
 
 ### Security invariants
 
-- отмена не ослабляет MLS validation и не помечает неподготовленный чат ready;
-- activity probe использует существующий authorized pairing endpoint и не раскрывает
-  ciphertext, identity keys или session credentials;
-- уже завершённая atomic MLS operation не откатывается; следующая операция не
-  начинается после подтверждённой отмены.
+- skipped state не помечает MLS generation ready и не ослабляет protect/unprotect;
+- неизвестная ошибка, invalid binding/ciphertext и authorization failure завершаются
+  ошибкой или retry, а не partial success;
+- manifest шифруется MLS application message в уже ready direct conversation;
+- server по-прежнему не получает plaintext, local archive content или skip manifest;
+- импорт и ACK остаются bound к exact pairing/device/conversation/client chunk.
 
 ### Verification
 
-- frontend unit: peer `410` во время target enrollment очищает durable job и даёт
-  `cancelled/stopped`;
-- linked enrollment проверяет activity до per-conversation work;
-- frontend lint, typecheck, full tests and production build;
-- production acceptance после rollout: cancel на candidate прекращает trusted
-  progress без нового QR и без reload.
+- frontend unit: 5 ready + 2 missing-identity завершаются partial success на обеих
+  сторонах; unknown/pending не пропускаются; encrypted manifest и reload resumability;
+- UI regression фиксирует progress/title/details для skipped chats;
+- backend contract не меняется;
+- full frontend lint/typecheck/tests/build;
+- isolated Docker stack: fresh migrations, healthy API/frontend/PostgreSQL;
+- real in-app browser against isolated Docker stack: authenticated Settings creates
+  and cancels a real QR offer through nginx/API without unexpected 5xx; exact
+  partial-completion copy/state is covered by the component regression because one
+  browser profile cannot represent both device-bound sessions at once.
 
 ### Exclusions
 
-- обход `missing_identity` для direct participant без активного crypto device;
-- удаление/изменение production conversations или пользователей `test`/`test3`;
-- изменение MLS membership/protocol или pair-level key agreement.
+- удаление production users/conversations или ручная правка их MLS generations;
+- transfer media/attachments;
+- новый server-readable pairing control protocol;
+- изменение MLS membership policy для participant без capable device.
 
 ### Definition of Done
 
-- кнопка остановки на любой стороне приводит обе cards к terminal stopped state;
-- второй client не начинает следующий chat/retry pass после server cancel;
-- full frontend checks green; production physical acceptance recorded after rollout.
+- 5 ready + 2 skipped дают terminal partial-success вместо `5 из 7` forever;
+- оба устройства согласуют те же skipped IDs и ACK доступных чатов;
+- UI честно не называет skipped chats синхронизированными;
+- Docker/browser acceptance и полный frontend verification зелёные;
+- docs/bugs/backlog обновлены и focused commit создан.

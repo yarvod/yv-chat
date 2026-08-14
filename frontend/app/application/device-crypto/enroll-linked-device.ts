@@ -16,12 +16,16 @@ export interface LinkedDeviceEnrollmentProgress {
   readonly totalConversations: number
   readonly readyConversations: number
   readonly pendingConversationIds: readonly string[]
+  readonly skippedConversationIds: readonly string[]
   readonly complete: boolean
 }
 
 type EpochDrainer = (ownerUserId: string, conversationId: string) => Promise<void>
 type ProgressListener = (progress: LinkedDeviceEnrollmentProgress) => void
 type ActivityGuard = () => Promise<void>
+type TargetState = 'ready' | 'pending' | 'skipped'
+
+const SKIPPABLE_BLOCK_REASONS = new Set(['missing_identity', 'protocol_failure'])
 
 export class EnrollLinkedDevice {
   private readonly running = new Map<string, Promise<LinkedDeviceEnrollmentProgress>>()
@@ -98,6 +102,7 @@ export class EnrollLinkedDevice {
       targetDeviceId,
       conversations.length,
       conversations.map(item => item.conversationId),
+      [],
     )
     onProgress(progress)
     if (progress.complete) return progress
@@ -106,10 +111,16 @@ export class EnrollLinkedDevice {
       if (generation !== this.cancelledGeneration) return progress
       await ensureActive()
       const pending: string[] = []
+      const skipped: string[] = []
       for (const conversation of conversations) {
         await ensureActive()
         const conversationId = conversation.conversationId
-        if (await this.targetIsReady(conversationId, targetDeviceId)) continue
+        const before = await this.targetState(conversationId, targetDeviceId)
+        if (before === 'ready') continue
+        if (before === 'skipped') {
+          skipped.push(conversationId)
+          continue
+        }
         this.cryptoSession.invalidateConversation(conversationId)
         try {
           await this.cryptoSession.reconcileConversation(conversationId)
@@ -119,11 +130,11 @@ export class EnrollLinkedDevice {
           // authoritative and does not treat a successful call as membership.
         }
         await ensureActive()
-        if (!await this.targetIsReady(conversationId, targetDeviceId)) {
-          pending.push(conversationId)
-        }
+        const after = await this.targetState(conversationId, targetDeviceId)
+        if (after === 'skipped') skipped.push(conversationId)
+        else if (after !== 'ready') pending.push(conversationId)
       }
-      progress = this.progress(targetDeviceId, conversations.length, pending)
+      progress = this.progress(targetDeviceId, conversations.length, pending, skipped)
       onProgress(progress)
       if (progress.complete || generation !== this.cancelledGeneration) return progress
       await this.waitForRetry()
@@ -138,13 +149,24 @@ export class EnrollLinkedDevice {
     )
   }
 
-  private async targetIsReady(conversationId: string, targetDeviceId: string): Promise<boolean> {
+  private async targetState(
+    conversationId: string,
+    targetDeviceId: string,
+  ): Promise<TargetState> {
     try {
       const generation = await this.cryptoServer.getCurrent(conversationId)
-      return generation?.status === 'ready'
+      if (
+        generation?.status === 'ready'
         && generation.requiredDevices.some(device => device.deviceId === targetDeviceId)
+      ) return 'ready'
+      if (
+        generation?.status === 'blocked'
+        && generation.blockReason !== null
+        && SKIPPABLE_BLOCK_REASONS.has(generation.blockReason)
+      ) return 'skipped'
+      return 'pending'
     } catch {
-      return false
+      return 'pending'
     }
   }
 
@@ -152,12 +174,16 @@ export class EnrollLinkedDevice {
     targetDeviceId: string,
     totalConversations: number,
     pendingConversationIds: readonly string[],
+    skippedConversationIds: readonly string[],
   ): LinkedDeviceEnrollmentProgress {
     return {
       targetDeviceId,
       totalConversations,
-      readyConversations: totalConversations - pendingConversationIds.length,
+      readyConversations: totalConversations
+        - pendingConversationIds.length
+        - skippedConversationIds.length,
       pendingConversationIds,
+      skippedConversationIds,
       complete: pendingConversationIds.length === 0,
     }
   }

@@ -155,6 +155,47 @@ describe('linked device MLS enrollment', () => {
     expect(result.pendingConversationIds).toEqual(directIds)
   })
 
+  it('finishes with an explicit skip when a participant has no MLS-capable device', async () => {
+    const session: LinkedDeviceEnrollmentSession = {
+      setBeforeEpochAdvance: vi.fn(),
+      invalidateConversation: vi.fn(),
+      reconcileConversation: vi.fn(),
+    }
+    const cryptoServer = {
+      getCurrent: vi.fn(async (conversationId: string) => (
+        conversationId === 'direct-b'
+          ? {
+              ...readyGeneration(conversationId, true),
+              status: 'blocked' as const,
+              blockReason: 'missing_identity' as const,
+              epoch: null,
+              commit: null,
+              ratchetTree: null,
+              readyAt: null,
+            }
+          : readyGeneration(conversationId, true)
+      )),
+    } as unknown as ConversationCryptoGateway
+    const enrollment = new EnrollLinkedDevice(
+      messaging(),
+      cryptoServer,
+      session,
+      scheduler,
+      async () => undefined,
+    )
+
+    const result = await enrollment.enroll('alice', targetDeviceId)
+
+    expect(result).toMatchObject({
+      complete: true,
+      totalConversations: 2,
+      readyConversations: 1,
+      pendingConversationIds: [],
+      skippedConversationIds: ['direct-b'],
+    })
+    expect(session.reconcileConversation).not.toHaveBeenCalledWith('direct-b')
+  })
+
   it('checks the pairing activity before doing per-conversation MLS work', async () => {
     const session: LinkedDeviceEnrollmentSession = {
       setBeforeEpochAdvance: vi.fn(),

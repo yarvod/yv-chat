@@ -130,7 +130,10 @@ function refreshSyncStatuses(): void {
 function syncTitle(progress: DeviceHistorySyncProgress): string {
   if (progress.stage === 'queued') return 'Синхронизация поставлена в очередь'
   if (progress.stage === 'preparing_crypto') {
-    return `Подготавливаем защищённые чаты: ${progress.readyConversations} из ${progress.totalConversations}`
+    const skipped = progress.skippedConversations > 0
+      ? `; пропустим: ${progress.skippedConversations}`
+      : ''
+    return `Подготавливаем защищённые чаты: ${progress.readyConversations} из ${progress.totalConversations}${skipped}`
   }
   if (progress.stage === 'transferring') return 'Передаём и проверяем историю'
   if (progress.stage === 'waiting_peer') return 'Ждём второе устройство'
@@ -151,8 +154,16 @@ function syncBadge(progress: DeviceHistorySyncProgress): string {
 
 function syncDetails(progress: DeviceHistorySyncProgress): string {
   const transfer = `Доступно к отправке: ${progress.exportedRecords}; получено сейчас: ${progress.importedRecords}.`
+  const skippedCount = progress.skippedConversations ?? 0
+  const synchronized = Math.max(
+    0,
+    progress.confirmedConversations - skippedCount,
+  )
   const chats = progress.totalConversations > 0
-    ? ` Подтверждено вторым устройством: ${progress.confirmedConversations} из ${progress.totalConversations} чатов.`
+    ? ` Синхронизировано: ${synchronized} из ${progress.totalConversations} чатов.`
+    : ''
+  const skipped = skippedCount > 0
+    ? ` Пропущено: ${skippedCount} — у участника нет активного защищённого устройства.`
     : ''
   const gaps = progress.gaps > 0 ? ` Недоступных источнику записей: ${progress.gaps}.` : ''
   const failure = progress.failure === 'network'
@@ -166,11 +177,11 @@ function syncDetails(progress: DeviceHistorySyncProgress): string {
           : progress.failure === 'unknown'
             ? ' Получена непредвиденная ошибка; эту попытку можно убрать и запустить заново.'
             : ''
-  if (progress.complete) return `${transfer}${chats}${gaps} Можно открыть чаты.`
+  if (progress.complete) return `${transfer}${chats}${skipped}${gaps} Можно открыть доступные чаты.`
   if (progress.stage === 'cancelled' || progress.stage === 'failed') {
-    return `${transfer}${chats}${gaps}${failure}`
+    return `${transfer}${chats}${skipped}${gaps}${failure}`
   }
-  return `${transfer}${chats}${gaps}${failure} Можно уйти из настроек; перенос продолжится, пока приложение открыто.`
+  return `${transfer}${chats}${skipped}${gaps}${failure} Можно уйти из настроек; перенос продолжится, пока приложение открыто.`
 }
 
 async function stopSync(progress: DeviceHistorySyncProgress): Promise<void> {
@@ -290,7 +301,7 @@ onMounted(() => {
       <progress
         v-if="progress.totalConversations > 0"
         :max="progress.totalConversations"
-        :value="progress.stage === 'preparing_crypto' ? progress.readyConversations : progress.confirmedConversations"
+        :value="progress.stage === 'preparing_crypto' ? progress.readyConversations + (progress.skippedConversations ?? 0) : progress.confirmedConversations"
       />
       <p>{{ syncDetails(progress) }}</p>
       <button

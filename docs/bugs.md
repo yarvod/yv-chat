@@ -4,6 +4,23 @@
 
 ## Active
 
+### BUG-080 — Неподготавливаемый direct блокировал history sync всех чатов
+
+- Статус: `fixed locally; production rollout pending` (`WP-086`).
+- Severity: `critical multi-device history availability`.
+- Production reproduction: у `admin` пять direct generations `ready`, а два чата с
+  `test`/`test3` — `blocked / missing_identity`; QR history sync остаётся на `5 из 7`
+  и не объединяет доступную историю остальных разговоров.
+- Требуемая семантика: proof-backed blocked chat даёт явный partial skip; неизвестная
+  или временная ошибка не скрывается. Обе стороны согласуют skipped IDs внутри
+  encrypted MLS completion manifest и завершают доступные чаты.
+- Исправление: version 3 completion marker переносит encrypted skip manifest через
+  готовый MLS direct; `missing_identity`/terminal `protocol_failure` исключаются из
+  transfer, а pending/network/неизвестные состояния продолжают retry/error.
+- Проверка: двусторонний application test завершает ready+skipped transfer с ACK,
+  enrollment и UI regressions проверяют skip/pending; полный frontend suite/build и
+  изолированный Docker/browser smoke зелёные.
+
 ### BUG-079 — Peer cancel не прерывал уже запущенную MLS-подготовку
 
 - Статус: `fixed locally; production rollout pending` (`WP-085`).

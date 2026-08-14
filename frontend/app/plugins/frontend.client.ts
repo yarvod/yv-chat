@@ -185,6 +185,21 @@ export default defineNuxtPlugin(() => {
         ensureActive,
       )
     ),
+    async (conversationId, currentDeviceId, targetDeviceId) => {
+      const generation = await conversationCryptoGateway.getCurrent(conversationId)
+      if (generation?.status === 'ready') {
+        const required = new Set(generation.requiredDevices.map(device => device.deviceId))
+        return required.has(currentDeviceId) && required.has(targetDeviceId)
+          ? 'ready'
+          : 'pending'
+      }
+      if (
+        generation?.status === 'blocked'
+        && (generation.blockReason === 'missing_identity'
+          || generation.blockReason === 'protocol_failure')
+      ) return 'skipped'
+      return 'pending'
+    },
   )
   themePreferences.apply(themePreference)
 

@@ -16,6 +16,7 @@ const trusted = '22222222-2222-4222-8222-222222222222'
 const candidate = '33333333-3333-4333-8333-333333333333'
 const pairing = '44444444-4444-4444-8444-444444444444'
 const conversation = '55555555-5555-4555-8555-555555555555'
+const blockedConversation = '55555555-5555-4555-8555-555555555556'
 
 function encode(value: string): string {
   const bytes = new TextEncoder().encode(value)
@@ -188,19 +189,21 @@ function service(
   relay: RelayState,
   jobs: DeviceHistorySyncJobStore,
   prepareTarget: ConstructorParameters<typeof SynchronizeDeviceHistory>[7] = null,
+  classifyConversation: ConstructorParameters<typeof SynchronizeDeviceHistory>[8] = null,
+  conversationIds: readonly string[] = [conversation],
 ) {
   return new SynchronizeDeviceHistory(
     new RelayGateway(relay, currentDeviceId) as unknown as DevicePairingGateway,
     {
-      listConversations: async () => [{
-        conversationId: conversation,
+      listConversations: async () => conversationIds.map(conversationId => ({
+        conversationId,
         conversationType: 'direct' as const,
         title: null,
         createdBy: owner,
         createdAt: '2026-08-13T12:00:00Z',
         updatedAt: '2026-08-13T12:00:00Z',
         members: [],
-      }],
+      })),
     } as never,
     archive,
     new ProtocolMessageProtection([adapter]),
@@ -208,6 +211,7 @@ function service(
     scheduler,
     4,
     prepareTarget,
+    classifyConversation,
   )
 }
 
@@ -384,6 +388,115 @@ describe('QR-linked bidirectional device history sync', () => {
       complete: false,
     })
     expect(prepareTarget).toHaveBeenCalledOnce()
+  })
+
+  it('completes the available conversation and reports a missing-identity chat as skipped', async () => {
+    const trustedArchive = new MemoryArchive([archived(1, trusted, 'from phone')])
+    const candidateArchive = new MemoryArchive([archived(2, candidate, 'from mac')])
+    const relay: RelayState = { chunks: [], acknowledged: new Set() }
+    const trustedJobs = new MemoryJobs()
+    const candidateJobs = new MemoryJobs()
+    const classify: ConstructorParameters<typeof SynchronizeDeviceHistory>[8]
+      = vi.fn(async conversationId => (
+        conversationId === blockedConversation ? 'skipped' : 'ready'
+      ))
+    const prepareTarget: ConstructorParameters<typeof SynchronizeDeviceHistory>[7]
+      = vi.fn(async (_owner, _target, onProgress) => {
+        onProgress({ totalConversations: 2, readyConversations: 1 })
+        return {
+          complete: true,
+          totalConversations: 2,
+          readyConversations: 1,
+          skippedConversationIds: [blockedConversation],
+        }
+      })
+    const conversations = [conversation, blockedConversation]
+    const trustedService = service(
+      trusted,
+      trustedArchive,
+      relay,
+      trustedJobs,
+      prepareTarget,
+      classify,
+      conversations,
+    )
+    const candidateService = service(
+      candidate,
+      candidateArchive,
+      relay,
+      candidateJobs,
+      null,
+      classify,
+      conversations,
+    )
+    const expiresAt = '2099-08-14T12:00:00Z'
+    const trustedInput = {
+      ownerUserId: owner,
+      currentDeviceId: trusted,
+      pairingId: pairing,
+      targetDeviceId: candidate,
+      expiresAt,
+      prepareTarget: true,
+    }
+    const candidateInput = {
+      ...trustedInput,
+      currentDeviceId: candidate,
+      targetDeviceId: trusted,
+      prepareTarget: false,
+    }
+
+    const [firstTrusted, firstCandidate] = await Promise.all([
+      trustedService.synchronize(trustedInput),
+      candidateService.synchronize(candidateInput),
+    ])
+    const finalTrusted = firstTrusted.complete
+      ? firstTrusted
+      : await trustedService.synchronize(trustedInput)
+    const finalCandidate = firstCandidate.complete
+      ? firstCandidate
+      : await candidateService.synchronize(candidateInput)
+
+    expect(finalTrusted).toMatchObject({
+      complete: true,
+      totalConversations: 2,
+      readyConversations: 1,
+      confirmedConversations: 2,
+      skippedConversations: 1,
+      skippedConversationIds: [blockedConversation],
+    })
+    expect(finalCandidate).toMatchObject({
+      complete: true,
+      totalConversations: 2,
+      readyConversations: 1,
+      confirmedConversations: 2,
+      skippedConversations: 1,
+      skippedConversationIds: [blockedConversation],
+    })
+    expect(relay.chunks.every(chunk => chunk.conversationId === conversation)).toBe(true)
+    expect(relay.acknowledged.size).toBe(relay.chunks.length)
+  })
+
+  it('does not silently skip a conversation whose crypto state is still pending', async () => {
+    const relay: RelayState = { chunks: [], acknowledged: new Set() }
+    const classify: ConstructorParameters<typeof SynchronizeDeviceHistory>[8]
+      = vi.fn().mockResolvedValue('pending')
+    const sync = service(
+      trusted,
+      new MemoryArchive([archived(1, trusted, 'trusted copy')]),
+      relay,
+      new MemoryJobs(),
+      null,
+      classify,
+    )
+
+    await expect(sync.synchronize({
+      ownerUserId: owner,
+      currentDeviceId: trusted,
+      pairingId: pairing,
+      targetDeviceId: candidate,
+      expiresAt: '2099-08-14T12:00:00Z',
+    })).rejects.toThrow('conversation crypto selection is pending')
+    expect(relay.chunks).toHaveLength(0)
   })
 
   it('merges independently available sent history without overwriting either side', async () => {

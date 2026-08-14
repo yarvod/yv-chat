@@ -1090,6 +1090,16 @@ authorized pairing, sender/target devices и direct conversation; direction им
 получают plaintext, archive key, signer или epoch secret. Оба devices экспортируют
 доступные records, поэтому merge образует union и не назначает primary archive.
 
+History union допускает terminal partial result только для доказуемо недоступного
+conversation crypto state. Current `blocked / missing_identity` и terminal
+`protocol_failure` становятся explicit skipped IDs; `pending`, network failure,
+malformed response, missing KeyPackage и roster transition продолжают retry/fail и
+не маскируются как успех. Skipped IDs передаются counterpart-у внутри bounded version
+3 completion manifest, зашифрованного обычным MLS `PrivateMessage` доступного READY
+direct. Relay server не получает новый plaintext control field. UI отдельно считает
+`synchronized` и `skipped`, а будущая pairing может повторить ранее skipped chat после
+восстановления capable participant device.
+
 Canonical content хранится как optional local-only поле рядом с immutable server
 envelope внутри существующей non-extractable AES-GCM archive key. Успешный decrypt и
 исходящий encrypted outbox выполняют write-through; одинаковый server refresh не
