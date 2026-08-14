@@ -21,6 +21,7 @@ export interface LinkedDeviceEnrollmentProgress {
 
 type EpochDrainer = (ownerUserId: string, conversationId: string) => Promise<void>
 type ProgressListener = (progress: LinkedDeviceEnrollmentProgress) => void
+type ActivityGuard = () => Promise<void>
 
 export class EnrollLinkedDevice {
   private readonly running = new Map<string, Promise<LinkedDeviceEnrollmentProgress>>()
@@ -40,17 +41,24 @@ export class EnrollLinkedDevice {
     ownerUserId: string,
     targetDeviceId: string,
     onProgress: ProgressListener = () => undefined,
+    ensureActive: ActivityGuard = async () => undefined,
   ): Promise<LinkedDeviceEnrollmentProgress> {
     if (!ownerUserId || !targetDeviceId) throw new TypeError('device enrollment binding is required')
     const key = `${ownerUserId}:${targetDeviceId}`
     const existing = this.running.get(key)
     if (existing) return existing
     const generation = this.cancelledGeneration
-    const operation = this.run(ownerUserId, targetDeviceId, generation, onProgress)
+    const operation = this.run(
+      ownerUserId,
+      targetDeviceId,
+      generation,
+      onProgress,
+      ensureActive,
+    )
     this.running.set(key, operation)
     void operation.finally(() => {
       if (this.running.get(key) === operation) this.running.delete(key)
-    })
+    }).catch(() => undefined)
     return operation
   }
 
@@ -79,10 +87,13 @@ export class EnrollLinkedDevice {
     targetDeviceId: string,
     generation: number,
     onProgress: ProgressListener,
+    ensureActive: ActivityGuard,
   ): Promise<LinkedDeviceEnrollmentProgress> {
     this.configureEpochDrain(ownerUserId)
+    await ensureActive()
     const conversations = (await this.messaging.listConversations())
       .filter(item => item.conversationType === 'direct')
+    await ensureActive()
     let progress = this.progress(
       targetDeviceId,
       conversations.length,
@@ -93,8 +104,10 @@ export class EnrollLinkedDevice {
 
     for (let attempt = 0; attempt < this.maxAttempts; attempt += 1) {
       if (generation !== this.cancelledGeneration) return progress
+      await ensureActive()
       const pending: string[] = []
       for (const conversation of conversations) {
+        await ensureActive()
         const conversationId = conversation.conversationId
         if (await this.targetIsReady(conversationId, targetDeviceId)) continue
         this.cryptoSession.invalidateConversation(conversationId)
@@ -105,6 +118,7 @@ export class EnrollLinkedDevice {
           // or this leaf may need a later durable retry. Verification below is
           // authoritative and does not treat a successful call as membership.
         }
+        await ensureActive()
         if (!await this.targetIsReady(conversationId, targetDeviceId)) {
           pending.push(conversationId)
         }
@@ -113,6 +127,7 @@ export class EnrollLinkedDevice {
       onProgress(progress)
       if (progress.complete || generation !== this.cancelledGeneration) return progress
       await this.waitForRetry()
+      await ensureActive()
     }
     return progress
   }

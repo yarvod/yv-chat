@@ -4,9 +4,27 @@
 
 ## Active
 
+### BUG-079 — Peer cancel не прерывал уже запущенную MLS-подготовку
+
+- Статус: `fixed locally; production rollout pending` (`WP-085`).
+- Severity: `high multi-device cancellation correctness and resource usage`.
+- Production reproduction: trusted Mac показывает `Подготавливаем защищённые чаты:
+  5 из 7`; Android нажимает `Остановить на обоих устройствах`; backend дважды
+  отвечает `204` и сохраняет `history_sync_cancelled_at`, relay прекращается, но Mac
+  продолжает local `EnrollLinkedDevice`.
+- Причина: cancel был observable только через history relay endpoints. Пока outer
+  history operation ожидала target preparer, local cancelled set и server `410`
+  не проверялись между conversation reconcile/retry operations.
+- Исправление: async activity guard проверяет local state и authorized relay перед
+  per-conversation MLS work; peer `410` переводит durable job в `cancelled/stopped`.
+- Отдельный production blocker `5 из 7`: direct-чаты с `test` и `test3` находятся в
+  `blocked / missing_identity`, потому что у peer нет активного MLS-capable device.
+  Он не отменяет и не оправдывает продолжение работы после cancel.
+
 ### BUG-078 — Несколько QR jobs одной пары вызывали server deadlock без возможности отмены
 
-- Статус: `fixed locally; production rollout pending` (`WP-084`).
+- Статус: `fixed and production deployed` (`WP-084`, `fee284e`). Physical acceptance
+  обнаружила отдельный остаточный defect `BUG-079`.
 - Severity: `critical multi-device synchronization availability`.
 - Production reproduction: после нескольких QR attempts новая PWA восстанавливает
   три-четыре durable jobs одного телефона/компьютера, одновременно запускает для

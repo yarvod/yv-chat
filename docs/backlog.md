@@ -138,10 +138,10 @@ cross-browser/security assurance gates.
 
 Статус: **in progress; `WP-079` durable pairing/session bootstrap, `WP-080`
 background MLS enrollment и `WP-081` bidirectional encrypted text/tombstone archive
-merge развернуты; `WP-082` automatic existing-device pairing развернут, а `WP-083`
-ACK-gated observable MLS/history union развернут; `WP-084` локально завершён и
-ожидает rollout: он закрывает найденные в physical production acceptance
-duplicate-job race, PostgreSQL deadlock и отсутствие двусторонней отмены**.
+merge развернуты; `WP-082` automatic existing-device pairing, `WP-083` ACK-gated
+observable MLS/history union и `WP-084` single-flight/server cancellation развернуты;
+`WP-085` локально закрывает найденный после rollout остаточный defect: server cancel
+останавливал relay, но не уже запущенный peer MLS enrollment**.
 `BL-064` и первый deployment-safe slice `BL-025` завершены; pairing реализуется
 итерациями с отдельным security/ADR review до изменения MLS membership semantics.
 Это не UI-задача «нарисовать QR»: `WP-079` не менял MLS roster, `WP-080` добавил

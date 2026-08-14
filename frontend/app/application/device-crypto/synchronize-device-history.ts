@@ -66,6 +66,7 @@ type TargetPreparer = (
   ownerUserId: string,
   targetDeviceId: string,
   onProgress: (progress: { totalConversations: number, readyConversations: number }) => void,
+  ensureActive: () => Promise<void>,
 ) => Promise<{ complete: boolean, totalConversations: number, readyConversations: number }>
 
 class DeviceHistorySyncCancelled extends Error {}
@@ -380,7 +381,7 @@ export class SynchronizeDeviceHistory {
     this.running.set(job.pairingId, operation)
     void operation.finally(() => {
       if (this.running.get(job.pairingId) === operation) this.running.delete(job.pairingId)
-    })
+    }).catch(() => undefined)
     return operation
   }
 
@@ -407,6 +408,7 @@ export class SynchronizeDeviceHistory {
           }
           this.report(progress, onProgress)
         },
+        () => this.ensureRelayActive(job.pairingId),
       )
       this.ensureActive(job.pairingId)
       progress = {
@@ -641,6 +643,12 @@ export class SynchronizeDeviceHistory {
 
   private ensureActive(pairingId: string): void {
     if (this.cancelled.has(pairingId)) throw new DeviceHistorySyncCancelled()
+  }
+
+  private async ensureRelayActive(pairingId: string): Promise<void> {
+    this.ensureActive(pairingId)
+    await this.gateway.listOutboundHistoryChunks(pairingId)
+    this.ensureActive(pairingId)
   }
 
   private removeStatus(pairingId: string): void {

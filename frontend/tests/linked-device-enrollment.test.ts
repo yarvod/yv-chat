@@ -4,6 +4,7 @@ import {
   EnrollLinkedDevice,
   type LinkedDeviceEnrollmentSession,
 } from '../app/application/device-crypto/enroll-linked-device'
+import { ApplicationError } from '../app/application/errors'
 import type { ConversationCryptoGateway } from '../app/application/ports/conversation-crypto-gateway'
 import type { MessagingGateway } from '../app/application/ports/messaging-gateway'
 import type { Scheduler } from '../app/application/ports/scheduler'
@@ -152,6 +153,36 @@ describe('linked device MLS enrollment', () => {
 
     expect(result.complete).toBe(false)
     expect(result.pendingConversationIds).toEqual(directIds)
+  })
+
+  it('checks the pairing activity before doing per-conversation MLS work', async () => {
+    const session: LinkedDeviceEnrollmentSession = {
+      setBeforeEpochAdvance: vi.fn(),
+      invalidateConversation: vi.fn(),
+      reconcileConversation: vi.fn(),
+    }
+    const enrollment = new EnrollLinkedDevice(
+      messaging(),
+      { getCurrent: vi.fn() } as unknown as ConversationCryptoGateway,
+      session,
+      scheduler,
+      async () => undefined,
+    )
+    const stopped = new ApplicationError(410, 'http', 'history sync was cancelled')
+    const ensureActive = vi.fn()
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(stopped)
+
+    await expect(enrollment.enroll(
+      'alice',
+      targetDeviceId,
+      () => undefined,
+      ensureActive,
+    )).rejects.toBe(stopped)
+
+    expect(ensureActive).toHaveBeenCalledTimes(3)
+    expect(session.reconcileConversation).not.toHaveBeenCalled()
   })
 
   it('reconciles every direct independently during authenticated foreground bootstrap', async () => {

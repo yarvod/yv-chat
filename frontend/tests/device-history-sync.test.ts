@@ -334,9 +334,56 @@ describe('QR-linked bidirectional device history sync', () => {
       peerCompletedConversationIds: [],
     })
 
-    expect(prepareTarget).toHaveBeenCalledWith(owner, candidate, expect.any(Function))
+    expect(prepareTarget).toHaveBeenCalledWith(
+      owner,
+      candidate,
+      expect.any(Function),
+      expect.any(Function),
+    )
     expect(relay.chunks).toHaveLength(2)
     expect(result.stage).toBe('waiting_peer')
+  })
+
+  it('stops trusted-device MLS preparation when the peer cancels the relay', async () => {
+    const jobs = new MemoryJobs()
+    const prepareTarget: ConstructorParameters<typeof SynchronizeDeviceHistory>[7]
+      = vi.fn(async (_owner, _target, _onProgress, ensureActive) => {
+        await ensureActive()
+        return { complete: true, totalConversations: 1, readyConversations: 1 }
+      })
+    const sync = new SynchronizeDeviceHistory(
+      {
+        listOutboundHistoryChunks: vi.fn().mockRejectedValue(
+          new ApplicationError(410, 'http', 'history sync was cancelled'),
+        ),
+      } as unknown as DevicePairingGateway,
+      { listConversations: vi.fn() } as never,
+      new MemoryArchive([]),
+      new ProtocolMessageProtection([adapter]),
+      jobs,
+      scheduler,
+      1,
+      prepareTarget,
+    )
+    const job = {
+      ownerUserId: owner,
+      currentDeviceId: trusted,
+      pairingId: pairing,
+      targetDeviceId: candidate,
+      expiresAt: '2099-08-14T12:00:00Z',
+      prepareTarget: true,
+    }
+    sync.queue(job)
+
+    sync.resume(owner, trusted)
+
+    await vi.waitFor(() => expect(jobs.jobs.size).toBe(0))
+    expect(sync.current(owner, trusted).at(0)).toMatchObject({
+      stage: 'cancelled',
+      failure: 'stopped',
+      complete: false,
+    })
+    expect(prepareTarget).toHaveBeenCalledOnce()
   })
 
   it('merges independently available sent history without overwriting either side', async () => {
