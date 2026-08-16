@@ -6,7 +6,24 @@ from uuid import UUID
 
 from messenger.domain.entities._validation import require_aware_datetime
 
-ALLOWED_MESSAGE_REACTIONS = ("👍", "❤️", "😂", "😮", "😢", "👎", "🔥", "🎉")
+ALLOWED_MESSAGE_REACTIONS = (
+    "❤️",
+    "👌",
+    "🔥",
+    "😁",
+    "🤯",
+    "💯",
+    "👍",
+    "😂",
+    "😮",
+    "😢",
+    "👎",
+    "🎉",
+    "👏",
+    "🤔",
+    "🙏",
+    "🥰",
+)
 
 
 @dataclass(frozen=True, slots=True)

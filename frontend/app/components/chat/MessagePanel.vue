@@ -115,12 +115,14 @@ const searchResults = ref<readonly TimelineMessage[]>([])
 const searchResultIndex = ref(0)
 const searching = ref(false)
 const deleteCandidateId = ref<string | null>(null)
-const reactionPickerMessageId = ref<string | null>(null)
+const unpinCandidateId = ref<string | null>(null)
 const activePinIndex = ref(0)
 const timeline = ref<HTMLElement | null>(null)
 const composerInput = ref<HTMLTextAreaElement | null>(null)
 const mediaInput = ref<HTMLInputElement | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
+const attachmentPicker = ref<HTMLElement | null>(null)
+const contextMenuElement = ref<HTMLElement | null>(null)
 interface SelectedAttachment {
   file: File
   kind: 'image' | 'video' | 'file'
@@ -143,7 +145,28 @@ let followComposerResize = false
 let layoutAnchor: { messageId: string, offset: number } | null = null
 let layoutAnchorExpiresAt = 0
 let attachmentDragDepth = 0
-const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '👎', '🔥', '🎉'] as const
+let longPressTimer: ReturnType<typeof setTimeout> | null = null
+interface MessageContextMenuState {
+  messageId: string
+  x: number
+  y: number
+  expandedReactions: boolean
+}
+interface MessageSwipeState {
+  messageId: string
+  pointerId: number
+  startX: number
+  startY: number
+  offset: number
+  longPressFired: boolean
+}
+const messageContextMenu = ref<MessageContextMenuState | null>(null)
+const messageSwipe = ref<MessageSwipeState | null>(null)
+const QUICK_REACTIONS = ['❤️', '👌', '🔥', '😁', '🤯', '💯', '👍'] as const
+const ALL_REACTIONS = [
+  ...QUICK_REACTIONS,
+  '😂', '😮', '😢', '👎', '🎉', '👏', '🤔', '🙏', '🥰',
+] as const
 const activePin = computed(() => props.messagePins[activePinIndex.value] ?? props.messagePins[0])
 const activePinnedMessage = computed(() => props.messages.find(message => (
   message.messageId === activePin.value?.messageId
@@ -152,6 +175,15 @@ const attachmentsAllowed = computed(() => (
   props.conversation?.conversationType === 'group'
   || (props.conversation?.conversationType === 'direct' && props.protectionSecure)
 ))
+const contextMessage = computed(() => props.messages.find(message => (
+  message.messageId === messageContextMenu.value?.messageId
+)) ?? null)
+const unpinCandidate = computed(() => props.messages.find(message => (
+  message.messageId === unpinCandidateId.value
+)) ?? null)
+const unpinCandidatePin = computed(() => props.messagePins.find(pin => (
+  pin.messageId === unpinCandidateId.value
+)) ?? null)
 
 const mentionMatch = computed(() => draft.value.match(/(?:^|\s)@([\p{L}\p{N}_.-]*)$/u))
 const mentionSuggestions = computed(() => {
@@ -385,8 +417,8 @@ async function openPinned(): Promise<void> {
   if (activePin.value) await props.openMessage(activePin.value.messageId)
 }
 
-async function changePin(messageId: string): Promise<void> {
-  await props.togglePin(messageId, !isPinned(messageId))
+async function changePin(messageId: string, active = !isPinned(messageId)): Promise<boolean> {
+  return props.togglePin(messageId, active)
 }
 
 async function changeReaction(
@@ -395,8 +427,153 @@ async function changeReaction(
   active: boolean,
 ): Promise<void> {
   if (await props.toggleReaction(messageId, reaction, active)) {
-    reactionPickerMessageId.value = null
+    messageContextMenu.value = null
   }
+}
+
+function reactedByActor(messageId: string, reaction: string): boolean {
+  return props.reactionSummaries.some(item => (
+    item.messageId === messageId
+    && item.reaction === reaction
+    && item.reactedByActor
+  ))
+}
+
+function closeTransientSurfaces(): void {
+  attachmentMenuOpen.value = false
+  messageContextMenu.value = null
+}
+
+function requestUnpin(messageId: string): void {
+  messageContextMenu.value = null
+  unpinCandidateId.value = messageId
+}
+
+async function confirmUnpin(): Promise<void> {
+  const messageId = unpinCandidateId.value
+  if (!messageId) return
+  if (await changePin(messageId, false)) unpinCandidateId.value = null
+}
+
+async function requestPinChange(message: TimelineMessage): Promise<void> {
+  if (isPinned(message.messageId)) {
+    requestUnpin(message.messageId)
+    return
+  }
+  if (await changePin(message.messageId, true)) messageContextMenu.value = null
+}
+
+function startReply(message: TimelineMessage): void {
+  replyingTo.value = message
+  messageContextMenu.value = null
+  void nextTick(() => composerInput.value?.focus())
+}
+
+function openMessageContext(message: TimelineMessage, clientX: number, clientY: number): void {
+  if (message.contentState !== 'available') return
+  attachmentMenuOpen.value = false
+  const menuWidth = 380
+  const menuHeight = 430
+  messageContextMenu.value = {
+    messageId: message.messageId,
+    x: Math.max(12, Math.min(clientX, window.innerWidth - menuWidth - 12)),
+    y: Math.max(12, Math.min(clientY, window.innerHeight - menuHeight - 12)),
+    expandedReactions: false,
+  }
+  void nextTick(() => contextMenuElement.value?.focus())
+}
+
+function handleMessageContextMenu(event: MouseEvent, message: TimelineMessage): void {
+  event.preventDefault()
+  openMessageContext(message, event.clientX, event.clientY)
+}
+
+function handleMessageKeydown(event: KeyboardEvent, message: TimelineMessage): void {
+  if (event.key !== 'ContextMenu' && !(event.key === 'F10' && event.shiftKey)) return
+  event.preventDefault()
+  const target = event.currentTarget
+  if (!(target instanceof HTMLElement)) return
+  const rect = target.getBoundingClientRect()
+  openMessageContext(message, rect.left + Math.min(rect.width, 180), rect.top + 24)
+}
+
+function isInteractiveTarget(target: EventTarget | null): boolean {
+  return target instanceof Element && Boolean(target.closest(
+    'button, a, input, textarea, video, audio, [role="button"], [contenteditable="true"]',
+  ))
+}
+
+function clearLongPressTimer(): void {
+  if (!longPressTimer) return
+  clearTimeout(longPressTimer)
+  longPressTimer = null
+}
+
+function resetMessageSwipe(): void {
+  clearLongPressTimer()
+  messageSwipe.value = null
+}
+
+function handleMessagePointerDown(event: PointerEvent, message: TimelineMessage): void {
+  if (event.pointerType === 'mouse' || event.button !== 0 || isInteractiveTarget(event.target)) return
+  messageSwipe.value = {
+    messageId: message.messageId,
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    offset: 0,
+    longPressFired: false,
+  }
+  clearLongPressTimer()
+  longPressTimer = setTimeout(() => {
+    const swipe = messageSwipe.value
+    if (!swipe || swipe.pointerId !== event.pointerId || swipe.offset > 8) return
+    swipe.longPressFired = true
+    openMessageContext(message, event.clientX, event.clientY)
+  }, 480)
+}
+
+function handleMessagePointerMove(event: PointerEvent): void {
+  const swipe = messageSwipe.value
+  if (!swipe || swipe.pointerId !== event.pointerId) return
+  const deltaX = event.clientX - swipe.startX
+  const deltaY = event.clientY - swipe.startY
+  if (Math.abs(deltaY) > Math.abs(deltaX) || deltaX < 0) {
+    resetMessageSwipe()
+    return
+  }
+  if (deltaX > 8) {
+    clearLongPressTimer()
+    event.preventDefault()
+    swipe.offset = Math.min(76, deltaX * 0.72)
+  }
+}
+
+function finishMessagePointer(event: PointerEvent, message: TimelineMessage): void {
+  const swipe = messageSwipe.value
+  if (!swipe || swipe.pointerId !== event.pointerId) return
+  const shouldReply = !swipe.longPressFired && swipe.offset >= 56
+  resetMessageSwipe()
+  if (shouldReply) startReply(message)
+}
+
+function messageSwipeStyle(messageId: string): Record<string, string> | undefined {
+  if (messageSwipe.value?.messageId !== messageId) return undefined
+  return { '--message-swipe-offset': `${messageSwipe.value.offset}px` }
+}
+
+function handleDocumentPointerDown(event: PointerEvent): void {
+  if (!attachmentMenuOpen.value) return
+  const target = event.target
+  if (target instanceof Node && attachmentPicker.value?.contains(target)) return
+  attachmentMenuOpen.value = false
+}
+
+function handleDocumentKeydown(event: KeyboardEvent): void {
+  if (event.key !== 'Escape') return
+  closeTransientSurfaces()
+  deleteCandidateId.value = null
+  unpinCandidateId.value = null
 }
 
 watch(
@@ -842,7 +1019,9 @@ watch(
       closeSearch()
       clearAttachments()
       deleteCandidateId.value = null
-      reactionPickerMessageId.value = null
+      unpinCandidateId.value = null
+      messageContextMenu.value = null
+      resetMessageSwipe()
       showScrollToLatest.value = false
       restorationPending.value = true
       await nextTick()
@@ -873,6 +1052,8 @@ onMounted(() => {
     observeTimelineLayout()
   }
   window.visualViewport?.addEventListener('resize', handleVisualViewportResize)
+  document.addEventListener('pointerdown', handleDocumentPointerDown, true)
+  document.addEventListener('keydown', handleDocumentKeydown)
 })
 
 onBeforeUnmount(() => {
@@ -880,6 +1061,9 @@ onBeforeUnmount(() => {
   if (highlightTimer) clearTimeout(highlightTimer)
   resizeObserver?.disconnect()
   window.visualViewport?.removeEventListener('resize', handleVisualViewportResize)
+  document.removeEventListener('pointerdown', handleDocumentPointerDown, true)
+  document.removeEventListener('keydown', handleDocumentKeydown)
+  resetMessageSwipe()
   clearAttachments()
   attachmentDragDepth = 0
   if (props.conversation) props.setTyping(props.conversation.conversationId, false)
@@ -1003,6 +1187,13 @@ onBeforeUnmount(() => {
           aria-label="Следующее закреплённое сообщение"
           @click="movePinned(1)"
         >↓</button>
+        <button
+          v-if="canManagePins()"
+          class="pinned-message-close"
+          type="button"
+          :aria-label="`Открепить сообщение #${activePin.sequence}`"
+          @click="requestUnpin(activePin.messageId)"
+        ><AppIcon name="close" /></button>
       </div>
       <p v-if="!protectionSecure" class="security-warning" role="status">
         {{ protectionLabel }}. Не отправляйте чувствительные данные.
@@ -1052,9 +1243,21 @@ onBeforeUnmount(() => {
             joined: item.joinedToPrevious,
             targeted: item.message.messageId === highlightedMessageId,
             'message-bubble--video-note': isStandaloneVideoNote(item.message),
+            'message-bubble--swiping': messageSwipe?.messageId === item.message.messageId,
           }"
+          :style="messageSwipeStyle(item.message.messageId)"
+          :tabindex="item.message.contentState === 'available' ? 0 : undefined"
+          :aria-label="item.message.contentState === 'available'
+            ? `Сообщение #${item.message.sequence}. Открыть действия: Shift+F10`
+            : undefined"
           :data-message-id="item.message.messageId"
           :data-sequence="item.message.sequence"
+          @contextmenu="handleMessageContextMenu($event, item.message)"
+          @pointerdown="handleMessagePointerDown($event, item.message)"
+          @pointermove="handleMessagePointerMove"
+          @pointerup="finishMessagePointer($event, item.message)"
+          @pointercancel="resetMessageSwipe"
+          @keydown="handleMessageKeydown($event, item.message)"
         >
           <strong v-if="item.showSender">{{ senderName(item.message) }}</strong>
           <MessageAttachments
@@ -1097,65 +1300,6 @@ onBeforeUnmount(() => {
             >
               <span>{{ summary.reaction }}</span><small>{{ summary.count }}</small>
             </button>
-          </div>
-          <div v-if="item.message.contentState === 'available'" class="message-actions">
-            <template v-if="deleteCandidateId === item.message.messageId">
-              <span>Удалить без возможности восстановления?</span>
-              <button
-                type="button"
-                :disabled="deletingMessageId === item.message.messageId"
-                @click="confirmDelete(item.message.messageId)"
-              >
-                {{ deletingMessageId === item.message.messageId ? 'Удаляем…' : 'Да, удалить' }}
-              </button>
-              <button type="button" @click="deleteCandidateId = null">Отмена</button>
-            </template>
-            <button
-              v-else-if="canDelete(item.message)"
-              type="button"
-              :aria-label="`Удалить сообщение #${item.message.sequence} у всех`"
-              @click="deleteCandidateId = item.message.messageId"
-            >
-              Удалить у всех
-            </button>
-            <button
-              v-if="canManagePins()"
-              type="button"
-              :disabled="pinningMessageId === item.message.messageId"
-              :aria-label="`${isPinned(item.message.messageId) ? 'Открепить' : 'Закрепить'} сообщение #${item.message.sequence}`"
-              @click="changePin(item.message.messageId)"
-            >
-              {{ pinningMessageId === item.message.messageId
-                ? 'Сохраняем…'
-                : isPinned(item.message.messageId) ? 'Открепить' : 'Закрепить' }}
-            </button>
-            <button
-              type="button"
-              :aria-label="`Ответить на сообщение #${item.message.sequence}`"
-              @click="replyingTo = item.message"
-            >
-              Ответить
-            </button>
-            <button
-              type="button"
-              :aria-expanded="reactionPickerMessageId === item.message.messageId"
-              :aria-label="`Добавить реакцию к сообщению #${item.message.sequence}`"
-              @click="reactionPickerMessageId = reactionPickerMessageId === item.message.messageId ? null : item.message.messageId"
-            >
-              Реакция
-            </button>
-            <div
-              v-if="reactionPickerMessageId === item.message.messageId"
-              class="reaction-picker"
-              aria-label="Выберите реакцию"
-            >
-              <button
-                v-for="reaction in QUICK_REACTIONS"
-                :key="reaction"
-                type="button"
-                @click="changeReaction(item.message.messageId, reaction, true)"
-              >{{ reaction }}</button>
-            </div>
           </div>
           <small class="message-meta">
             <time :datetime="item.message.createdAt">
@@ -1287,7 +1431,7 @@ onBeforeUnmount(() => {
       <p v-if="attachmentError" class="composer-attachment-error" role="alert">
         {{ attachmentError }}
       </p>
-      <div class="attachment-picker" @keydown.esc="attachmentMenuOpen = false">
+      <div ref="attachmentPicker" class="attachment-picker" @keydown.esc="attachmentMenuOpen = false">
         <button
           class="attach-button"
           :class="{ disabled: !attachmentsAllowed || sending }"
@@ -1380,4 +1524,117 @@ onBeforeUnmount(() => {
     <h2>Выберите диалог</h2>
     <p>Или создайте новый с помощью кнопки «+».</p>
   </section>
+
+  <div
+    v-if="messageContextMenu && contextMessage"
+    class="message-context-backdrop"
+    @pointerdown.self="messageContextMenu = null"
+    @contextmenu.prevent.self="messageContextMenu = null"
+  >
+    <section
+      ref="contextMenuElement"
+      class="message-context-menu"
+      role="menu"
+      tabindex="-1"
+      aria-label="Действия с сообщением"
+      :style="{ left: `${messageContextMenu.x}px`, top: `${messageContextMenu.y}px` }"
+    >
+        <div class="context-quick-reactions" aria-label="Быстрые реакции">
+          <button
+            v-for="reaction in QUICK_REACTIONS"
+            :key="reaction"
+            type="button"
+            :class="{ active: reactedByActor(contextMessage.messageId, reaction) }"
+            :aria-label="`Реакция ${reaction}`"
+            @click="changeReaction(
+              contextMessage.messageId,
+              reaction,
+              !reactedByActor(contextMessage.messageId, reaction),
+            )"
+          >{{ reaction }}</button>
+          <button
+            class="context-reactions-expand"
+            type="button"
+            :aria-expanded="messageContextMenu.expandedReactions"
+            aria-label="Показать больше реакций"
+            @click="messageContextMenu.expandedReactions = !messageContextMenu.expandedReactions"
+          >⌄</button>
+        </div>
+        <div
+          v-if="messageContextMenu.expandedReactions"
+          class="context-all-reactions"
+          aria-label="Все реакции"
+        >
+          <button
+            v-for="reaction in ALL_REACTIONS"
+            :key="reaction"
+            type="button"
+            :class="{ active: reactedByActor(contextMessage.messageId, reaction) }"
+            :aria-label="`Реакция ${reaction}`"
+            @click="changeReaction(
+              contextMessage.messageId,
+              reaction,
+              !reactedByActor(contextMessage.messageId, reaction),
+            )"
+          >{{ reaction }}</button>
+        </div>
+        <div class="context-message-actions">
+          <button type="button" role="menuitem" @click="startReply(contextMessage)">
+            <span aria-hidden="true">↩</span><strong>Ответить</strong>
+          </button>
+          <button
+            v-if="canManagePins()"
+            type="button"
+            role="menuitem"
+            :disabled="pinningMessageId === contextMessage.messageId"
+            @click="requestPinChange(contextMessage)"
+          >
+            <AppIcon name="pin" />
+            <strong>{{ isPinned(contextMessage.messageId) ? 'Открепить' : 'Закрепить' }}</strong>
+          </button>
+          <button
+            v-if="canDelete(contextMessage)"
+            class="danger"
+            type="button"
+            role="menuitem"
+            @click="deleteCandidateId = contextMessage.messageId; messageContextMenu = null"
+          >
+            <span aria-hidden="true">⌫</span><strong>Удалить у всех</strong>
+          </button>
+        </div>
+    </section>
+  </div>
+
+  <div v-if="unpinCandidateId" class="message-confirm-backdrop" @click.self="unpinCandidateId = null">
+    <section role="alertdialog" aria-modal="true" aria-labelledby="unpin-message-title" class="message-confirm-dialog">
+        <span class="message-confirm-icon"><AppIcon name="pin" /></span>
+        <h3 id="unpin-message-title">Убрать из закреплённых?</h3>
+        <p>{{ unpinCandidate?.displayBody?.trim() || `Сообщение #${unpinCandidatePin?.sequence ?? ''}` }}</p>
+        <div>
+          <button type="button" @click="unpinCandidateId = null">Отмена</button>
+          <button
+            class="danger"
+            type="button"
+            :disabled="pinningMessageId === unpinCandidateId"
+            @click="confirmUnpin"
+          >{{ pinningMessageId === unpinCandidateId ? 'Убираем…' : 'Убрать' }}</button>
+        </div>
+    </section>
+  </div>
+
+  <div v-if="deleteCandidateId" class="message-confirm-backdrop" @click.self="deleteCandidateId = null">
+    <section role="alertdialog" aria-modal="true" aria-labelledby="delete-message-title" class="message-confirm-dialog">
+        <h3 id="delete-message-title">Удалить сообщение у всех?</h3>
+        <p>Сообщение исчезнет у всех участников без возможности восстановления.</p>
+        <div>
+          <button type="button" @click="deleteCandidateId = null">Отмена</button>
+          <button
+            class="danger"
+            type="button"
+            :disabled="deletingMessageId === deleteCandidateId"
+            @click="confirmDelete(deleteCandidateId)"
+          >{{ deletingMessageId === deleteCandidateId ? 'Удаляем…' : 'Удалить' }}</button>
+        </div>
+    </section>
+  </div>
 </template>

@@ -1,60 +1,64 @@
 # Текущий workplan
 
-## WP-091 — Video-note max-duration review and progress ring
+## WP-092 — Telegram-like message interactions
 
-Статус: **implemented and full-CI verified; physical camera permission acceptance pending**
-Bug: `BUG-081`
+Статус: **implemented, full-CI, Docker and browser verified**
+Backlog: `BL-077`
+Bug: `BUG-082`
 
-Цель: при достижении минутного лимита не отправлять видеокружок неявно, а сохранить
-его в явном review state с кнопками отправки/удаления и показывать оставшееся время
-через доступный progress ring по контуру live preview.
+Цель: убрать постоянно видимую строку действий под сообщением и собрать компактный,
+предсказуемый interaction flow: swipe-to-reply, long-press/right-click context menu,
+расширенные реакции и подтверждаемое открепление из панели закрепов.
 
 ### Scope
 
-- 60-second timer останавливает MediaRecorder и materializes bounded local Blob;
-- завершённый по лимиту кружок остаётся в overlay и не передаётся upload/send flow;
-- review показывает записанный muted loop, `1:00`, кнопки «Удалить» и «Отправить»;
-- явная отправка emits Blob ровно один раз, удаление освобождает Blob URL без upload;
-- hold/release, swipe-left cancel и locked-mode send/cancel остаются совместимыми;
-- live/review preview получает круговой progress indicator от 0 до 60 секунд,
-  включая заметное near-limit состояние и semantic `progressbar`.
+- свайп сообщения вправо запускает reply и даёт понятный визуальный threshold;
+- long-press на touch и правый клик мыши открывают одно контекстное меню;
+- меню содержит быстрые реакции, раскрываемую полную палитру и доступные actor action;
+- direct participant и group owner/admin могут pin; unpin всегда требует подтверждения;
+- крестик в панели закрепов открывает подтверждение для текущего закрепа;
+- delete-for-everyone остаётся только для авторизованного actor и подтверждается;
+- attachment picker и context/reaction menu закрываются кликом вне, Escape и после action;
+- reaction allowlist одинаков на frontend/domain/backend и покрыт regression tests.
 
-### Correctness and resource invariants
+### Correctness and UX invariants
 
-- запись физически прекращается ровно на bounded limit и не продолжает использовать
-  camera/microphone во время review;
-- pending Blob живёт только в памяти текущего component instance и не сохраняется
-  в plaintext storage;
-- object URL всегда revoke при send, delete, unmount или capture reset;
-- hidden document отменяет только active capture, но не молча удаляет готовый review;
-- double send/delete и race timer↔pointer release не создают два сообщения;
-- существующие 60-second / 8 MiB checks и direct client-side encryption не меняются.
+- вертикальный scroll не превращается в reply; swipe threshold применяется один раз;
+- long-press не срабатывает на интерактивном дочернем control;
+- закрытие popover не меняет draft, attachments или выбранный reply;
+- pin/delete не выполняются до явного подтверждения и не дублируются double click;
+- новые reactions проходят существующие authorization, sync и idempotency paths;
+- keyboard/focus/ARIA semantics доступны без touch gestures.
 
 ### Verification
 
-- component regression: max duration stops without emit, shows full progress/review,
-  explicit send emits once, delete emits nothing and revokes URL;
-- existing hold/release, cancel, lock, permission and camera-switch tests remain green;
-- CSS/mobile tests cover circular progress geometry and safe overlay controls;
-- full `make ci`, integrated Docker Compose build/health and in-app browser acceptance.
+- component tests: pin close confirmation/cancel, context actions, expanded reactions,
+  swipe threshold, long-press/right-click и outside-click dismissal;
+- backend domain/application tests подтверждают расширенный allowlist и invalid reaction;
+- frontend lint/typecheck/test/build, backend checks, full `make ci`;
+- integrated Docker Compose health, in-app browser desktop acceptance и touch
+  PointerEvent regressions для mobile gestures.
 
 ### Definition of Done
 
-- at 60 seconds the user always sees whether the recording is ready and chooses send/delete;
-- progress ring advances continuously and communicates the one-minute boundary;
-- no media resource leak, implicit upload, duplicate send or E2EE boundary change;
-- all automated, Docker and browser checks pass.
+- message actions не занимают постоянное место в bubble;
+- все requested gestures/actions работают и не конфликтуют со scroll/click;
+- transient menus закрываются естественно кликом вне или Escape;
+- automated, Docker и browser проверки зелёные.
 
 ### Result
 
-- max-duration timer теперь завершает `MediaRecorder`, освобождает sensor tracks и
-  переводит bounded Blob в memory-only review вместо неявного `recorded` event;
-- review воспроизводит готовый muted loop, показывает `1:00` и ждёт явного send/delete;
-- круговой conic-gradient progress обновляется каждые 100 мс, краснеет на последних
-  10 секундах и имеет semantic `progressbar` с текущей секундой;
-- send/delete/background/unmount и timer↔pointer races покрыты component regressions;
-- полный `make ci` прошёл: `271 passed, 12 skipped` backend, `23 passed` Rust/OpenMLS,
-  а финальный frontend suite — `311 passed`; lint/typecheck/build/Compose/deploy/docs gates green;
-- Docker images пересобраны, пять runtime services healthy; свежая PWA и реальный
-  capture entry открылись, но in-app browser ожидает пользовательское системное
-  разрешение camera/microphone, поэтому sensor-level минутный прогон ещё не закрыт.
+- постоянная строка message actions удалена; right-click, `Shift+F10` и touch
+  long-press открывают единое compact context menu;
+- swipe right использует direction guard и threshold, показывает reply indicator и
+  не срабатывает при вертикальном scroll gesture;
+- quick strip из семи реакций раскрывается до 16; backend domain allowlist принимает
+  тот же набор через существующий authorized durable reaction flow;
+- pinned header получил крестик; header/context unpin и delete-for-everyone требуют
+  отдельного alert dialog, cancel не вызывает mutation;
+- attachment/context surfaces закрываются outside click и Escape;
+- `make ci` прошёл: backend `272 passed, 12 skipped`, Rust/OpenMLS `23 passed`,
+  frontend `312 passed`; lint, typing, build, Compose/deploy/docs gates зелёные;
+- Docker images пересобраны, runtime healthy, migration `0028_message_pins` применена
+  к local QA volume; браузер подтвердил right-click/keyboard reply, expanded `🥰`
+  reaction end-to-end, click-outside и pin → cancel/confirm unpin.

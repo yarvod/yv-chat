@@ -115,3 +115,21 @@ async def test_reaction_authorization_rejects_outsider_foreign_and_invalid_value
         await use_case.execute(
             SetMessageReactionCommand(alice.id, conversation.id, message.id, "not-an-emoji", True)
         )
+
+
+async def test_extended_reaction_palette_uses_the_same_durable_flow() -> None:
+    state, alice, _, _, message, conversation = reaction_state()
+    use_case = SetMessageReaction(
+        unit_of_work=FakeMessagingUnitOfWorkFactory(state),
+        clock=FixedClock(NOW),
+        sync_policy=SyncPolicy(),
+        realtime_notifier=RecordingRealtimeNotifier(),
+    )
+
+    result = await use_case.execute(
+        SetMessageReactionCommand(alice.id, conversation.id, message.id, "🤯", True)
+    )
+
+    assert result[0].reaction == "🤯"
+    assert result[0].count == 1
+    assert result[0].reacted_by_actor is True

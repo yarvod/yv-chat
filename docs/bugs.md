@@ -4,6 +4,19 @@
 
 ## Active
 
+### BUG-082 — Popover действий закрывался только повторным нажатием на trigger
+
+- Статус: `verified locally in WP-092`.
+- Severity: `medium interaction UX`.
+- Reproduction: открыть attachment/reaction picker и нажать на timeline или composer;
+  окно остаётся открытым, пока пользователь не нажмёт исходную кнопку повторно.
+- Ожидаемая семантика: click/tap вне transient surface и Escape закрывают её без
+  изменения draft, attachments или сообщения; context menu использует тот же contract.
+- Исправление: attachment picker использует document-level outside-pointer dismissal,
+  context menu — bounded backdrop; Escape централизованно закрывает transient surfaces.
+- Проверка: component regression и real-browser smoke подтверждают open → outside click
+  → hidden без повторного нажатия trigger.
+
 ### BUG-081 — Минутный видеокружок исчезал до неявной отправки
 
 - Статус: `fixed locally in WP-091; physical camera permission acceptance pending`.

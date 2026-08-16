@@ -88,10 +88,108 @@ describe('message panel', () => {
     await wrapper.get('.pinned-message-main').trigger('click')
     expect(openMessage).toHaveBeenCalledWith('message-1')
 
-    const firstActions = wrapper.find('[data-message-id="message-1"]')
-    await firstActions.get('button[aria-label^="Открепить"]').trigger('click')
+    await wrapper.get('.pinned-message-close').trigger('click')
+    expect(togglePin).not.toHaveBeenCalled()
+    expect(wrapper.get('[role="alertdialog"]').text()).toContain('Убрать из закреплённых')
+    await wrapper.get('.message-confirm-dialog button').trigger('click')
+    expect(wrapper.find('[role="alertdialog"]').exists()).toBe(false)
+    expect(togglePin).not.toHaveBeenCalled()
+    await wrapper.get('.pinned-message-close').trigger('click')
+    await wrapper.get('.message-confirm-dialog button.danger').trigger('click')
     expect(togglePin).toHaveBeenCalledWith('message-1', false)
-    expect(wrapper.find('[data-message-id="message-2"]').text()).toContain('Открепить')
+
+    await wrapper.get('[data-message-id="message-2"]').trigger('contextmenu', {
+      clientX: 120,
+      clientY: 140,
+    })
+    expect(wrapper.get('.message-context-menu').text()).toContain('Открепить')
+  })
+
+  it('replies on a deliberate right swipe and opens actions on touch long-press', async () => {
+    vi.useFakeTimers()
+    const message = {
+      messageId: 'message-gesture',
+      clientMessageId: 'client-gesture',
+      conversationId: 'conversation-1',
+      senderUserId: 'bob-id',
+      senderDeviceId: 'bob-device',
+      protocolVersion: 1,
+      cryptoGenerationId: null,
+      cryptoEpoch: null,
+      sequence: 1,
+      createdAt: '2026-08-17T12:00:01Z',
+      expiresAt: '2026-09-16T12:00:00Z',
+      ciphertextBase64: 'b3BhcXVl',
+      deletionReason: null,
+      deletedAt: null,
+      contentState: 'available' as const,
+      displayBody: 'Жесты сообщения',
+      contentSecure: true,
+    }
+    const wrapper = mount(MessagePanel, {
+      props: {
+        conversation,
+        messages: [message],
+        actorUserId: 'alice-id',
+        sending: false,
+        protectionSecure: true,
+        protectionLabel: 'E2EE',
+        sendMessage: vi.fn(),
+        deleteMessage: vi.fn(),
+        deletingMessageId: null,
+        typingActorIds: [],
+        onlineActorIds: [],
+        deliveryStates: [],
+        connectionState: 'connected',
+        setTyping: vi.fn(),
+      },
+    })
+    const bubble = wrapper.get('[data-message-id="message-gesture"]')
+
+    bubble.element.dispatchEvent(new PointerEvent('pointerdown', {
+      bubbles: true, button: 0, pointerId: 3, pointerType: 'touch', clientX: 10, clientY: 20,
+    }))
+    bubble.element.dispatchEvent(new PointerEvent('pointermove', {
+      bubbles: true, cancelable: true, pointerId: 3, pointerType: 'touch', clientX: 18, clientY: 90,
+    }))
+    bubble.element.dispatchEvent(new PointerEvent('pointerup', {
+      bubbles: true, pointerId: 3, pointerType: 'touch', clientX: 18, clientY: 90,
+    }))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.composer-reply').exists()).toBe(false)
+
+    bubble.element.dispatchEvent(new PointerEvent('pointerdown', {
+      bubbles: true, button: 0, pointerId: 1, pointerType: 'touch', clientX: 10, clientY: 20,
+    }))
+    bubble.element.dispatchEvent(new PointerEvent('pointermove', {
+      bubbles: true, cancelable: true, pointerId: 1, pointerType: 'touch', clientX: 100, clientY: 22,
+    }))
+    await wrapper.vm.$nextTick()
+    expect(bubble.classes()).toContain('message-bubble--swiping')
+    bubble.element.dispatchEvent(new PointerEvent('pointerup', {
+      bubbles: true, pointerId: 1, pointerType: 'touch', clientX: 100, clientY: 22,
+    }))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.get('.composer-reply').text()).toContain('Жесты сообщения')
+    await wrapper.get('.composer-reply button').trigger('click')
+
+    bubble.element.dispatchEvent(new PointerEvent('pointerdown', {
+      bubbles: true, button: 0, pointerId: 2, pointerType: 'touch', clientX: 40, clientY: 50,
+    }))
+    await vi.advanceTimersByTimeAsync(500)
+    await wrapper.vm.$nextTick()
+    expect(wrapper.get('.message-context-menu').text()).toContain('Ответить')
+    bubble.element.dispatchEvent(new PointerEvent('pointerup', {
+      bubbles: true, pointerId: 2, pointerType: 'touch', clientX: 40, clientY: 50,
+    }))
+    await wrapper.get('.message-context-backdrop').trigger('pointerdown')
+    expect(wrapper.find('.message-context-menu').exists()).toBe(false)
+
+    await bubble.trigger('keydown', { key: 'F10', shiftKey: true })
+    expect(wrapper.get('.message-context-menu').attributes('role')).toBe('menu')
+
+    wrapper.unmount()
+    vi.useRealTimers()
   })
 
   it('renders a standalone video note without the generic square message frame', () => {
@@ -183,6 +281,9 @@ describe('message panel', () => {
     await wrapper.get('.attach-button').trigger('click')
     expect(wrapper.text()).toContain('Открыть системную галерею')
     expect(wrapper.text()).toContain('Выбрать любой тип')
+    document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.attachment-picker-menu').exists()).toBe(false)
 
     const photos = Array.from({ length: 8 }, (_, index) => (
       new File([`photo-${index}`], `photo-${index}.png`, { type: 'image/png' })
@@ -694,10 +795,14 @@ describe('message panel', () => {
       },
     })
 
-    await wrapper.get('.message-actions > button').trigger('click')
+    await wrapper.get('[data-message-id="message-1"]').trigger('contextmenu', {
+      clientX: 120,
+      clientY: 140,
+    })
+    await wrapper.get('.context-message-actions button.danger').trigger('click')
     expect(deleteMessage).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('без возможности восстановления')
-    await wrapper.get('.message-actions button').trigger('click')
+    await wrapper.get('.message-confirm-dialog button.danger').trigger('click')
     expect(deleteMessage).toHaveBeenCalledWith('message-1')
 
     await wrapper.setProps({
@@ -712,7 +817,8 @@ describe('message panel', () => {
       }],
     })
     expect(wrapper.text()).toContain('Сообщение удалено для всех')
-    expect(wrapper.find('.message-actions').exists()).toBe(false)
+    await wrapper.get('[data-message-id="message-1"]').trigger('contextmenu')
+    expect(wrapper.find('.message-context-menu').exists()).toBe(false)
   })
 
   it('renders a safe unavailable state without exposing ciphertext', () => {
@@ -1295,7 +1401,11 @@ describe('message panel', () => {
     expect(searchMessages).toHaveBeenCalledWith('нужное')
     expect(openMessage).toHaveBeenCalledWith('message-1')
 
-    await wrapper.get('button[aria-label="Ответить на сообщение #1"]').trigger('click')
+    await wrapper.get('[data-message-id="message-1"]').trigger('contextmenu', {
+      clientX: 120,
+      clientY: 140,
+    })
+    await wrapper.get('.context-message-actions button').trigger('click')
     expect(wrapper.text()).toContain('Ответ Bob')
     await wrapper.get('textarea').setValue('Привет @b')
     expect(wrapper.text()).toContain('@bob')
@@ -1308,8 +1418,12 @@ describe('message panel', () => {
 
     await wrapper.get('.message-reactions button').trigger('click')
     expect(toggleReaction).toHaveBeenCalledWith('message-1', '❤️', false)
-    await wrapper.get('button[aria-label="Добавить реакцию к сообщению #1"]').trigger('click')
-    await wrapper.get('.reaction-picker button').trigger('click')
-    expect(toggleReaction).toHaveBeenCalledWith('message-1', '👍', true)
+    await wrapper.get('[data-message-id="message-1"]').trigger('contextmenu', {
+      clientX: 120,
+      clientY: 140,
+    })
+    await wrapper.get('.context-reactions-expand').trigger('click')
+    await wrapper.get('button[aria-label="Реакция 🥰"]').trigger('click')
+    expect(toggleReaction).toHaveBeenCalledWith('message-1', '🥰', true)
   })
 })
