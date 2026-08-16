@@ -571,7 +571,7 @@ generic background notification, focus/navigation и invalid-subscription cleanu
 
 ### BL-077 — Telegram-like message interactions
 
-Статус: **completed and locally verified** (`WP-092`, `WP-093`).
+Статус: **completed and locally verified** (`WP-092`, `WP-093`, `WP-094`).
 
 - swipe right для reply не конфликтует с вертикальным timeline scroll;
 - long-press/right-click/`Shift+F10` открывают context menu вместо постоянной строки actions;
@@ -580,6 +580,8 @@ generic background notification, focus/navigation и invalid-subscription cleanu
 - attachment/context surfaces закрываются outside click и Escape;
 - на coarse pointer native selection/callout не конфликтует с long-press, а точный
   текст копируется явным действием через `ClipboardPort`;
+- standalone видеокружок принимает mobile long-press/swipe-right без случайного
+  playback click; desktop reply остаётся явным context-menu действием;
 - full CI, Docker health и real-browser reaction/pin/reply acceptance зелёные.
 
 ### BL-065 — Multiple message pins

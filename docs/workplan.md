@@ -1,51 +1,62 @@
 # Текущий workplan
 
-## WP-093 — Touch long-press ownership and explicit copy
+## WP-094 — Video-note message gestures
 
-Статус: **implemented and locally verified**
-Bug: `BUG-083`
+Статус: **implemented and locally verified; camera browser acceptance pending**
+Backlog: `BL-077`
+Bug: `BUG-084`
 
-Цель: на Pixel/iPhone long-press должен принадлежать message action menu, а не
-системному выделению текста, Google Lens/search или iOS callout; копирование текста
-остаётся доступным как явное действие внутри меню.
+Цель: standalone видеокружок должен поддерживать тот же message-action contract,
+что и текст: long-press и swipe-right на touch, context menu и явный reply action
+на desktop, без случайного запуска playback после жеста.
 
 ### Scope
 
-- coarse-pointer message bubbles отключают native text selection, touch callout и drag;
-- links внутри bubble сохраняют обычный short tap, но не открывают native long-press menu;
-- context menu показывает «Копировать текст» только для available non-empty body;
-- copy идёт через существующий `ClipboardPort`, без прямого browser API в UI;
-- success/failure получает доступный transient feedback без логирования plaintext;
-- reply, pin, reactions, delete, vertical scroll и swipe остаются совместимыми.
+- touch pointer на `.message-video-note` участвует в long-press и swipe-right;
+- long-press открывает существующее context menu со всеми доступными действиями;
+- swipe-right запускает reply и использует существующий threshold/indicator;
+- right-click и keyboard context path остаются desktop-механизмом действий;
+- synthetic click после long-press/swipe подавляется только для текущего кружка;
+- short tap продолжает раскрывать кружок и включать звук по существующей логике;
+- обычные video attachments и retry/download controls остаются интерактивными.
 
 ### Correctness and UX invariants
 
-- selection blocking применяется только на coarse pointer и не ломает desktop selection;
-- copy получает уже отображаемый decrypted body из memory и не меняет E2EE/storage boundary;
-- empty, deleted и attachment-only messages не предлагают бессмысленный copy action;
-- clipboard rejection не закрывает задачу молча и не оставляет stale toast/timer;
-- long-press timer не запускает native selection или второе действие.
+- mouse drag не превращается в reply и не конкурирует с video controls;
+- подавление click живёт только до ближайшего click/task и не ломает следующий tap;
+- vertical touch scroll отменяет message gesture;
+- reply/context actions не меняют media bytes, E2EE metadata или playback adapter;
+- не добавляется отдельная ветка действий для видеокружков.
 
 ### Verification
 
-- component tests: long-press → menu → copy success/failure, no copy for empty/deleted;
-- CSS regression: coarse-pointer bubble owns selection/callout while desktop stays selectable;
-- existing swipe/right-click/reaction/pin/delete regressions remain green;
-- full `make ci`, Docker Compose health и in-app browser copy smoke.
+- component regression: video-note child long-press → menu без playback click;
+- component regression: video-note swipe-right → reply без playback click;
+- component regression: short tap разрешён, right-click → menu → reply;
+- existing text gestures, video-note rendering/playback и attachment tests зелёные;
+- full `make ci`, Docker Compose health и in-app browser smoke.
 
 ### Definition of Done
 
-- Pixel/iPhone long-press не показывает selection handles/native search surface;
-- явный copy action копирует точный отображаемый текст и показывает результат;
-- tap по ссылке, swipe reply и vertical scrolling не деградируют;
-- automated, Docker и browser проверки зелёные.
+- на мобильном кружок принимает long-press и swipe-right как сообщение;
+- на desktop правый клик открывает меню, reply выбирается явным действием;
+- short tap playback и следующий tap после любого gesture не деградируют;
+- automated и Docker проверки зелёные; real-camera browser acceptance требует permission.
 
 ### Result
 
-- coarse-pointer bubbles отключают native selection/callout/drag, не затрагивая
-  desktop pointer selection;
-- long-press по тексту или ссылке открывает application menu, где доступно явное
-  «Копировать текст» через `ClipboardPort` с success/failure feedback;
-- attachment-only и пустые сообщения не показывают copy action;
-- `make ci`, 314 frontend tests, Docker Compose health и real-browser PWA smoke
-  (menu → copy → «Текст скопирован») прошли локально 2026-08-17.
+- interactive guard теперь делает узкое исключение только для standalone
+  `.message-video-note`, поэтому touch long-press/swipe доходят до общего message flow;
+- gesture хранит `startedOnVideoNote`, захватывает touch pointer и после long-press
+  или horizontal drag подавляет только compatibility click этого кружка;
+- suppression имеет bounded fallback, снимается следующим pointerdown и не поглощает
+  следующий осознанный playback tap;
+- mouse pointer по-прежнему не запускает drag-reply; right-click и keyboard открывают
+  общее меню, где reply выбирается явным действием;
+- component regressions проверяют short tap, long-press, swipe, следующий tap,
+  mouse drag и child-target right-click → reply;
+- полный `make ci` прошёл: backend `272 passed, 12 skipped`, Rust/OpenMLS `23 passed`,
+  frontend `314 passed`; Docker Compose и health endpoint зелёные;
+- свежая PWA и общее action menu проверены через in-app browser; локальный чат не
+  содержал кружка, а две попытки создать QA-кружок остались на системном
+  «Подключаем камеру…», поэтому recorder был закрыт reload без отправки сообщения.

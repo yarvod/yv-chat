@@ -150,12 +150,15 @@ let layoutAnchorExpiresAt = 0
 let attachmentDragDepth = 0
 let longPressTimer: ReturnType<typeof setTimeout> | null = null
 let messageActionNoticeTimer: ReturnType<typeof setTimeout> | null = null
+let suppressedMessageClickTimer: ReturnType<typeof setTimeout> | null = null
+let suppressedMessageClickId: string | null = null
 interface MessageContextMenuState {
   messageId: string
   x: number
   y: number
   expandedReactions: boolean
 }
+
 interface MessageSwipeState {
   messageId: string
   pointerId: number
@@ -163,6 +166,7 @@ interface MessageSwipeState {
   startY: number
   offset: number
   longPressFired: boolean
+  startedOnVideoNote: boolean
 }
 const messageContextMenu = ref<MessageContextMenuState | null>(null)
 const messageSwipe = ref<MessageSwipeState | null>(null)
@@ -521,10 +525,37 @@ function handleMessageKeydown(event: KeyboardEvent, message: TimelineMessage): v
   openMessageContext(message, rect.left + Math.min(rect.width, 180), rect.top + 24)
 }
 
-function isInteractiveTarget(target: EventTarget | null): boolean {
+function isVideoNoteGestureTarget(target: EventTarget | null, message: TimelineMessage): boolean {
+  return isStandaloneVideoNote(message)
+    && target instanceof Element
+    && Boolean(target.closest('.message-video-note'))
+}
+
+function isInteractiveTarget(target: EventTarget | null, message: TimelineMessage): boolean {
+  if (isVideoNoteGestureTarget(target, message)) return false
   return target instanceof Element && Boolean(target.closest(
     'button, input, textarea, video, audio, [role="button"], [contenteditable="true"]',
   ))
+}
+
+function clearSuppressedMessageClick(): void {
+  if (suppressedMessageClickTimer) clearTimeout(suppressedMessageClickTimer)
+  suppressedMessageClickTimer = null
+  suppressedMessageClickId = null
+}
+
+function suppressNextVideoNoteClick(messageId: string): void {
+  clearSuppressedMessageClick()
+  suppressedMessageClickId = messageId
+  suppressedMessageClickTimer = setTimeout(clearSuppressedMessageClick, 800)
+}
+
+function handleMessageClickCapture(event: MouseEvent, message: TimelineMessage): void {
+  if (suppressedMessageClickId !== message.messageId) return
+  if (!isVideoNoteGestureTarget(event.target, message)) return
+  event.preventDefault()
+  event.stopPropagation()
+  clearSuppressedMessageClick()
 }
 
 function clearLongPressTimer(): void {
@@ -539,7 +570,9 @@ function resetMessageSwipe(): void {
 }
 
 function handleMessagePointerDown(event: PointerEvent, message: TimelineMessage): void {
-  if (event.pointerType === 'mouse' || event.button !== 0 || isInteractiveTarget(event.target)) return
+  if (suppressedMessageClickId) clearSuppressedMessageClick()
+  if (event.pointerType === 'mouse' || event.button !== 0 || isInteractiveTarget(event.target, message)) return
+  const startedOnVideoNote = isVideoNoteGestureTarget(event.target, message)
   messageSwipe.value = {
     messageId: message.messageId,
     pointerId: event.pointerId,
@@ -547,6 +580,11 @@ function handleMessagePointerDown(event: PointerEvent, message: TimelineMessage)
     startY: event.clientY,
     offset: 0,
     longPressFired: false,
+    startedOnVideoNote,
+  }
+  if (startedOnVideoNote && event.currentTarget instanceof HTMLElement
+    && typeof event.currentTarget.setPointerCapture === 'function') {
+    event.currentTarget.setPointerCapture(event.pointerId)
   }
   clearLongPressTimer()
   longPressTimer = setTimeout(() => {
@@ -577,7 +615,9 @@ function finishMessagePointer(event: PointerEvent, message: TimelineMessage): vo
   const swipe = messageSwipe.value
   if (!swipe || swipe.pointerId !== event.pointerId) return
   const shouldReply = !swipe.longPressFired && swipe.offset >= 56
+  const shouldSuppressClick = swipe.startedOnVideoNote && (swipe.longPressFired || swipe.offset > 8)
   resetMessageSwipe()
+  if (shouldSuppressClick) suppressNextVideoNoteClick(message.messageId)
   if (shouldReply) startReply(message)
 }
 
@@ -1048,6 +1088,7 @@ watch(
       messageActionNotice.value = null
       if (messageActionNoticeTimer) clearTimeout(messageActionNoticeTimer)
       messageActionNoticeTimer = null
+      clearSuppressedMessageClick()
       resetMessageSwipe()
       showScrollToLatest.value = false
       restorationPending.value = true
@@ -1091,6 +1132,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', handleDocumentPointerDown, true)
   document.removeEventListener('keydown', handleDocumentKeydown)
   if (messageActionNoticeTimer) clearTimeout(messageActionNoticeTimer)
+  clearSuppressedMessageClick()
   resetMessageSwipe()
   clearAttachments()
   attachmentDragDepth = 0
@@ -1285,6 +1327,7 @@ onBeforeUnmount(() => {
           @pointermove="handleMessagePointerMove"
           @pointerup="finishMessagePointer($event, item.message)"
           @pointercancel="resetMessageSwipe"
+          @click.capture="handleMessageClickCapture($event, item.message)"
           @keydown="handleMessageKeydown($event, item.message)"
         >
           <strong v-if="item.showSender">{{ senderName(item.message) }}</strong>

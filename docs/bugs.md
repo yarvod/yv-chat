@@ -4,6 +4,25 @@
 
 ## Active
 
+### BUG-084 — Видеокружок исключался из mobile message gestures
+
+- Статус: `fixed and locally verified in WP-094; real-camera browser acceptance pending`.
+- Severity: `high mobile interaction inconsistency`.
+- Reproduction: долго нажать или свайпнуть вправо по самому standalone кружку;
+  `button/video` interactive guard не запускает message long-press/swipe state.
+- Desktop: right-click всплывает до article, но этот child-target path и reply action
+  не были закреплены regression test.
+- Ожидаемая семантика: long-press/swipe работают на кружке как на сообщении,
+  right-click открывает те же действия, short tap по-прежнему управляет playback.
+- Инвариант: после long-press/swipe synthetic click не должен раскрывать кружок,
+  включать звук или поглощать следующий обычный tap.
+- Исправление: standalone `.message-video-note` участвует в общем touch gesture state;
+  pointer capture удерживает release, bounded suppression гасит только compatibility
+  click после действия, а новый pointerdown немедленно снимает stale guard.
+- Проверка: component regression покрывает short tap, long-press, swipe-right,
+  следующий tap, mouse drag и child-target right-click → reply; full CI и Docker
+  зелёные. In-app browser не получил camera permission и не смог создать fixture.
+
 ### BUG-083 — Native selection перехватывал long-press сообщения на Pixel/iPhone
 
 - Статус: `fixed and locally verified in WP-093; physical Pixel/iPhone acceptance pending`.
