@@ -31,13 +31,11 @@
    schema/update safety должна появиться до новых persistent stores.
 2. `BL-024` — remaining persisted drafts/attachment metadata, pinning и retention
 controls. Encrypted OPFS cache, byte-bounded eviction и safe device clear уже готовы.
-3. `BL-017` вместе с оставшейся attachment-частью `BL-013` — direct MLS attachment
-   encryption/upload/download без server plaintext или file keys.
-4. `BL-043` — оставшийся offline draft, cancel/retry и polished
+3. `BL-043` — оставшийся offline draft, cancel/retry и polished
    attachment UX поверх уже готовых secure storage boundaries.
-5. `BL-015` — QR linking, trusted-device MLS enrollment и двусторонний
+4. `BL-015` — QR linking, trusted-device MLS enrollment и двусторонний
    device-to-device history transfer; `WP-082` объединяет new/existing-device offer.
-6. `BL-051` — возврат group MLS только после multi-epoch и multi-device acceptance.
+5. `BL-051` — возврат group MLS только после multi-epoch и multi-device acceptance.
 
 ### P2 — assurance, product controls и эксплуатация
 
@@ -106,7 +104,7 @@ messages, cursor sync, receipts/presence/typing и authenticated WebSocket пе�
 
 ### BL-013 — Frontend crypto adapter и device identity
 
-Статус: **remaining attachment boundary и assurance**. Text protection, sealed vault,
+Статус: **attachment boundary completed in `WP-087`; assurance remains**. Text protection, sealed vault,
 Worker runtime, device identity и KeyPackage lifecycle перенесены в `Completed` как
 `BL-013A`.
 
@@ -114,7 +112,7 @@ Worker runtime, device identity и KeyPackage lifecycle перенесены в 
 cross-browser/security assurance gates.
 
 - `encryptAttachment/decryptAttachment` и MLS-bound encrypted metadata contract
-  реализуются вместе с `BL-017` без вывода file keys в Vue;
+  реализованы вместе с `BL-017` без вывода file keys в Vue;
 - seal/restore/tamper/storage-denial acceptance в Firefox и Safari;
 - migration/update lifecycle покрывается совместно с `BL-025`;
 - memory/plaintext lifecycle audit и log-redaction gate полного Worker flow;
@@ -375,15 +373,17 @@ keys/messages; security review, ADR, runbook и rollback проверены до
 
 ### BL-017 — Encrypted attachment upload/download
 
-Статус: **P1 after `BL-025`/`BL-024`**. Старый `WP-051` design/WIP должен быть
-revalidated against current direct-only MLS v2 policy и не считается выполнением.
+Статус: **completed locally in `WP-087`; production rollout pending**. Старый
+`WP-051` design revalidated against current direct-only MLS v2 policy; whole-file
+first slice остаётся bounded, resumable/chunk encryption относится к `BL-043`.
 
 Результат: клиент шифрует file до upload и расшифровывает только локально.
 
 - client type/size validation, random file key и encrypted metadata в message payload;
 - versioned `/api/v1/attachments` upload/download;
 - authorization через conversation membership;
-- configurable limits для image/file/video/voice;
+- bounded limits для image/file/video/video-note; configurable/resumable staging
+  остаётся в `BL-043`;
 - server не делает preview/transcoding и не получает keys/plaintext.
 
 ### BL-043 — Telegram-like photo/file experience поверх encrypted attachments

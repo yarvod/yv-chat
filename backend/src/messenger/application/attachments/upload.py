@@ -1,4 +1,4 @@
-"""Authorize and persist one server-readable group attachment upload."""
+"""Authorize and persist one bounded group plaintext or direct ciphertext upload."""
 
 from collections.abc import AsyncIterable
 from dataclasses import dataclass
@@ -89,8 +89,13 @@ class UploadGroupAttachment:
                 await uow.conversations.get_by_id(command.conversation_id),
                 command.actor_user_id,
             )
-            if conversation.conversation_type is not ConversationType.GROUP:
-                raise InvalidAttachmentError("attachments are available only in group v1")
+            if conversation.conversation_type is ConversationType.DIRECT and (
+                command.media_kind is not AttachmentMediaKind.FILE
+                or command.content_type != "application/octet-stream"
+            ):
+                raise InvalidAttachmentError(
+                    "direct attachments require opaque ciphertext metadata"
+                )
             existing = await uow.attachments.get_by_client_id(
                 uploader_device_id=command.actor_device_id,
                 client_attachment_id=command.client_attachment_id,

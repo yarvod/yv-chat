@@ -1,4 +1,4 @@
-"""Group attachment persistence transaction boundary."""
+"""Attachment persistence transaction boundary."""
 
 from __future__ import annotations
 

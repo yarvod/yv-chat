@@ -31,7 +31,7 @@ export class QueueOutgoingMessage {
       || !command.senderDeviceId
       || !command.conversationId
       || !plaintext
-      || plaintext.length > (attachmentIds.length > 0 ? 8_000 : 4_000)
+      || plaintext.length > (attachmentIds.length > 0 ? 32_000 : 4_000)
       || attachmentIds.length > 10
       || new Set(attachmentIds).size !== attachmentIds.length
       || attachmentIds.some(item => !item || item.length > 64)

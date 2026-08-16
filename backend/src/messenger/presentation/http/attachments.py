@@ -1,4 +1,4 @@
-"""Authenticated streaming transport for server-readable group attachments."""
+"""Authenticated streaming transport for bounded attachment blobs."""
 
 from datetime import datetime
 from typing import Annotated

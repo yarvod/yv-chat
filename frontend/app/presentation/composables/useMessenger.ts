@@ -27,15 +27,18 @@ import type { TimelineMessage } from '../../application/messaging/timeline-messa
 import {
   encodeGroupMessageContent,
 } from '../../application/messaging/group-message-content'
-import {
-  encodeTextMessageContent,
-  type MessageInteractionContext,
-} from '../../application/messaging/text-message-content'
+import type { MessageInteractionContext } from '../../application/messaging/text-message-content'
 import type {
   GroupAttachmentSource,
   UploadGroupAttachment,
 } from '../../application/messaging/upload-group-attachment'
 import type { DownloadGroupAttachment } from '../../application/messaging/download-group-attachment'
+import type { UploadDirectAttachment } from '../../application/messaging/upload-direct-attachment'
+import {
+  encodeDirectMessageContent,
+  type DirectMessageAttachment,
+  type DirectAttachmentSecrets,
+} from '../../application/messaging/direct-message-content'
 import type { MessageArchive } from '../../application/ports/message-archive'
 import type {
   ConversationViewportAnchor,
@@ -111,7 +114,9 @@ export interface MessengerDependencies extends MessageOutboxDependencies {
   leaveGroup: LeaveGroup
   pageVisibility: PageVisibility
   uploadGroupAttachment?: UploadGroupAttachment
+  uploadDirectAttachment?: UploadDirectAttachment
   downloadGroupAttachment?: DownloadGroupAttachment
+  directAttachmentSecrets?: DirectAttachmentSecrets
   initializeDeviceCrypto?: () => Promise<unknown>
   reconcileConversationCrypto?: (
     conversationId: string,
@@ -156,7 +161,9 @@ export function useMessenger(
       leaveGroup: $frontend.leaveGroup,
       pageVisibility: $frontend.pageVisibility,
       uploadGroupAttachment: $frontend.uploadGroupAttachment,
+      uploadDirectAttachment: $frontend.uploadDirectAttachment,
       downloadGroupAttachment: $frontend.downloadGroupAttachment,
+      directAttachmentSecrets: $frontend.directAttachmentSecrets,
       initializeDeviceCrypto: () => $frontend.deviceCryptoSession.initialize({
         userId: actorUserId,
         deviceId: actorDeviceId,
@@ -190,7 +197,9 @@ export function useMessenger(
     leaveGroup,
     pageVisibility,
     uploadGroupAttachment,
+    uploadDirectAttachment,
     downloadGroupAttachment,
+    directAttachmentSecrets,
   } = dependencies
   const state = reactive<MessengerState>({
     phase: 'loading',
@@ -224,6 +233,7 @@ export function useMessenger(
     gateway,
     messageArchive,
     messageProtection,
+    directAttachmentSecrets,
   )
   dependencies.configureCryptoEpochDrainer?.(
     conversationId => history.cacheRetainedBeforeEpochAdvance(conversationId),
@@ -1028,10 +1038,6 @@ export function useMessenger(
     ) {
       return false
     }
-    if (attachments.length > 0 && conversation.conversationType !== 'group') {
-      state.message = 'Файлы в личных чатах появятся после отдельного E2EE media flow.'
-      return false
-    }
     if (
       conversationUsesEndToEndEncryption(conversation.conversationType)
       && state.conversationCryptoPhase !== 'ready'
@@ -1050,25 +1056,41 @@ export function useMessenger(
     )
     try {
       const uploaded: MessageAttachment[] = []
-      if (attachments.length > 0 && !uploadGroupAttachment) {
+      const directUploaded: DirectMessageAttachment[] = []
+      if (
+        attachments.length > 0
+        && ((conversation.conversationType === 'group' && !uploadGroupAttachment)
+          || (conversation.conversationType === 'direct' && !uploadDirectAttachment))
+      ) {
         state.message = 'Загрузка файлов на этом устройстве недоступна.'
         return false
       }
       let completedBytes = 0
       for (const attachment of attachments) {
         let currentUploadedBytes = 0
-        uploaded.push(await uploadGroupAttachment!.execute(
-          conversationId,
-          conversation.conversationType,
-          attachment,
-          progress => {
+        const onProgress = (progress: { uploadedBytes: number }) => {
             currentUploadedBytes = Math.max(
               currentUploadedBytes,
               Math.max(0, Math.min(attachment.size, progress.uploadedBytes)),
             )
             state.attachmentUploadBytesSent = completedBytes + currentUploadedBytes
-          },
-        ))
+        }
+        if (conversation.conversationType === 'group') {
+          uploaded.push(await uploadGroupAttachment!.execute(
+            conversationId,
+            conversation.conversationType,
+            attachment,
+            onProgress,
+          ))
+        } else {
+          const result = await uploadDirectAttachment!.execute(
+            conversationId,
+            attachment,
+            onProgress,
+          )
+          directUploaded.push(result)
+          uploaded.push(result.attachment)
+        }
         completedBytes += attachment.size
         state.attachmentUploadBytesSent = completedBytes
         state.attachmentUploadCompleted = uploaded.length
@@ -1083,7 +1105,11 @@ export function useMessenger(
             attachments: uploaded,
             ...interactionContent,
           })
-        : encodeTextMessageContent({ text: normalized, ...interactionContent })
+        : encodeDirectMessageContent({
+            text: normalized,
+            attachments: directUploaded,
+            ...interactionContent,
+          })
       return await outbox.enqueue(
         conversationId,
         conversation.conversationType,
@@ -1308,6 +1334,7 @@ export function useMessenger(
   function dispose(): void {
     unsubscribeDeviceHistorySync?.()
     downloadGroupAttachment?.clearMemory(actorUserId, actorDeviceId)
+    directAttachmentSecrets?.clear()
   }
 
   return {

@@ -25,7 +25,12 @@ import { DeliverOutboxMessage } from '../app/application/messaging/deliver-outbo
 import { ListOutboxMessages } from '../app/application/messaging/list-outbox-messages'
 import { QueueOutgoingMessage } from '../app/application/messaging/queue-outgoing-message'
 import { UploadGroupAttachment } from '../app/application/messaging/upload-group-attachment'
+import { UploadDirectAttachment } from '../app/application/messaging/upload-direct-attachment'
 import { decodeGroupMessageContent } from '../app/application/messaging/group-message-content'
+import {
+  decodeDirectMessageContent,
+  DirectAttachmentSecrets,
+} from '../app/application/messaging/direct-message-content'
 import { RetryOutboxMessage } from '../app/application/messaging/retry-outbox-message'
 import { ListParticipantDeliveryStates } from '../app/application/messaging/list-participant-delivery-states'
 import { MarkConversationDelivered } from '../app/application/messaging/mark-conversation-delivered'
@@ -36,6 +41,7 @@ import { ProtocolMessageProtection } from '../app/application/messaging/message-
 import { SyntheticMessageProtocol } from '../app/infrastructure/crypto/synthetic-message-protocol'
 import { UnavailableMlsMessageProtocol } from '../app/infrastructure/crypto/unavailable-mls-message-protocol'
 import { useMessenger } from '../app/presentation/composables/useMessenger'
+import type { MessageProtocolAdapter } from '../app/application/ports/message-protocol-adapter'
 
 const conversation = {
   conversationId: 'conversation-1',
@@ -464,6 +470,88 @@ describe('messenger orchestration', () => {
       'server-batch-client-1',
       'server-batch-client-2',
     ])
+  })
+
+  it('encrypts and binds a direct attachment only after MLS is ready', async () => {
+    const direct = { ...conversation, conversationType: 'direct' as const, title: null }
+    vi.mocked(gateway.listConversations).mockResolvedValue([direct])
+    const adapter: MessageProtocolAdapter = {
+      protocolVersion: 2,
+      secure: true,
+      label: 'Test MLS E2EE',
+      protectText: async input => ({
+        ciphertextBase64: btoa(input.plaintext),
+        cryptoGenerationId: 'generation-1',
+        cryptoEpoch: 1,
+      }),
+      unprotectText: async input => atob(input.ciphertextBase64),
+    }
+    const protection = new ProtocolMessageProtection([new SyntheticMessageProtocol(), adapter])
+    const secrets = new DirectAttachmentSecrets()
+    const upload = vi.fn<AttachmentGateway['upload']>(async (conversationId, source) => ({
+      attachmentId: 'direct-server-attachment',
+      clientAttachmentId: source.clientAttachmentId,
+      conversationId,
+      kind: source.kind,
+      contentType: source.contentType,
+      byteSize: source.byteSize,
+      sha256Digest: 'a'.repeat(64),
+      createdAt: '2026-08-11T12:00:00Z',
+      expiresAt: '2026-09-10T12:00:00Z',
+    }))
+    const dependencies = messengerDependencies()
+    const body = new Blob(['direct secret'], { type: 'application/pdf' })
+    const messenger = useMessenger('alice-id', 'device-alice', vi.fn(), {
+      ...dependencies,
+      messageProtection: protection,
+      queueOutgoingMessage: new QueueOutgoingMessage(
+        messageOutbox,
+        protection,
+        clientIdGenerator,
+        clock,
+      ),
+      directAttachmentSecrets: secrets,
+      uploadDirectAttachment: new UploadDirectAttachment(
+        { upload, download: vi.fn() },
+        {
+          encrypt: vi.fn().mockResolvedValue({
+            ciphertext: new Blob(['opaque-ciphertext-tag'], { type: 'application/octet-stream' }),
+            keyBase64: btoa('k'.repeat(32)),
+            nonceBase64: btoa('n'.repeat(12)),
+          }),
+          decrypt: vi.fn(),
+        },
+        secrets,
+        { create: () => 'direct-client-attachment' },
+      ),
+      reconcileConversationCrypto: vi.fn().mockResolvedValue({
+        status: 'ready' as const,
+        generationId: 'generation-1',
+        generationNumber: 1,
+        blockReason: null,
+        epoch: 1,
+      }),
+    })
+
+    await messenger.load()
+    expect(await messenger.send('private file', [{
+      name: '../report.pdf',
+      type: body.type,
+      size: body.size,
+      body,
+    }])).toBe(true)
+    expect(upload).toHaveBeenCalledWith('conversation-1', expect.objectContaining({
+      kind: 'file',
+      contentType: 'application/octet-stream',
+    }), expect.any(Function))
+    await vi.waitFor(() => expect(gateway.sendMessage).toHaveBeenCalled())
+    const call = vi.mocked(gateway.sendMessage).mock.calls.at(-1)
+    expect(call?.slice(0, 3)).toEqual(['conversation-1', 'client-generated-id', 2])
+    expect(call?.[4]).toBe('generation-1')
+    expect(call?.[5]).toBe(1)
+    expect(call?.[6]).toEqual(['direct-server-attachment'])
+    expect(decodeDirectMessageContent(atob(call?.[3] ?? ''), 'conversation-1').attachments)
+      .toEqual([expect.objectContaining({ name: 'report.pdf', contentType: 'application/pdf' })])
   })
 
   it('keeps direct send fail-closed while MLS reconciliation is pending', async () => {

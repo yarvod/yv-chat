@@ -1205,10 +1205,10 @@ client validates type/size and computes SHA-256
 ```
 
 Это сознательно **не E2EE**: server видит group message, filename metadata и media
-bytes. UI обязан обозначать это, direct MLS v2 endpoint отклоняет такие bytes/IDs,
-а server не создаёт plaintext fallback для личного чата.
+bytes. UI обязан обозначать это; direct MLS v2 принимает только locally encrypted
+opaque bytes/metadata и server не создаёт plaintext fallback для личного чата.
 
-Будущий direct MLS attachment flow (`BL-017`) имеет другую границу:
+Direct MLS attachment flow (`WP-087`) имеет другую границу:
 
 ```text
 client validates type/size
@@ -1219,6 +1219,23 @@ client validates type/size
 → encrypted message carries attachment metadata/key material
 ```
 
+Первый production-oriented slice использует bounded whole-file WebCrypto вместо
+самодельного streaming crypto framing: AES-256-GCM, random independent 256-bit key и
+96-bit nonce на attachment, 128-bit tag и AAD
+`schema + conversation_id + client_attachment_id + original kind/MIME/byte size`.
+Обычный direct media/file ограничен ciphertext ceiling 25 MiB, video note — 8 MiB и
+60 секундами. Key/nonce, original filename/MIME/kind/size находятся только внутри
+MLS v2 application content и encrypted local message archive/outbox; Vue получает
+display projection без key material. Malformed metadata, changed AAD и corrupt bytes
+fail closed. Resumable/chunked attachment encryption требует отдельного
+стандартизованного framing review и не имитируется в этом slice.
+
+Direct upload принудительно использует server metadata `file` и
+`application/octet-stream`; сервер видит ciphertext size/digest, conversation,
+uploader device и opaque IDs, но не исходный media kind/MIME/name/size или file key.
+Attachment commit разрешён только exact direct MLS v2 generation/epoch. Group v1
+сохраняет прежний server-readable contract и предупреждение без E2EE.
+
 В обоих flow server-generated `storage_key` — opaque logical key. Client filename
 никогда не используется как filesystem path и сейчас хранится только внутри
 versioned group message envelope. Application зависит от `MediaStorage`, default
@@ -1228,8 +1245,9 @@ server-side thumbnail/transcoding отсутствуют. Typed `image` и `vide
 `nosniff`; generic `file` принимает любое bounded MIME/расширение, но всегда
 возвращается как `application/octet-stream` attachment. Это не позволяет HTML, SVG
 или другому active content исполняться как документ внутри application origin.
-Frontend считает upload SHA-256 инкрементально по `Blob.stream()` через небольшой
-audited hash adapter, не материализуя видео целиком вторым `ArrayBuffer` в памяти.
+HTTP gateway считает upload SHA-256 инкрементально по `Blob.stream()` через небольшой
+audited hash adapter. Direct first slice сначала выполняет отдельно описанную bounded
+whole-file WebCrypto operation; group flow не материализует видео вторым buffer.
 
 Frontend никогда не навигирует browser/PWA напрямую на protected media URL и не
 открывает его через `_blank`: standalone PWA и внешний browser могут иметь разный
@@ -1274,8 +1292,10 @@ Persistent LRU ceiling — 2 GiB на user+device; expired entries удаляю�
 от server cleanup. Это application maximum, а не обещание quota: browser/OS может
 дать меньше или evict origin storage. Cache failure является miss и возвращает поток
 к authenticated server download. Bounded 128 MiB hot RAM LRU убирает OPFS read при
-A → B → A; он очищается при messenger unmount/logout. Local cache не является backup,
-не продлевает server TTL и пока обслуживает только явно non-E2EE group v1 media.
+A → B → A; он очищается при messenger unmount/logout. Local cache не является backup
+и не продлевает server TTL. Group v1 original bytes защищаются device-local cache
+key; direct v2 cache принимает только уже client-encrypted ciphertext и расшифровывает
+его в application memory после чтения.
 
 `WP-072` добавляет settings operations поверх того же `MediaCache` port: inspect
 возвращает только aggregate plaintext byte count, entry count и application ceiling,
@@ -1356,9 +1376,10 @@ path; WebSocket нужен только для уменьшения latency ру
 server history — она возможна только через будущий secure device-to-device transfer.
 Backup retention не должна сохранять TTL-deleted ciphertext бесконечно.
 
-Group attachment cleanup реализован тем же low-memory process: pending blobs имеют
+Attachment cleanup реализован тем же low-memory process: pending blobs имеют
 24-hour TTL, committed blobs наследуют message expiry и удаляются bounded/idempotent
-через `MediaStorage`. Direct encrypted media и локальный OPFS cache ещё не реализованы.
+через `MediaStorage`; direct encrypted blob использует тот же opaque storage и cleanup,
+не раскрывая key/plaintext.
 
 ## 13. PWA, realtime и Web Push
 

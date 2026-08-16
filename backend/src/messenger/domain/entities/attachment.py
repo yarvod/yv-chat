@@ -1,4 +1,4 @@
-"""Opaque storage metadata for one bounded group attachment."""
+"""Opaque storage metadata for one bounded attachment blob."""
 
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta

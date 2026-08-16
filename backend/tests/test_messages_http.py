@@ -22,7 +22,7 @@ async def login_as(client: AsyncClient, username: str) -> None:
     assert response.status_code == 200
 
 
-async def test_group_attachment_upload_binding_download_and_direct_rejection() -> None:
+async def test_group_attachment_flow_and_direct_opaque_upload_contract() -> None:
     application, state, clock = build_test_application()
     bob = User.create(username="bob", display_name="Bob", now=NOW)
     mallory = User.create(username="mallory", display_name="Mallory", now=NOW)
@@ -147,7 +147,24 @@ async def test_group_attachment_upload_binding_download_and_direct_rejection() -
             content=body,
         )
         assert rejected.status_code == 422
-        assert len(state.attachments) == 3
+        direct_ciphertext = b"opaque-aes-gcm-ciphertext-with-tag"
+        direct_query = (
+            "media_kind=file"
+            f"&byte_size={len(direct_ciphertext)}"
+            f"&sha256={hashlib.sha256(direct_ciphertext).hexdigest()}"
+            "&content_type=application%2Foctet-stream"
+        )
+        direct_uploaded = await alice_client.put(
+            f"/api/v1/conversations/{direct.json()['conversation_id']}"
+            f"/attachments/{uuid4()}?{direct_query}",
+            headers={**alice_headers, "Content-Type": "application/octet-stream"},
+            content=direct_ciphertext,
+        )
+        assert direct_uploaded.status_code == 201
+        direct_record = state.attachments[UUID(direct_uploaded.json()["attachment_id"])]
+        assert direct_record.content_type == "application/octet-stream"
+        assert direct_record.media_kind.value == "file"
+        assert len(state.attachments) == 4
 
 
 async def test_send_opaque_message_and_reject_invalid_or_non_member_envelopes() -> None:

@@ -3,6 +3,7 @@ import type { MessagingGateway } from '../ports/messaging-gateway'
 import type { OpaqueMessage } from '../../domain/messaging/models'
 import type { ProtocolMessageProtection } from './message-protection'
 import { prepareTimelineMessage, type TimelineMessage } from './timeline-message'
+import type { DirectAttachmentSecrets } from './direct-message-content'
 
 const HISTORY_PAGE_SIZE = 100
 const MAX_TIMELINE_MESSAGES = 300
@@ -41,6 +42,7 @@ export class ConversationHistory {
     private readonly gateway: MessagingGateway,
     private readonly archive: MessageArchive,
     private readonly protection: ProtocolMessageProtection,
+    private readonly directSecrets?: DirectAttachmentSecrets,
   ) {}
 
   get archiveStatus(): 'ready' | 'unavailable' {
@@ -281,7 +283,7 @@ export class ConversationHistory {
   async fetchTombstone(conversationId: string, messageId: string): Promise<TimelineMessage> {
     const tombstone = await this.gateway.getMessage(conversationId, messageId)
     await this.persist(conversationId, [tombstone])
-    return prepareTimelineMessage(tombstone, this.protection)
+    return prepareTimelineMessage(tombstone, this.protection, this.directSecrets)
   }
 
   async search(conversationId: string, query: string): Promise<TimelineMessage[]> {
@@ -322,7 +324,11 @@ export class ConversationHistory {
     }
     await this.persist(message.conversationId, [archived])
     if (hasNewer) return { messages: [...current], hasMore, hasNewer }
-    const merged = mergeById(current, [await prepareTimelineMessage(archived, this.protection)])
+    const merged = mergeById(current, [await prepareTimelineMessage(
+      archived,
+      this.protection,
+      this.directSecrets,
+    )])
     return {
       messages: this.latestWindow(merged),
       hasMore: hasMore || merged.length > MAX_TIMELINE_MESSAGES,
@@ -428,7 +434,11 @@ export class ConversationHistory {
           // Missing/deleted MLS sender keys remain an explicit unavailable gap.
         }
       }
-      prepared.push(await prepareTimelineMessage(recoverable, this.protection))
+      prepared.push(await prepareTimelineMessage(
+        recoverable,
+        this.protection,
+        this.directSecrets,
+      ))
     }
     if (this.archiveAvailable) {
       try {

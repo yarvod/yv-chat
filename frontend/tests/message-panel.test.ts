@@ -247,7 +247,7 @@ describe('message panel', () => {
     ])
   })
 
-  it('sends captured group video-note metadata and never exposes the camera in direct chat', async () => {
+  it('sends video-note metadata in group and only exposes direct capture after E2EE is ready', async () => {
     const body = new Blob(['compact'], { type: 'video/webm' })
     const sendMessage = vi.fn().mockResolvedValue(true)
     const videoNoteRecorder = {
@@ -296,9 +296,11 @@ describe('message panel', () => {
     })])
     await wrapper.setProps({ conversation })
     expect(wrapper.find('.fake-video-note').exists()).toBe(false)
+    await wrapper.setProps({ protectionSecure: true })
+    expect(wrapper.find('.fake-video-note').exists()).toBe(true)
   })
 
-  it('does not bypass the direct-chat E2EE media boundary for pasted files', async () => {
+  it('accepts pasted files only when direct-chat E2EE is ready', async () => {
     const wrapper = mount(MessagePanel, {
       props: {
         conversation,
@@ -326,7 +328,19 @@ describe('message panel', () => {
     await wrapper.vm.$nextTick()
 
     expect(event.defaultPrevented).toBe(true)
-    expect(wrapper.text()).toContain('Вложения в личных чатах появятся после подключения E2EE media flow')
+    expect(wrapper.text()).toContain('хранение до 30 дней · E2EE')
+    expect(wrapper.find('.composer-attachment').exists()).toBe(true)
+
+    await wrapper.setProps({ protectionSecure: false })
+    await wrapper.get('.composer-attachment button').trigger('click')
+    const blocked = new Event('paste', { bubbles: true, cancelable: true })
+    Object.defineProperty(blocked, 'clipboardData', {
+      value: { items: [], files: [pasted] },
+    })
+    wrapper.get('textarea').element.dispatchEvent(blocked)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('Вложения доступны после готовности E2EE этого личного чата')
     expect(wrapper.find('.composer-attachment').exists()).toBe(false)
   })
 

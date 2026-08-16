@@ -24,7 +24,7 @@ export interface GroupAttachmentSource {
   durationSeconds?: number
 }
 
-function safeDisplayName(value: string): string {
+export function safeDisplayName(value: string): string {
   const name = [...(value.split(/[\\/]/).at(-1) ?? '')]
     .filter(character => character.charCodeAt(0) >= 32 && character.charCodeAt(0) !== 127)
     .join('')

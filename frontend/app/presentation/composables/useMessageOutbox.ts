@@ -14,6 +14,7 @@ import type { HapticsPort } from '../../application/ports/haptics'
 import { MessageOutboxError } from '../../application/ports/message-outbox'
 import type { ConversationType, SendMessageReceipt } from '../../domain/messaging/models'
 import type { OutboxMessage } from '../../domain/messaging/outbox'
+import type { DirectAttachmentSecrets } from '../../application/messaging/direct-message-content'
 
 export interface MessageOutboxDependencies {
   messageProtection: ProtocolMessageProtection
@@ -23,6 +24,7 @@ export interface MessageOutboxDependencies {
   deliverOutboxMessage: DeliverOutboxMessage
   acknowledgeOutboxMessage: AcknowledgeOutboxMessage
   retryOutboxMessage: RetryOutboxMessage
+  directAttachmentSecrets?: DirectAttachmentSecrets
 }
 
 export interface MessageOutboxCallbacks {
@@ -52,6 +54,7 @@ export function useMessageOutbox(
     deliverOutboxMessage,
     acknowledgeOutboxMessage,
     retryOutboxMessage,
+    directAttachmentSecrets,
   } = dependencies
   const state = reactive<MessageOutboxState>({
     status: 'ready',
@@ -63,7 +66,11 @@ export function useMessageOutbox(
   let flushQueued = false
 
   async function replaceView(message: OutboxMessage): Promise<void> {
-    const view = await prepareOutgoingMessageView(message, messageProtection)
+    const view = await prepareOutgoingMessageView(
+      message,
+      messageProtection,
+      directAttachmentSecrets,
+    )
     state.messages = [
       ...state.messages.filter(item => item.clientMessageId !== view.clientMessageId),
       view,
@@ -81,7 +88,7 @@ export function useMessageOutbox(
     try {
       const messages = await listOutboxMessages.execute(ownerUserId, senderDeviceId)
       state.messages = await Promise.all(messages.map(
-        message => prepareOutgoingMessageView(message, messageProtection),
+        message => prepareOutgoingMessageView(message, messageProtection, directAttachmentSecrets),
       ))
       state.status = 'ready'
       state.notice = null

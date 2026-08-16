@@ -35,7 +35,9 @@ import { DeliverOutboxMessage } from '../application/messaging/deliver-outbox-me
 import { ListOutboxMessages } from '../application/messaging/list-outbox-messages'
 import { QueueOutgoingMessage } from '../application/messaging/queue-outgoing-message'
 import { UploadGroupAttachment } from '../application/messaging/upload-group-attachment'
+import { UploadDirectAttachment } from '../application/messaging/upload-direct-attachment'
 import { DownloadGroupAttachment } from '../application/messaging/download-group-attachment'
+import { DirectAttachmentSecrets } from '../application/messaging/direct-message-content'
 import { ClearDeviceMediaCache } from '../application/storage/clear-device-media-cache'
 import { InspectDeviceMediaCache } from '../application/storage/inspect-device-media-cache'
 import { RetryOutboxMessage } from '../application/messaging/retry-outbox-message'
@@ -78,6 +80,7 @@ import { BrowserDeviceHistorySyncJobStore } from '../infrastructure/storage/brow
 import { EncryptedMediaCache } from '../infrastructure/storage/encrypted-media-cache'
 import { SyntheticMessageProtocol } from '../infrastructure/crypto/synthetic-message-protocol'
 import { MlsMessageProtocol } from '../infrastructure/crypto/mls-message-protocol'
+import { WebCryptoAttachmentCipher } from '../infrastructure/crypto/webcrypto-attachment-cipher'
 import { HttpAdminAccountsGateway } from '../infrastructure/http/admin-accounts-gateway'
 import { HttpAccountSecurityGateway } from '../infrastructure/http/account-security-gateway'
 import { ApiClient } from '../infrastructure/http/api-client'
@@ -136,7 +139,16 @@ export default defineNuxtPlugin(() => {
   const messengerSnapshotStore = new IndexedDbMessengerSnapshotStore()
   const messageOutbox = new IndexedDbMessageOutbox()
   const mediaCache = new EncryptedMediaCache()
-  const downloadGroupAttachment = new DownloadGroupAttachment(attachmentGateway, mediaCache)
+  const directAttachmentSecrets = new DirectAttachmentSecrets()
+  const attachmentCipher = new WebCryptoAttachmentCipher()
+  const downloadGroupAttachment = new DownloadGroupAttachment(
+    attachmentGateway,
+    mediaCache,
+    128 * 1024 * 1024,
+    Date.now,
+    attachmentCipher,
+    directAttachmentSecrets,
+  )
   const conversationCryptoState = new IndexedDbConversationCryptoState()
   const deviceCryptoSession = new DeviceCryptoSession(
     deviceCryptoRegistryGateway,
@@ -163,6 +175,7 @@ export default defineNuxtPlugin(() => {
           messagingGateway,
           messageArchive,
           messageProtection,
+          directAttachmentSecrets,
         )
         epochHistories.set(ownerUserId, history)
       }
@@ -208,7 +221,14 @@ export default defineNuxtPlugin(() => {
       frontend: {
         messagingGateway,
         uploadGroupAttachment: new UploadGroupAttachment(attachmentGateway, clientIdGenerator),
+        uploadDirectAttachment: new UploadDirectAttachment(
+          attachmentGateway,
+          attachmentCipher,
+          directAttachmentSecrets,
+          clientIdGenerator,
+        ),
         downloadGroupAttachment,
+        directAttachmentSecrets,
         inspectDeviceMediaCache: new InspectDeviceMediaCache(mediaCache),
         clearDeviceMediaCache: new ClearDeviceMediaCache(mediaCache, downloadGroupAttachment),
         deleteMessageForEveryone: new DeleteMessageForEveryone(messagingGateway),

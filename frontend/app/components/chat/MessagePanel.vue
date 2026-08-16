@@ -12,6 +12,7 @@ import {
   attachmentKindFor,
   GROUP_ATTACHMENT_LIMIT,
   maximumAttachmentBytes,
+  maximumDirectAttachmentBytes,
 } from '../../application/messaging/group-attachment-policy'
 import type { OutgoingMessageView } from '../../application/messaging/outgoing-message-view'
 import type { RealtimeConnectionState } from '../../application/messaging/realtime-sync-service'
@@ -135,6 +136,10 @@ let layoutAnchor: { messageId: string, offset: number } | null = null
 let layoutAnchorExpiresAt = 0
 let attachmentDragDepth = 0
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '👎', '🔥', '🎉'] as const
+const attachmentsAllowed = computed(() => (
+  props.conversation?.conversationType === 'group'
+  || (props.conversation?.conversationType === 'direct' && props.protectionSecure)
+))
 
 const mentionMatch = computed(() => draft.value.match(/(?:^|\s)@([\p{L}\p{N}_.-]*)$/u))
 const mentionSuggestions = computed(() => {
@@ -387,7 +392,7 @@ async function submit(): Promise<void> {
 }
 
 async function sendVideoNote(recording: RecordedVideoNote): Promise<void> {
-  if (props.sending || props.conversation?.conversationType !== 'group') return
+  if (props.sending || !attachmentsAllowed.value) return
   attachmentError.value = null
   const extension = recording.contentType === 'video/mp4' ? 'mp4' : 'webm'
   const sent = await props.sendMessage('', [{
@@ -430,8 +435,8 @@ function addAttachments(files: readonly File[]): boolean {
     attachmentError.value = 'Дождитесь завершения текущей отправки.'
     return false
   }
-  if (props.conversation?.conversationType !== 'group') {
-    attachmentError.value = 'Вложения в личных чатах появятся после подключения E2EE media flow.'
+  if (!attachmentsAllowed.value) {
+    attachmentError.value = 'Вложения доступны после готовности E2EE этого личного чата.'
     return false
   }
   if (selectedAttachments.value.length + files.length > GROUP_ATTACHMENT_LIMIT) {
@@ -440,9 +445,12 @@ function addAttachments(files: readonly File[]): boolean {
   }
   for (const file of files) {
     const kind = attachmentKindFor(file.type)
-    const maximum = maximumAttachmentBytes(kind)
+    const direct = props.conversation?.conversationType === 'direct'
+    const maximum = direct
+      ? maximumDirectAttachmentBytes(kind)
+      : maximumAttachmentBytes(kind)
     if (file.size <= 0 || file.size > maximum) {
-      const limitLabel = kind === 'image' ? '12 МБ' : kind === 'video' ? '100 МБ' : '25 МБ'
+      const limitLabel = kind === 'image' ? '12 МБ' : direct ? '25 МБ' : kind === 'video' ? '100 МБ' : '25 МБ'
       const kindLabel = kind === 'image' ? 'изображение' : kind === 'video' ? 'видео' : 'файл'
       attachmentError.value = `«${attachmentName(file)}»: ${kindLabel} должно быть не больше ${limitLabel}.`
       return false
@@ -837,7 +845,8 @@ onBeforeUnmount(() => {
       <span class="attachment-drop-overlay__icon"><AppIcon name="attachment" /></span>
       <strong>Перетащите файлы в сообщение</strong>
       <small v-if="conversation.conversationType === 'group'">До 10 файлов за одну отправку</small>
-      <small v-else>Вложения в личных чатах пока недоступны</small>
+      <small v-else-if="protectionSecure">Файлы будут зашифрованы до загрузки</small>
+      <small v-else>Ожидаем готовности E2EE</small>
     </div>
     <header class="conversation-header">
       <button class="mobile-back" type="button" aria-label="К списку диалогов" @click="emit('back')">
@@ -1115,7 +1124,10 @@ onBeforeUnmount(() => {
               ? `Загрузка ${overallAttachmentUploadPercent}% · ${attachmentUploadCompleted + 1} из ${attachmentUploadTotal}`
               : 'Сохраняем сообщение… 100%' }}
           </span>
-          <span v-else>{{ selectedAttachments.length }} из 10 · хранение до 30 дней · не E2EE</span>
+          <span v-else>
+            {{ selectedAttachments.length }} из 10 · хранение до 30 дней ·
+            {{ conversation.conversationType === 'direct' ? 'E2EE' : 'не E2EE' }}
+          </span>
           <button type="button" :disabled="sending" @click="clearAttachments">Убрать все</button>
         </div>
         <div class="composer-attachments__strip">
@@ -1175,14 +1187,14 @@ onBeforeUnmount(() => {
       <div class="attachment-picker" @keydown.esc="attachmentMenuOpen = false">
         <button
           class="attach-button"
-          :class="{ disabled: conversation.conversationType !== 'group' || sending }"
+          :class="{ disabled: !attachmentsAllowed || sending }"
           type="button"
-          :disabled="conversation.conversationType !== 'group' || sending"
+          :disabled="!attachmentsAllowed || sending"
           :aria-expanded="attachmentMenuOpen"
           aria-controls="attachment-picker-menu"
-          :title="conversation.conversationType === 'group'
+          :title="attachmentsAllowed
             ? 'Прикрепить медиа или файл'
-            : 'Вложения в личных чатах появятся после E2EE media flow'"
+            : 'Ожидаем готовности E2EE личного чата'"
           @click="attachmentMenuOpen = !attachmentMenuOpen"
         >
           <AppIcon name="attachment" />
@@ -1194,7 +1206,7 @@ onBeforeUnmount(() => {
           type="file"
           multiple
           accept="image/*,video/*"
-          :disabled="conversation.conversationType !== 'group' || sending"
+          :disabled="!attachmentsAllowed || sending"
           @change="chooseAttachment"
         >
         <input
@@ -1202,7 +1214,7 @@ onBeforeUnmount(() => {
           data-picker="file"
           type="file"
           multiple
-          :disabled="conversation.conversationType !== 'group' || sending"
+          :disabled="!attachmentsAllowed || sending"
           @change="chooseAttachment"
         >
         <Transition name="attachment-menu">
@@ -1244,7 +1256,7 @@ onBeforeUnmount(() => {
         @blur="handleComposerBlur"
       />
       <VideoNoteCapture
-        v-if="conversation.conversationType === 'group'
+        v-if="attachmentsAllowed
           && videoNoteRecorder
           && draft.trim().length === 0
           && selectedAttachments.length === 0"

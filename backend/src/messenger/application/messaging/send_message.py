@@ -128,12 +128,16 @@ class SendOpaqueMessage:
                 conversation.conversation_type,
                 command.protocol_version,
             )
-            if command.attachment_ids and (
-                conversation.conversation_type is not ConversationType.GROUP
-                or command.protocol_version != 1
-            ):
+            attachments_match_protocol = (
+                conversation.conversation_type is ConversationType.GROUP
+                and command.protocol_version == 1
+            ) or (
+                conversation.conversation_type is ConversationType.DIRECT
+                and command.protocol_version == 2
+            )
+            if command.attachment_ids and not attachments_match_protocol:
                 raise AttachmentConflictError(
-                    "attachments are available only for non-E2EE group v1 messages"
+                    "attachments must use the conversation's exact message protocol"
                 )
             if command.protocol_version == 2:
                 generation = await unit_of_work.crypto_generations.get_current(

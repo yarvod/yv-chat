@@ -2,6 +2,10 @@ import type { OutboxFailureCode, OutboxMessage, OutboxMessageStatus } from '../.
 import type { ProtocolMessageProtection } from './message-protection'
 import type { MessageAttachment } from '../../domain/messaging/models'
 import { decodeGroupMessageContent } from './group-message-content'
+import {
+  decodeDirectMessageContent,
+  type DirectAttachmentSecrets,
+} from './direct-message-content'
 
 export interface OutgoingMessageView {
   clientMessageId: string
@@ -18,6 +22,7 @@ export interface OutgoingMessageView {
 export async function prepareOutgoingMessageView(
   message: OutboxMessage,
   protection: ProtocolMessageProtection,
+  directSecrets?: DirectAttachmentSecrets,
 ): Promise<OutgoingMessageView> {
   try {
     const content = message.localPlaintext
@@ -29,7 +34,7 @@ export async function prepareOutgoingMessageView(
         })
     const decoded = message.protocolVersion === 1
       ? decodeGroupMessageContent(content.plaintext)
-      : { text: content.plaintext, attachments: [] }
+      : decodeDirectMessageContent(content.plaintext, message.conversationId, directSecrets)
     return {
       clientMessageId: message.clientMessageId,
       conversationId: message.conversationId,

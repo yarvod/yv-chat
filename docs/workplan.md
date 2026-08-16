@@ -1,70 +1,78 @@
 # Текущий workplan
 
-## WP-086 — Partial QR history sync for provably unavailable chats
+## WP-087 — Encrypted direct attachments and video notes
 
-Статус: **completed and production deployed** (`BUG-080`, `BL-015`, workflow
-`31761641522`, image `sha-5db642f`)
+Статус: **completed locally; production rollout pending**
+Backlog: `BL-013`, `BL-017`, `BL-043`
 
-Цель: один direct-чат, который server crypto state доказуемо не позволяет
-синхронизировать, не блокирует объединение остальных чатов устройства.
-
-### Production reproduction
-
-- `admin` связывает Android и Mac с семью direct conversations;
-- пять current MLS generations имеют `ready` и содержат оба device leaf;
-- чаты с `test` и `test3` имеют `blocked / missing_identity`, потому что у второго
-  participant нет активного MLS-capable device;
-- current all-or-nothing enrollment остаётся на `5 из 7`, затем вся history job
-  уходит в retry вместо завершения доступных пяти чатов.
+Цель: разрешить фото, видео, произвольные файлы и видеокружки в личных MLS v2
+чатах без передачи server-у plaintext, filename, MIME, media kind или file key.
 
 ### Scope
 
-- оба устройства одинаково классифицируют conversation как `ready`, временно
-  `pending` или доказуемо `skipped` по authoritative crypto generation;
-- `missing_identity` и terminal `protocol_failure` можно пропустить; network,
-  malformed response и retryable roster/key-package state нельзя молча скрывать;
-- encrypted completion manifest передаёт skipped conversation IDs через любой
-  доступный MLS conversation, не раскрывая их relay server-у как новое поле;
-- peer ACK и local durable job различают полностью и частично успешный transfer;
-- Settings показывает `синхронизировано N`, `пропущено M` и понятную причину;
-- skipped chat остаётся доступен для отдельной будущей попытки после исправления
-  participant crypto state.
+- direct client валидирует bounded source, создаёт отдельные random AES-256-GCM
+  key/96-bit nonce и шифрует whole file локально до upload;
+- AES-GCM AAD связывает schema, conversation, client attachment ID, исходный kind,
+  MIME и byte size; ciphertext corruption и metadata substitution fail closed;
+- direct upload использует существующий streaming `MediaStorage`, но передаёт только
+  `file`, `application/octet-stream`, ciphertext size/digest и opaque IDs;
+- original name/type/kind/size, key и nonce доставляются только внутри MLS v2
+  application content; Vue получает только display projection без key/nonce;
+- server разрешает attachment commit для exact direct MLS v2 generation/epoch и
+  сохраняет прежний group v1 server-readable flow без изменения его маркировки;
+- download сначала получает/cache-ит client-encrypted bytes, затем локально проверяет
+  scope/AES-GCM tag и возвращает plaintext Blob только в memory/UI;
+- direct composer, picker, paste/drop и `video_note` включаются только при READY MLS;
+  pending/blocked/unavailable MLS остаётся fail closed;
+- first slice ограничивает обычный direct file/media 25 MiB, video note — 8 MiB и
+  60 секунд; resumable/chunk crypto остаётся отдельным hardening.
 
 ### Security invariants
 
-- skipped state не помечает MLS generation ready и не ослабляет protect/unprotect;
-- неизвестная ошибка, invalid binding/ciphertext и authorization failure завершаются
-  ошибкой или retry, а не partial success;
-- manifest шифруется MLS application message в уже ready direct conversation;
-- server по-прежнему не получает plaintext, local archive content или skip manifest;
-- импорт и ACK остаются bound к exact pairing/device/conversation/client chunk.
+- backend DB/storage/logs/API не получают direct plaintext, filename, original MIME,
+  media kind, file key или nonce;
+- один key/nonce не переиспользуется; key material не попадает в Vue props/state,
+  `localStorage` или незашифрованный IndexedDB metadata;
+- outsider, removed member, cross-conversation attachment, direct v1, group v2,
+  non-opaque direct upload metadata и tampered ciphertext отклоняются;
+- server-side preview/transcoding отсутствует, client filename не используется как path;
+- существующие group attachments и исторические messages читаются exact-version flow.
 
 ### Verification
 
-- frontend unit: 5 ready + 2 missing-identity завершаются partial success на обеих
-  сторонах; unknown/pending не пропускаются; encrypted manifest и reload resumability;
-- UI regression фиксирует progress/title/details для skipped chats;
-- backend contract не меняется;
-- full frontend lint/typecheck/tests/build;
-- isolated Docker stack: fresh migrations, healthy API/frontend/PostgreSQL;
-- real in-app browser against isolated Docker stack: two device-bound sessions on
-  isolated `localhost` origins complete an existing-device QR flow with one `ready`
-  direct and one `blocked / missing_identity` direct; both sides finish at `1 из 2`,
-  report one explicit skip, expose the transferred message, and remove the stop action;
-- PostgreSQL records four history chunks for the ready direct and four ACKs; browser
-  consoles are clean and the pairing/history API flow completes without 5xx.
-
-### Exclusions
-
-- удаление production users/conversations или ручная правка их MLS generations;
-- transfer media/attachments;
-- новый server-readable pairing control protocol;
-- изменение MLS membership policy для participant без capable device.
+- backend unit/HTTP/PostgreSQL: direct opaque upload, exact MLS v2 binding,
+  authorization, idempotency, metadata rejection, cleanup and group regression;
+- frontend unit: codec round-trip/tamper, AES-GCM corruption/AAD mismatch, upload,
+  direct/group download, key absence in display projection, composer/video-note gates;
+- Rust/OpenMLS and frontend crypto regression suites, lint/typecheck/build;
+- full backend checks, migrations, Docker Compose config and isolated Docker stack;
+- real in-app browser: READY direct chat sends and opens a file and video note,
+  reload still decrypts them, group warning remains honest, console/API have no 5xx.
 
 ### Definition of Done
 
-- 5 ready + 2 skipped дают terminal partial-success вместо `5 из 7` forever;
-- оба устройства согласуют те же skipped IDs и ACK доступных чатов;
-- UI честно не называет skipped chats синхронизированными;
-- Docker/browser acceptance и полный frontend verification зелёные;
-- docs/bugs/backlog обновлены и focused commit создан.
+- два MLS-capable devices обмениваются direct file/video note и расшифровывают их
+  только локально, включая после reload;
+- server stores only opaque encrypted bytes and routing metadata;
+- direct composer stays disabled unless current MLS generation is READY;
+- relevant/full checks and Docker/browser acceptance are green;
+- README, architecture, backlog and bugs reflect the implemented boundary.
+
+### Result
+
+- direct MLS v2 file/photo/video/video-note payloads are encrypted in the browser
+  with per-attachment AES-256-GCM material and uploaded as opaque
+  `application/octet-stream` bytes;
+- the MLS application message carries the protected display metadata and file
+  material; reload restores it from the encrypted local archive without exposing
+  the material to Vue props or server metadata;
+- full backend/frontend/OpenMLS checks, production builds and an isolated Docker
+  stack are green (`266 passed, 12 skipped`; `306 passed`; `23 passed`);
+- two independent browser origins exchanged an encrypted file, the recipient
+  restored it after reload, and a subsequent MLS text message still decrypted;
+  PostgreSQL stored only `file`/`application/octet-stream` and the 67-byte stored
+  blob did not contain the 51-byte fixture plaintext;
+- the in-app browser exposed no camera/microphone device, so physical video-note
+  capture correctly reached the permission error path. The same `video_note`
+  encryption/upload/decrypt contract is covered by the direct-attachment tests;
+  real-device camera acceptance remains part of the production/browser matrix.

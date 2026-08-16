@@ -95,7 +95,7 @@ def upload_command(
     )
 
 
-async def test_group_upload_is_idempotent_and_direct_upload_is_rejected() -> None:
+async def test_group_upload_is_idempotent_and_direct_requires_opaque_metadata() -> None:
     state, alice, bob, _, device, group = attachment_state()
     storage = FakeMediaStorage()
     use_case = UploadGroupAttachment(
@@ -130,6 +130,22 @@ async def test_group_upload_is_idempotent_and_direct_upload_is_rejected() -> Non
                 body=body,
             )
         )
+    encrypted_body = b"opaque direct ciphertext and tag"
+    uploaded_direct = await use_case.execute(
+        upload_command(
+            alice=alice,
+            device=device,
+            conversation=direct,
+            body=encrypted_body,
+            media_kind=AttachmentMediaKind.FILE,
+            content_type="application/octet-stream",
+        )
+    )
+    assert uploaded_direct.conversation_id == direct.id
+    assert state.attachments[uploaded_direct.attachment_id].content_type == (
+        "application/octet-stream"
+    )
+    assert encrypted_body in storage.objects.values()
 
 
 async def test_quota_integrity_and_client_id_conflicts_remove_partial_objects() -> None:

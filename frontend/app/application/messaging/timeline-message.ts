@@ -1,7 +1,10 @@
 import type { MessageAttachment, OpaqueMessage } from '../../domain/messaging/models'
 import type { ArchivedMessage } from '../ports/message-archive'
 import { decodeGroupMessageContent } from './group-message-content'
-import { decodeTextMessageContent } from './text-message-content'
+import {
+  decodeDirectMessageContent,
+  type DirectAttachmentSecrets,
+} from './direct-message-content'
 import {
   MessageProtectionError,
   type ProtocolMessageProtection,
@@ -33,6 +36,7 @@ function unavailableLabel(error: unknown): string {
 export async function prepareTimelineMessage(
   message: ArchivedMessage,
   protection: ProtocolMessageProtection,
+  directSecrets?: DirectAttachmentSecrets,
 ): Promise<TimelineMessage> {
   const { localPlaintext: _localPlaintext, ...envelope } = message
   if (message.ciphertextBase64 === null) {
@@ -53,7 +57,7 @@ export async function prepareTimelineMessage(
         })
     const decoded = message.protocolVersion === 1
       ? decodeGroupMessageContent(content.plaintext)
-      : { ...decodeTextMessageContent(content.plaintext), attachments: [] }
+      : decodeDirectMessageContent(content.plaintext, message.conversationId, directSecrets)
     return {
       ...envelope,
       contentState: 'available',

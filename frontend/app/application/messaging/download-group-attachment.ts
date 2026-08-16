@@ -1,6 +1,8 @@
 import type { MessageAttachment } from '../../domain/messaging/models'
 import type { AttachmentGateway } from '../ports/attachment-gateway'
 import type { MediaCache, MediaCacheScope } from '../ports/media-cache'
+import type { AttachmentCipher } from '../ports/attachment-cipher'
+import type { DirectAttachmentSecrets } from './direct-message-content'
 
 import { maximumAttachmentBytes } from './group-attachment-policy'
 
@@ -15,6 +17,8 @@ export class DownloadGroupAttachment {
     private readonly cache?: MediaCache,
     private readonly maxHotBytes = 128 * 1024 * 1024,
     private readonly now: () => number = Date.now,
+    private readonly cipher?: AttachmentCipher,
+    private readonly directSecrets?: DirectAttachmentSecrets,
   ) {}
 
   async execute(
@@ -27,30 +31,40 @@ export class DownloadGroupAttachment {
     if (!ownerUserId || !ownerDeviceId || !conversationId || !attachment.attachmentId) {
       throw new TypeError('invalid attachment scope')
     }
+    const secret = this.directSecrets?.get(conversationId, attachment.attachmentId)
+    const cachedAttachment: MessageAttachment = secret
+      ? {
+          attachmentId: attachment.attachmentId,
+          kind: 'file',
+          name: 'encrypted-attachment.bin',
+          contentType: 'application/octet-stream',
+          byteSize: secret.ciphertextByteSize,
+        }
+      : attachment
     const scope: MediaCacheScope = {
       ownerUserId,
       ownerDeviceId,
       conversationId,
-      attachment,
+      attachment: cachedAttachment,
       expiresAt,
     }
     const cacheKey = this.cacheKey(scope)
     const hot = this.hot.get(cacheKey)
-    if (hot && this.notExpired(expiresAt) && this.validBlob(hot, attachment)) {
+    if (hot && this.notExpired(expiresAt) && this.validBlob(hot, cachedAttachment)) {
       this.hot.delete(cacheKey)
       this.hot.set(cacheKey, hot)
-      return hot
+      return await this.decryptIfNeeded(conversationId, attachment, hot)
     }
     if (hot) {
       this.hot.delete(cacheKey)
       this.hotBytes -= hot.size
     }
     const running = this.pending.get(cacheKey)
-    if (running) return await running
+    if (running) return await this.decryptIfNeeded(conversationId, attachment, await running)
     const generation = this.ownerGeneration(scope.ownerUserId, scope.ownerDeviceId)
     const request = this.load(scope, generation).finally(() => this.pending.delete(cacheKey))
     this.pending.set(cacheKey, request)
-    return await request
+    return await this.decryptIfNeeded(conversationId, attachment, await request)
   }
 
   clearMemory(ownerUserId: string, ownerDeviceId: string): void {
@@ -135,5 +149,26 @@ export class DownloadGroupAttachment {
       this.hot.delete(oldest[0])
       this.hotBytes -= oldest[1].size
     }
+  }
+
+  private async decryptIfNeeded(
+    conversationId: string,
+    attachment: MessageAttachment,
+    blob: Blob,
+  ): Promise<Blob> {
+    const secret = this.directSecrets?.get(conversationId, attachment.attachmentId)
+    if (!secret) return blob
+    if (!this.cipher) throw new TypeError('direct attachment cipher unavailable')
+    const plaintext = await this.cipher.decrypt({
+      conversationId,
+      clientAttachmentId: secret.clientAttachmentId,
+      kind: attachment.kind,
+      contentType: attachment.contentType,
+      plaintextBytes: attachment.byteSize,
+    }, blob, secret.keyBase64, secret.nonceBase64)
+    if (plaintext.size !== attachment.byteSize || plaintext.type !== attachment.contentType) {
+      throw new TypeError('direct attachment plaintext mismatch')
+    }
+    return plaintext
   }
 }

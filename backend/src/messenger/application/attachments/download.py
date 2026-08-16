@@ -1,4 +1,4 @@
-"""Authorize streaming access to one committed group attachment."""
+"""Authorize streaming access to one committed attachment blob."""
 
 from collections.abc import AsyncIterator
 from dataclasses import dataclass

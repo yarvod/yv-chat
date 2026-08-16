@@ -33,6 +33,8 @@ from messenger.application.messaging.send_message import (
 )
 from messenger.application.sync import SyncEventType, SyncPolicy
 from messenger.domain.entities import (
+    Attachment,
+    AttachmentMediaKind,
     Conversation,
     ConversationCryptoGeneration,
     ConversationCryptoRequiredDevice,
@@ -633,9 +635,25 @@ async def test_v2_send_requires_ready_generation_and_sender_leaf() -> None:
         crypto_generation_id=pending.id,
         crypto_epoch=1,
     )
+    attachment = Attachment.create_pending(
+        client_attachment_id=uuid4(),
+        conversation_id=conversation.id,
+        uploader_user_id=alice.id,
+        uploader_device_id=device.id,
+        storage_key="direct/opaque-ciphertext",
+        media_kind=AttachmentMediaKind.FILE,
+        byte_size=48,
+        sha256_digest="a" * 64,
+        content_type="application/octet-stream",
+        now=NOW,
+        pending_retention=timedelta(days=1),
+    )
+    state.attachments[attachment.id] = attachment
+    bound_command = replace(bound_command, attachment_ids=(attachment.id,))
     sent = await use_case.execute(bound_command)
     assert sent.protocol_version == 2
     assert state.messages[sent.message_id].ciphertext == b"opaque-mls-private-message"
+    assert state.attachments[attachment.id].committed_message_id == sent.message_id
 
     next_generation = ConversationCryptoGeneration.create(
         conversation_id=conversation.id,
