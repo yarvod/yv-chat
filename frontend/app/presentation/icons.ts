@@ -10,3 +10,4 @@ export type AppIconName =
   | 'send'
   | 'settings'
   | 'users'
+  | 'volume-off'

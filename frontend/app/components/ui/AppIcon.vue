@@ -54,6 +54,10 @@ defineProps<{ name: AppIconName }>()
       <path d="m22 2-7 20-4-9-9-4Z" />
       <path d="M22 2 11 13" />
     </template>
+    <template v-else-if="name === 'volume-off'">
+      <path d="M11 5 6.5 9H3v6h3.5l4.5 4Z" />
+      <path d="m16.5 9.5 5 5M21.5 9.5l-5 5" />
+    </template>
     <template v-else>
       <path d="M18 6 6 18M6 6l12 12" />
     </template>

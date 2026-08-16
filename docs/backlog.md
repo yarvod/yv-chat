@@ -388,7 +388,8 @@ first slice остаётся bounded, resumable/chunk encryption относит�
 
 ### BL-043 — Telegram-like photo/file experience поверх encrypted attachments
 
-Статус: **desktop paste/drop completed in `WP-065`/`c8d55f6`**. Здесь остаются только
+Статус: **video-note playback polish completed locally in `WP-088`; desktop paste/drop
+completed in `WP-065`/`c8d55f6`**. Здесь остаются только
 durable/direct-media slices после `BL-017` и `BL-024`; production group
 picker/batch/gallery/video/download уже перенесён в `Completed`.
 
@@ -396,6 +397,7 @@ picker/batch/gallery/video/download уже перенесён в `Completed`.
 polished desktop/mobile interaction без server-side preview/transcoding.
 
 - [x] desktop drag/drop и clipboard paste с теми же type/size/count checks, что picker;
+- [x] muted autoplay, click-to-expand with sound и unclipped countdown для `video_note`;
 - caption и locally generated encrypted preview/thumbnail для direct MLS attachment;
 - upload cancel/retry и offline-safe draft/outbox lifecycle поверх persistent staging;
 - явные download/cache/pin/expired states без обещания доступности удалённого original;

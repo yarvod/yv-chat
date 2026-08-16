@@ -391,7 +391,7 @@ describe('message attachment rendering', () => {
     click.mockRestore()
   })
 
-  it('renders a video note as a circular custom player without changing generic video', async () => {
+  it('autoplays a muted video note, expands with sound and keeps its timer outside the crop', async () => {
     const videoNote = {
       attachmentId: 'video-note-1',
       kind: 'video' as const,
@@ -416,10 +416,46 @@ describe('message attachment rendering', () => {
     await flushPromises()
 
     expect(wrapper.find('.message-video').exists()).toBe(false)
-    expect(wrapper.get('.message-video-note').text()).toContain('0:09')
-    expect(wrapper.get('.message-video-note video').attributes('controls')).toBeUndefined()
-    await wrapper.get('.message-video-note').trigger('click')
+    const button = wrapper.get('.message-video-note')
+    const video = wrapper.get<HTMLVideoElement>('.message-video-note video')
+    expect(button.text()).toContain('00:09')
+    expect(video.attributes('controls')).toBeUndefined()
+    expect(video.element.autoplay).toBe(true)
+    expect(video.element.muted).toBe(true)
+    expect(video.element.loop).toBe(true)
+    expect(wrapper.get('.message-video-note__timer').element.parentElement).toBe(button.element)
+    expect(wrapper.get('.message-video-note__inner').find('.message-video-note__timer').exists())
+      .toBe(false)
+
+    Object.defineProperty(video.element, 'currentTime', {
+      configurable: true,
+      value: 4.2,
+      writable: true,
+    })
+    await video.trigger('timeupdate')
+    expect(button.text()).toContain('00:05')
+
+    await button.trigger('click')
     expect(play).toHaveBeenCalledOnce()
+    expect(button.classes()).toContain('is-expanded')
+    expect(button.attributes('aria-label')).toContain('Свернуть')
+    expect(video.element.muted).toBe(false)
+    expect(video.element.loop).toBe(false)
+    expect(video.element.currentTime).toBe(0)
+
+    await button.trigger('click')
+    expect(play).toHaveBeenCalledTimes(2)
+    expect(button.classes()).not.toContain('is-expanded')
+    expect(video.element.muted).toBe(true)
+    expect(video.element.loop).toBe(true)
+
+    await button.trigger('click')
+    await video.trigger('ended')
+    expect(play).toHaveBeenCalledTimes(4)
+    expect(button.classes()).not.toContain('is-expanded')
+    expect(video.element.muted).toBe(true)
+    expect(video.element.loop).toBe(true)
+    expect(video.element.currentTime).toBe(0)
     play.mockRestore()
   })
 

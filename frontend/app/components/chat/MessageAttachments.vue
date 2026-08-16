@@ -25,6 +25,8 @@ const mediaStates = ref(new Map<string, MediaState>())
 const playbackFailures = ref(new Set<string>())
 const playingVideoNotes = ref(new Set<string>())
 const videoNoteProgress = ref(new Map<string, number>())
+const videoNoteElapsed = ref(new Map<string, number>())
+const expandedVideoNoteId = ref<string | null>(null)
 const galleryRoot = ref<HTMLElement | null>(null)
 const viewerRoot = ref<HTMLElement | null>(null)
 const viewerImage = ref<HTMLImageElement | null>(null)
@@ -70,25 +72,43 @@ function videoNoteStyle(attachmentId: string): Record<string, string> {
   return { '--video-note-progress': `${Math.round(progress * 360)}deg` }
 }
 
-function videoNoteDuration(attachment: MessageAttachment): string {
+function videoNoteTimeLabel(attachment: MessageAttachment): string {
   const duration = Math.max(1, Math.min(60, attachment.durationSeconds ?? 1))
-  return `0:${String(duration).padStart(2, '0')}`
+  const elapsed = videoNoteElapsed.value.get(attachment.attachmentId) ?? 0
+  const remaining = Math.max(0, Math.ceil(duration - elapsed))
+  return `${String(Math.floor(remaining / 60)).padStart(2, '0')}:${String(remaining % 60).padStart(2, '0')}`
 }
 
 async function toggleVideoNote(attachmentId: string, event: MouseEvent): Promise<void> {
   const button = event.currentTarget as HTMLButtonElement
   const video = button.querySelector('video')
   if (!video) return
-  if (!video.paused) {
-    video.pause()
+  if (expandedVideoNoteId.value === attachmentId) {
+    expandedVideoNoteId.value = null
+    video.muted = true
+    video.loop = true
+    try {
+      await video.play()
+    } catch {
+      // Muted autoplay can still be denied by device power/data-saving policy.
+    }
     return
   }
   for (const candidate of galleryRoot.value?.querySelectorAll('video') ?? []) {
-    if (candidate !== video && !candidate.paused) candidate.pause()
+    if (candidate === video) continue
+    candidate.muted = true
+    candidate.loop = true
   }
+  expandedVideoNoteId.value = attachmentId
+  video.loop = false
+  video.muted = false
+  video.currentTime = 0
   try {
     await video.play()
   } catch {
+    expandedVideoNoteId.value = null
+    video.muted = true
+    video.loop = true
     markPlaybackFailure(attachmentId)
   }
 }
@@ -100,6 +120,10 @@ function updateVideoNotePlayback(attachmentId: string, event: Event): void {
     attachmentId,
     Math.max(0, Math.min(1, video.currentTime / duration)),
   )
+  videoNoteElapsed.value = new Map(videoNoteElapsed.value).set(
+    attachmentId,
+    Math.max(0, video.currentTime),
+  )
 }
 
 function setVideoNotePlaying(attachmentId: string, playing: boolean): void {
@@ -107,6 +131,17 @@ function setVideoNotePlaying(attachmentId: string, playing: boolean): void {
   if (playing) next.add(attachmentId)
   else next.delete(attachmentId)
   playingVideoNotes.value = next
+}
+
+function finishVideoNotePlayback(attachmentId: string, event: Event): void {
+  setVideoNotePlaying(attachmentId, false)
+  if (expandedVideoNoteId.value !== attachmentId) return
+  const video = event.currentTarget as HTMLVideoElement
+  expandedVideoNoteId.value = null
+  video.muted = true
+  video.loop = true
+  video.currentTime = 0
+  void video.play().catch(() => undefined)
 }
 
 async function load(attachment: MessageAttachment): Promise<MediaState> {
@@ -331,6 +366,12 @@ watch(
     videoNoteProgress.value = new Map(
       [...videoNoteProgress.value].filter(([attachmentId]) => currentIds.has(attachmentId)),
     )
+    videoNoteElapsed.value = new Map(
+      [...videoNoteElapsed.value].filter(([attachmentId]) => currentIds.has(attachmentId)),
+    )
+    if (expandedVideoNoteId.value && !currentIds.has(expandedVideoNoteId.value)) {
+      expandedVideoNoteId.value = null
+    }
     if (
       activeMediaIndex.value !== null
       && activeMediaIndex.value >= mediaAttachments.value.length
@@ -400,6 +441,7 @@ onBeforeUnmount(() => {
       <div
         v-else-if="attachment.kind === 'video' && attachment.presentation === 'video_note'"
         class="message-video-note-shell"
+        :class="{ 'is-expanded': expandedVideoNoteId === attachment.attachmentId }"
         :data-attachment-id="attachment.attachmentId"
       >
         <template v-if="stateFor(attachment.attachmentId)?.phase === 'ready'">
@@ -410,26 +452,38 @@ onBeforeUnmount(() => {
           <button
             v-else
             class="message-video-note"
+            :class="{ 'is-expanded': expandedVideoNoteId === attachment.attachmentId }"
             type="button"
             :style="videoNoteStyle(attachment.attachmentId)"
-            :aria-label="playingVideoNotes.has(attachment.attachmentId)
-              ? `Пауза видеокружка ${attachment.name}`
-              : `Воспроизвести видеокружок ${attachment.name}`"
+            :aria-label="expandedVideoNoteId === attachment.attachmentId
+              ? `Свернуть видеокружок и выключить звук ${attachment.name}`
+              : `Увеличить видеокружок и включить звук ${attachment.name}`"
             @click="toggleVideoNote(attachment.attachmentId, $event)"
           >
             <span class="message-video-note__inner">
               <video
                 :src="stateFor(attachment.attachmentId)?.url"
+                autoplay
+                muted
+                loop
                 playsinline
-                preload="metadata"
+                preload="auto"
                 @play="setVideoNotePlaying(attachment.attachmentId, true)"
                 @pause="setVideoNotePlaying(attachment.attachmentId, false)"
-                @ended="setVideoNotePlaying(attachment.attachmentId, false)"
+                @ended="finishVideoNotePlayback(attachment.attachmentId, $event)"
                 @timeupdate="updateVideoNotePlayback(attachment.attachmentId, $event)"
                 @error="markPlaybackFailure(attachment.attachmentId)"
               />
               <span v-if="!playingVideoNotes.has(attachment.attachmentId)" class="message-video-note__play" aria-hidden="true">▶</span>
-              <small>{{ videoNoteDuration(attachment) }}</small>
+            </span>
+            <span
+              v-if="expandedVideoNoteId !== attachment.attachmentId"
+              class="message-video-note__muted"
+              aria-hidden="true"
+            ><AppIcon name="volume-off" /></span>
+            <span class="message-video-note__timer" aria-hidden="true">
+              <span>{{ videoNoteTimeLabel(attachment) }}</span>
+              <i />
             </span>
           </button>
         </template>
