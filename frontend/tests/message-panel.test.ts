@@ -107,6 +107,7 @@ describe('message panel', () => {
 
   it('replies on a deliberate right swipe and opens actions on touch long-press', async () => {
     vi.useFakeTimers()
+    const copyText = vi.fn().mockResolvedValue(true)
     const message = {
       messageId: 'message-gesture',
       clientMessageId: 'client-gesture',
@@ -137,6 +138,7 @@ describe('message panel', () => {
         sendMessage: vi.fn(),
         deleteMessage: vi.fn(),
         deletingMessageId: null,
+        copyText,
         typingActorIds: [],
         onlineActorIds: [],
         deliveryStates: [],
@@ -179,20 +181,72 @@ describe('message panel', () => {
     await vi.advanceTimersByTimeAsync(500)
     await wrapper.vm.$nextTick()
     expect(wrapper.get('.message-context-menu').text()).toContain('Ответить')
+    expect(wrapper.get('.message-context-menu').text()).toContain('Копировать текст')
     bubble.element.dispatchEvent(new PointerEvent('pointerup', {
       bubbles: true, pointerId: 2, pointerType: 'touch', clientX: 40, clientY: 50,
     }))
-    await wrapper.get('.message-context-backdrop').trigger('pointerdown')
+    await wrapper.get('.context-message-actions button:nth-child(2)').trigger('click')
+    expect(copyText).toHaveBeenCalledWith('Жесты сообщения')
+    expect(wrapper.get('.message-action-toast').text()).toBe('Текст скопирован')
     expect(wrapper.find('.message-context-menu').exists()).toBe(false)
 
     await bubble.trigger('keydown', { key: 'F10', shiftKey: true })
     expect(wrapper.get('.message-context-menu').attributes('role')).toBe('menu')
+    await wrapper.get('.message-context-backdrop').trigger('pointerdown')
 
     wrapper.unmount()
     vi.useRealTimers()
   })
 
-  it('renders a standalone video note without the generic square message frame', () => {
+  it('keeps the context menu open and reports clipboard failure', async () => {
+    const copyText = vi.fn().mockResolvedValue(false)
+    const wrapper = mount(MessagePanel, {
+      props: {
+        conversation,
+        messages: [{
+          messageId: 'message-copy-failure',
+          clientMessageId: 'client-copy-failure',
+          conversationId: 'conversation-1',
+          senderUserId: 'bob-id',
+          senderDeviceId: 'bob-device',
+          protocolVersion: 1,
+          cryptoGenerationId: null,
+          cryptoEpoch: null,
+          sequence: 1,
+          createdAt: '2026-08-17T12:00:01Z',
+          expiresAt: '2026-09-16T12:00:00Z',
+          ciphertextBase64: 'b3BhcXVl',
+          deletionReason: null,
+          deletedAt: null,
+          contentState: 'available' as const,
+          displayBody: '  Точный текст с пробелами  ',
+          contentSecure: true,
+        }],
+        actorUserId: 'alice-id',
+        sending: false,
+        protectionSecure: true,
+        protectionLabel: 'E2EE',
+        sendMessage: vi.fn(),
+        deleteMessage: vi.fn(),
+        deletingMessageId: null,
+        copyText,
+        typingActorIds: [],
+        onlineActorIds: [],
+        deliveryStates: [],
+        connectionState: 'connected',
+        setTyping: vi.fn(),
+      },
+    })
+
+    await wrapper.get('[data-message-id="message-copy-failure"]').trigger('contextmenu')
+    await wrapper.get('.context-message-actions button:nth-child(2)').trigger('click')
+
+    expect(copyText).toHaveBeenCalledWith('  Точный текст с пробелами  ')
+    expect(wrapper.get('.message-action-toast').text()).toBe('Не удалось скопировать текст')
+    expect(wrapper.find('.message-context-menu').exists()).toBe(true)
+  })
+
+  it('renders a standalone video note without the generic square message frame', async () => {
     const videoNoteMessage = {
       messageId: 'video-note-message',
       clientMessageId: 'video-note-client',
@@ -244,6 +298,8 @@ describe('message panel', () => {
     })
 
     expect(wrapper.get('.message-bubble').classes()).toContain('message-bubble--video-note')
+    await wrapper.get('.message-bubble').trigger('contextmenu')
+    expect(wrapper.get('.message-context-menu').text()).not.toContain('Копировать текст')
   })
 
   it('opens intentional pickers and sends an ordered photo/video/arbitrary-file batch', async () => {

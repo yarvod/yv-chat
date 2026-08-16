@@ -4,6 +4,23 @@
 
 ## Active
 
+### BUG-083 — Native selection перехватывал long-press сообщения на Pixel/iPhone
+
+- Статус: `fixed and locally verified in WP-093; physical Pixel/iPhone acceptance pending`.
+- Severity: `high mobile interaction conflict`.
+- Reproduction: долго нажать на текст сообщения в Chrome/Pixel или Safari/iPhone;
+  одновременно с application context menu появляются selection handles и native
+  search/copy surface, как на приложенном physical-device screenshot.
+- Ожидаемая семантика: coarse-pointer bubble владеет long-press целиком; копирование
+  доступно явным пунктом context menu, short link tap и timeline scroll сохраняются.
+- Инварианты: desktop text selection не блокируется, UI использует `ClipboardPort`,
+  plaintext не логируется и не сохраняется дополнительно.
+- Исправление: coarse-pointer CSS передаёт long-press приложению, links больше не
+  исключаются из gesture ownership, а context menu предлагает явное копирование.
+- Проверка: component/CSS regressions, full CI, Docker health и real-browser PWA
+  smoke подтверждают menu → copy → success; финальный physical-device acceptance
+  остаётся за пользователем на Pixel/iPhone.
+
 ### BUG-082 — Popover действий закрывался только повторным нажатием на trigger
 
 - Статус: `verified locally in WP-092`.

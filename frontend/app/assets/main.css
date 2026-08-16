@@ -314,6 +314,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .message-confirm-dialog button:hover { background: var(--surface-hover); }
 .message-confirm-dialog button.danger { color: #fff; background: var(--danger); }
 .message-confirm-dialog button:disabled { cursor: wait; opacity: .58; }
+.message-action-toast { position: absolute; z-index: 125; right: 50%; bottom: 82px; margin: 0; padding: 9px 14px; border: 1px solid var(--border); border-radius: 999px; color: var(--text); background: color-mix(in srgb, var(--surface-solid) 96%, transparent); box-shadow: 0 10px 32px rgb(0 0 0 / 22%); font-size: .76rem; font-weight: 750; translate: 50% 0; backdrop-filter: blur(18px); }
 .scroll-to-latest { position: absolute; z-index: 4; right: clamp(16px, 4vw, 48px); bottom: 82px; display: flex; min-height: 40px; align-items: center; gap: 6px; padding: 0 13px; border: 1px solid var(--border); border-radius: 999px; color: var(--primary); background: var(--surface-solid); box-shadow: 0 8px 28px rgb(0 0 0 / 20%); font-size: .75rem; font-weight: 750; }
 .scroll-to-latest .app-icon { width: 15px; height: 15px; transform: rotate(-90deg); }
 .composer { grid-row: 4; display: grid; grid-template-columns: 42px minmax(0, 1fr) 46px; align-items: end; gap: 7px; padding: 10px clamp(12px, 4vw, 44px) max(12px, env(safe-area-inset-bottom)); border-top: 1px solid var(--border); background: var(--surface); backdrop-filter: blur(18px); }
@@ -629,6 +630,11 @@ legend { padding: 0 6px; color: var(--muted); font-size: .8rem; }
 @keyframes rise-in { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes bubble-in { from { opacity: 0; transform: translateY(5px) scale(.985); } to { opacity: 1; transform: none; } }
 
+@media (hover: none) and (pointer: coarse) {
+  .message-bubble, .message-bubble * { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  .message-bubble img, .message-bubble video { -webkit-user-drag: none; }
+}
+
 @media (max-width: 840px) {
   .push-permission-prompt { left: 14px; right: 14px; bottom: calc(var(--mobile-tabs-slot-height) + 10px); width: auto; align-items: stretch; flex-direction: column; }
   .push-permission-prompt__actions { justify-content: flex-end; }
@@ -681,6 +687,7 @@ legend { padding: 0 6px; color: var(--muted); font-size: .8rem; }
   .conversation-header-avatar { width: 40px; height: 40px; }
   .composer { padding: 8px 8px max(8px, env(safe-area-inset-bottom)); }
   .scroll-to-latest { right: 12px; bottom: calc(70px + env(safe-area-inset-bottom)); }
+  .message-action-toast { bottom: calc(70px + env(safe-area-inset-bottom)); }
   .new-conversation { position: absolute; z-index: 5; top: 8px; right: 8px; left: 8px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface-solid); box-shadow: var(--shadow); }
   .group-details-backdrop { padding: 0; place-items: stretch; }
   .group-details-panel { width: 100%; height: 100dvh; border: 0; border-radius: 0; }

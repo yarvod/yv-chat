@@ -72,6 +72,7 @@ const props = withDefaults(defineProps<{
   messagePins?: readonly MessagePinSummary[]
   togglePin?: (messageId: string, active: boolean) => Promise<boolean>
   pinningMessageId?: string | null
+  copyText?: (value: string) => Promise<boolean>
   connectionState: RealtimeConnectionState
   setTyping: (conversationId: string, active: boolean) => void
   viewportAnchor?: ConversationViewportAnchor | null
@@ -100,6 +101,7 @@ const props = withDefaults(defineProps<{
   messagePins: () => [],
   togglePin: async () => false,
   pinningMessageId: null,
+  copyText: async () => false,
   viewportAnchor: null,
   targetMessageId: null,
   saveViewport: async () => undefined,
@@ -116,6 +118,7 @@ const searchResultIndex = ref(0)
 const searching = ref(false)
 const deleteCandidateId = ref<string | null>(null)
 const unpinCandidateId = ref<string | null>(null)
+const messageActionNotice = ref<string | null>(null)
 const activePinIndex = ref(0)
 const timeline = ref<HTMLElement | null>(null)
 const composerInput = ref<HTMLTextAreaElement | null>(null)
@@ -146,6 +149,7 @@ let layoutAnchor: { messageId: string, offset: number } | null = null
 let layoutAnchorExpiresAt = 0
 let attachmentDragDepth = 0
 let longPressTimer: ReturnType<typeof setTimeout> | null = null
+let messageActionNoticeTimer: ReturnType<typeof setTimeout> | null = null
 interface MessageContextMenuState {
   messageId: string
   x: number
@@ -469,6 +473,26 @@ function startReply(message: TimelineMessage): void {
   void nextTick(() => composerInput.value?.focus())
 }
 
+function showMessageActionNotice(message: string): void {
+  messageActionNotice.value = message
+  if (messageActionNoticeTimer) clearTimeout(messageActionNoticeTimer)
+  messageActionNoticeTimer = setTimeout(() => {
+    messageActionNotice.value = null
+    messageActionNoticeTimer = null
+  }, 2_400)
+}
+
+async function copyMessageText(message: TimelineMessage): Promise<void> {
+  const body = message.displayBody
+  if (!body?.trim()) return
+  if (await props.copyText(body)) {
+    messageContextMenu.value = null
+    showMessageActionNotice('Текст скопирован')
+    return
+  }
+  showMessageActionNotice('Не удалось скопировать текст')
+}
+
 function openMessageContext(message: TimelineMessage, clientX: number, clientY: number): void {
   if (message.contentState !== 'available') return
   attachmentMenuOpen.value = false
@@ -499,7 +523,7 @@ function handleMessageKeydown(event: KeyboardEvent, message: TimelineMessage): v
 
 function isInteractiveTarget(target: EventTarget | null): boolean {
   return target instanceof Element && Boolean(target.closest(
-    'button, a, input, textarea, video, audio, [role="button"], [contenteditable="true"]',
+    'button, input, textarea, video, audio, [role="button"], [contenteditable="true"]',
   ))
 }
 
@@ -1021,6 +1045,9 @@ watch(
       deleteCandidateId.value = null
       unpinCandidateId.value = null
       messageContextMenu.value = null
+      messageActionNotice.value = null
+      if (messageActionNoticeTimer) clearTimeout(messageActionNoticeTimer)
+      messageActionNoticeTimer = null
       resetMessageSwipe()
       showScrollToLatest.value = false
       restorationPending.value = true
@@ -1063,6 +1090,7 @@ onBeforeUnmount(() => {
   window.visualViewport?.removeEventListener('resize', handleVisualViewportResize)
   document.removeEventListener('pointerdown', handleDocumentPointerDown, true)
   document.removeEventListener('keydown', handleDocumentKeydown)
+  if (messageActionNoticeTimer) clearTimeout(messageActionNoticeTimer)
   resetMessageSwipe()
   clearAttachments()
   attachmentDragDepth = 0
@@ -1356,6 +1384,10 @@ onBeforeUnmount(() => {
       <span aria-hidden="true">{{ historyHasNewer ? 'К последним' : 'Новые' }}</span>
     </button>
 
+    <p v-if="messageActionNotice" class="message-action-toast" role="status" aria-live="polite">
+      {{ messageActionNotice }}
+    </p>
+
     <form class="composer" @submit.prevent="submit">
       <div v-if="replyingTo" class="composer-reply">
         <span>
@@ -1581,6 +1613,14 @@ onBeforeUnmount(() => {
         <div class="context-message-actions">
           <button type="button" role="menuitem" @click="startReply(contextMessage)">
             <span aria-hidden="true">↩</span><strong>Ответить</strong>
+          </button>
+          <button
+            v-if="contextMessage.displayBody?.trim()"
+            type="button"
+            role="menuitem"
+            @click="copyMessageText(contextMessage)"
+          >
+            <span aria-hidden="true">⧉</span><strong>Копировать текст</strong>
           </button>
           <button
             v-if="canManagePins()"

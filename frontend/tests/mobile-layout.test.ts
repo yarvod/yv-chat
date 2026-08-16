@@ -117,6 +117,19 @@ describe('mobile application shell', () => {
     expect(css).toMatch(/\.message-bubble\.message-bubble--video-note \{[^}]*border: 0;[^}]*background: transparent;[^}]*box-shadow: none;/)
   })
 
+  it('gives coarse-pointer message long-press to the application menu', () => {
+    const css = readFileSync(resolve(process.cwd(), 'app/assets/main.css'), 'utf8')
+    const coarseBlock = css.slice(
+      css.indexOf('@media (hover: none) and (pointer: coarse)'),
+      css.indexOf('@media (max-width: 840px)'),
+    )
+
+    expect(coarseBlock).toMatch(/\.message-bubble, \.message-bubble \* \{[^}]*-webkit-user-select: none;[^}]*user-select: none;[^}]*-webkit-touch-callout: none;/)
+    expect(coarseBlock).toMatch(/\.message-bubble img, \.message-bubble video \{[^}]*-webkit-user-drag: none;/)
+    expect(css.slice(0, css.indexOf('@media (hover: none) and (pointer: coarse)')))
+      .not.toMatch(/\.message-bubble \{[^}]*user-select: none;/)
+  })
+
   it('overlays transient connection state without reserving a shell row', () => {
     const css = readFileSync(resolve(process.cwd(), 'app/assets/main.css'), 'utf8')
 

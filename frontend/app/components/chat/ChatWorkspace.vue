@@ -99,6 +99,16 @@ async function leaveGroup(): Promise<boolean> {
   return left
 }
 
+async function copyMessageText(value: string): Promise<boolean> {
+  try {
+    await $frontend.clipboard.writeText(value)
+    $frontend.haptics.perform('success')
+    return true
+  } catch {
+    return false
+  }
+}
+
 async function createDirect(userId: string): Promise<void> {
   await messenger.createDirect(userId)
   if (messenger.state.activeConversationId) {
@@ -225,6 +235,7 @@ onBeforeUnmount(() => {
         :message-pins="messenger.state.messagePins"
         :toggle-pin="messenger.togglePin"
         :pinning-message-id="messenger.state.pinningMessageId"
+        :copy-text="copyMessageText"
         :connection-state="connectionState"
         :set-typing="typing.setLocal.bind(typing)"
         :viewport-anchor="messenger.activeViewportAnchor.value"
