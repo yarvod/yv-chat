@@ -8,6 +8,7 @@ const originalSrcObject = Object.getOwnPropertyDescriptor(HTMLMediaElement.proto
 class FakeTrack {
   readonly stop = vi.fn()
   readonly applyConstraints = vi.fn().mockResolvedValue(undefined)
+  contentHint = ''
 
   constructor(readonly kind: 'audio' | 'video') {}
 }
@@ -79,9 +80,31 @@ describe('browser video note recorder', () => {
     vi.unstubAllGlobals()
   })
 
-  it('requests bounded camera constraints, negotiates MP4 and stops every capture track', async () => {
+  it('requests a bounded high-quality profile, negotiates MP4 and stops every capture track', async () => {
     const videoTrack = new FakeTrack('video')
     const audioTrack = new FakeTrack('audio')
+    const canvasVideoTrack = new FakeTrack('video')
+    const canvasContext = {
+      imageSmoothingEnabled: false,
+      imageSmoothingQuality: 'low',
+      save: vi.fn(),
+      translate: vi.fn(),
+      scale: vi.fn(),
+      drawImage: vi.fn(),
+      restore: vi.fn(),
+    } as unknown as CanvasRenderingContext2D
+    let capturedCanvas: { width: number, height: number, frameRate?: number } | null = null
+    let scheduledDraw: FrameRequestCallback | null = null
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(canvasContext)
+    vi.spyOn(HTMLCanvasElement.prototype, 'captureStream').mockImplementation(function (frameRate) {
+      capturedCanvas = { width: this.width, height: this.height, frameRate }
+      return new FakeMediaStream([canvasVideoTrack]) as unknown as MediaStream
+    })
+    vi.spyOn(performance, 'now').mockReturnValue(100)
+    vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation(callback => {
+      scheduledDraw = callback
+      return 1
+    })
     const getUserMedia = vi.fn().mockResolvedValue(
       new FakeMediaStream([videoTrack, audioTrack]),
     )
@@ -93,26 +116,43 @@ describe('browser video note recorder', () => {
 
     const session = await recorder.open('user')
     session.start()
+    expect(canvasContext.drawImage).toHaveBeenCalledTimes(1)
+    scheduledDraw?.(110)
+    expect(canvasContext.drawImage).toHaveBeenCalledTimes(1)
+    scheduledDraw?.(134)
+    expect(canvasContext.drawImage).toHaveBeenCalledTimes(2)
     const result = await session.stop()
 
     expect(getUserMedia).toHaveBeenCalledWith({
       audio: expect.objectContaining({ channelCount: 1, sampleRate: 48_000 }),
       video: expect.objectContaining({
         facingMode: { ideal: 'user' },
-        width: { ideal: 480, max: 720 },
-        height: { ideal: 480, max: 720 },
-        frameRate: { ideal: 20, max: 24 },
+        width: { ideal: 720, max: 1_080 },
+        height: { ideal: 720, max: 1_080 },
+        frameRate: { ideal: 30, max: 30 },
       }),
     })
     expect(FakeMediaRecorder.lastOptions).toMatchObject({
       mimeType: 'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
-      videoBitsPerSecond: 420_000,
-      audioBitsPerSecond: 48_000,
+      videoBitsPerSecond: 900_000,
+      audioBitsPerSecond: 96_000,
     })
+    const maximumTargetBytes = (
+      Number(FakeMediaRecorder.lastOptions?.videoBitsPerSecond)
+      + Number(FakeMediaRecorder.lastOptions?.audioBitsPerSecond)
+    ) * 60 / 8
+    expect(maximumTargetBytes).toBeLessThan(8 * 1024 * 1024)
+    expect(videoTrack.contentHint).toBe('motion')
+    expect(audioTrack.contentHint).toBe('speech')
+    expect(canvasVideoTrack.contentHint).toBe('motion')
+    expect(capturedCanvas).toEqual({ width: 720, height: 720, frameRate: 30 })
+    expect(canvasContext.imageSmoothingEnabled).toBe(true)
+    expect(canvasContext.imageSmoothingQuality).toBe('high')
     expect(result).toMatchObject({ contentType: 'video/mp4', durationSeconds: 1 })
     expect(result.body.size).toBeGreaterThan(0)
     expect(videoTrack.stop).toHaveBeenCalled()
     expect(audioTrack.stop).toHaveBeenCalled()
+    expect(canvasVideoTrack.stop).toHaveBeenCalled()
   })
 
   it('maps denied permission to a recoverable typed error', async () => {

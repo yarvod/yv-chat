@@ -1271,11 +1271,17 @@ Blob скачивается без выхода из приложения. Compo
 `video` attachment, не как новый storage/media kind. Старый клиент игнорирует
 необязательные metadata и показывает обычное видео. Browser adapter после user
 gesture запрашивает camera/microphone, runtime-negotiates MP4/WebM, записывает
-квадратный 480×480 поток с bounded 20 fps / 420 Kbit video / 48 Kbit mono audio и
+квадратный 720×720 поток с bounded 30 fps / 900 Kbit video / 96 Kbit mono speech
+audio и
 останавливает все tracks при stop/cancel/error/background/unmount. Client maximum —
 60 секунд и 8 MiB; обычный group video сохраняет общий 100 MiB limit. Camera switch
-меняет только client capture source; crop/composition выполняется локально там, где
-доступен `canvas.captureStream`, с direct MediaRecorder fallback. Server не получает
+меняет только client capture source; crop/composition с high-quality canvas smoothing
+и throttled 30-fps draw loop выполняется локально там, где доступен
+`canvas.captureStream`, с direct MediaRecorder
+fallback. Camera resolution/FPS остаются ideal constraints без hard minimum, поэтому
+low-end device может выбрать меньший поддерживаемый профиль. Target aggregate bitrate
+даёт около 7.47 MB за 60 секунд до container overhead и остаётся ниже 8 MiB admission;
+итоговый Blob всё равно fail closed проверяется по exact byte size. Server не получает
 отдельный camera signal и не делает thumbnail, crop или transcoding. Hold/release,
 swipe-left cancel и swipe-up lock являются presentation interaction; authorized
 upload, message idempotency, TTL, cleanup и download/cache correctness не меняются.

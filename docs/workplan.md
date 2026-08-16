@@ -1,63 +1,63 @@
 # Текущий workplan
 
-## WP-088 — Telegram-like encrypted video-note playback
+## WP-089 — Higher-quality bounded video-note capture
 
 Статус: **completed locally; production rollout pending**
 Backlog: `BL-043`
 
-Цель: довести отображение уже защищённых `video_note` до понятного Telegram-like
-поведения без изменения E2EE/storage boundary.
+Цель: повысить резкость, плавность и качество речи в новых `video_note`, сохранив
+60-second / 8 MiB admission boundary и существующее E2EE/storage поведение.
 
 ### Scope
 
-- компактный кружок автоматически воспроизводит загруженный Blob без звука и в loop;
-- первый пользовательский click увеличивает кружок, перезапускает запись с начала,
-  выключает loop и включает звук;
-- повторный click возвращает muted autoplay preview; завершение звучащего playback
-  также безопасно возвращает компактный preview;
-- только один раскрытый кружок может воспроизводиться со звуком;
-- таймер расположен отдельной контрастной pill поверх нижнего края круга, не
-  обрезается внутренним `overflow: hidden` и показывает оставшееся время;
-- generic video/photo/file flow, encrypted download/cache и MLS content не меняются.
+- output canvas увеличивается с 480×480 до 720×720;
+- camera target увеличивается с 20 до bounded 30 fps без hard minimum для слабых
+  устройств;
+- encoder budget увеличивается с 420 до 900 Kbit/s video и с 48 до 96 Kbit/s mono
+  audio;
+- video/audio tracks получают standard content hints `motion`/`speech`, canvas crop
+  использует high-quality smoothing;
+- codec negotiation, camera switch, gestures, encrypted attachment flow и playback
+  presentation не меняются.
 
 ### Security and accessibility invariants
 
-- autoplay всегда `muted` и `playsinline`; звук включается только из user gesture;
-- direct ciphertext/key/metadata boundary остаётся без изменений;
-- кнопка сообщает compact/expanded действие через динамический `aria-label`;
-- unsupported media и download fallback сохраняются;
-- motion и sizing остаются bounded responsive CSS без fullscreen navigation.
+- target bitrate budget остаётся ниже 8 MiB для полной 60-second записи с запасом
+  на container overhead;
+- constraints остаются `ideal`, а не `exact`/`min`, чтобы low-end camera могла
+  выбрать поддерживаемое разрешение/FPS;
+- client по-прежнему fail closed отклоняет итоговый Blob больше 8 MiB;
+- direct bytes шифруются до upload; server-side transcoding/decryption не появляется;
+- all tracks по-прежнему останавливаются при stop/cancel/error.
 
 ### Verification
 
-- component tests: autoplay/muted/loop attributes, timer placement/format,
-  expand+unmute+restart, collapse+mute+loop и generic video regression;
+- recorder tests: camera/audio constraints, codec, increased bounded bitrates,
+  track cleanup and permission mapping;
 - frontend lint, typecheck, tests and production build;
 - isolated Docker stack and in-app browser visual/interaction acceptance;
-- production read-only audit confirms direct attachment rows are opaque ciphertext.
+- browser camera permission/capture acceptance where hardware is exposed.
 
 ### Definition of Done
 
-- compact video note starts muted automatically when media becomes playable;
-- click expands and enables sound, second click collapses back to muted loop;
-- timer is readable and no longer clipped by the circular media mask;
-- production direct attachment audit and all relevant checks are documented green.
+- new recorder options request 720-square / 30 fps with 900/96 Kbit budgets;
+- maximum target payload remains bounded below 8 MiB for 60 seconds;
+- permission/capture fallbacks and existing video-note interaction remain green;
+- Docker/browser acceptance and all relevant checks are documented.
 
 ### Result
 
-- compact `video_note` starts automatically as a muted inline loop; click restarts it
-  expanded with sound and no loop, while repeat click or natural end returns the muted
-  compact preview;
-- the countdown pill now lives outside the circular crop, uses `MM:SS`, and the compact
-  state exposes an explicit mute badge and state-aware accessible action label;
-- production read-only audit found two committed direct-chat attachments. Both are
-  stored as `file` / `application/octet-stream`; their 64 KiB prefixes have no known
-  image/video magic and have entropy `7.9973`, consistent with client ciphertext. The
-  server intentionally cannot distinguish a video note from another direct attachment;
-- frontend lint, typecheck, all `306` tests and production build are green; docs-check
-  is green;
-- isolated Docker Compose is healthy and the in-app browser verified real muted
-  autoplay, the unclipped timer/mute overlays, expanded playback without loop, and the
-  automatic return to compact muted loop. The fixture used the shared renderer in a
-  disposable local group because the automation tab did not expose camera hardware;
-  direct storage encryption was verified separately against production bytes.
+- recorder target вырос с 480×480 / 20 fps / 420 Kbit video / 48 Kbit audio до
+  720×720 / 30 fps / 900 Kbit video / 96 Kbit mono speech audio;
+- camera/audio tracks маркируются `motion`/`speech`, square crop использует high-quality
+  smoothing, а canvas draw loop throttled до output 30 fps вместо лишних redraws;
+- полный 60-second target составляет около 7.47 MB до container overhead и имеет
+  запас до 8 MiB; exact final Blob ceiling и graceful camera fallback сохранены;
+- frontend lint, typecheck, all `306` tests и production build green; recorder tests
+  фиксируют constraints, bitrates, byte budget, canvas size/FPS/smoothing, hints и
+  cleanup всех tracks;
+- финальный Docker Compose stack healthy, свежая PWA открыла direct MLS chat и
+  recorder control без runtime/API failure. In-app automation получила persisted
+  camera/microphone denial без нового system prompt, поэтому sensor-level A/V quality
+  остаётся короткой physical-device acceptance после rollout; denial recovery UI
+  сработал корректно.

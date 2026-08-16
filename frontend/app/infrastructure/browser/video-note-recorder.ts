@@ -6,10 +6,10 @@ import {
   type VideoNoteRecordingSession,
 } from '../../application/ports/video-note-recorder'
 
-const CAPTURE_SIZE = 480
-const CAPTURE_FRAME_RATE = 20
-const VIDEO_BITS_PER_SECOND = 420_000
-const AUDIO_BITS_PER_SECOND = 48_000
+const CAPTURE_SIZE = 720
+const CAPTURE_FRAME_RATE = 30
+const VIDEO_BITS_PER_SECOND = 900_000
+const AUDIO_BITS_PER_SECOND = 96_000
 const MIME_CANDIDATES = [
   'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
   'video/webm;codecs=vp8,opus',
@@ -30,6 +30,14 @@ function stopTracks(stream: MediaStream | null): void {
   for (const track of stream?.getTracks() ?? []) track.stop()
 }
 
+function setContentHint(track: MediaStreamTrack, hint: 'motion' | 'speech'): void {
+  try {
+    track.contentHint = hint
+  } catch {
+    // Some otherwise compatible WebViews expose a read-only contentHint property.
+  }
+}
+
 function captureErrorName(error: unknown): string | null {
   if (typeof error !== 'object' || error === null || !('name' in error)) return null
   return typeof error.name === 'string' ? error.name : null
@@ -38,10 +46,10 @@ function captureErrorName(error: unknown): string | null {
 function cameraConstraints(facingMode: VideoNoteFacingMode): MediaTrackConstraints {
   return {
     facingMode: { ideal: facingMode },
-    width: { ideal: CAPTURE_SIZE, max: 720 },
-    height: { ideal: CAPTURE_SIZE, max: 720 },
+    width: { ideal: CAPTURE_SIZE, max: 1_080 },
+    height: { ideal: CAPTURE_SIZE, max: 1_080 },
     aspectRatio: { ideal: 1 },
-    frameRate: { ideal: CAPTURE_FRAME_RATE, max: 24 },
+    frameRate: { ideal: CAPTURE_FRAME_RATE, max: CAPTURE_FRAME_RATE },
   }
 }
 
@@ -125,6 +133,8 @@ class BrowserVideoNoteSession implements VideoNoteRecordingSession {
       stopTracks(stream)
       throw new VideoNoteCaptureError('capture')
     }
+    setContentHint(cameraTrack, 'motion')
+    setContentHint(microphoneTrack, 'speech')
     this.cameraStream = new MediaStream([cameraTrack])
     this.microphoneTrack = microphoneTrack
     this.preview = new MediaStream([cameraTrack])
@@ -226,6 +236,7 @@ class BrowserVideoNoteSession implements VideoNoteRecordingSession {
       stopTracks(nextStream)
       throw new VideoNoteCaptureError('capture')
     }
+    setContentHint(nextTrack, 'motion')
     const previousCamera = this.cameraStream
     this.cameraStream = new MediaStream([nextTrack])
     this.preview = new MediaStream([nextTrack])
@@ -285,14 +296,24 @@ class BrowserVideoNoteSession implements VideoNoteRecordingSession {
     if (context && typeof canvas.captureStream === 'function') {
       canvas.width = CAPTURE_SIZE
       canvas.height = CAPTURE_SIZE
-      const draw = () => {
-        drawSquareFrame(context, this.sourceVideo, this.currentFacingMode)
+      context.imageSmoothingEnabled = true
+      context.imageSmoothingQuality = 'high'
+      const frameIntervalMilliseconds = 1_000 / CAPTURE_FRAME_RATE
+      let lastFrameAt = Number.NEGATIVE_INFINITY
+      const draw = (timestamp: number) => {
+        if (timestamp - lastFrameAt >= frameIntervalMilliseconds) {
+          drawSquareFrame(context, this.sourceVideo, this.currentFacingMode)
+          lastFrameAt = timestamp
+        }
         this.animationFrame = requestAnimationFrame(draw)
       }
-      draw()
+      draw(performance.now())
       this.canvasStream = canvas.captureStream(CAPTURE_FRAME_RATE)
       const videoTrack = this.canvasStream.getVideoTracks()[0]
-      if (videoTrack) return new MediaStream([videoTrack, this.microphoneTrack])
+      if (videoTrack) {
+        setContentHint(videoTrack, 'motion')
+        return new MediaStream([videoTrack, this.microphoneTrack])
+      }
       stopTracks(this.canvasStream)
       this.canvasStream = null
     }

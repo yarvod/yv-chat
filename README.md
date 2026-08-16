@@ -31,7 +31,9 @@ v2 content. Сервер хранит `application/octet-stream` ciphertext и o
 metadata, а расшифровка выполняется локально после authenticated download.
 Composer также записывает компактные видеокружки: hold/release отправляет,
 swipe-left отменяет, swipe-up фиксирует запись, locked mode позволяет переключить
-камеру. Запись ограничена 60 секундами, 480×480, low-bitrate profile и 8 MiB;
+камеру. Запись ограничена 60 секундами и 8 MiB; bounded target profile использует
+720×720, до 30 fps, 900 Kbit/s video и 96 Kbit/s mono speech audio с graceful
+camera fallback на поддерживаемые устройством параметры;
 в group v1 это тот же явно server-readable flow, в direct v2 bytes и metadata E2EE;
 в обоих случаях это attachment, а не WebRTC call.
 В Settings можно посмотреть размер и число локальных media-копий и после отдельного
