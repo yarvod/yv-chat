@@ -4,6 +4,19 @@
 
 ## Active
 
+### BUG-081 — Минутный видеокружок исчезал до неявной отправки
+
+- Статус: `fixed locally in WP-091; physical camera permission acceptance pending`.
+- Severity: `high messaging UX and send-intent clarity`.
+- Reproduction: удерживать запись видеокружка до 60 секунд; timer вызывает общий
+  finish/send path, overlay сразу закрывается, а сообщение появляется только после
+  client processing/upload, поэтому пользователь не понимает, отправлена ли запись.
+- Ожидаемая семантика: лимит только останавливает capture; готовый локальный кружок
+  остаётся в review с явными «Отправить»/«Удалить», а контур preview заранее показывает
+  прогресс до минуты.
+- Инварианты: camera/microphone освобождаются на лимите, Blob не уходит в upload до
+  явного send, delete/unmount освобождают object URL, direct E2EE flow не меняется.
+
 ### BUG-080 — Неподготавливаемый direct блокировал history sync всех чатов
 
 - Статус: `fixed and production deployed` (`WP-086`, workflow `31761641522`,

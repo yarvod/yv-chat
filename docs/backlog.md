@@ -614,13 +614,16 @@ generic background notification, focus/navigation и invalid-subscription cleanu
 ### BL-073 — Telegram-style compact group video notes
 
 Статус: **implemented, full-CI verified and production deployed** (`WP-073`,
-`dc14858`); physical Android/iOS acceptance подтвердила permission/capture flow,
+`dc14858`); max-duration review/progress fix реализован локально в `WP-091` и ожидает
+rollout. Physical Android/iOS acceptance подтвердила permission/capture flow,
 safe-area fixes и gesture/presentation polish.
 
 - hold/release отправляет, swipe-left отменяет, swipe-up фиксирует запись;
 - locked mode поддерживает cancel/send и best-effort front/back camera switch;
-- browser-negotiated MP4/WebM ограничен 480×480, 20 fps, low bitrate, 60 секундами
-  и 8 MiB без server-side crop/transcoding;
+- browser-negotiated MP4/WebM ограничен 720×720, 30 fps, 900/96 Kbit/s target,
+  60 секундами и 8 MiB без server-side crop/transcoding;
+- progress ring показывает приближение к минуте; автоматическая остановка открывает
+  local review с явными send/delete и не запускает upload самостоятельно;
 - optional `video_note` presentation metadata даёт старому client обычный video
   fallback без backend schema/media-kind migration;
 - круглый player переиспользует authenticated group download, TTL и encrypted

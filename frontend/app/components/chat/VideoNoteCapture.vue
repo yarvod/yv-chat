@@ -9,7 +9,7 @@ import {
   type VideoNoteRecordingSession,
 } from '../../application/ports/video-note-recorder'
 
-type CapturePhase = 'idle' | 'opening' | 'recording' | 'locked' | 'finishing'
+type CapturePhase = 'idle' | 'opening' | 'recording' | 'locked' | 'finishing' | 'review'
 
 const props = defineProps<{
   recorder: VideoNoteRecorder
@@ -27,6 +27,8 @@ const facingMode = ref<VideoNoteFacingMode>('user')
 const elapsedMilliseconds = ref(0)
 const cancelArmed = ref(false)
 const switchingCamera = ref(false)
+const pendingRecording = ref<RecordedVideoNote | null>(null)
+const reviewPreviewUrl = ref<string | null>(null)
 let session: VideoNoteRecordingSession | null = null
 let pointerId: number | null = null
 let pointerStartX = 0
@@ -52,7 +54,20 @@ function errorMessage(error: unknown): string {
 
 function formattedElapsed(): string {
   const totalSeconds = Math.min(60, Math.floor(elapsedMilliseconds.value / 1_000))
-  return `0:${String(totalSeconds).padStart(2, '0')}`
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return `${minutes}:${String(seconds).padStart(2, '0')}`
+}
+
+function progressSeconds(): number {
+  return Math.min(60, Math.floor(elapsedMilliseconds.value / 1_000))
+}
+
+function recordingProgressStyle(): Record<string, string> {
+  const progress = elapsedMilliseconds.value / VIDEO_NOTE_MAX_DURATION_MS
+  return {
+    '--video-note-recording-progress': `${Math.round(Math.min(1, progress) * 360)}deg`,
+  }
 }
 
 async function attachPreview(): Promise<void> {
@@ -76,7 +91,7 @@ function startTimers(): void {
     )
   }, 100)
   maximumTimer = setTimeout(() => {
-    void finishRecording()
+    void prepareRecordingReview()
   }, VIDEO_NOTE_MAX_DURATION_MS)
 }
 
@@ -206,6 +221,52 @@ async function finishRecording(): Promise<void> {
   }
 }
 
+async function prepareRecordingReview(): Promise<void> {
+  const activeSession = session
+  if (!activeSession || (phase.value !== 'recording' && phase.value !== 'locked')) return
+  phase.value = 'finishing'
+  pointerId = null
+  removePointerListeners()
+  elapsedMilliseconds.value = VIDEO_NOTE_MAX_DURATION_MS
+  clearTimers()
+  try {
+    const recording = await activeSession.stop()
+    session = null
+    pendingRecording.value = recording
+    previewStream.value = null
+    reviewPreviewUrl.value = URL.createObjectURL(recording.body)
+    phase.value = 'review'
+    await nextTick()
+    if (previewVideo.value) {
+      previewVideo.value.srcObject = null
+      try {
+        await previewVideo.value.play()
+      } catch {
+        // A visible still frame and explicit actions remain available if autoplay is blocked.
+      }
+    }
+  } catch (error) {
+    emit('error', errorMessage(error))
+    await resetCapture(false)
+  }
+}
+
+async function sendPreparedRecording(): Promise<void> {
+  const recording = pendingRecording.value
+  if (phase.value !== 'review' || !recording || props.disabled) return
+  phase.value = 'finishing'
+  pendingRecording.value = null
+  emit('recorded', recording)
+  await resetCapture(false)
+}
+
+async function deletePreparedRecording(): Promise<void> {
+  if (phase.value !== 'review') return
+  phase.value = 'finishing'
+  pendingRecording.value = null
+  await resetCapture(false)
+}
+
 async function cancelRecording(): Promise<void> {
   const activeSession = session
   ++operationId
@@ -229,6 +290,9 @@ async function resetCapture(invalidateOperation = true): Promise<void> {
   lockRequestedWhileOpening = false
   cancelArmed.value = false
   switchingCamera.value = false
+  pendingRecording.value = null
+  if (reviewPreviewUrl.value) URL.revokeObjectURL(reviewPreviewUrl.value)
+  reviewPreviewUrl.value = null
   const activeSession = session
   session = null
   if (invalidateOperation) await activeSession?.cancel()
@@ -238,13 +302,13 @@ async function resetCapture(invalidateOperation = true): Promise<void> {
 }
 
 function handleVisibilityChange(): void {
-  if (document.visibilityState === 'hidden' && phase.value !== 'idle') {
+  if (document.visibilityState === 'hidden' && phase.value !== 'idle' && phase.value !== 'review') {
     void cancelRecording()
   }
 }
 
 watch(() => props.disabled, disabled => {
-  if (disabled && phase.value !== 'idle') void cancelRecording()
+  if (disabled && phase.value !== 'idle' && phase.value !== 'review') void cancelRecording()
 })
 
 onMounted(() => document.addEventListener('visibilitychange', handleVisibilityChange))
@@ -254,6 +318,7 @@ onBeforeUnmount(() => {
   ++operationId
   clearTimers()
   removePointerListeners()
+  if (reviewPreviewUrl.value) URL.revokeObjectURL(reviewPreviewUrl.value)
   void session?.cancel()
 })
 </script>
@@ -291,13 +356,32 @@ onBeforeUnmount(() => {
                 muted
                 autoplay
                 playsinline
-                :class="{ mirrored: facingMode === 'user' }"
+                :loop="phase === 'review'"
+                :src="phase === 'review' ? reviewPreviewUrl ?? undefined : undefined"
+                :class="{ mirrored: facingMode === 'user' && phase !== 'review' }"
               />
               <span v-if="phase === 'opening'" class="loading-orbit" aria-hidden="true" />
-              <span v-else class="video-note-recorder__time">{{ formattedElapsed() }}</span>
+              <span
+                v-else
+                class="video-note-recorder__progress"
+                :class="{
+                  'is-near-limit': elapsedMilliseconds >= 50_000,
+                  'is-review': phase === 'review',
+                }"
+                :style="recordingProgressStyle()"
+                role="progressbar"
+                aria-label="Прогресс записи видеокружка"
+                aria-valuemin="0"
+                aria-valuemax="60"
+                :aria-valuenow="progressSeconds()"
+                :aria-valuetext="formattedElapsed()"
+              />
+              <span v-if="phase !== 'opening'" class="video-note-recorder__time">{{ formattedElapsed() }}</span>
             </div>
             <p v-if="phase === 'opening'">Подключаем камеру…</p>
             <p v-else-if="cancelArmed" class="video-note-recorder__cancel-hint">Отпустите, чтобы отменить</p>
+            <p v-else-if="phase === 'review'">Минута записана — отправить или удалить?</p>
+            <p v-else-if="phase === 'finishing'">Обрабатываем запись…</p>
             <p v-else-if="phase === 'locked'">Запись зафиксирована</p>
             <p v-else>← отмена · ↑ зафиксировать</p>
             <div v-if="phase === 'locked'" class="video-note-recorder__actions">
@@ -311,6 +395,15 @@ onBeforeUnmount(() => {
                 {{ switchingCamera ? '…' : '↻' }}
               </button>
               <button type="button" class="primary" @click="finishRecording">Отправить</button>
+            </div>
+            <div v-else-if="phase === 'review'" class="video-note-recorder__actions video-note-recorder__review-actions">
+              <button type="button" class="danger" @click="deletePreparedRecording">Удалить</button>
+              <button
+                type="button"
+                class="primary"
+                :disabled="disabled"
+                @click="sendPreparedRecording"
+              >Отправить</button>
             </div>
           </div>
         </div>

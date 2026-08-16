@@ -34,6 +34,8 @@ swipe-left отменяет, swipe-up фиксирует запись, locked mo
 камеру. Запись ограничена 60 секундами и 8 MiB; bounded target profile использует
 720×720, до 30 fps, 900 Kbit/s video и 96 Kbit/s mono speech audio с graceful
 camera fallback на поддерживаемые устройством параметры;
+по контуру live preview идёт минутный progress ring, а достигший лимита кружок
+остаётся в локальном review до явного выбора «Отправить» или «Удалить»;
 в group v1 это тот же явно server-readable flow, в direct v2 bytes и metadata E2EE;
 в обоих случаях это attachment, а не WebRTC call.
 В Settings можно посмотреть размер и число локальных media-копий и после отдельного

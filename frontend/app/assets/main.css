@@ -405,12 +405,15 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .video-note-button > span::after { content: ''; position: absolute; top: 2px; right: -6px; width: 6px; height: 10px; border-radius: 0 4px 4px 0; background: currentcolor; clip-path: polygon(0 25%, 100% 0, 100% 100%, 0 75%); }
 .video-note-overlay { position: fixed; z-index: 150; inset: 0; display: grid; place-items: end center; padding: max(20px, env(safe-area-inset-top)) 16px max(90px, calc(env(safe-area-inset-bottom) + 76px)); background: linear-gradient(180deg, rgb(3 5 10 / 25%), rgb(3 5 10 / 82%)); backdrop-filter: blur(6px); }
 .video-note-recorder { display: grid; width: min(360px, calc(100vw - 32px)); place-items: center; gap: 14px; color: white; text-align: center; pointer-events: none; }
-.video-note-recorder__preview { position: relative; display: grid; width: min(310px, 78vw); aspect-ratio: 1; place-items: center; overflow: hidden; border: 4px solid var(--primary); border-radius: 50%; background: #090b12; box-shadow: 0 18px 64px rgb(0 0 0 / 42%); transition: transform .15s ease, border-color .15s ease; }
+.video-note-recorder__preview { position: relative; display: grid; width: min(310px, 78vw); aspect-ratio: 1; place-items: center; overflow: visible; border: 4px solid rgb(255 255 255 / 16%); border-radius: 50%; background: #090b12; box-shadow: 0 18px 64px rgb(0 0 0 / 42%); transition: transform .15s ease, border-color .15s ease; }
 .video-note-recorder.is-cancel-armed .video-note-recorder__preview { transform: scale(.93); border-color: var(--danger); }
-.video-note-recorder__preview video { display: block; width: 100%; height: 100%; object-fit: cover; }
+.video-note-recorder__preview video { display: block; width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
 .video-note-recorder__preview video.mirrored { transform: scaleX(-1); }
 .video-note-recorder__preview .loading-orbit { position: absolute; width: 34px; height: 34px; }
-.video-note-recorder__time { position: absolute; bottom: 18px; left: 50%; min-width: 54px; padding: 5px 10px; transform: translateX(-50%); border-radius: 999px; background: rgb(3 5 10 / 68%); font-size: .78rem; font-variant-numeric: tabular-nums; backdrop-filter: blur(8px); }
+.video-note-recorder__progress { --video-note-recording-progress: 0deg; --video-note-recording-progress-color: var(--primary); position: absolute; z-index: 3; inset: -7px; border-radius: 50%; background: conic-gradient(from -90deg, var(--video-note-recording-progress-color) var(--video-note-recording-progress), rgb(255 255 255 / 16%) 0deg); pointer-events: none; transition: background .1s linear; mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4px)); -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4px)); }
+.video-note-recorder__progress.is-near-limit { --video-note-recording-progress-color: var(--danger); }
+.video-note-recorder__progress.is-review { --video-note-recording-progress-color: var(--primary); }
+.video-note-recorder__time { position: absolute; z-index: 4; bottom: 18px; left: 50%; min-width: 54px; padding: 5px 10px; transform: translateX(-50%); border-radius: 999px; background: rgb(3 5 10 / 68%); font-size: .78rem; font-variant-numeric: tabular-nums; backdrop-filter: blur(8px); }
 .video-note-recorder p { min-height: 22px; margin: 0; color: rgb(255 255 255 / 82%); font-size: .8rem; font-weight: 700; }
 .video-note-recorder .video-note-recorder__cancel-hint { color: #ff9da9; }
 .video-note-recorder__actions { display: flex; align-items: center; gap: 12px; pointer-events: auto; }
@@ -418,6 +421,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .video-note-recorder__actions button[aria-label='Переключить камеру'] { min-width: 46px; padding: 0; font-size: 1.45rem; }
 .video-note-recorder__actions button.primary { border-color: var(--primary); color: var(--primary-ink); background: var(--primary); }
 .video-note-recorder__actions button.danger { border-color: color-mix(in srgb, var(--danger) 65%, transparent); color: #ffb7bf; }
+.video-note-recorder__review-actions button { min-width: 116px; }
 .video-note-overlay-enter-active, .video-note-overlay-leave-active { transition: opacity .15s ease; }
 .video-note-overlay-enter-from, .video-note-overlay-leave-to { opacity: 0; }
 .new-conversation { padding: 14px; border-bottom: 1px solid var(--border); }

@@ -112,6 +112,8 @@ describe('mobile application shell', () => {
 
     expect(css).toMatch(/\.video-note-capture \{[^}]*touch-action: none;[^}]*user-select: none;[^}]*-webkit-touch-callout: none;/)
     expect(css).toMatch(/\.video-note-button \{[^}]*-webkit-touch-callout: none;[^}]*-webkit-user-drag: none;/)
+    expect(css).toMatch(/\.video-note-recorder__progress \{[^}]*conic-gradient\([^}]*mask: radial-gradient/)
+    expect(css).toMatch(/\.video-note-recorder__review-actions button \{[^}]*min-width: 116px;/)
     expect(css).toMatch(/\.message-bubble\.message-bubble--video-note \{[^}]*border: 0;[^}]*background: transparent;[^}]*box-shadow: none;/)
   })
 

@@ -36,6 +36,14 @@ describe('video note capture gestures', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined)
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: vi.fn((blob: Blob) => `blob:video-note-review-${blob.size}`),
+    })
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      configurable: true,
+      value: vi.fn(),
+    })
   })
 
   afterEach(() => {
@@ -120,7 +128,7 @@ describe('video note capture gestures', () => {
     expect(session.stop).toHaveBeenCalledOnce()
   })
 
-  it('automatically finishes at the bounded 60-second duration', async () => {
+  it('stops at 60 seconds and waits for explicit send with a full progress ring', async () => {
     const { recorder, session } = recordingHarness()
     const wrapper = mount(VideoNoteCapture, {
       props: { recorder, disabled: false },
@@ -129,12 +137,74 @@ describe('video note capture gestures', () => {
     wrapper.get('.video-note-button').element.dispatchEvent(pointer('pointerdown', 11, 200, 500))
     await flushPromises()
     window.dispatchEvent(pointer('pointermove', 11, 200, 410))
-    vi.advanceTimersByTime(60_000)
+
+    vi.advanceTimersByTime(30_000)
+    await wrapper.vm.$nextTick()
+    const halfwayProgress = wrapper.get('[role="progressbar"]')
+    expect(halfwayProgress.attributes('aria-valuenow')).toBe('30')
+    expect(halfwayProgress.attributes('style')).toContain('--video-note-recording-progress: 180deg')
+
+    vi.advanceTimersByTime(30_000)
     await flushPromises()
 
     expect(session.stop).toHaveBeenCalledOnce()
     expect(session.cancel).not.toHaveBeenCalled()
+    expect(wrapper.emitted('recorded')).toBeUndefined()
+    expect(wrapper.text()).toContain('Минута записана — отправить или удалить?')
+    expect(wrapper.get('.video-note-recorder__time').text()).toBe('1:00')
+    expect(wrapper.get('[role="progressbar"]').attributes('aria-valuenow')).toBe('60')
+    expect(wrapper.get('[role="progressbar"]').classes()).toContain('is-review')
+    expect(wrapper.get<HTMLVideoElement>('.video-note-recorder__preview video').attributes('src'))
+      .toBe('blob:video-note-review-13')
+
+    await wrapper.get('.video-note-recorder__review-actions .primary').trigger('click')
+    await flushPromises()
+
     expect(wrapper.emitted('recorded')).toHaveLength(1)
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:video-note-review-13')
+  })
+
+  it('deletes a max-duration review without emitting or uploading it', async () => {
+    const { recorder, session } = recordingHarness()
+    const wrapper = mount(VideoNoteCapture, {
+      props: { recorder, disabled: false },
+      global: { stubs: { Teleport: true } },
+    })
+    wrapper.get('.video-note-button').element.dispatchEvent(pointer('pointerdown', 12, 200, 500))
+    await flushPromises()
+    vi.advanceTimersByTime(60_000)
+    await flushPromises()
+
+    expect(session.stop).toHaveBeenCalledOnce()
+    await wrapper.get('.video-note-recorder__review-actions .danger').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.emitted('recorded')).toBeUndefined()
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:video-note-review-13')
+  })
+
+  it('keeps a completed review across backgrounding and releases it on unmount', async () => {
+    const { recorder, session } = recordingHarness()
+    const wrapper = mount(VideoNoteCapture, {
+      props: { recorder, disabled: false },
+      global: { stubs: { Teleport: true } },
+    })
+    wrapper.get('.video-note-button').element.dispatchEvent(pointer('pointerdown', 14, 200, 500))
+    await flushPromises()
+    vi.advanceTimersByTime(60_000)
+    await flushPromises()
+
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' })
+    document.dispatchEvent(new Event('visibilitychange'))
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Минута записана — отправить или удалить?')
+    expect(session.cancel).not.toHaveBeenCalled()
+    wrapper.unmount()
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:video-note-review-13')
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
   })
 
   it('preserves an upward lock gesture while camera permission is still opening', async () => {
