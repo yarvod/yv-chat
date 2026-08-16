@@ -31,6 +31,69 @@ const conversation = {
 }
 
 describe('message panel', () => {
+  it('cycles multiple pins, opens the exact message and exposes direct-chat pin actions', async () => {
+    const messages = [1, 2].map(sequence => ({
+      messageId: `message-${sequence}`,
+      clientMessageId: `client-${sequence}`,
+      conversationId: 'conversation-1',
+      senderUserId: sequence === 1 ? 'alice-id' : 'bob-id',
+      senderDeviceId: `device-${sequence}`,
+      protocolVersion: 1,
+      cryptoGenerationId: null,
+      cryptoEpoch: null,
+      sequence,
+      createdAt: `2026-08-17T12:00:0${sequence}Z`,
+      expiresAt: '2026-09-16T12:00:00Z',
+      ciphertextBase64: 'b3BhcXVl',
+      deletionReason: null,
+      deletedAt: null,
+      contentState: 'available' as const,
+      displayBody: sequence === 1 ? 'Первый закреп' : 'Второй закреп',
+      contentSecure: true,
+    }))
+    const openMessage = vi.fn().mockResolvedValue(undefined)
+    const togglePin = vi.fn().mockResolvedValue(true)
+    const wrapper = mount(MessagePanel, {
+      props: {
+        conversation,
+        messages,
+        messagePins: [{
+          messageId: 'message-2', sequence: 2, pinnedByUserId: 'alice-id',
+          pinnedAt: '2026-08-17T12:01:02Z',
+        }, {
+          messageId: 'message-1', sequence: 1, pinnedByUserId: 'bob-id',
+          pinnedAt: '2026-08-17T12:01:01Z',
+        }],
+        openMessage,
+        togglePin,
+        actorUserId: 'alice-id',
+        sending: false,
+        protectionSecure: true,
+        protectionLabel: 'E2EE',
+        sendMessage: vi.fn(),
+        deleteMessage: vi.fn(),
+        deletingMessageId: null,
+        typingActorIds: [],
+        onlineActorIds: [],
+        deliveryStates: [],
+        connectionState: 'connected',
+        setTyping: vi.fn(),
+      },
+    })
+
+    expect(wrapper.get('.pinned-message-bar').text()).toContain('Второй закреп')
+    expect(wrapper.get('.pinned-message-count').text()).toBe('1/2')
+    await wrapper.get('[aria-label="Следующее закреплённое сообщение"]').trigger('click')
+    expect(wrapper.get('.pinned-message-bar').text()).toContain('Первый закреп')
+    await wrapper.get('.pinned-message-main').trigger('click')
+    expect(openMessage).toHaveBeenCalledWith('message-1')
+
+    const firstActions = wrapper.find('[data-message-id="message-1"]')
+    await firstActions.get('button[aria-label^="Открепить"]').trigger('click')
+    expect(togglePin).toHaveBeenCalledWith('message-1', false)
+    expect(wrapper.find('[data-message-id="message-2"]').text()).toContain('Открепить')
+  })
+
   it('renders a standalone video note without the generic square message frame', () => {
     const videoNoteMessage = {
       messageId: 'video-note-message',

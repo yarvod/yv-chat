@@ -3,6 +3,7 @@ export type DurableRealtimeEventType =
   | 'conversation_updated'
   | 'message_deleted'
   | 'message_reaction_updated'
+  | 'message_pin_updated'
   | 'read_receipt'
   | 'delivery_receipt'
 

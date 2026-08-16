@@ -12,6 +12,7 @@ from messenger.application.ports.conversations import ConversationRepository
 from messenger.application.ports.device_crypto import DeviceCryptoIdentityRepository
 from messenger.application.ports.identity import DeviceRepository, UserRepository
 from messenger.application.ports.messages.delivery_states import ConversationDeliveryStateRepository
+from messenger.application.ports.messages.pins import MessagePinRepository
 from messenger.application.ports.messages.reactions import MessageReactionRepository
 from messenger.application.ports.messages.read_states import ConversationReadStateRepository
 from messenger.application.ports.messages.repository import MessageRepository
@@ -31,6 +32,7 @@ class MessagingUnitOfWork(Protocol):
     crypto_identities: DeviceCryptoIdentityRepository
     attachments: AttachmentRepository
     reactions: MessageReactionRepository
+    pins: MessagePinRepository
 
     async def __aenter__(self) -> Self: ...
 

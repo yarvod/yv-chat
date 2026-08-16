@@ -6,6 +6,7 @@ export type AppIconName =
   | 'close'
   | 'file'
   | 'media'
+  | 'pin'
   | 'search'
   | 'send'
   | 'settings'

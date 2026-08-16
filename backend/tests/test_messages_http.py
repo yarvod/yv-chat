@@ -22,6 +22,81 @@ async def login_as(client: AsyncClient, username: str) -> None:
     assert response.status_code == 200
 
 
+async def test_group_message_pins_enforce_roles_and_expose_only_opaque_metadata() -> None:
+    application, state, _ = build_test_application()
+    bob = User.create(username="bob", display_name="Bob", now=NOW)
+    mallory = User.create(username="mallory", display_name="Mallory", now=NOW)
+    for user in (bob, mallory):
+        state.users[user.id] = user
+        state.password_hashes[user.id] = "$argon2id$fake-hash"
+
+    transport = ASGITransport(app=application)
+    async with (
+        AsyncClient(transport=transport, base_url=ORIGIN) as alice_client,
+        AsyncClient(transport=transport, base_url=ORIGIN) as bob_client,
+        AsyncClient(transport=transport, base_url=ORIGIN) as mallory_client,
+    ):
+        await login_as(alice_client, "alice")
+        await login_as(bob_client, "bob")
+        await login_as(mallory_client, "mallory")
+        alice_headers = {
+            "Origin": ORIGIN,
+            "X-CSRF-Token": alice_client.cookies["__Host-yv_csrf"],
+        }
+        bob_headers = {
+            "Origin": ORIGIN,
+            "X-CSRF-Token": bob_client.cookies["__Host-yv_csrf"],
+        }
+        group = await alice_client.post(
+            "/api/v1/conversations/group",
+            headers=alice_headers,
+            json={"title": "Pinned", "member_user_ids": [str(bob.id)]},
+        )
+        conversation_id = group.json()["conversation_id"]
+        sent = await alice_client.post(
+            f"/api/v1/conversations/{conversation_id}/messages",
+            headers=alice_headers,
+            json={
+                "client_message_id": str(uuid4()),
+                "protocol_version": 1,
+                "ciphertext_base64": base64.b64encode(b"opaque pin target").decode(),
+            },
+        )
+        message_id = sent.json()["message_id"]
+
+        missing_csrf = await alice_client.put(
+            f"/api/v1/conversations/{conversation_id}/messages/{message_id}/pin",
+            headers={"Origin": ORIGIN},
+        )
+        pinned = await alice_client.put(
+            f"/api/v1/conversations/{conversation_id}/messages/{message_id}/pin",
+            headers=alice_headers,
+        )
+        member_list = await bob_client.get(f"/api/v1/conversations/{conversation_id}/messages/pins")
+        member_unpin = await bob_client.delete(
+            f"/api/v1/conversations/{conversation_id}/messages/{message_id}/pin",
+            headers=bob_headers,
+        )
+        outsider_list = await mallory_client.get(
+            f"/api/v1/conversations/{conversation_id}/messages/pins"
+        )
+
+        assert missing_csrf.status_code == 403
+        assert pinned.status_code == 200
+        assert pinned.json() == member_list.json()
+        assert pinned.json()[0] == {
+            "message_id": message_id,
+            "sequence": sent.json()["sequence"],
+            "pinned_by_user_id": str(
+                next(user.id for user in state.users.values() if user.username == "alice")
+            ),
+            "pinned_at": pinned.json()[0]["pinned_at"],
+        }
+        assert "ciphertext" not in pinned.json()[0]
+        assert member_unpin.status_code == 403
+        assert outsider_list.status_code == 404
+
+
 async def test_group_attachment_flow_and_direct_opaque_upload_contract() -> None:
     application, state, clock = build_test_application()
     bob = User.create(username="bob", display_name="Bob", now=NOW)

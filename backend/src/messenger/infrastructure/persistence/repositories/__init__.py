@@ -31,6 +31,9 @@ from messenger.infrastructure.persistence.repositories.device_pairings import (
     SqlAlchemyDevicePairingRepository,
 )
 from messenger.infrastructure.persistence.repositories.devices import SqlAlchemyDeviceRepository
+from messenger.infrastructure.persistence.repositories.message_pins import (
+    SqlAlchemyMessagePinRepository,
+)
 from messenger.infrastructure.persistence.repositories.message_reactions import (
     SqlAlchemyMessageReactionRepository,
 )
@@ -66,6 +69,7 @@ __all__ = [
     "SqlAlchemyDevicePairingRepository",
     "SqlAlchemyDeviceHistoryChunkRepository",
     "SqlAlchemyMessageRepository",
+    "SqlAlchemyMessagePinRepository",
     "SqlAlchemyMessageReactionRepository",
     "SqlAlchemyPasswordResetTokenRepository",
     "SqlAlchemyPushSubscriptionRepository",

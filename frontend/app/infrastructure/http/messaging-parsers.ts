@@ -8,6 +8,7 @@ import type {
   DirectoryUser,
   MessageHistoryPage,
   MessageReactionSummary,
+  MessagePinSummary,
   OpaqueMessage,
   SendMessageReceipt,
   MessageDeletionReason,
@@ -201,6 +202,32 @@ export function parseMessageReactions(value: unknown): MessageReactionSummary[] 
   })
 }
 
+export function parseMessagePins(value: unknown): MessagePinSummary[] {
+  if (!Array.isArray(value)) {
+    throw new ApplicationError(200, 'invalid-response', 'invalid message pins')
+  }
+  const pins = value.map(raw => {
+    const item = record(raw)
+    const sequence = integerField(item, 'sequence')
+    const pinnedAt = stringField(item, 'pinned_at')
+    if (sequence <= 0 || Number.isNaN(Date.parse(pinnedAt))) {
+      throw new ApplicationError(200, 'invalid-response', 'invalid message pin')
+    }
+    return {
+      messageId: stringField(item, 'message_id'),
+      sequence,
+      pinnedByUserId: stringField(item, 'pinned_by_user_id'),
+      pinnedAt,
+    }
+  })
+  if (pins.length > 50 || pins.some((pin, index) => (
+    index > 0 && Date.parse(pin.pinnedAt) > Date.parse(pins[index - 1]!.pinnedAt)
+  ))) {
+    throw new ApplicationError(200, 'invalid-response', 'invalid message pin ordering')
+  }
+  return pins
+}
+
 function parseSyncEvent(value: unknown): SyncEvent {
   const item = record(value)
   const eventType = enumField<SyncEventType>(item, 'event_type', [
@@ -208,6 +235,7 @@ function parseSyncEvent(value: unknown): SyncEvent {
     'message_created',
     'message_deleted',
     'message_reaction_updated',
+    'message_pin_updated',
     'read_receipt',
     'delivery_receipt',
   ])
@@ -219,7 +247,7 @@ function parseSyncEvent(value: unknown): SyncEvent {
     : integerField(item, 'delivery_sequence')
   const valid = eventType === 'conversation_updated'
     ? messageId === null && actorUserId === null && readSequence === null && deliverySequence === null
-      : eventType === 'message_reaction_updated'
+      : eventType === 'message_reaction_updated' || eventType === 'message_pin_updated'
         ? messageId !== null && actorUserId !== null && readSequence === null
           && deliverySequence === null
       : eventType === 'read_receipt'

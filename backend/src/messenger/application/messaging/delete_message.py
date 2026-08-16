@@ -89,6 +89,10 @@ class DeleteMessageForEveryone:
                 deleted_by_user_id=command.actor_user_id,
             )
             await unit_of_work.messages.update(tombstone)
+            await unit_of_work.pins.remove(
+                conversation_id=conversation.id,
+                message_id=message.id,
+            )
             sync_events = deletion_events(
                 tombstone,
                 {member.user_id for member in conversation.members if member.is_active},

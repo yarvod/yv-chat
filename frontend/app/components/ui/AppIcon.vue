@@ -43,6 +43,10 @@ defineProps<{ name: AppIconName }>()
       <circle cx="8.5" cy="9" r="1.5" />
       <path d="m4.5 17 4.7-4.8 3.3 3.1 2.2-2.2 4.8 4.9" />
     </template>
+    <template v-else-if="name === 'pin'">
+      <path d="m14 4 6 6-3 1-4 4-1 5-2.5-5.5L4 12l5-1 4-4Z" />
+      <path d="m9.5 14.5-5 5" />
+    </template>
     <template v-else-if="name === 'file'">
       <path d="M6 2h8l4 4v16H6Z" />
       <path d="M14 2v5h5M9 12h6M9 16h6" />

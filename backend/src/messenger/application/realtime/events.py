@@ -13,6 +13,7 @@ class RealtimeEventType(StrEnum):
     CONVERSATION_UPDATED = "conversation_updated"
     MESSAGE_DELETED = "message_deleted"
     MESSAGE_REACTION_UPDATED = "message_reaction_updated"
+    MESSAGE_PIN_UPDATED = "message_pin_updated"
     READ_RECEIPT = "read_receipt"
     DELIVERY_RECEIPT = "delivery_receipt"
     TYPING = "typing"
@@ -56,7 +57,10 @@ class RealtimeNotification:
                 and self.presence_online is not None
                 and self.delivery_sequence is None
             )
-        elif self.event_type is RealtimeEventType.MESSAGE_REACTION_UPDATED:
+        elif self.event_type in {
+            RealtimeEventType.MESSAGE_REACTION_UPDATED,
+            RealtimeEventType.MESSAGE_PIN_UPDATED,
+        }:
             valid = (
                 self.message_id is not None
                 and self.actor_user_id is not None
@@ -117,6 +121,7 @@ _SYNC_EVENT_TYPES = {
     SyncEventType.CONVERSATION_UPDATED: RealtimeEventType.CONVERSATION_UPDATED,
     SyncEventType.MESSAGE_DELETED: RealtimeEventType.MESSAGE_DELETED,
     SyncEventType.MESSAGE_REACTION_UPDATED: RealtimeEventType.MESSAGE_REACTION_UPDATED,
+    SyncEventType.MESSAGE_PIN_UPDATED: RealtimeEventType.MESSAGE_PIN_UPDATED,
     SyncEventType.READ_RECEIPT: RealtimeEventType.READ_RECEIPT,
     SyncEventType.DELIVERY_RECEIPT: RealtimeEventType.DELIVERY_RECEIPT,
 }

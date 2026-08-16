@@ -104,6 +104,7 @@ from messenger.application.messaging.list_messages import ListMessages
 from messenger.application.messaging.list_read_states import ListConversationReadStates
 from messenger.application.messaging.mark_delivered import MarkConversationDelivered
 from messenger.application.messaging.mark_read import MarkConversationRead
+from messenger.application.messaging.message_pins import ListMessagePins, SetMessagePin
 from messenger.application.messaging.policy import MessageEnvelopePolicy
 from messenger.application.messaging.retention import MessageRetentionPolicy
 from messenger.application.messaging.send_message import SendOpaqueMessage
@@ -435,6 +436,8 @@ class HttpTestProvider(Provider):
         scope=Scope.REQUEST,
     )
     mark_conversation_delivered = provide(MarkConversationDelivered, scope=Scope.REQUEST)
+    list_message_pins = provide(ListMessagePins, scope=Scope.REQUEST)
+    set_message_pin = provide(SetMessagePin, scope=Scope.REQUEST)
     list_sync_events = provide(ListSyncEvents, scope=Scope.REQUEST)
     publish_typing = provide(PublishTyping, scope=Scope.REQUEST)
     list_presence_snapshot = provide(ListPresenceSnapshot, scope=Scope.REQUEST)

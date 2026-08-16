@@ -59,6 +59,10 @@ class CleanupExpiredMessages:
                     deleted_by_user_id=None,
                 )
                 await unit_of_work.messages.update(tombstone)
+                await unit_of_work.pins.remove(
+                    conversation_id=conversation.id,
+                    message_id=message.id,
+                )
                 sync_events.extend(
                     deletion_events(
                         tombstone,

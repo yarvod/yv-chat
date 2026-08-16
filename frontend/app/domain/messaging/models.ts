@@ -80,6 +80,13 @@ export interface MessageReactionSummary {
   reactedByActor: boolean
 }
 
+export interface MessagePinSummary {
+  messageId: string
+  sequence: number
+  pinnedByUserId: string
+  pinnedAt: string
+}
+
 export type MessageDeletionReason = 'manual' | 'expired'
 
 export interface DeleteMessageResult {
@@ -109,6 +116,7 @@ export type SyncEventType =
   | 'message_created'
   | 'message_deleted'
   | 'message_reaction_updated'
+  | 'message_pin_updated'
   | 'read_receipt'
   | 'delivery_receipt'
 

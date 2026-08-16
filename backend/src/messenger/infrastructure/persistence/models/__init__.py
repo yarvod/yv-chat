@@ -26,6 +26,7 @@ from messenger.infrastructure.persistence.models.device_crypto_identity import (
 from messenger.infrastructure.persistence.models.device_history_chunk import DeviceHistoryChunkModel
 from messenger.infrastructure.persistence.models.device_pairing import DevicePairingModel
 from messenger.infrastructure.persistence.models.message import MessageModel
+from messenger.infrastructure.persistence.models.message_pin import MessagePinModel
 from messenger.infrastructure.persistence.models.message_reaction import MessageReactionModel
 from messenger.infrastructure.persistence.models.password_reset_token import PasswordResetTokenModel
 from messenger.infrastructure.persistence.models.push_subscription import PushSubscriptionModel
@@ -54,6 +55,7 @@ __all__ = [
     "DeviceCryptoIdentityModel",
     "DeviceKeyPackageModel",
     "MessageModel",
+    "MessagePinModel",
     "MessageReactionModel",
     "PasswordResetTokenModel",
     "PushSubscriptionModel",

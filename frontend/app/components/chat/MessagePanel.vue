@@ -21,6 +21,7 @@ import type {
   Conversation,
   MessageAttachment,
   MessageReactionSummary,
+  MessagePinSummary,
   ParticipantDeliveryState,
 } from '../../domain/messaging/models'
 import { buildTimelineLayout } from '../../presentation/chat/timeline-layout'
@@ -68,6 +69,9 @@ const props = withDefaults(defineProps<{
   deliveryStates: readonly ParticipantDeliveryState[]
   reactionSummaries?: readonly MessageReactionSummary[]
   toggleReaction?: (messageId: string, reaction: string, active: boolean) => Promise<boolean>
+  messagePins?: readonly MessagePinSummary[]
+  togglePin?: (messageId: string, active: boolean) => Promise<boolean>
+  pinningMessageId?: string | null
   connectionState: RealtimeConnectionState
   setTyping: (conversationId: string, active: boolean) => void
   viewportAnchor?: ConversationViewportAnchor | null
@@ -93,6 +97,9 @@ const props = withDefaults(defineProps<{
   openMessage: async () => undefined,
   reactionSummaries: () => [],
   toggleReaction: async () => false,
+  messagePins: () => [],
+  togglePin: async () => false,
+  pinningMessageId: null,
   viewportAnchor: null,
   targetMessageId: null,
   saveViewport: async () => undefined,
@@ -109,6 +116,7 @@ const searchResultIndex = ref(0)
 const searching = ref(false)
 const deleteCandidateId = ref<string | null>(null)
 const reactionPickerMessageId = ref<string | null>(null)
+const activePinIndex = ref(0)
 const timeline = ref<HTMLElement | null>(null)
 const composerInput = ref<HTMLTextAreaElement | null>(null)
 const mediaInput = ref<HTMLInputElement | null>(null)
@@ -136,6 +144,10 @@ let layoutAnchor: { messageId: string, offset: number } | null = null
 let layoutAnchorExpiresAt = 0
 let attachmentDragDepth = 0
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '👎', '🔥', '🎉'] as const
+const activePin = computed(() => props.messagePins[activePinIndex.value] ?? props.messagePins[0])
+const activePinnedMessage = computed(() => props.messages.find(message => (
+  message.messageId === activePin.value?.messageId
+)) ?? null)
 const attachmentsAllowed = computed(() => (
   props.conversation?.conversationType === 'group'
   || (props.conversation?.conversationType === 'direct' && props.protectionSecure)
@@ -336,6 +348,47 @@ function reactionsFor(messageId: string): readonly MessageReactionSummary[] {
   return props.reactionSummaries.filter(item => item.messageId === messageId)
 }
 
+function canManagePins(): boolean {
+  if (!props.conversation) return false
+  if (props.conversation.conversationType === 'direct') return true
+  const actor = props.conversation.members.find(member => (
+    member.userId === props.actorUserId && member.leftAt === null
+  ))
+  return actor?.role === 'owner' || actor?.role === 'admin'
+}
+
+function isPinned(messageId: string): boolean {
+  return props.messagePins.some(pin => pin.messageId === messageId)
+}
+
+function pinnedPreview(): string {
+  const message = activePinnedMessage.value
+  if (!message) return `Сообщение #${activePin.value?.sequence ?? ''}`
+  if (message.contentState === 'deleted') return 'Сообщение удалено'
+  if (message.displayBody?.trim()) return message.displayBody.trim()
+  if ((message.displayAttachments?.length ?? 0) > 0) {
+    return message.displayAttachments?.[0]?.presentation === 'video_note'
+      ? 'Видеосообщение'
+      : 'Вложение'
+  }
+  return `Сообщение #${message.sequence}`
+}
+
+function movePinned(delta: number): void {
+  if (props.messagePins.length < 2) return
+  activePinIndex.value = (
+    activePinIndex.value + delta + props.messagePins.length
+  ) % props.messagePins.length
+}
+
+async function openPinned(): Promise<void> {
+  if (activePin.value) await props.openMessage(activePin.value.messageId)
+}
+
+async function changePin(messageId: string): Promise<void> {
+  await props.togglePin(messageId, !isPinned(messageId))
+}
+
 async function changeReaction(
   messageId: string,
   reaction: string,
@@ -345,6 +398,13 @@ async function changeReaction(
     reactionPickerMessageId.value = null
   }
 }
+
+watch(
+  () => props.messagePins.map(pin => pin.messageId).join(','),
+  () => {
+    if (activePinIndex.value >= props.messagePins.length) activePinIndex.value = 0
+  },
+)
 
 function canDelete(message: TimelineMessage): boolean {
   if (message.deletedAt !== null || !props.conversation) return false
@@ -911,7 +971,39 @@ onBeforeUnmount(() => {
       <button type="button" aria-label="Закрыть поиск" @click="closeSearch"><AppIcon name="close" /></button>
     </form>
 
-    <div v-if="!protectionSecure || archiveStatus === 'unavailable' || outboxStatus === 'unavailable'" class="timeline-notices">
+    <div
+      v-if="messagePins.length > 0 || !protectionSecure || archiveStatus === 'unavailable' || outboxStatus === 'unavailable'"
+      class="timeline-notices"
+    >
+      <div v-if="activePin" class="pinned-message-bar">
+        <button
+          class="pinned-message-main"
+          type="button"
+          :aria-label="`Открыть закреплённое сообщение ${activePinIndex + 1} из ${messagePins.length}`"
+          @click="openPinned"
+        >
+          <span class="pinned-message-icon"><AppIcon name="pin" /></span>
+          <span class="pinned-message-copy">
+            <strong>Закреплённое сообщение</strong>
+            <small>{{ pinnedPreview() }}</small>
+          </span>
+        </button>
+        <span v-if="messagePins.length > 1" class="pinned-message-count">
+          {{ activePinIndex + 1 }}/{{ messagePins.length }}
+        </span>
+        <button
+          v-if="messagePins.length > 1"
+          type="button"
+          aria-label="Предыдущее закреплённое сообщение"
+          @click="movePinned(-1)"
+        >↑</button>
+        <button
+          v-if="messagePins.length > 1"
+          type="button"
+          aria-label="Следующее закреплённое сообщение"
+          @click="movePinned(1)"
+        >↓</button>
+      </div>
       <p v-if="!protectionSecure" class="security-warning" role="status">
         {{ protectionLabel }}. Не отправляйте чувствительные данные.
       </p>
@@ -1025,6 +1117,17 @@ onBeforeUnmount(() => {
               @click="deleteCandidateId = item.message.messageId"
             >
               Удалить у всех
+            </button>
+            <button
+              v-if="canManagePins()"
+              type="button"
+              :disabled="pinningMessageId === item.message.messageId"
+              :aria-label="`${isPinned(item.message.messageId) ? 'Открепить' : 'Закрепить'} сообщение #${item.message.sequence}`"
+              @click="changePin(item.message.messageId)"
+            >
+              {{ pinningMessageId === item.message.messageId
+                ? 'Сохраняем…'
+                : isPinned(item.message.messageId) ? 'Открепить' : 'Закрепить' }}
             </button>
             <button
               type="button"

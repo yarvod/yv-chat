@@ -228,6 +228,17 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 @keyframes connection-pulse { 50% { opacity: .4; transform: scale(.82); } }
 .mobile-back { display: none; width: 40px; height: 40px; place-items: center; flex: 0 0 auto; padding: 0; border: 0; border-radius: 50%; color: var(--text); background: transparent; font-size: 1.15rem; }
 .timeline-notices { grid-row: 2; display: grid; }
+.pinned-message-bar { display: flex; min-width: 0; min-height: 54px; align-items: center; gap: 4px; padding: 5px clamp(12px, 4vw, 44px); border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--surface-solid) 94%, transparent); box-shadow: 0 4px 16px rgb(0 0 0 / 5%); }
+.pinned-message-main { display: grid; min-width: 0; flex: 1; grid-template-columns: 30px minmax(0, 1fr); align-items: center; gap: 9px; padding: 4px 6px; border: 0; border-radius: 10px; color: var(--text); background: transparent; text-align: left; }
+.pinned-message-main:hover { background: var(--surface-hover); }
+.pinned-message-icon { display: grid; width: 30px; height: 34px; place-items: center; border-left: 3px solid var(--primary); color: var(--primary); }
+.pinned-message-icon .app-icon { width: 18px; height: 18px; }
+.pinned-message-copy { display: grid; min-width: 0; gap: 2px; }
+.pinned-message-copy strong { color: var(--primary); font-size: .72rem; }
+.pinned-message-copy small { overflow: hidden; color: var(--muted); font-size: .72rem; text-overflow: ellipsis; white-space: nowrap; }
+.pinned-message-count { color: var(--muted); font-size: .68rem; font-variant-numeric: tabular-nums; }
+.pinned-message-bar > button:not(.pinned-message-main) { display: grid; width: 32px; height: 32px; flex: 0 0 auto; place-items: center; padding: 0; border: 0; border-radius: 50%; color: var(--primary); background: transparent; }
+.pinned-message-bar > button:not(.pinned-message-main):hover { background: var(--surface-hover); }
 .security-warning, .storage-warning { margin: 0; padding: 8px 18px; text-align: center; font-size: .73rem; }
 .security-warning { color: var(--warning); background: color-mix(in srgb, var(--warning) 9%, var(--surface-solid)); }
 .storage-warning { color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, var(--surface-solid)); }

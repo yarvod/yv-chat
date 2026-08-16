@@ -231,6 +231,8 @@ beforeEach(() => {
       deletedAt: '2026-08-11T12:01:00Z',
       advanced: true,
     }),
+    listMessagePins: vi.fn().mockResolvedValue([]),
+    setMessagePin: vi.fn().mockResolvedValue([]),
     listSync: vi.fn()
       .mockResolvedValueOnce({ events: [], nextCursor: 4, streamCursor: 4, hasMore: false, resetRequired: false })
       .mockResolvedValueOnce({
@@ -246,6 +248,43 @@ beforeEach(() => {
 })
 
 describe('messenger orchestration', () => {
+  it('updates multiple pins immediately and reloads them after durable pin sync', async () => {
+    const firstPin = {
+      messageId: 'message-1',
+      sequence: 1,
+      pinnedByUserId: 'alice-id',
+      pinnedAt: '2026-08-11T12:01:00Z',
+    }
+    vi.mocked(gateway.listMessagePins!).mockResolvedValue([firstPin])
+    vi.mocked(gateway.setMessagePin!).mockResolvedValue([firstPin])
+    const messenger = useMessenger('alice-id', 'device-alice', vi.fn(), messengerDependencies())
+
+    await messenger.load()
+    expect(messenger.state.messagePins).toEqual([firstPin])
+    await expect(messenger.togglePin('message-1', true)).resolves.toBe(true)
+    expect(gateway.setMessagePin).toHaveBeenCalledWith('conversation-1', 'message-1', true)
+
+    const secondPin = {
+      messageId: 'message-2',
+      sequence: 2,
+      pinnedByUserId: 'bob-id',
+      pinnedAt: '2026-08-11T12:02:00Z',
+    }
+    vi.mocked(gateway.listMessagePins!).mockResolvedValue([secondPin, firstPin])
+    vi.mocked(gateway.listSync).mockReset().mockResolvedValueOnce({
+      events: [{
+        eventId: 'pin-event', cursor: 6, eventType: 'message_pin_updated',
+        conversationId: 'conversation-1', messageId: 'message-2',
+        actorUserId: 'bob-id', readSequence: null, deliverySequence: null,
+        createdAt: '2026-08-11T12:02:00Z',
+      }],
+      nextCursor: 6, streamCursor: 6, hasMore: false, resetRequired: false,
+    })
+    await messenger.poll()
+
+    expect(messenger.state.messagePins).toEqual([secondPin, firstPin])
+  })
+
   it('refreshes an open timeline when QR history import updates its local archive', async () => {
     let historyListener: ((progress: {
       ownerUserId: string

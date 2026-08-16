@@ -29,6 +29,7 @@ from messenger.domain.entities.device_pairing import (
     DevicePairingStatus,
 )
 from messenger.domain.entities.message import Message, MessageDeletionReason
+from messenger.domain.entities.message_pin import MessagePin
 from messenger.domain.entities.message_reaction import (
     ALLOWED_MESSAGE_REACTIONS,
     MessageReaction,
@@ -57,6 +58,7 @@ __all__ = [
     "ConversationDeliveryState",
     "Message",
     "MessageDeletionReason",
+    "MessagePin",
     "MessageReaction",
     "ALLOWED_MESSAGE_REACTIONS",
     "PasswordResetToken",

@@ -585,6 +585,7 @@ User ──< Device ──< Session
                                   │
                                   └──< Message ──< Attachment
                                            ├──< Receipt
+                                           ├──< MessagePin
                                            └──< SyncEvent/Tombstone
 ```
 
@@ -638,6 +639,17 @@ message ID даёт not-found, а не existence oracle. Первая опера
 ciphertext, записывает manual tombstone и recipient-specific `message_deleted`;
 duplicate retry возвращает `advanced=false` без commit/event. Уже просмотренную,
 скопированную или экспортированную remote copy система уничтожить не обещает.
+
+Multiple pins хранятся отдельно в `message_pins` как opaque reference
+`(conversation_id, message_id, pinned_by_user_id, pinned_at)` без ciphertext,
+plaintext preview или key material. Active direct participant может pin/unpin;
+в group mutation разрешена только owner/admin, ordinary member получает read-only
+list. Conversation row lock сериализует bounded limit 50, unique message reference
+делает write idempotent, а list возвращает active messages newest-first. Delete и
+expiry cleanup удаляют pin в той же messaging transaction. Каждое изменение создаёт
+recipient-specific `message_pin_updated`; WebSocket остаётся hint, а canonical
+состояние восстанавливается list API после cursor catch-up. Preview вычисляется
+только frontend из уже локально расшифрованного timeline message.
 
 PostgreSQL — source of truth для server-side sync state только в retention window. WebSocket — notification channel. После reconnect/sleep/lost events клиент выполняет cursor catch-up:
 

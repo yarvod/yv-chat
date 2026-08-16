@@ -19,6 +19,7 @@ from messenger.application.errors import (
     InvalidMessageEnvelopeError,
     MessageIdempotencyConflictError,
     MessageNotFoundError,
+    MessagePinLimitError,
 )
 from messenger.application.messaging.delete_message import (
     DeleteMessageForEveryone,
@@ -30,6 +31,13 @@ from messenger.application.messaging.list_message_history import (
     ListMessageHistoryQuery,
 )
 from messenger.application.messaging.list_messages import ListMessages, ListMessagesQuery
+from messenger.application.messaging.message_pins import (
+    ListMessagePins,
+    ListMessagePinsQuery,
+    MessagePinSummary,
+    SetMessagePin,
+    SetMessagePinCommand,
+)
 from messenger.application.messaging.message_reactions import (
     ListMessageReactions,
     ListMessageReactionsQuery,
@@ -104,6 +112,17 @@ class MessageReactionResponse(BaseModel):
     reaction: str
     count: int
     reacted_by_actor: bool
+
+
+class MessagePinResponse(BaseModel):
+    message_id: UUID
+    sequence: int
+    pinned_by_user_id: UUID
+    pinned_at: datetime
+
+
+def serialize_pins(items: list[MessagePinSummary]) -> list[MessagePinResponse]:
+    return [MessagePinResponse.model_validate(item, from_attributes=True) for item in items]
 
 
 def serialize_reactions(items: list[MessageReactionSummary]) -> list[MessageReactionResponse]:
@@ -301,6 +320,105 @@ async def list_message_reactions(
             "invalid reaction query",
         ) from error
     return serialize_reactions(items)
+
+
+@router.get("/pins", response_model=list[MessagePinResponse])
+async def list_message_pins(
+    conversation_id: UUID,
+    request: Request,
+    response: Response,
+    settings: FromDishka[AppSettings],
+    authenticate_session: FromDishka[AuthenticateSession],
+    use_case: FromDishka[ListMessagePins],
+) -> list[MessagePinResponse]:
+    principal = await authenticate_request(request, response, settings, authenticate_session)
+    try:
+        items = await use_case.execute(
+            ListMessagePinsQuery(
+                actor_user_id=principal.user_id,
+                conversation_id=conversation_id,
+            )
+        )
+    except ConversationNotFoundError as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "conversation not found") from error
+    return serialize_pins(items)
+
+
+async def change_message_pin(
+    *,
+    conversation_id: UUID,
+    message_id: UUID,
+    active: bool,
+    request: Request,
+    response: Response,
+    settings: AppSettings,
+    authenticate_session: AuthenticateSession,
+    use_case: SetMessagePin,
+) -> list[MessagePinResponse]:
+    require_csrf(request, settings)
+    principal = await authenticate_request(request, response, settings, authenticate_session)
+    try:
+        items = await use_case.execute(
+            SetMessagePinCommand(
+                actor_user_id=principal.user_id,
+                conversation_id=conversation_id,
+                message_id=message_id,
+                active=active,
+            )
+        )
+    except ConversationNotFoundError as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "conversation not found") from error
+    except AuthorizationDeniedError as error:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "forbidden") from error
+    except MessageNotFoundError as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "message not found") from error
+    except MessagePinLimitError as error:
+        raise HTTPException(status.HTTP_409_CONFLICT, "message pin limit reached") from error
+    return serialize_pins(items)
+
+
+@router.put("/{message_id}/pin", response_model=list[MessagePinResponse])
+async def pin_message(
+    conversation_id: UUID,
+    message_id: UUID,
+    request: Request,
+    response: Response,
+    settings: FromDishka[AppSettings],
+    authenticate_session: FromDishka[AuthenticateSession],
+    use_case: FromDishka[SetMessagePin],
+) -> list[MessagePinResponse]:
+    return await change_message_pin(
+        conversation_id=conversation_id,
+        message_id=message_id,
+        active=True,
+        request=request,
+        response=response,
+        settings=settings,
+        authenticate_session=authenticate_session,
+        use_case=use_case,
+    )
+
+
+@router.delete("/{message_id}/pin", response_model=list[MessagePinResponse])
+async def unpin_message(
+    conversation_id: UUID,
+    message_id: UUID,
+    request: Request,
+    response: Response,
+    settings: FromDishka[AppSettings],
+    authenticate_session: FromDishka[AuthenticateSession],
+    use_case: FromDishka[SetMessagePin],
+) -> list[MessagePinResponse]:
+    return await change_message_pin(
+        conversation_id=conversation_id,
+        message_id=message_id,
+        active=False,
+        request=request,
+        response=response,
+        settings=settings,
+        authenticate_session=authenticate_session,
+        use_case=use_case,
+    )
 
 
 async def change_message_reaction(

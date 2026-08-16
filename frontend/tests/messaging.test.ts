@@ -15,6 +15,7 @@ import { UnavailableMlsMessageProtocol } from '../app/infrastructure/crypto/unav
 import {
   parseConversation,
   parseMessageHistoryPage,
+  parseMessagePins,
   parseOpaqueMessage,
   parseMessageReactions,
   parseSyncPage,
@@ -277,6 +278,36 @@ describe('messaging boundaries', () => {
       reaction: '👍',
       count: 0,
       reacted_by_actor: false,
+    }])).toThrow(ApplicationError)
+  })
+
+  it('parses newest-first bounded opaque message pins', () => {
+    expect(parseMessagePins([{
+      message_id: 'message-2',
+      sequence: 2,
+      pinned_by_user_id: 'alice-id',
+      pinned_at: '2026-08-17T12:00:02Z',
+    }, {
+      message_id: 'message-1',
+      sequence: 1,
+      pinned_by_user_id: 'bob-id',
+      pinned_at: '2026-08-17T12:00:01Z',
+    }])).toEqual([
+      {
+        messageId: 'message-2',
+        sequence: 2,
+        pinnedByUserId: 'alice-id',
+        pinnedAt: '2026-08-17T12:00:02Z',
+      },
+      {
+        messageId: 'message-1',
+        sequence: 1,
+        pinnedByUserId: 'bob-id',
+        pinnedAt: '2026-08-17T12:00:01Z',
+      },
+    ])
+    expect(() => parseMessagePins([{
+      message_id: 'message-1', sequence: 0, pinned_by_user_id: 'alice-id', pinned_at: 'bad',
     }])).toThrow(ApplicationError)
   })
 })

@@ -5,6 +5,7 @@ import type {
   DirectoryUser,
   MessageHistoryPage,
   MessageReactionSummary,
+  MessagePinSummary,
   OpaqueMessage,
   SendMessageReceipt,
   SyncPage,
@@ -18,6 +19,7 @@ import {
   parseMessages,
   parseMessageHistoryPage,
   parseMessageReactions,
+  parseMessagePins,
   parseOpaqueMessage,
   parseSendMessageReceipt,
   parseSyncPage,
@@ -154,6 +156,24 @@ export class HttpMessagingGateway implements MessagingGateway {
     return parseMessageReactions(await this.apiClient.request(
       `/api/v1/conversations/${encodeURIComponent(conversationId)}`
       + `/messages/${encodeURIComponent(messageId)}/reactions/${encodeURIComponent(reaction)}`,
+      { method: active ? 'PUT' : 'DELETE' },
+    ))
+  }
+
+  async listMessagePins(conversationId: string): Promise<MessagePinSummary[]> {
+    return parseMessagePins(await this.apiClient.request(
+      `/api/v1/conversations/${encodeURIComponent(conversationId)}/messages/pins`,
+    ))
+  }
+
+  async setMessagePin(
+    conversationId: string,
+    messageId: string,
+    active: boolean,
+  ): Promise<MessagePinSummary[]> {
+    return parseMessagePins(await this.apiClient.request(
+      `/api/v1/conversations/${encodeURIComponent(conversationId)}`
+      + `/messages/${encodeURIComponent(messageId)}/pin`,
       { method: active ? 'PUT' : 'DELETE' },
     ))
   }

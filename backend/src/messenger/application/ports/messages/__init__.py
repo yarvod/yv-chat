@@ -4,6 +4,7 @@ from messenger.application.ports.messages.delivery_states import (
     ConversationDeliveryStateRepository,
     ParticipantDeliverySummary,
 )
+from messenger.application.ports.messages.pins import MessagePinRepository
 from messenger.application.ports.messages.reactions import MessageReactionRepository
 from messenger.application.ports.messages.read_states import (
     ConversationReadStateRepository,
@@ -22,6 +23,7 @@ __all__ = [
     "ParticipantDeliverySummary",
     "MessageRepository",
     "MessageReactionRepository",
+    "MessagePinRepository",
     "MessagingUnitOfWork",
     "MessagingUnitOfWorkFactory",
 ]

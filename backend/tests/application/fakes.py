@@ -55,6 +55,7 @@ from messenger.application.ports.messages import (
     ConversationDeliveryStateRepository,
     ConversationReadStateRepository,
     ConversationReadSummary,
+    MessagePinRepository,
     MessageReactionRepository,
     MessageRepository,
     MessagingUnitOfWork,
@@ -84,6 +85,7 @@ from messenger.domain.entities import (
     DevicePairing,
     DevicePairingStatus,
     Message,
+    MessagePin,
     MessageReaction,
     PasswordResetToken,
     RegistrationInvitation,
@@ -121,6 +123,7 @@ class IdentityState:
     conversations: dict[UUID, Conversation] = field(default_factory=dict)
     messages: dict[UUID, Message] = field(default_factory=dict)
     message_reactions: dict[tuple[UUID, UUID, str], MessageReaction] = field(default_factory=dict)
+    message_pins: dict[UUID, MessagePin] = field(default_factory=dict)
     attachments: dict[UUID, Attachment] = field(default_factory=dict)
     message_sequences: dict[UUID, int] = field(default_factory=dict)
     delivery_states: dict[tuple[UUID, UUID], ConversationDeliveryState] = field(
@@ -1548,6 +1551,53 @@ class FakeMessageReactionRepository:
         return self._state.message_reactions.pop((message_id, user_id, reaction), None) is not None
 
 
+class FakeMessagePinRepository:
+    def __init__(self, state: IdentityState) -> None:
+        self._state = state
+
+    async def list_active(
+        self,
+        *,
+        conversation_id: UUID,
+        now: datetime,
+    ) -> list[tuple[MessagePin, int]]:
+        pins = []
+        for pin in self._state.message_pins.values():
+            message = self._state.messages.get(pin.message_id)
+            if (
+                pin.conversation_id == conversation_id
+                and message is not None
+                and message.conversation_id == conversation_id
+                and not message.is_deleted
+                and message.expires_at > now
+            ):
+                pins.append((pin, message.sequence))
+        return sorted(
+            pins,
+            key=lambda item: (-item[0].pinned_at.timestamp(), item[0].message_id.int),
+        )
+
+    async def exists(self, *, conversation_id: UUID, message_id: UUID) -> bool:
+        pin = self._state.message_pins.get(message_id)
+        return pin is not None and pin.conversation_id == conversation_id
+
+    async def count_active(self, *, conversation_id: UUID, now: datetime) -> int:
+        return len(await self.list_active(conversation_id=conversation_id, now=now))
+
+    async def add(self, pin: MessagePin) -> bool:
+        if pin.message_id in self._state.message_pins:
+            return False
+        self._state.message_pins[pin.message_id] = pin
+        return True
+
+    async def remove(self, *, conversation_id: UUID, message_id: UUID) -> bool:
+        pin = self._state.message_pins.get(message_id)
+        if pin is None or pin.conversation_id != conversation_id:
+            return False
+        del self._state.message_pins[message_id]
+        return True
+
+
 class FakeSyncRepository:
     def __init__(self, state: IdentityState) -> None:
         self._state = state
@@ -1611,6 +1661,7 @@ class FakeMessagingUnitOfWork:
         self._state = state
         self.messages: MessageRepository = FakeMessageRepository(state)
         self.reactions: MessageReactionRepository = FakeMessageReactionRepository(state)
+        self.pins: MessagePinRepository = FakeMessagePinRepository(state)
         self.attachments: AttachmentRepository = FakeAttachmentRepository(state)
         self.delivery_states: ConversationDeliveryStateRepository = (
             FakeConversationDeliveryStateRepository(state)

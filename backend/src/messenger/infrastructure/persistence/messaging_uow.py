@@ -15,6 +15,7 @@ from messenger.application.ports.identity import DeviceRepository, UserRepositor
 from messenger.application.ports.messages import (
     ConversationDeliveryStateRepository,
     ConversationReadStateRepository,
+    MessagePinRepository,
     MessageReactionRepository,
     MessageRepository,
     MessagingUnitOfWork,
@@ -29,6 +30,7 @@ from messenger.infrastructure.persistence.repositories import (
     SqlAlchemyConversationRepository,
     SqlAlchemyDeviceCryptoIdentityRepository,
     SqlAlchemyDeviceRepository,
+    SqlAlchemyMessagePinRepository,
     SqlAlchemyMessageReactionRepository,
     SqlAlchemyMessageRepository,
     SqlAlchemySyncRepository,
@@ -52,6 +54,7 @@ class SqlAlchemyMessagingUnitOfWork:
         self.crypto_identities: DeviceCryptoIdentityRepository
         self.attachments: AttachmentRepository
         self.reactions: MessageReactionRepository
+        self.pins: MessagePinRepository
 
     async def __aenter__(self) -> "SqlAlchemyMessagingUnitOfWork":
         self._session = self._session_factory()
@@ -69,6 +72,7 @@ class SqlAlchemyMessagingUnitOfWork:
         self.crypto_identities = SqlAlchemyDeviceCryptoIdentityRepository(self._session)
         self.attachments = SqlAlchemyAttachmentRepository(self._session)
         self.reactions = SqlAlchemyMessageReactionRepository(self._session)
+        self.pins = SqlAlchemyMessagePinRepository(self._session)
         return self
 
     async def __aexit__(

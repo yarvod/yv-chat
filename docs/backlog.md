@@ -69,9 +69,8 @@ timeline, mobile viewport, install assets и update UX перенесены в `
 
 ## Messaging foundation
 
-В этом разделе нет незавершённого foundation: conversations, ordered/idempotent
-messages, cursor sync, receipts/presence/typing и authenticated WebSocket перенесены
-в `Completed`. Новые correctness-задачи появляются отдельными bounded slices.
+Conversations, ordered/idempotent messages, cursor sync, multiple pins,
+receipts/presence/typing и authenticated WebSocket перенесены в `Completed`.
 
 ## E2EE и multi-device history
 
@@ -569,6 +568,18 @@ generic background notification, focus/navigation и invalid-subscription cleanu
 - решение о native wrapper только при подтверждённой необходимости.
 
 ## Completed
+
+### BL-065 — Multiple message pins
+
+Статус: **completed and locally verified** (`WP-090`).
+
+- direct participant и group owner/admin могут pin/unpin, group member только читает;
+- server хранит только opaque message references и actor/timestamp metadata;
+- до 50 закрепов на conversation, idempotent writes и deterministic newest-first list;
+- compact panel показывает несколько закрепов, client-side preview, счётчик,
+  навигацию и переход к exact retained message;
+- pin changes сходятся через cursor sync/realtime без зависимости от WebSocket;
+- deleted/expired/foreign messages не раскрываются и не остаются видимыми pins.
 
 ### BL-076 — Independent TLS certificates for production origins
 

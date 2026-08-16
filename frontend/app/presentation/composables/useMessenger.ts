@@ -54,6 +54,7 @@ import type {
   DirectoryUser,
   MessageAttachment,
   MessageReactionSummary,
+  MessagePinSummary,
   OpaqueMessage,
   ParticipantDeliveryState,
   SendMessageReceipt,
@@ -85,6 +86,7 @@ interface MessengerState {
   syncCursor: number
   creating: boolean
   deletingMessageId: string | null
+  pinningMessageId: string | null
   groupMutating: boolean
   uploadingAttachment: boolean
   attachmentUploadCompleted: number
@@ -92,6 +94,7 @@ interface MessengerState {
   attachmentUploadBytesSent: number
   attachmentUploadBytesTotal: number
   reactionSummaries: MessageReactionSummary[]
+  messagePins: MessagePinSummary[]
   conversationCryptoPhase: ConversationCryptoPhase
   conversationCryptoBlockReason: string | null
   message: string | null
@@ -217,6 +220,7 @@ export function useMessenger(
     syncCursor: 0,
     creating: false,
     deletingMessageId: null,
+    pinningMessageId: null,
     groupMutating: false,
     uploadingAttachment: false,
     attachmentUploadCompleted: 0,
@@ -224,6 +228,7 @@ export function useMessenger(
     attachmentUploadBytesSent: 0,
     attachmentUploadBytesTotal: 0,
     reactionSummaries: [],
+    messagePins: [],
     conversationCryptoPhase: 'checking',
     conversationCryptoBlockReason: null,
     message: null,
@@ -561,6 +566,37 @@ export function useMessenger(
     }
   }
 
+  async function reloadActivePins(): Promise<void> {
+    const conversationId = state.activeConversationId
+    const listPins = gateway.listMessagePins
+    if (!conversationId || !listPins) {
+      state.messagePins = []
+      return
+    }
+    try {
+      const pins = await listPins.call(gateway, conversationId)
+      if (state.activeConversationId === conversationId) state.messagePins = pins
+    } catch (error) {
+      if (error instanceof ApplicationError && error.status === 401) onUnauthorized()
+    }
+  }
+
+  async function togglePin(messageId: string, active: boolean): Promise<boolean> {
+    const conversationId = state.activeConversationId
+    const setPin = gateway.setMessagePin
+    if (!conversationId || !setPin || state.pinningMessageId !== null) return false
+    state.pinningMessageId = messageId
+    try {
+      state.messagePins = await setPin.call(gateway, conversationId, messageId, active)
+      return true
+    } catch (error) {
+      fail(error)
+      return false
+    } finally {
+      state.pinningMessageId = null
+    }
+  }
+
   function syncArchiveStatus(): void {
     state.archiveStatus = history.archiveStatus === 'ready' && snapshotAvailable
       ? 'ready'
@@ -779,7 +815,10 @@ export function useMessenger(
     if (!state.conversations.some(item => item.conversationId === state.activeConversationId)) {
       state.activeConversationId = state.conversations[0]?.conversationId ?? null
       resetHistoryWindow()
-      if (state.activeConversationId) await loadLatestHistory(state.activeConversationId)
+      if (state.activeConversationId) {
+        await loadLatestHistory(state.activeConversationId)
+        await reloadActivePins()
+      }
     }
   }
 
@@ -829,7 +868,10 @@ export function useMessenger(
         : conversations[0]?.conversationId ?? null
       resetHistoryWindow()
       await reconcileAllDirectConversations()
-      if (state.activeConversationId) await loadLatestHistory(state.activeConversationId)
+      if (state.activeConversationId) {
+        await loadLatestHistory(state.activeConversationId)
+        await reloadActivePins()
+      }
       if (state.activeConversationId && targetMessageId) {
         await selectConversation(state.activeConversationId, targetMessageId)
       }
@@ -851,12 +893,14 @@ export function useMessenger(
     if (changed) {
       rememberActiveHistoryWindow()
       state.activeConversationId = conversationId
+      state.messagePins = []
       hotWindow = hotHistoryWindow(conversationId)
       if (hotWindow) applyHistoryWindow(hotWindow, conversationId)
       else resetHistoryWindow()
     }
     state.message = null
     try {
+      const pinsReload = reloadActivePins()
       const targetIndex = targetMessageId === null
         ? -1
         : state.messages.findIndex(message => message.messageId === targetMessageId)
@@ -899,9 +943,11 @@ export function useMessenger(
           await loadLatestHistory(conversationId)
         }
       } else {
+        await pinsReload
         await refreshConversationCrypto(conversationId)
         return
       }
+      await pinsReload
       syncArchiveStatus()
       await refreshConversationCrypto(conversationId)
       state.phase = 'ready'
@@ -1183,6 +1229,7 @@ export function useMessenger(
     state.message = null
     try {
       const result = await deleteMessageForEveryone.execute(conversationId, messageId)
+      state.messagePins = state.messagePins.filter(pin => pin.messageId !== messageId)
       state.messages = state.messages.map(message => (
         message.messageId === result.messageId
           ? {
@@ -1229,6 +1276,7 @@ export function useMessenger(
       let readStatesChanged = false
       let deliveryStatesChanged = false
       let reactionsChanged = false
+      let pinsChanged = false
       while (hasMore && pages < 10) {
         const page = await gateway.listSync(state.syncCursor)
         if (page.resetRequired) {
@@ -1238,6 +1286,7 @@ export function useMessenger(
           if (state.activeConversationId) {
             resetHistoryWindow()
             await loadLatestHistory(state.activeConversationId)
+            await reloadActivePins()
           }
           state.syncCursor = page.streamCursor
           await persistSnapshot()
@@ -1270,6 +1319,10 @@ export function useMessenger(
             || event.eventType === 'delivery_receipt'
           reactionsChanged ||= event.eventType === 'message_reaction_updated'
             && event.conversationId === state.activeConversationId
+          pinsChanged ||= (
+            (event.eventType === 'message_pin_updated' || event.eventType === 'message_deleted')
+            && event.conversationId === state.activeConversationId
+          )
         }
         state.syncCursor = page.nextCursor
         hasMore = page.hasMore
@@ -1313,6 +1366,7 @@ export function useMessenger(
       if (readStatesChanged) await reloadReadStates()
       if (deliveryStatesChanged) await reloadDeliveryStates()
       if (reactionsChanged) await reloadActiveReactions()
+      if (pinsChanged) await reloadActivePins()
       await persistSnapshot()
       state.phase = 'ready'
       state.message = null
@@ -1362,6 +1416,7 @@ export function useMessenger(
     retryOutgoing,
     searchActiveConversation,
     toggleReaction,
+    togglePin,
     deleteMessage,
     loadOlder,
     returnToLatest,

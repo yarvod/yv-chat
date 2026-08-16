@@ -35,6 +35,7 @@ def test_persistence_metadata_contains_expected_tables() -> None:
         "device_history_chunks",
         "messages",
         "message_reactions",
+        "message_pins",
         "password_reset_tokens",
         "push_subscriptions",
         "registration_invitations",
@@ -294,6 +295,18 @@ def test_message_schema_is_bounded_opaque_ciphertext_only() -> None:
         "ix_messages_expiry_active",
         "ix_messages_tombstone_expiry",
     }.issubset({index.name for index in messages.indexes})
+
+
+def test_message_pin_schema_contains_only_opaque_routing_metadata() -> None:
+    pins = Base.metadata.tables["message_pins"]
+
+    assert set(pins.columns.keys()) == {
+        "conversation_id",
+        "message_id",
+        "pinned_at",
+        "pinned_by_user_id",
+    }
+    assert set(pins.columns.keys()).isdisjoint(FORBIDDEN_COLUMNS)
 
 
 def test_sync_schema_has_per_user_cursor_and_opaque_routing_fields_only() -> None:

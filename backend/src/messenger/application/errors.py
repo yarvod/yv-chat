@@ -5,6 +5,10 @@ class ApplicationError(Exception):
     """Base for expected application-level failures."""
 
 
+class MessagePinLimitError(ApplicationError):
+    """A conversation already contains the maximum number of active pins."""
+
+
 class AuthorizationDeniedError(ApplicationError):
     """The current principal cannot perform the requested operation."""
 

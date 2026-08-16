@@ -4,6 +4,7 @@ import type {
   DirectoryUser,
   MessageHistoryPage,
   MessageReactionSummary,
+  MessagePinSummary,
   OpaqueMessage,
   SendMessageReceipt,
   SyncPage,
@@ -45,5 +46,11 @@ export interface MessagingGateway {
     reaction: string,
     active: boolean,
   ): Promise<MessageReactionSummary[]>
+  listMessagePins?(conversationId: string): Promise<MessagePinSummary[]>
+  setMessagePin?(
+    conversationId: string,
+    messageId: string,
+    active: boolean,
+  ): Promise<MessagePinSummary[]>
   listSync(after: number): Promise<SyncPage>
 }
