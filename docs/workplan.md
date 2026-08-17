@@ -28,13 +28,15 @@ Bug: `BUG-087`
 - remote deploy собирает bounded shared asset directory из трёх последних trusted
   immutable frontend images и ранее сохранённых файлов не старше семи дней;
 - system Nginx читает только deployment-owned `/var/www/yv-chat/current` alias;
-- remote deploy устанавливает snippet через backup, `nginx -t`, reload и rollback;
+- host admin один раз устанавливает reviewed snippet через backup, `nginx -t`, reload
+  и rollback; unprivileged remote deploy только обновляет owned asset directory;
 - current unversioned Nuxt build metadata всегда копируется последней;
 - API, database, media, E2EE state и соседние VPS services не меняются.
 
 ### Safety invariants
 
 - на VPS не выполняется frontend build; используются только уже pulled GHCR images;
+- normal deployment не получает `sudo` и fail-closed проверяет owner asset directory;
 - staging directory заменяется атомарно, пока старый container продолжает видеть
   прежний bind mount;
 - failed rollout сохраняет previous image rollback и содержит assets обеих версий;
@@ -69,3 +71,6 @@ Bug: `BUG-087`
   extracted artifacts удаляются;
 - full `make ci`: backend `272 passed, 12 skipped`, Rust/OpenMLS `23 passed`, frontend
   `316 passed`; lint, typecheck, build, Compose, deploy и docs gates зелёные.
+- первый rollout `31988247755` fail-closed остановился до migration/container replace:
+  production `devuser` ожидаемо не имеет `sudo`; live stack остался healthy на
+  `3b7b69e`. Host provisioning вынесен в existing safe-vhost boundary.

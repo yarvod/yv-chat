@@ -1677,7 +1677,9 @@ update. Поэтому system Nginx обслуживает только `/_nuxt/
 дольше семи дней. App shell и Service Worker требуют network revalidation, а hashed
 chunks получают годовой cache TTL. Перед публикацией удаляются symlinks; каталог
 содержит только публичные regular build artifacts и не является user/media storage.
-Project-owned snippet меняется через backup, `nginx -t`, graceful reload и rollback.
+Project-owned snippet меняется host admin через backup, `nginx -t`, graceful reload
+и rollback. Normal GitHub deployment остаётся unprivileged, требует заранее созданный
+`devuser`-owned asset parent и fail-closed проверяет его owner.
 
 ## 18. Documentation-driven workflow
 

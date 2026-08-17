@@ -28,7 +28,6 @@ frontend_asset_previous=''
 frontend_asset_stage=''
 frontend_asset_link_stage=''
 temporary_asset_containers=''
-nginx_snippet_backup=''
 cleanup() {
     for container_id in $temporary_asset_containers; do
         docker rm -f "$container_id" >/dev/null 2>&1 || true
@@ -38,9 +37,6 @@ cleanup() {
     fi
     if test -n "$frontend_asset_link_stage"; then
         rm -f -- "$frontend_asset_link_stage"
-    fi
-    if test -n "$nginx_snippet_backup"; then
-        rm -f -- "$nginx_snippet_backup"
     fi
     rm -rf -- "$docker_auth_dir"
 }
@@ -56,7 +52,8 @@ compose config --quiet
 compose pull postgres api cleanup frontend
 
 prepare_frontend_assets() {
-    sudo install -d -o "$(id -u)" -g "$(id -g)" -m 0755 "$frontend_asset_parent"
+    test -d "$frontend_asset_parent"
+    test "$(stat -c '%U' "$frontend_asset_parent")" = "$(id -un)"
     frontend_asset_stage=$(mktemp -d "$frontend_asset_parent/release.XXXXXX")
 
     if test -L "$frontend_asset_current"; then
@@ -103,30 +100,7 @@ prepare_frontend_assets() {
     frontend_asset_stage=''
 }
 
-install_nginx_snippet() {
-    nginx_snippet_source="$DEPLOY_ROOT/deploy/nginx/host-chat.server.conf"
-    nginx_snippet_target='/etc/nginx/snippets/yv-chat-server.conf'
-    test -f "$nginx_snippet_source"
-    test -f "$nginx_snippet_target"
-    if cmp -s "$nginx_snippet_source" "$nginx_snippet_target"; then
-        return
-    fi
-
-    nginx_snippet_backup=$(mktemp "$DEPLOY_ROOT/.nginx-snippet.XXXXXX")
-    cp "$nginx_snippet_target" "$nginx_snippet_backup"
-    sudo install -o root -g root -m 0644 "$nginx_snippet_source" "$nginx_snippet_target"
-    if ! sudo nginx -t || ! sudo systemctl reload nginx; then
-        sudo install -o root -g root -m 0644 "$nginx_snippet_backup" "$nginx_snippet_target"
-        sudo nginx -t
-        sudo systemctl reload nginx || true
-        return 1
-    fi
-    rm -f -- "$nginx_snippet_backup"
-    nginx_snippet_backup=''
-}
-
 prepare_frontend_assets
-install_nginx_snippet
 compose up -d --wait postgres
 compose run --rm --no-deps api uv run alembic upgrade head
 

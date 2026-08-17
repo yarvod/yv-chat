@@ -64,9 +64,9 @@ On push to `main` or manual dispatch, `.github/workflows/deploy.yml`:
 4. copies the production Compose, deploy scripts and reviewed host vhost sources;
 5. starts PostgreSQL and applies Alembic migrations with the new backend image;
 6. rolls out PostgreSQL/media-init/API/cleanup and waits for container health;
-7. atomically prepares `/var/www/yv-chat/current` from the current and two previous
-   immutable images, retaining older files for no more than seven days, and safely
-   installs/tests/reloads the project-owned Nginx snippet when it changed;
+7. validates the pre-provisioned `devuser`-owned `/var/www/yv-chat`, then atomically
+   prepares its `current` link from the current and two previous immutable images,
+   retaining older files for no more than seven days;
 8. checks the direct API loopback, then rolls out the frontend and waits for health;
 9. checks the frontend loopback and records the deployed immutable tag.
 
@@ -156,6 +156,16 @@ browser permission prompt entirely and must be rejected by `make deploy-check`.
 
 Never run Certbot/Nginx in the yv-chat production Compose. Never edit neighboring
 `yoowee.ru` or `s3.yoowee.ru` vhosts as part of chat deployment.
+
+Before enabling cross-release assets, the host administrator creates the public-only
+asset parent without granting `devuser` general Nginx/root access:
+
+```bash
+install -d -o devuser -g www-data -m 0755 /var/www/yv-chat
+```
+
+The normal GitHub deployment has no `sudo`; it fails closed unless this directory
+exists and belongs to `devuser`.
 
 When adding or restoring a production name, first install the reviewed dual-name
 port-80 chat vhost so its ACME webroot is reachable. Issue each certificate through

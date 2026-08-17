@@ -21,6 +21,9 @@
   текущего и двух предыдущих GHCR images с семидневным TTL retained files.
 - Проверка: full CI и isolated Nginx legacy-asset smoke зелёные; exact production
   asset URLs проверяются после rollout.
+- Rollout note: первая попытка `31988247755` безопасно остановилась до migration и
+  container replacement, когда unprivileged `devuser` не получил `sudo`; live stack
+  остался healthy. Host provisioning отделён от normal deployment.
 
 ### BUG-086 — Android bubbles с длинными ссылками схлопывались до touch minimum
 
