@@ -131,6 +131,13 @@ describe('mobile application shell', () => {
       .not.toMatch(/\.message-bubble \{[^}]*user-select: none;/)
   })
 
+  it('does not let the column timeline shrink long message content to the touch minimum', () => {
+    const css = readFileSync(resolve(process.cwd(), 'app/assets/main.css'), 'utf8')
+
+    expect(css).toMatch(/\.message-bubble \{[^}]*flex-shrink: 0;/)
+    expect(css).toMatch(/@media \(hover: none\) and \(pointer: coarse\)[\s\S]*\.message-bubble:not\(\.message-bubble--video-note\) \{[^}]*min-width: 48px;[^}]*min-height: 48px;/)
+  })
+
   it('overlays transient connection state without reserving a shell row', () => {
     const css = readFileSync(resolve(process.cwd(), 'app/assets/main.css'), 'utf8')
 

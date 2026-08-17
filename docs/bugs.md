@@ -4,6 +4,22 @@
 
 ## Active
 
+### BUG-086 — Android bubbles с длинными ссылками схлопывались до touch minimum
+
+- Статус: `fixed and locally verified in WP-096; physical Android acceptance pending`.
+- Severity: `critical mobile timeline readability`.
+- Регрессия: `d75ca1e` / `WP-095`.
+- Reproduction: открыть на Android/coarse pointer историю с long URL и media;
+  bubbles сжимаются по вертикали, а content накладывается на соседние сообщения.
+- Root cause: explicit coarse `min-height: 48px` отключил content-based flex minimum,
+  при этом `.message-bubble` оставался `flex-shrink: 1` в column timeline.
+- Ожидаемая семантика: 48 px — minimum для короткого touch target, но высокий
+  text/media bubble всегда сохраняет полную content height.
+- Исправление: base bubble получил `flex-shrink: 0`; coarse 48×48 minimum сохранён,
+  но больше не заменяет intrinsic/content height длинного сообщения.
+- Проверка: CSS regression, full CI, Docker health и in-app browser smoke с тремя
+  long URL bubbles зелёные; проверка на физическом Android ожидается после rollout.
+
 ### BUG-085 — Короткая рамка сообщения имела ненадёжный long-press на Pixel
 
 - Статус: `fixed and locally verified in WP-095; physical Pixel acceptance pending`.

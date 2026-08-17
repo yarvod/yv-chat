@@ -1,63 +1,62 @@
 # Текущий workplan
 
-## WP-095 — Reliable small-message touch target
+## WP-096 — Android long-link timeline sizing regression
 
-Статус: **implemented and locally verified; physical Pixel acceptance pending**
+Статус: **implemented, full-CI, Docker and browser verified; physical Android acceptance pending**
 Backlog: `BL-077`
-Bug: `BUG-085`
+Bug: `BUG-086`
 
-Цель: на Pixel короткое сообщение должно легко принимать long-press по всей
-видимой рамке, даже при небольшом естественном дрейфе пальца, без конфликта с
-вертикальной прокруткой и swipe-to-reply.
+Цель: вернуть корректную высоту сообщений с длинными ссылками и media на Android,
+сохранив 48×48 touch target коротких bubbles и все новые message gestures.
+
+### Root cause
+
+- `WP-095` добавил explicit `min-height: 48px` только для coarse pointer;
+- `.message-timeline` — column flex container, а bubbles сохраняли default
+  `flex-shrink: 1`;
+- explicit minimum заменил content-based automatic minimum, поэтому высокий bubble
+  мог сжаться до touch minimum, пока link/media content рисовался за его границами;
+- desktop не затронут, потому что coarse media query там не активен.
 
 ### Scope
 
-- coarse-pointer text bubbles получают minimum touch target 48×48 px;
-- вся площадь рамки article остаётся зоной message long-press, не только glyphs текста;
-- small pointer movement внутри touch slop не отменяет long-press;
-- вся shell-область загруженного кружка использует тот же tolerant gesture surface;
-- contextmenu ловится article в capture-фазе даже поверх внутренних media layers;
-- заметный vertical movement по-прежнему передаёт управление timeline scroll;
-- deliberate horizontal movement сохраняет существующий swipe-to-reply threshold;
-- standalone видеокружки и desktop sizing не растягиваются этим изменением.
+- message bubble явно запрещает shrink по block axis внутри timeline;
+- 48×48 coarse minimum остаётся только нижней границей короткого сообщения;
+- long URL продолжает переноситься через существующий `overflow-wrap: anywhere`;
+- media/gallery bubble занимает реальную intrinsic/content height;
+- ordering, sticky day labels, scroll restoration и gestures не меняются.
 
 ### Correctness and UX invariants
 
-- touch-target расширяется только для coarse pointer и только внутри рамки сообщения;
-- соседние messages не получают overlapping invisible hit areas;
-- jitter tolerance не блокирует scroll и не запускает reply;
-- long-press timer открывает одно context menu и корректно очищается;
-- native selection guard, links и interactive child controls не деградируют.
+- bubble height не может стать меньше laid-out text/media content;
+- длинные ссылки не выходят за рамку и не накладываются на следующие messages;
+- короткий touch target не уменьшается ниже 48×48;
+- desktop layout и максимальная ширина messages остаются прежними;
+- fix не использует fixed height или content clipping.
 
 ### Verification
 
-- component regression: pointerdown по article padding + micro vertical jitter → menu;
-- component regression: video-note shell jitter/right-click → menu;
-- component regression: large vertical gesture → no menu/reply;
-- component regression: deliberate horizontal swipe → reply;
-- CSS regression: coarse text bubble имеет 48×48 target, video note исключён;
-- full `make ci`, Docker Compose health и in-app browser smoke.
+- CSS regression фиксирует `flex-shrink: 0` на base bubble и coarse 48×48 minimum;
+- existing long-link segmentation/wrapping и media layout tests зелёные;
+- full `make ci`, Docker Compose health и in-app browser long-link smoke;
+- после production rollout оба HTTPS health endpoint зелёные.
 
 ### Definition of Done
 
-- короткая рамка сообщения легко удерживается пальцем на Pixel-class viewport;
-- небольшой дрейф пальца не сбрасывает меню действий;
-- scroll, swipe reply, links, кружки и desktop layout работают как раньше;
-- automated, Docker и browser проверки зелёные.
+- Android timeline с длинными ссылками/media не схлопывается и не перекрывается;
+- touch target и message actions предыдущих WP не деградируют;
+- automated, Docker, browser и production проверки зелёные.
 
 ### Result
 
-- coarse-pointer non-video bubbles имеют реальную framed minimum size 48×48 px,
-  без overlapping pseudo hit-area и без изменений desktop layout;
-- общий gesture state игнорирует до 10 px micro-jitter, после чего различает
-  vertical scroll и deliberate horizontal reply как раньше;
-- загруженный видеокружок считает и внутреннюю кнопку, и свободную shell-область
-  одной gesture surface; retry/download controls остаются интерактивными;
-- article ловит `contextmenu` в capture-фазе, поэтому right-click по media child
-  гарантированно открывает одно message action menu;
-- component/CSS regressions покрывают padding hit, jitter, vertical cancel, swipe,
-  video-note shell long-press и shell right-click;
-- полный `make ci` прошёл: backend `272 passed, 12 skipped`, Rust/OpenMLS `23 passed`,
-  frontend `314 passed`; Docker Compose и health endpoint зелёные;
-- свежая PWA проверена через in-app browser на коротком QA-сообщении «Ок»;
-  тестовое сообщение удалено, coarse Pixel hardware acceptance остаётся за устройством.
+- root cause подтверждён: `flex-shrink: 1` вместе с coarse-only explicit
+  `min-height` позволял column flex container сжимать высокий bubble до touch minimum;
+- base `.message-bubble` получил `flex-shrink: 0`, сохранив 48×48 minimum коротких
+  сообщений и полную content height длинных ссылок/media;
+- backend: `272 passed, 12 skipped`; Rust/OpenMLS: `23 passed`; frontend:
+  `315 passed`; lint, typecheck, build, Compose/deploy/docs gates зелёные;
+- свежий production frontend image поднят локально в Docker, healthchecks и
+  `/api/v1/health` зелёные;
+- in-app browser smoke отправил три сообщения с длинными URL: bubbles сохранили
+  независимую высоту без overlap; QA fixtures затем удалены;
+- проверка на физическом Android остаётся acceptance-шагом после production rollout.
