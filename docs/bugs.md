@@ -18,7 +18,7 @@
 - Ожидаемая семантика: текущие и несколько предыдущих trusted hashed assets доступны
   одновременно, а app shell всегда revalidate-ится.
 - Исправление: app shell/SW revalidate-ятся; Nginx exact alias получает atomic union
-  текущего и двух предыдущих GHCR images с семидневным TTL retained files.
+  максимум десяти последних GHCR images с семидневным TTL retained files.
 - Проверка: full CI и isolated Nginx legacy-asset smoke зелёные; exact production
   asset URLs проверяются после rollout.
 - Rollout note: первая попытка `31988247755` безопасно остановилась до migration и
@@ -26,6 +26,9 @@
   остался healthy. Host provisioning отделён от normal deployment.
 - Вторая попытка `31988630036` так же fail-closed поймала несовместимое с production
   `mawk` имя loop variable `index`; оно заменено и exact command проверен на host.
+- Первый успешный rollout контейнеров `31989037255` выявил на post-deploy probe, что
+  окно из трёх images недостаточно при быстрых fail-closed retry: пользовательский
+  `d75ca1e` уже был четвёртым/пятым. Bound увеличен до десяти при сохранении TTL 7 дней.
 
 ### BUG-086 — Android bubbles с длинными ссылками схлопывались до touch minimum
 

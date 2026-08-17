@@ -69,11 +69,13 @@ prepare_frontend_assets() {
         return 1
     fi
 
-    # Copy oldest-to-newest so current unversioned Nuxt metadata wins while the
-    # previous two trusted immutable releases remain available to stale PWA shells.
+    # Copy oldest-to-newest so current unversioned Nuxt metadata wins while a
+    # bounded compatibility window remains available to stale PWA shells. Keep
+    # enough releases for rapid retry/fail-closed deploys not to evict the last
+    # user-visible production shell from the window.
     frontend_images=$(
         docker image ls "$FRONTEND_IMAGE" --format '{{.Repository}}:{{.Tag}}' |
-            awk '/:sha-/ && !seen[$0]++ { images[++count] = $0; if (count == 3) exit }
+            awk '/:sha-/ && !seen[$0]++ { images[++count] = $0; if (count == 10) exit }
                 END { for (position = count; position >= 1; position--) print images[position] }'
     )
     test -n "$frontend_images"

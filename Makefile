@@ -147,6 +147,7 @@ deploy-check:
 	grep -q 'compose pull postgres api cleanup frontend' deploy/remote-deploy.sh
 	grep -q 'prepare_frontend_assets' deploy/remote-deploy.sh
 	grep -q 'docker image ls "\$$FRONTEND_IMAGE"' deploy/remote-deploy.sh
+	grep -q 'count == 10' deploy/remote-deploy.sh
 	! grep -q 'for (index =' deploy/remote-deploy.sh
 	grep -q 'docker cp "\$$container_id:/app/.output/public/_nuxt/."' deploy/remote-deploy.sh
 	grep -q 'stat -c.*frontend_asset_parent' deploy/remote-deploy.sh

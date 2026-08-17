@@ -25,8 +25,10 @@ Bug: `BUG-087`
 
 - app shell и Service Worker получают `no-cache, no-store, must-revalidate`;
 - app-owned Nginx location отдаёт content-hashed `/_nuxt/**` с годовым cache TTL;
-- remote deploy собирает bounded shared asset directory из трёх последних trusted
-  immutable frontend images и ранее сохранённых файлов не старше семи дней;
+- remote deploy собирает bounded shared asset directory максимум из десяти последних
+  trusted immutable frontend images и ранее сохранённых файлов не старше семи дней;
+  окно выдерживает несколько быстрых fail-closed retry, не вытесняя последний
+  пользовательский релиз;
 - system Nginx читает только deployment-owned `/var/www/yv-chat/current` alias;
 - host admin один раз устанавливает reviewed snippet через backup, `nginx -t`, reload
   и rollback; unprivileged remote deploy только обновляет owned asset directory;
@@ -77,3 +79,6 @@ Bug: `BUG-087`
 - второй rollout `31988630036` также остановился до migration/container replace:
   production `mawk` резервирует имя built-in `index`; loop variable переименована и
   exact image-selection command проверена непосредственно на `ru1`.
+- rollout `31989037255` успешно обновил контейнеры на `c090dc8`, но production probe
+  до включения Nginx alias показал, что окно из трёх images было слишком узким: два
+  fail-closed retry вытеснили пользовательский `d75ca1e`; bound увеличен до десяти.
