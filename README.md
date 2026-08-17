@@ -36,6 +36,8 @@ swipe-left отменяет, swipe-up фиксирует запись, locked mo
 camera fallback на поддерживаемые устройством параметры;
 по контуру live preview идёт минутный progress ring, а достигший лимита кружок
 остаётся в локальном review до явного выбора «Отправить» или «Удалить»;
+timeline автоматически воспроизводит muted только реально видимые кружки и ставит
+их на pause сразу после выхода за viewport, не накапливая фоновые decoder-ы;
 в group v1 это тот же явно server-readable flow, в direct v2 bytes и metadata E2EE;
 в обоих случаях это attachment, а не WebRTC call.
 В Settings можно посмотреть размер и число локальных media-копий и после отдельного

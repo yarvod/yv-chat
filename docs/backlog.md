@@ -649,6 +649,8 @@ safe-area fixes и gesture/presentation polish.
   fallback без backend schema/media-kind migration;
 - круглый player переиспользует authenticated group download, TTL и encrypted
   device media cache; direct MLS composer остаётся закрыт до `BL-017`.
+- timeline autoplay ограничен фактическим viewport: видимые кружки играют muted,
+  вышедшие за экран pause-ятся и не накапливают фоновые video decoder-ы (`WP-098`).
 
 ### BL-071 — Encrypted 2 GiB device media cache
 

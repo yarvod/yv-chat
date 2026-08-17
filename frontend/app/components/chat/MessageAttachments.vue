@@ -35,7 +35,9 @@ const imageZoom = ref(1)
 const imagePanX = ref(0)
 const imagePanY = ref(0)
 const pending = new Map<string, Promise<MediaState>>()
+const visibleVideoNoteIds = new Set<string>()
 let mediaObserver: IntersectionObserver | null = null
+let videoNoteObserver: IntersectionObserver | null = null
 let touchStartX: number | null = null
 let touchStartY: number | null = null
 let pinchStartDistance: number | null = null
@@ -133,6 +135,33 @@ function setVideoNotePlaying(attachmentId: string, playing: boolean): void {
   playingVideoNotes.value = next
 }
 
+function videoNoteElement(attachmentId: string): HTMLVideoElement | null {
+  for (const shell of galleryRoot.value?.querySelectorAll<HTMLElement>(
+    '.message-video-note-shell[data-attachment-id]',
+  ) ?? []) {
+    if (shell.dataset.attachmentId === attachmentId) return shell.querySelector('video')
+  }
+  return null
+}
+
+async function syncVideoNotePlayback(attachmentId: string): Promise<void> {
+  const video = videoNoteElement(attachmentId)
+  if (!video) return
+  if (!visibleVideoNoteIds.has(attachmentId)) {
+    video.pause()
+    return
+  }
+  if (expandedVideoNoteId.value !== attachmentId) {
+    video.muted = true
+    video.loop = true
+  }
+  try {
+    await video.play()
+  } catch {
+    // Muted autoplay may be denied by device power/data-saving policy.
+  }
+}
+
 function finishVideoNotePlayback(attachmentId: string, event: Event): void {
   setVideoNotePlaying(attachmentId, false)
   if (expandedVideoNoteId.value !== attachmentId) return
@@ -141,7 +170,7 @@ function finishVideoNotePlayback(attachmentId: string, event: Event): void {
   video.muted = true
   video.loop = true
   video.currentTime = 0
-  void video.play().catch(() => undefined)
+  if (visibleVideoNoteIds.has(attachmentId)) void video.play().catch(() => undefined)
 }
 
 async function load(attachment: MessageAttachment): Promise<MediaState> {
@@ -159,6 +188,9 @@ async function load(attachment: MessageAttachment): Promise<MediaState> {
       }
       const state = { phase: 'ready' as const, blob, url }
       setState(attachment.attachmentId, state)
+      if (attachment.presentation === 'video_note') {
+        void nextTick().then(() => syncVideoNotePlayback(attachment.attachmentId))
+      }
       return state
     })
     .catch(() => {
@@ -349,6 +381,30 @@ function observeVisibleMedia(): void {
   }
 }
 
+function observeVideoNotePlayback(): void {
+  videoNoteObserver?.disconnect()
+  videoNoteObserver = null
+  visibleVideoNoteIds.clear()
+  const root = galleryRoot.value
+  if (!root) return
+  for (const video of root.querySelectorAll<HTMLVideoElement>('.message-video-note video')) {
+    video.pause()
+  }
+  if (!('IntersectionObserver' in window)) return
+  videoNoteObserver = new IntersectionObserver(entries => {
+    for (const entry of entries) {
+      const attachmentId = (entry.target as HTMLElement).dataset.attachmentId
+      if (!attachmentId) continue
+      if (entry.isIntersecting) visibleVideoNoteIds.add(attachmentId)
+      else visibleVideoNoteIds.delete(attachmentId)
+      void syncVideoNotePlayback(attachmentId)
+    }
+  }, { threshold: 0.01 })
+  for (const element of root.querySelectorAll<HTMLElement>('.message-video-note-shell')) {
+    videoNoteObserver.observe(element)
+  }
+}
+
 watch(
   () => props.attachments,
   async attachments => {
@@ -378,11 +434,13 @@ watch(
     ) closeViewer()
     await nextTick()
     observeVisibleMedia()
+    observeVideoNotePlayback()
   },
 )
 
 onMounted(() => {
   observeVisibleMedia()
+  observeVideoNotePlayback()
 })
 
 watch(activeMediaIndex, (current, previous) => {
@@ -394,6 +452,8 @@ watch(activeMediaIndex, (current, previous) => {
 onBeforeUnmount(() => {
   disposed = true
   mediaObserver?.disconnect()
+  videoNoteObserver?.disconnect()
+  visibleVideoNoteIds.clear()
   window.removeEventListener('keydown', handleViewerKeydown)
   pauseViewerVideo()
   for (const video of galleryRoot.value?.querySelectorAll('video') ?? []) video.pause()
@@ -463,11 +523,10 @@ onBeforeUnmount(() => {
             <span class="message-video-note__inner">
               <video
                 :src="stateFor(attachment.attachmentId)?.url"
-                autoplay
                 muted
                 loop
                 playsinline
-                preload="auto"
+                preload="metadata"
                 @play="setVideoNotePlaying(attachment.attachmentId, true)"
                 @pause="setVideoNotePlaying(attachment.attachmentId, false)"
                 @ended="finishVideoNotePlayback(attachment.attachmentId, $event)"

@@ -4,9 +4,22 @@
 
 ## Active
 
+### BUG-088 — Загруженные видеокружки продолжали autoplay за viewport
+
+- Статус: `fixed and full-CI verified in WP-098; authenticated browser history pending`.
+- Severity: `high mobile performance and battery usage`.
+- Reproduction: открыть историю с несколькими видеокружками и прокрутить их за экран;
+  уже загруженные `<video autoplay>` продолжают воспроизведение одновременно.
+- Root cause: media observer отвечал только за lazy load и после первого intersection
+  снимал наблюдение; отдельного playback visibility lifecycle не было.
+- Ожидаемая семантика: muted autoplay только у реально видимых кружков; leave viewport
+  немедленно ставит video на pause, re-enter возобновляет его.
+- Проверка: controlled IntersectionObserver component test покрывает initial invisible,
+  enter, leave и re-enter; Docker shell smoke зелёный, локальной auth session нет.
+
 ### BUG-087 — Installed PWA теряла executable chunks после frontend rollout
 
-- Статус: `fixed and fully verified locally in WP-097; production rollout pending`.
+- Статус: `fixed, CI/browser verified and production deployed in WP-097`.
 - Severity: `critical production PWA availability`.
 - Production reproduction: после `3b7b69e` старая PWA запросила
   `/_nuxt/entry.CGou5k6z.css` и `/_nuxt/-r9Uks-L.js`; новый frontend вернул `404`.

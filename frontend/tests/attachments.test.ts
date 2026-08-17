@@ -391,7 +391,7 @@ describe('message attachment rendering', () => {
     click.mockRestore()
   })
 
-  it('autoplays a muted video note, expands with sound and keeps its timer outside the crop', async () => {
+  it('autoplays a visible muted video note, expands with sound and keeps its timer outside the crop', async () => {
     const videoNote = {
       attachmentId: 'video-note-1',
       kind: 'video' as const,
@@ -420,9 +420,11 @@ describe('message attachment rendering', () => {
     const video = wrapper.get<HTMLVideoElement>('.message-video-note video')
     expect(button.text()).toContain('00:09')
     expect(video.attributes('controls')).toBeUndefined()
-    expect(video.element.autoplay).toBe(true)
+    expect(video.element.autoplay).toBe(false)
     expect(video.element.muted).toBe(true)
     expect(video.element.loop).toBe(true)
+    expect(video.attributes('preload')).toBe('metadata')
+    expect(play).toHaveBeenCalledOnce()
     expect(wrapper.get('.message-video-note__timer').element.parentElement).toBe(button.element)
     expect(wrapper.get('.message-video-note__inner').find('.message-video-note__timer').exists())
       .toBe(false)
@@ -436,7 +438,7 @@ describe('message attachment rendering', () => {
     expect(button.text()).toContain('00:05')
 
     await button.trigger('click')
-    expect(play).toHaveBeenCalledOnce()
+    expect(play).toHaveBeenCalledTimes(2)
     expect(button.classes()).toContain('is-expanded')
     expect(button.attributes('aria-label')).toContain('Свернуть')
     expect(video.element.muted).toBe(false)
@@ -444,19 +446,109 @@ describe('message attachment rendering', () => {
     expect(video.element.currentTime).toBe(0)
 
     await button.trigger('click')
-    expect(play).toHaveBeenCalledTimes(2)
+    expect(play).toHaveBeenCalledTimes(3)
     expect(button.classes()).not.toContain('is-expanded')
     expect(video.element.muted).toBe(true)
     expect(video.element.loop).toBe(true)
 
     await button.trigger('click')
     await video.trigger('ended')
-    expect(play).toHaveBeenCalledTimes(4)
+    expect(play).toHaveBeenCalledTimes(5)
     expect(button.classes()).not.toContain('is-expanded')
     expect(video.element.muted).toBe(true)
     expect(video.element.loop).toBe(true)
     expect(video.element.currentTime).toBe(0)
     play.mockRestore()
+  })
+
+  it('plays video notes only while their shells intersect the viewport', async () => {
+    const videoNote = {
+      attachmentId: 'video-note-visible',
+      kind: 'video' as const,
+      name: 'visible-note.webm',
+      contentType: 'video/webm',
+      byteSize: 420,
+      presentation: 'video_note' as const,
+      durationSeconds: 9,
+    }
+    class ControlledIntersectionObserver {
+      readonly targets = new Set<Element>()
+
+      constructor(
+        private readonly callback: IntersectionObserverCallback,
+        readonly options?: IntersectionObserverInit,
+      ) {}
+
+      observe(target: Element): void {
+        this.targets.add(target)
+        if (this.options?.rootMargin === '500px 0px') {
+          this.callback(
+            [{ isIntersecting: true, target } as IntersectionObserverEntry],
+            this as never,
+          )
+        }
+      }
+
+      disconnect(): void {
+        this.targets.clear()
+      }
+
+      unobserve(target: Element): void {
+        this.targets.delete(target)
+      }
+
+      trigger(isIntersecting: boolean): void {
+        this.callback(
+          [...this.targets].map(target => ({ isIntersecting, target } as IntersectionObserverEntry)),
+          this as never,
+        )
+      }
+    }
+    const observers: ControlledIntersectionObserver[] = []
+    Object.defineProperty(globalThis, 'IntersectionObserver', {
+      configurable: true,
+      value: class extends ControlledIntersectionObserver {
+        constructor(callback: IntersectionObserverCallback, options?: IntersectionObserverInit) {
+          super(callback, options)
+          observers.push(this)
+        }
+      },
+    })
+    const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined)
+    const pause = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined)
+    const wrapper = mount(MessageAttachments, {
+      props: {
+        conversationId: 'conversation-1',
+        expiresAt,
+        attachments: [videoNote],
+        loadAttachment: vi.fn().mockResolvedValue(
+          new Blob(['x'.repeat(videoNote.byteSize)], { type: videoNote.contentType }),
+        ),
+      },
+      global: { stubs: { Teleport: true } },
+    })
+    await flushPromises()
+
+    const playbackObserver = observers.find(item => item.options?.threshold === 0.01)
+    expect(playbackObserver).toBeDefined()
+    expect(play).not.toHaveBeenCalled()
+
+    playbackObserver?.trigger(true)
+    await flushPromises()
+    expect(play).toHaveBeenCalledOnce()
+
+    const pauseCallsBeforeLeave = pause.mock.calls.length
+    playbackObserver?.trigger(false)
+    await flushPromises()
+    expect(pause).toHaveBeenCalledTimes(pauseCallsBeforeLeave + 1)
+
+    playbackObserver?.trigger(true)
+    await flushPromises()
+    expect(play).toHaveBeenCalledTimes(2)
+
+    wrapper.unmount()
+    play.mockRestore()
+    pause.mockRestore()
   })
 
   it('downloads a file through the authenticated gateway without endpoint navigation', async () => {

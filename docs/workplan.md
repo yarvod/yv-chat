@@ -1,84 +1,54 @@
 # Текущий workplan
 
-## WP-097 — Cross-release PWA asset continuity
+## WP-098 — Viewport-bounded video-note autoplay
 
-Статус: **implemented, full-CI and production-like Nginx verified; rollout pending**
-Backlog: `BL-025`
-Bug: `BUG-087`
+Статус: **implemented, full-CI and Docker shell verified; authenticated browser history pending**
+Backlog: `BL-073`
+Bug: `BUG-088`
 
-Цель: установленная или уже открытая PWA не должна ломаться после frontend rollout,
-если её предыдущий executable shell ещё запрашивает hashed Nuxt chunks прошлого
-релиза.
+Цель: видеокружки автоматически воспроизводятся без звука только пока реально видны
+в viewport; длинная история не должна одновременно декодировать все уже загруженные
+кружки.
 
-### Production evidence and root cause
+### Root cause
 
-- VPS, Nginx, API/frontend/PostgreSQL были healthy с `restart count = 0`;
-- оба public health endpoint и direct loopback upstream отвечали `200`;
-- после rollout production access log зафиксировал `404` для предыдущих
-  `/_nuxt/entry.*.css` и `/_nuxt/*.js`;
-- prompt-mode Service Worker намеренно позволяет старому shell работать до explicit
-  activation, но rollout сразу заменял единственный frontend filesystem;
-- HTML и `sw.js` не имели explicit revalidation headers, поэтому browser/PWA мог
-  повторно открыть stale shell уже после удаления его chunks.
+- lazy media observer загружает media около viewport и затем `unobserve`-ит shell;
+- `<video autoplay loop muted>` запускается при появлении после загрузки;
+- уход сообщения за экран не ставит video на pause, поэтому число активных decoder-ов
+  растёт по мере прокрутки истории.
 
 ### Scope
 
-- app shell и Service Worker получают `no-cache, no-store, must-revalidate`;
-- app-owned Nginx location отдаёт content-hashed `/_nuxt/**` с годовым cache TTL;
-- remote deploy собирает bounded shared asset directory максимум из десяти последних
-  trusted immutable frontend images и ранее сохранённых файлов не старше семи дней;
-  окно выдерживает несколько быстрых fail-closed retry, не вытесняя последний
-  пользовательский релиз;
-- system Nginx читает только deployment-owned `/var/www/yv-chat/current` alias;
-- host admin один раз устанавливает reviewed snippet через backup, `nginx -t`, reload
-  и rollback; unprivileged remote deploy только обновляет owned asset directory;
-- current unversioned Nuxt build metadata всегда копируется последней;
-- API, database, media, E2EE state и соседние VPS services не меняются.
-
-### Safety invariants
-
-- на VPS не выполняется frontend build; используются только уже pulled GHCR images;
-- normal deployment не получает `sudo` и fail-closed проверяет owner asset directory;
-- staging directory заменяется атомарно, пока старый container продолжает видеть
-  прежний bind mount;
-- failed rollout сохраняет previous image rollback и содержит assets обеих версий;
-- retained files — только публичные regular `/_nuxt` assets, symlinks удаляются,
-  никаких secrets/user data;
-- каталог bounded release count + TTL и не растёт бесконечно.
+- убрать нативный `autoplay` у timeline video note;
+- отдельный `IntersectionObserver` без preload margin управляет только playback;
+- входящий в viewport кружок запускается muted/loop, вышедший немедленно pause-ится;
+- пользовательский expanded playback также не продолжает звук за экраном;
+- при возврате видимого элемента observer возобновляет его в текущем playback mode;
+- при отсутствии `IntersectionObserver` остаётся click-to-play без массового autoplay;
+- обычные video/image, attachment crypto/cache/API и recording flow не меняются.
 
 ### Verification
 
-- config regression фиксирует shell revalidation и immutable hashed chunks;
-- deploy gate фиксирует Nginx alias, extraction последних images и safe snippet install;
-- full `make ci`, production-like Docker rollout и healthchecks;
-- exact ранее упавшие production asset URLs после rollout отвечают `200`;
-- fresh и stale-shell browser smoke не имеют console/load errors.
+- component test моделирует enter/leave/re-enter и проверяет `play/pause`;
+- regression фиксирует отсутствие нативного `autoplay` и metadata-only preload;
+- frontend lint, typecheck, tests и production build;
+- Docker stack и in-app browser smoke с несколькими кружками и прокруткой.
 
 ### Definition of Done
 
-- предыдущие chunks доступны одновременно с текущими после production rollout;
-- новая PWA загружается, старая получает update prompt без fatal asset `404`;
-- CI/deploy зелёные, оба origins и WebSocket/API остаются доступны.
+- ни один невидимый timeline video note не играет;
+- все видимые кружки могут играть muted одновременно;
+- expand-with-sound и timer/progress продолжают работать;
+- observer-ы отключаются при update/unmount без утечек.
 
-### Result before rollout
+### Result
 
-- production incident доказан exact access-log `404`, при этом VPS, Nginx и все
-  containers оставались healthy с restart count `0`;
-- app shell и `sw.js` в production image отвечают `no-store`, hashed asset — long-lived;
-- isolated Nginx smoke отдал synthetic previous-release CSS, отсутствующий в current
-  frontend image, с `200`, правильным MIME, годовым TTL и всеми security headers;
-- промежуточные Nitro route/middleware варианты были отклонены smoke-тестом, потому
-  что precomputed static layer завершает missing-asset `404` раньше application routes;
-- final design использует exact Nginx alias и atomic symlink switch, symlinks внутри
-  extracted artifacts удаляются;
-- full `make ci`: backend `272 passed, 12 skipped`, Rust/OpenMLS `23 passed`, frontend
-  `316 passed`; lint, typecheck, build, Compose, deploy и docs gates зелёные.
-- первый rollout `31988247755` fail-closed остановился до migration/container replace:
-  production `devuser` ожидаемо не имеет `sudo`; live stack остался healthy на
-  `3b7b69e`. Host provisioning вынесен в existing safe-vhost boundary.
-- второй rollout `31988630036` также остановился до migration/container replace:
-  production `mawk` резервирует имя built-in `index`; loop variable переименована и
-  exact image-selection command проверена непосредственно на `ru1`.
-- rollout `31989037255` успешно обновил контейнеры на `c090dc8`, но production probe
-  до включения Nginx alias показал, что окно из трёх images было слишком узким: два
-  fail-closed retry вытеснили пользовательский `d75ca1e`; bound увеличен до десяти.
+- нативный timeline `autoplay` удалён, `preload` ограничен `metadata`;
+- отдельный zero-margin observer управляет playback независимо от 500 px load-ahead;
+- controlled component test подтвердил invisible initial pause, enter `play`, leave
+  `pause` и re-enter `play`, сохранив expand-with-sound и timer lifecycle;
+- full `make ci`: backend `272 passed, 12 skipped`, Rust/OpenMLS `23 passed`, весь
+  frontend suite, lint, typecheck, production build, Compose/deploy/docs gates зелёные;
+- Docker stack пересобран и healthy; in-app browser загрузил локальный login shell без
+  console errors. Authenticated local history недоступна без тестовой session, поэтому
+  реальный scroll acceptance с пользовательскими кружками не заявляется.
