@@ -1585,9 +1585,14 @@ operations сохраняют обычные cookie/CSRF проверки. Infra
 Message use case сначала commit-ит message/sync state, затем best-effort отправляет push
 только другим participant users. Service Worker валидирует versioned opaque payload,
 подавляет system notification при видимом app window, использует stable event tag для
-deduplication и по click фокусирует/открывает exact conversation. Generic title/body не
-содержат sender, message или attachment metadata. WebSocket и Push остаются wake-up
-каналами; authoritative cursor sync не меняется.
+deduplication и по click фокусирует/открывает exact conversation. Mobile lifecycle не
+считается надёжным: worker предпочитает visible/focused window, но перебирает clients,
+сначала восстанавливает task через focus, затем выполняет exact URL navigation, а при
+discarded task использует `openWindow`. После восстановления активный client получает
+дополнительный typed route signal с validated opaque conversation/message UUID; Nuxt
+router повторно применяет его без plaintext данных. Generic title/body не содержат
+sender, message или attachment metadata. WebSocket и Push остаются wake-up каналами;
+authoritative cursor sync не меняется.
 
 ## 14. Calls
 

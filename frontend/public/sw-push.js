@@ -51,19 +51,39 @@ self.addEventListener('notificationclick', event => {
       || !YV_PUSH_UUID.test(messageId)
     ) return
     const target = `/chat?conversation=${encodeURIComponent(conversationId)}&message=${encodeURIComponent(messageId)}`
-    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
-    const existing = windows[0]
-    if (existing) {
+    const navigation = {
+      type: 'yv-notification-navigation',
+      conversationId,
+      messageId,
+    }
+    const windows = [
+      ...await self.clients.matchAll({ type: 'window', includeUncontrolled: true }),
+    ].sort((left, right) => {
+      const leftPriority = Number(left.visibilityState === 'visible') + Number(left.focused)
+      const rightPriority = Number(right.visibilityState === 'visible') + Number(right.focused)
+      return rightPriority - leftPriority
+    })
+    for (const existing of windows) {
       try {
-        const navigated = 'navigate' in existing ? await existing.navigate(target) : null
+        // Android may return a discarded task from matchAll(). Focusing first
+        // gives the OS a chance to restore it before route navigation.
+        const focused = await existing.focus()
+        const navigated = 'navigate' in focused ? await focused.navigate(target) : null
         if (navigated === null) throw new Error('window client navigation was rejected')
-        await existing.focus()
+        navigated.postMessage?.(navigation)
         return
       } catch {
-        // A discarded/frozen Android task can still be returned by matchAll().
-        // Opening a fresh scoped client is the reliable fallback.
+        // Try another live task before opening a new scoped window.
       }
     }
-    await self.clients.openWindow(target)
+    const opened = await self.clients.openWindow(target)
+    if (opened) {
+      try {
+        const focused = await opened.focus()
+        focused.postMessage?.(navigation)
+      } catch {
+        // openWindow already initiated the cold-start navigation.
+      }
+    }
   })())
 })

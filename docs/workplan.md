@@ -1,54 +1,59 @@
 # Текущий workplan
 
-## WP-098 — Viewport-bounded video-note autoplay
+## WP-099 — Надёжный переход из Web Push в сообщение
 
-Статус: **implemented, full-CI and Docker shell verified; authenticated browser history pending**
-Backlog: `BL-073`
-Bug: `BUG-088`
+Статус: **implemented; full CI, Docker and in-app browser verified; physical mobile acceptance pending**
+Backlog: `BL-028`
+Bug: `BUG-089`
 
-Цель: видеокружки автоматически воспроизводятся без звука только пока реально видны
-в viewport; длинная история не должна одновременно декодировать все уже загруженные
-кружки.
+Цель: клик по уведомлению устойчиво открывает установленную PWA, нужный диалог и
+точное сообщение при тёплом и холодном старте, включая Android с замороженной или
+discarded app task.
 
 ### Root cause
 
-- lazy media observer загружает media около viewport и затем `unobserve`-ит shell;
-- `<video autoplay loop muted>` запускается при появлении после загрузки;
-- уход сообщения за экран не ставит video на pause, поэтому число активных decoder-ов
-  растёт по мере прокрутки истории.
+- Service Worker без разбора выбирал первый `WindowClient` из `matchAll()`;
+- навигация выполнялась до восстановления/focus окна, что ненадёжно для замороженной
+  Android PWA task;
+- после успешного focus/navigation не было резервного typed route signal в уже
+  запущенное Nuxt-приложение;
+- при ошибке первого stale client не проверялись остальные живые окна.
 
 ### Scope
 
-- убрать нативный `autoplay` у timeline video note;
-- отдельный `IntersectionObserver` без preload margin управляет только playback;
-- входящий в viewport кружок запускается muted/loop, вышедший немедленно pause-ится;
-- пользовательский expanded playback также не продолжает звук за экраном;
-- при возврате видимого элемента observer возобновляет его в текущем playback mode;
-- при отсутствии `IntersectionObserver` остаётся click-to-play без массового autoplay;
-- обычные video/image, attachment crypto/cache/API и recording flow не меняются.
+- предпочитать visible/focused clients, но fail over по всем найденным окнам;
+- сначала восстанавливать/focus client, затем переходить на точный URL сообщения;
+- при невозможности использовать существующую task открывать новое scoped окно;
+- передавать validated opaque conversation/message UUID внутрь приложения через
+  `postMessage`, без plaintext preview;
+- приложение принимает только известный typed navigation event с валидными UUID;
+- sync, unread, push payload и notification privacy contract не меняются.
 
 ### Verification
 
-- component test моделирует enter/leave/re-enter и проверяет `play/pause`;
-- regression фиксирует отсутствие нативного `autoplay` и metadata-only preload;
+- service-worker unit tests: warm client, discarded Android task, cold fallback;
+- parser tests: typed event, malformed UUID и unknown event rejection;
 - frontend lint, typecheck, tests и production build;
-- Docker stack и in-app browser smoke с несколькими кружками и прокруткой.
+- Docker stack и in-app browser smoke точного `/chat?conversation=...&message=...` URL;
+- production workflow и public health/assets probe.
 
 ### Definition of Done
 
-- ни один невидимый timeline video note не играет;
-- все видимые кружки могут играть muted одновременно;
-- expand-with-sound и timer/progress продолжают работать;
-- observer-ы отключаются при update/unmount без утечек.
+- stale first client не блокирует открытие PWA;
+- focus происходит до navigation;
+- exact route сохраняет conversation/message при cold и warm start;
+- malformed/untrusted navigation messages игнорируются;
+- generic notification не раскрывает содержимое сообщения.
 
 ### Result
 
-- нативный timeline `autoplay` удалён, `preload` ограничен `metadata`;
-- отдельный zero-margin observer управляет playback независимо от 500 px load-ahead;
-- controlled component test подтвердил invisible initial pause, enter `play`, leave
-  `pause` и re-enter `play`, сохранив expand-with-sound и timer lifecycle;
-- full `make ci`: backend `272 passed, 12 skipped`, Rust/OpenMLS `23 passed`, весь
-  frontend suite, lint, typecheck, production build, Compose/deploy/docs gates зелёные;
-- Docker stack пересобран и healthy; in-app browser загрузил локальный login shell без
-  console errors. Authenticated local history недоступна без тестовой session, поэтому
-  реальный scroll acceptance с пользовательскими кружками не заявляется.
+- warm click сначала focus-ит client, затем открывает exact route и отправляет typed
+  route signal активному Nuxt-приложению;
+- rejected/discarded client больше не завершает обработку: worker пробует остальные
+  tasks и использует `openWindow` как cold-start fallback;
+- full `make ci` зелёный: backend `272 passed, 12 skipped`, Rust/OpenMLS `23 passed`,
+  весь frontend suite, lint, typecheck, production build и repository gates;
+- Docker frontend пересобран, весь stack healthy; in-app browser активировал новую
+  локальную PWA, cold deep link сохранил exact query до ожидаемого auth redirect, а
+  release Nginx отдаёт обновлённый worker. Реальный notification tap на Android/iOS
+  требует post-deploy проверки на физических устройствах.

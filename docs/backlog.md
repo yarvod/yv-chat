@@ -493,8 +493,9 @@ bounded offline-период, не превращая origin storage в безл
 ### BL-028 — Notification UX, preferences и deduplication
 
 Статус: **remaining controls after deployed `WP-061` MVP**. Device-bound subscription,
-generic background notification, focus/navigation и invalid-subscription cleanup
-перенесены в `Completed` вместе с `BL-026`/`BL-027`.
+generic background notification и invalid-subscription cleanup перенесены в
+`Completed` вместе с `BL-026`/`BL-027`; `WP-099` усиливает exact-message
+focus/navigation для frozen/discarded mobile PWA tasks.
 
 Результат: foreground/background уведомления не дублируют unread state.
 

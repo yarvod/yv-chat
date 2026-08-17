@@ -22,21 +22,45 @@ interface NotificationClickEventLike extends ExtendableEventLike {
 
 type EventHandler = (event: unknown) => void
 
-function harness(options: { visible?: boolean, duplicate?: boolean } = {}) {
+function harness(options: {
+  visible?: boolean
+  duplicate?: boolean
+  staleClient?: boolean
+} = {}) {
   const listeners = new Map<string, EventHandler>()
   const notifications: { title: string, options: Record<string, unknown> }[] = []
   const navigations: string[] = []
+  const actions: string[] = []
+  const messages: unknown[] = []
   let focused = 0
   const windowClient = {
     visibilityState: options.visible ? 'visible' : 'hidden',
-    async navigate(url: string): Promise<void> { navigations.push(url) },
-    async focus(): Promise<void> { focused += 1 },
+    focused: false,
+    async navigate(url: string): Promise<typeof windowClient> {
+      actions.push('navigate')
+      navigations.push(url)
+      return windowClient
+    },
+    async focus(): Promise<typeof windowClient> {
+      actions.push('focus')
+      focused += 1
+      if (options.staleClient) throw new Error('discarded task')
+      return windowClient
+    },
+    postMessage(value: unknown): void {
+      actions.push('postMessage')
+      messages.push(value)
+    },
   }
   const worker = {
     addEventListener(type: string, listener: EventHandler): void { listeners.set(type, listener) },
     clients: {
       async matchAll(): Promise<typeof windowClient[]> { return options.visible === undefined ? [] : [windowClient] },
-      async openWindow(url: string): Promise<void> { navigations.push(url) },
+      async openWindow(url: string): Promise<typeof windowClient> {
+        actions.push('openWindow')
+        navigations.push(url)
+        return windowClient
+      },
     },
     registration: {
       async getNotifications(): Promise<object[]> { return options.duplicate ? [{}] : [] },
@@ -53,6 +77,8 @@ function harness(options: { visible?: boolean, duplicate?: boolean } = {}) {
     listeners,
     notifications,
     navigations,
+    actions,
+    messages,
     focused: () => focused,
   }
 }
@@ -118,5 +144,32 @@ describe('privacy-safe push service worker', () => {
       `/chat?conversation=${PAYLOAD.conversation_id}&message=${PAYLOAD.message_id}`,
     ])
     expect(target.focused()).toBe(1)
+    expect(target.actions).toEqual(['focus', 'navigate', 'postMessage'])
+    expect(target.messages).toEqual([{
+      type: 'yv-notification-navigation',
+      conversationId: PAYLOAD.conversation_id,
+      messageId: PAYLOAD.message_id,
+    }])
+  })
+
+  it('opens and focuses a fresh window when Android reports a discarded task', async () => {
+    const target = harness({ visible: false, staleClient: true })
+    let pending = Promise.resolve()
+    const event: NotificationClickEventLike = {
+      notification: {
+        data: {
+          conversationId: PAYLOAD.conversation_id,
+          messageId: PAYLOAD.message_id,
+        },
+        close() {},
+      },
+      waitUntil(promise) { pending = promise },
+    }
+    target.listeners.get('notificationclick')?.(event)
+    await pending
+    expect(target.navigations).toEqual([
+      `/chat?conversation=${PAYLOAD.conversation_id}&message=${PAYLOAD.message_id}`,
+    ])
+    expect(target.actions).toEqual(['focus', 'openWindow', 'focus'])
   })
 })

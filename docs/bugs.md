@@ -4,6 +4,22 @@
 
 ## Active
 
+### BUG-089 — Web Push мог выбрать замороженное окно и не открыть точное сообщение
+
+- Статус: `fixed, full-CI/Docker/browser verified in WP-099; production and physical mobile acceptance pending`.
+- Severity: `high mobile reliability`.
+- Reproduction: нажать notification при замороженной/discarded Android PWA task;
+  иногда приложение не открывается либо остаётся на прежнем route. На iOS проявляется
+  реже из-за другого lifecycle установленной PWA.
+- Root cause: Service Worker использовал только первый client из `matchAll()`, вызывал
+  navigation до focus и не имел typed route handoff в уже восстановленное приложение.
+- Ожидаемая семантика: перебрать доступные tasks, focus до navigation, при stale task
+  открыть новое окно и передать validated exact-message route активному клиенту.
+- Инвариант: notification и межконтекстное сообщение содержат только opaque UUID,
+  без sender, plaintext или attachment metadata.
+- Проверка: unit tests покрывают warm navigation и discarded-task fallback; physical
+  Android/iOS notification acceptance остаётся обязательной post-deploy проверкой.
+
 ### BUG-088 — Загруженные видеокружки продолжали autoplay за viewport
 
 - Статус: `fixed and full-CI verified in WP-098; authenticated browser history pending`.
