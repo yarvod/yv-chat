@@ -74,3 +74,6 @@ Bug: `BUG-087`
 - первый rollout `31988247755` fail-closed остановился до migration/container replace:
   production `devuser` ожидаемо не имеет `sudo`; live stack остался healthy на
   `3b7b69e`. Host provisioning вынесен в existing safe-vhost boundary.
+- второй rollout `31988630036` также остановился до migration/container replace:
+  production `mawk` резервирует имя built-in `index`; loop variable переименована и
+  exact image-selection command проверена непосредственно на `ru1`.

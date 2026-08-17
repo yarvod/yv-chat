@@ -24,6 +24,8 @@
 - Rollout note: первая попытка `31988247755` безопасно остановилась до migration и
   container replacement, когда unprivileged `devuser` не получил `sudo`; live stack
   остался healthy. Host provisioning отделён от normal deployment.
+- Вторая попытка `31988630036` так же fail-closed поймала несовместимое с production
+  `mawk` имя loop variable `index`; оно заменено и exact command проверен на host.
 
 ### BUG-086 — Android bubbles с длинными ссылками схлопывались до touch minimum
 

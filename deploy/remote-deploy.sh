@@ -74,7 +74,7 @@ prepare_frontend_assets() {
     frontend_images=$(
         docker image ls "$FRONTEND_IMAGE" --format '{{.Repository}}:{{.Tag}}' |
             awk '/:sha-/ && !seen[$0]++ { images[++count] = $0; if (count == 3) exit }
-                END { for (index = count; index >= 1; index--) print images[index] }'
+                END { for (position = count; position >= 1; position--) print images[position] }'
     )
     test -n "$frontend_images"
     for frontend_image in $frontend_images; do
