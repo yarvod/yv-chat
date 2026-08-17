@@ -632,6 +632,7 @@ legend { padding: 0 6px; color: var(--muted); font-size: .8rem; }
 
 @media (hover: none) and (pointer: coarse) {
   .message-bubble, .message-bubble * { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  .message-bubble:not(.message-bubble--video-note) { min-width: 48px; min-height: 48px; }
   .message-bubble img, .message-bubble video { -webkit-user-drag: none; }
 }
 

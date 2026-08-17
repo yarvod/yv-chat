@@ -154,6 +154,8 @@ describe('message panel', () => {
     bubble.element.dispatchEvent(new PointerEvent('pointermove', {
       bubbles: true, cancelable: true, pointerId: 3, pointerType: 'touch', clientX: 18, clientY: 90,
     }))
+    await vi.advanceTimersByTimeAsync(500)
+    expect(wrapper.find('.message-context-menu').exists()).toBe(false)
     bubble.element.dispatchEvent(new PointerEvent('pointerup', {
       bubbles: true, pointerId: 3, pointerType: 'touch', clientX: 18, clientY: 90,
     }))
@@ -177,6 +179,9 @@ describe('message panel', () => {
 
     bubble.element.dispatchEvent(new PointerEvent('pointerdown', {
       bubbles: true, button: 0, pointerId: 2, pointerType: 'touch', clientX: 40, clientY: 50,
+    }))
+    bubble.element.dispatchEvent(new PointerEvent('pointermove', {
+      bubbles: true, cancelable: true, pointerId: 2, pointerType: 'touch', clientX: 44, clientY: 57,
     }))
     await vi.advanceTimersByTimeAsync(500)
     await wrapper.vm.$nextTick()
@@ -294,13 +299,14 @@ describe('message panel', () => {
       global: {
         stubs: {
           MessageAttachments: {
-            template: '<button class="message-video-note fake-video-note" type="button">video note</button>',
+            template: '<div class="message-video-note-shell fake-video-note-shell"><button class="message-video-note fake-video-note" type="button">video note</button></div>',
           },
         },
       },
     })
 
     const bubble = wrapper.get('.message-bubble')
+    const videoNoteShell = wrapper.get('.fake-video-note-shell')
     const videoNote = wrapper.get('.fake-video-note')
     const playbackClick = vi.fn()
     videoNote.element.addEventListener('click', playbackClick)
@@ -327,12 +333,13 @@ describe('message panel', () => {
     expect(playbackTap()).toBe(true)
     expect(playbackClick).toHaveBeenCalledTimes(1)
 
-    videoNote.element.dispatchEvent(pointer('pointerdown', 2, 40, 50))
+    videoNoteShell.element.dispatchEvent(pointer('pointerdown', 2, 40, 50))
+    videoNoteShell.element.dispatchEvent(pointer('pointermove', 2, 44, 57))
     await vi.advanceTimersByTimeAsync(500)
     await wrapper.vm.$nextTick()
     expect(wrapper.get('.message-context-menu').text()).toContain('Ответить')
     expect(wrapper.get('.message-context-menu').text()).not.toContain('Копировать текст')
-    videoNote.element.dispatchEvent(pointer('pointerup', 2, 40, 50))
+    videoNoteShell.element.dispatchEvent(pointer('pointerup', 2, 44, 57))
     expect(playbackTap()).toBe(false)
     expect(playbackClick).toHaveBeenCalledTimes(1)
     await wrapper.get('.message-context-backdrop').trigger('pointerdown')
@@ -359,7 +366,7 @@ describe('message panel', () => {
     expect(bubble.classes()).not.toContain('message-bubble--swiping')
     expect(wrapper.find('.composer-reply').exists()).toBe(false)
 
-    await videoNote.trigger('contextmenu', { clientX: 60, clientY: 70 })
+    await videoNoteShell.trigger('contextmenu', { clientX: 60, clientY: 70 })
     expect(wrapper.get('.message-context-menu').text()).toContain('Ответить')
     await wrapper.get('.context-message-actions button:first-child').trigger('click')
     expect(wrapper.get('.composer-reply').text()).toContain('video-note.webm')

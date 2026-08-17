@@ -125,6 +125,7 @@ describe('mobile application shell', () => {
     )
 
     expect(coarseBlock).toMatch(/\.message-bubble, \.message-bubble \* \{[^}]*-webkit-user-select: none;[^}]*user-select: none;[^}]*-webkit-touch-callout: none;/)
+    expect(coarseBlock).toMatch(/\.message-bubble:not\(\.message-bubble--video-note\) \{[^}]*min-width: 48px;[^}]*min-height: 48px;/)
     expect(coarseBlock).toMatch(/\.message-bubble img, \.message-bubble video \{[^}]*-webkit-user-drag: none;/)
     expect(css.slice(0, css.indexOf('@media (hover: none) and (pointer: coarse)')))
       .not.toMatch(/\.message-bubble \{[^}]*user-select: none;/)

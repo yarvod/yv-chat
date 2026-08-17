@@ -4,6 +4,24 @@
 
 ## Active
 
+### BUG-085 — Короткая рамка сообщения имела ненадёжный long-press на Pixel
+
+- Статус: `fixed and locally verified in WP-095; physical Pixel acceptance pending`.
+- Severity: `high mobile usability`.
+- Reproduction: долго удерживать короткое сообщение; маленькая рамка сложна для
+  попадания, а минимальный вертикальный дрейф пальца немедленно сбрасывает gesture.
+- Ожидаемая семантика: вся видимая рамка — минимум 48×48 px touch target, небольшой
+  jitter допускается, но осознанный vertical scroll и horizontal reply сохраняются.
+- Инварианты: без invisible overlap соседних сообщений, без изменения desktop/video
+  note layout и без возврата native text selection.
+- Дополнительное проявление: у кружка внутренний button и внешний shell давали разные
+  event targets; вся shell-зона и right-click по media layers должны вести в одно меню.
+- Исправление: coarse bubble получает framed 48×48 target, 10 px movement slop
+  допускает finger jitter; video-note shell объединён в gesture surface, contextmenu
+  перехватывается article capture listener-ом.
+- Проверка: component/CSS regressions, full CI, Docker health и fresh-PWA browser
+  smoke короткого сообщения зелёные; Pixel-class physical acceptance ожидается.
+
 ### BUG-084 — Видеокружок исключался из mobile message gestures
 
 - Статус: `fixed and locally verified in WP-094; real-camera browser acceptance pending`.

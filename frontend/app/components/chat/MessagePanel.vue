@@ -170,6 +170,7 @@ interface MessageSwipeState {
 }
 const messageContextMenu = ref<MessageContextMenuState | null>(null)
 const messageSwipe = ref<MessageSwipeState | null>(null)
+const MESSAGE_GESTURE_SLOP_PX = 10
 const QUICK_REACTIONS = ['❤️', '👌', '🔥', '😁', '🤯', '💯', '👍'] as const
 const ALL_REACTIONS = [
   ...QUICK_REACTIONS,
@@ -526,9 +527,12 @@ function handleMessageKeydown(event: KeyboardEvent, message: TimelineMessage): v
 }
 
 function isVideoNoteGestureTarget(target: EventTarget | null, message: TimelineMessage): boolean {
-  return isStandaloneVideoNote(message)
-    && target instanceof Element
-    && Boolean(target.closest('.message-video-note'))
+  if (!isStandaloneVideoNote(message) || !(target instanceof Element)) return false
+  if (target.closest('.message-video-note')) return true
+  if (!target.closest('.message-video-note-shell')) return false
+  return !target.closest(
+    'button, input, textarea, audio, [role="button"], [contenteditable="true"]',
+  )
 }
 
 function isInteractiveTarget(target: EventTarget | null, message: TimelineMessage): boolean {
@@ -600,11 +604,12 @@ function handleMessagePointerMove(event: PointerEvent): void {
   if (!swipe || swipe.pointerId !== event.pointerId) return
   const deltaX = event.clientX - swipe.startX
   const deltaY = event.clientY - swipe.startY
+  if (Math.max(Math.abs(deltaX), Math.abs(deltaY)) <= MESSAGE_GESTURE_SLOP_PX) return
   if (Math.abs(deltaY) > Math.abs(deltaX) || deltaX < 0) {
     resetMessageSwipe()
     return
   }
-  if (deltaX > 8) {
+  if (deltaX > MESSAGE_GESTURE_SLOP_PX) {
     clearLongPressTimer()
     event.preventDefault()
     swipe.offset = Math.min(76, deltaX * 0.72)
@@ -1322,7 +1327,7 @@ onBeforeUnmount(() => {
             : undefined"
           :data-message-id="item.message.messageId"
           :data-sequence="item.message.sequence"
-          @contextmenu="handleMessageContextMenu($event, item.message)"
+          @contextmenu.capture="handleMessageContextMenu($event, item.message)"
           @pointerdown="handleMessagePointerDown($event, item.message)"
           @pointermove="handleMessagePointerMove"
           @pointerup="finishMessagePointer($event, item.message)"
