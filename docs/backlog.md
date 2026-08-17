@@ -472,8 +472,9 @@ bounded offline-период, не превращая origin storage в безл
 ### BL-025 — PWA lifecycle и update safety
 
 Статус: **частично выполнено**: install surface и Workbox app shell готовы;
-`WP-078` заменяет surprise automatic activation на user-controlled update. Persistent-
-schema compatibility и background ownership остаются.
+`WP-078` заменяет surprise automatic activation на user-controlled update, `WP-097`
+добавляет cross-release executable asset continuity. Persistent-schema compatibility
+и background ownership остаются.
 
 Результат: приложение устанавливается, работает с offline shell и безопасно обновляется.
 

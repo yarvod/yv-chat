@@ -4,6 +4,24 @@
 
 ## Active
 
+### BUG-087 — Installed PWA теряла executable chunks после frontend rollout
+
+- Статус: `fixed and fully verified locally in WP-097; production rollout pending`.
+- Severity: `critical production PWA availability`.
+- Production reproduction: после `3b7b69e` старая PWA запросила
+  `/_nuxt/entry.CGou5k6z.css` и `/_nuxt/-r9Uks-L.js`; новый frontend вернул `404`.
+- Серверная диагностика: VPS/Nginx/containers healthy, restart count `0`, direct и
+  public health `200`, 5xx/crash-loop отсутствуют.
+- Root cause: prompt-mode сохраняет previous executable shell до user activation,
+  а deployment немедленно удалял chunks предыдущего image; shell/SW responses также
+  не требовали explicit browser revalidation.
+- Ожидаемая семантика: текущие и несколько предыдущих trusted hashed assets доступны
+  одновременно, а app shell всегда revalidate-ится.
+- Исправление: app shell/SW revalidate-ятся; Nginx exact alias получает atomic union
+  текущего и двух предыдущих GHCR images с семидневным TTL retained files.
+- Проверка: full CI и isolated Nginx legacy-asset smoke зелёные; exact production
+  asset URLs проверяются после rollout.
+
 ### BUG-086 — Android bubbles с длинными ссылками схлопывались до touch minimum
 
 - Статус: `fixed and locally verified in WP-096; physical Android acceptance pending`.

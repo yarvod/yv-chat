@@ -1,62 +1,71 @@
 # Текущий workplan
 
-## WP-096 — Android long-link timeline sizing regression
+## WP-097 — Cross-release PWA asset continuity
 
-Статус: **implemented, full-CI, Docker and browser verified; physical Android acceptance pending**
-Backlog: `BL-077`
-Bug: `BUG-086`
+Статус: **implemented, full-CI and production-like Nginx verified; rollout pending**
+Backlog: `BL-025`
+Bug: `BUG-087`
 
-Цель: вернуть корректную высоту сообщений с длинными ссылками и media на Android,
-сохранив 48×48 touch target коротких bubbles и все новые message gestures.
+Цель: установленная или уже открытая PWA не должна ломаться после frontend rollout,
+если её предыдущий executable shell ещё запрашивает hashed Nuxt chunks прошлого
+релиза.
 
-### Root cause
+### Production evidence and root cause
 
-- `WP-095` добавил explicit `min-height: 48px` только для coarse pointer;
-- `.message-timeline` — column flex container, а bubbles сохраняли default
-  `flex-shrink: 1`;
-- explicit minimum заменил content-based automatic minimum, поэтому высокий bubble
-  мог сжаться до touch minimum, пока link/media content рисовался за его границами;
-- desktop не затронут, потому что coarse media query там не активен.
+- VPS, Nginx, API/frontend/PostgreSQL были healthy с `restart count = 0`;
+- оба public health endpoint и direct loopback upstream отвечали `200`;
+- после rollout production access log зафиксировал `404` для предыдущих
+  `/_nuxt/entry.*.css` и `/_nuxt/*.js`;
+- prompt-mode Service Worker намеренно позволяет старому shell работать до explicit
+  activation, но rollout сразу заменял единственный frontend filesystem;
+- HTML и `sw.js` не имели explicit revalidation headers, поэтому browser/PWA мог
+  повторно открыть stale shell уже после удаления его chunks.
 
 ### Scope
 
-- message bubble явно запрещает shrink по block axis внутри timeline;
-- 48×48 coarse minimum остаётся только нижней границей короткого сообщения;
-- long URL продолжает переноситься через существующий `overflow-wrap: anywhere`;
-- media/gallery bubble занимает реальную intrinsic/content height;
-- ordering, sticky day labels, scroll restoration и gestures не меняются.
+- app shell и Service Worker получают `no-cache, no-store, must-revalidate`;
+- app-owned Nginx location отдаёт content-hashed `/_nuxt/**` с годовым cache TTL;
+- remote deploy собирает bounded shared asset directory из трёх последних trusted
+  immutable frontend images и ранее сохранённых файлов не старше семи дней;
+- system Nginx читает только deployment-owned `/var/www/yv-chat/current` alias;
+- remote deploy устанавливает snippet через backup, `nginx -t`, reload и rollback;
+- current unversioned Nuxt build metadata всегда копируется последней;
+- API, database, media, E2EE state и соседние VPS services не меняются.
 
-### Correctness and UX invariants
+### Safety invariants
 
-- bubble height не может стать меньше laid-out text/media content;
-- длинные ссылки не выходят за рамку и не накладываются на следующие messages;
-- короткий touch target не уменьшается ниже 48×48;
-- desktop layout и максимальная ширина messages остаются прежними;
-- fix не использует fixed height или content clipping.
+- на VPS не выполняется frontend build; используются только уже pulled GHCR images;
+- staging directory заменяется атомарно, пока старый container продолжает видеть
+  прежний bind mount;
+- failed rollout сохраняет previous image rollback и содержит assets обеих версий;
+- retained files — только публичные regular `/_nuxt` assets, symlinks удаляются,
+  никаких secrets/user data;
+- каталог bounded release count + TTL и не растёт бесконечно.
 
 ### Verification
 
-- CSS regression фиксирует `flex-shrink: 0` на base bubble и coarse 48×48 minimum;
-- existing long-link segmentation/wrapping и media layout tests зелёные;
-- full `make ci`, Docker Compose health и in-app browser long-link smoke;
-- после production rollout оба HTTPS health endpoint зелёные.
+- config regression фиксирует shell revalidation и immutable hashed chunks;
+- deploy gate фиксирует Nginx alias, extraction последних images и safe snippet install;
+- full `make ci`, production-like Docker rollout и healthchecks;
+- exact ранее упавшие production asset URLs после rollout отвечают `200`;
+- fresh и stale-shell browser smoke не имеют console/load errors.
 
 ### Definition of Done
 
-- Android timeline с длинными ссылками/media не схлопывается и не перекрывается;
-- touch target и message actions предыдущих WP не деградируют;
-- automated, Docker, browser и production проверки зелёные.
+- предыдущие chunks доступны одновременно с текущими после production rollout;
+- новая PWA загружается, старая получает update prompt без fatal asset `404`;
+- CI/deploy зелёные, оба origins и WebSocket/API остаются доступны.
 
-### Result
+### Result before rollout
 
-- root cause подтверждён: `flex-shrink: 1` вместе с coarse-only explicit
-  `min-height` позволял column flex container сжимать высокий bubble до touch minimum;
-- base `.message-bubble` получил `flex-shrink: 0`, сохранив 48×48 minimum коротких
-  сообщений и полную content height длинных ссылок/media;
-- backend: `272 passed, 12 skipped`; Rust/OpenMLS: `23 passed`; frontend:
-  `315 passed`; lint, typecheck, build, Compose/deploy/docs gates зелёные;
-- свежий production frontend image поднят локально в Docker, healthchecks и
-  `/api/v1/health` зелёные;
-- in-app browser smoke отправил три сообщения с длинными URL: bubbles сохранили
-  независимую высоту без overlap; QA fixtures затем удалены;
-- проверка на физическом Android остаётся acceptance-шагом после production rollout.
+- production incident доказан exact access-log `404`, при этом VPS, Nginx и все
+  containers оставались healthy с restart count `0`;
+- app shell и `sw.js` в production image отвечают `no-store`, hashed asset — long-lived;
+- isolated Nginx smoke отдал synthetic previous-release CSS, отсутствующий в current
+  frontend image, с `200`, правильным MIME, годовым TTL и всеми security headers;
+- промежуточные Nitro route/middleware варианты были отклонены smoke-тестом, потому
+  что precomputed static layer завершает missing-asset `404` раньше application routes;
+- final design использует exact Nginx alias и atomic symlink switch, symlinks внутри
+  extracted artifacts удаляются;
+- full `make ci`: backend `272 passed, 12 skipped`, Rust/OpenMLS `23 passed`, frontend
+  `316 passed`; lint, typecheck, build, Compose, deploy и docs gates зелёные.

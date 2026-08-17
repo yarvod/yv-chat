@@ -145,6 +145,14 @@ deploy-check:
 	grep -q '^  cleanup:' compose.prod.yml
 	grep -q 'messenger.cleanup_messages' compose.prod.yml
 	grep -q 'compose pull postgres api cleanup frontend' deploy/remote-deploy.sh
+	grep -q 'prepare_frontend_assets' deploy/remote-deploy.sh
+	grep -q 'docker image ls "\$$FRONTEND_IMAGE"' deploy/remote-deploy.sh
+	grep -q 'docker cp "\$$container_id:/app/.output/public/_nuxt/."' deploy/remote-deploy.sh
+	grep -q 'install_nginx_snippet' deploy/remote-deploy.sh
+	grep -q 'find "\$$frontend_asset_stage" -type l -delete' deploy/remote-deploy.sh
+	grep -q 'sudo nginx -t' deploy/remote-deploy.sh
+	grep -q 'alias /var/www/yv-chat/current/' deploy/nginx/host-chat.server.conf
+	grep -q 'expires 1y' deploy/nginx/host-chat.server.conf
 	grep -q 'compose up -d --wait --wait-timeout 120 postgres media-init api cleanup' deploy/remote-deploy.sh
 	grep -q 'compose up -d --wait --wait-timeout 120 frontend' deploy/remote-deploy.sh
 	grep -q 'YV_CHAT_API_BIND_PORT:-18081' deploy/remote-deploy.sh

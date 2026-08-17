@@ -79,6 +79,15 @@ describe('PWA install assets', () => {
     expect(app).toContain('AppUpdatePrompt')
   })
 
+  it('revalidates the executable shell while keeping hashed chunks immutable', () => {
+    const config = readFileSync(resolve(process.cwd(), 'nuxt.config.ts'), 'utf8')
+
+    expect(config).toContain("'/**':")
+    expect(config).toContain("'cache-control': 'no-cache, no-store, must-revalidate'")
+    expect(config).toContain("'/_nuxt/**':")
+    expect(config).toContain("'cache-control': 'public, max-age=31536000, immutable'")
+  })
+
   it('keeps standard artwork transparent and the maskable canvas fully opaque', async () => {
     const transparent = await sharp(resolve(process.cwd(), 'public/icons/icon-v3-any-512.png'))
       .ensureAlpha()

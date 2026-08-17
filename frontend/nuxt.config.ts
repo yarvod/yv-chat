@@ -56,6 +56,18 @@ export default defineNuxtConfig({
     strict: true,
     typeCheck: true,
   },
+  routeRules: {
+    '/**': {
+      headers: {
+        'cache-control': 'no-cache, no-store, must-revalidate',
+      },
+    },
+    '/_nuxt/**': {
+      headers: {
+        'cache-control': 'public, max-age=31536000, immutable',
+      },
+    },
+  },
   pwa: {
     registerType: 'prompt',
     manifest: {

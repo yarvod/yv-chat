@@ -64,13 +64,22 @@ On push to `main` or manual dispatch, `.github/workflows/deploy.yml`:
 4. copies the production Compose, deploy scripts and reviewed host vhost sources;
 5. starts PostgreSQL and applies Alembic migrations with the new backend image;
 6. rolls out PostgreSQL/media-init/API/cleanup and waits for container health;
-7. checks the direct API loopback, then rolls out the frontend and waits for health;
-8. checks the frontend loopback and records the deployed immutable tag.
+7. atomically prepares `/var/www/yv-chat/current` from the current and two previous
+   immutable images, retaining older files for no more than seven days, and safely
+   installs/tests/reloads the project-owned Nginx snippet when it changed;
+8. checks the direct API loopback, then rolls out the frontend and waits for health;
+9. checks the frontend loopback and records the deployed immutable tag.
 
 The VPS does not build images. Normal application rollout does not reload system
 Nginx because its stable loopback upstream addresses do not change.
 Keeping the previous frontend alive until the replacement API is healthy prevents
 an auto-updating PWA from reloading into the expected API recreation/502 window.
+Keeping recent content-hashed `/_nuxt` files behind the exact Nginx alias
+`/var/www/yv-chat/current` also lets a prompt-mode installed PWA finish running its
+previous shell or display the explicit update prompt after rollout. The directory
+contains public regular build artifacts only, removes symlinks before publication,
+and is bounded by both release count and age. Nginx never exposes the parent as a
+generic filesystem root.
 
 ## Server secrets and non-secret runtime settings
 

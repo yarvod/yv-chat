@@ -1670,6 +1670,15 @@ Rollout пересоздаёт и дожидается healthcheck `postgres/med
 окне. На клиенте transport/408/429/5xx при `/me` являются временной недоступностью;
 только `401` доказывает недействительность opaque session и разрешает очистить account.
 
+Prompt-mode PWA может продолжать исполнять предыдущий shell до явного подтверждения
+update. Поэтому system Nginx обслуживает только `/_nuxt/**` из deployment-owned
+`/var/www/yv-chat/current`, который remote deploy атомарно переключает на union
+текущего и двух предыдущих immutable GHCR images, сохраняя ранее собранные files не
+дольше семи дней. App shell и Service Worker требуют network revalidation, а hashed
+chunks получают годовой cache TTL. Перед публикацией удаляются symlinks; каталог
+содержит только публичные regular build artifacts и не является user/media storage.
+Project-owned snippet меняется через backup, `nginx -t`, graceful reload и rollback.
+
 ## 18. Documentation-driven workflow
 
 Каждая фича проходит один и тот же lifecycle:
