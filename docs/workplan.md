@@ -2,7 +2,7 @@
 
 ## WP-103 — Выбор аудиовыхода в полноэкранном звонке
 
-Статус: **implemented and locally verified; deployment pending**
+Статус: **implemented and deployed; physical device acceptance pending**
 Backlog: `BL-035`
 
 Цель: дать пользователю понятный полноэкранный выбор доступного маршрута звука
@@ -64,4 +64,7 @@ Bluetooth-наушники — если конкретный браузер де
   `23 passed`, frontend `332 passed`, lint/format/import boundaries/mypy/typecheck,
   production build и Compose/deployment checks;
 - local browser shell smoke выполнен без console errors; end-to-end physical
-  speaker/earpiece/Bluetooth acceptance и production rollout ещё ожидаются.
+  speaker/earpiece/Bluetooth acceptance ещё ожидается;
+- feature commit `a21d154`; GitHub CI `32274481108` и production deploy
+  `32274481103` зелёные; оба public origins отвечают health `200`, unauthenticated
+  call config — `401`, production frontend/backend healthy на tag `sha-a21d154…`.
