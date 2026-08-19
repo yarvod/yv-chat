@@ -546,6 +546,8 @@ focus/navigation для frozen/discarded mobile PWA tasks.
 
 Результат: FastAPI/WebSocket передаёт только versioned signaling state после стабильного messaging/E2EE.
 
+Статус: **implemented and locally verified** (`WP-100`).
+
 - `call_offer`, `call_answer`, `ice_candidate`, `call_rejected`, `call_ended`;
 - authenticated conversation participants и timeout/reconnect/failure state;
 - push `incoming_call` только как wake-up hint без SDP/keys preview;
@@ -554,6 +556,9 @@ focus/navigation для frozen/discarded mobile PWA tasks.
 ### BL-035 — WebRTC audio и coturn
 
 Результат: audio идёт peer-to-peer с TURN fallback.
+
+Статус: **implemented; production coturn rollout and physical NAT acceptance pending**
+(`WP-100`).
 
 - browser capability/permission UX;
 - STUN/TURN configuration и coturn production secrets/ports;

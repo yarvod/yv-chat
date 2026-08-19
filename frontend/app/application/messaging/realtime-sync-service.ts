@@ -1,6 +1,13 @@
-import type { RealtimeConnection, RealtimeGateway } from '../ports/realtime-gateway'
+import type {
+  OutgoingCallSignal,
+  RealtimeConnection,
+  RealtimeGateway,
+} from '../ports/realtime-gateway'
 import type { ScheduledTask, Scheduler } from '../ports/scheduler'
-import type { EphemeralRealtimeFrame } from '../../domain/messaging/realtime'
+import type {
+  CallRealtimeFrame,
+  EphemeralRealtimeFrame,
+} from '../../domain/messaging/realtime'
 
 const FALLBACK_SYNC_INTERVAL_MS = 30_000
 const RECONNECT_DELAYS_MS = [1_000, 2_000, 5_000, 10_000, 30_000] as const
@@ -20,6 +27,7 @@ export class RealtimeSyncService {
   private onEphemeral: ((frame: EphemeralRealtimeFrame) => void) | null = null
   private resetEphemeral: (() => void) | null = null
   private onConnectionState: ((state: RealtimeConnectionState) => void) | null = null
+  private onCall: ((frame: CallRealtimeFrame) => void) | null = null
 
   constructor(
     private readonly gateway: RealtimeGateway,
@@ -32,6 +40,7 @@ export class RealtimeSyncService {
     onEphemeral: (frame: EphemeralRealtimeFrame) => void = () => undefined,
     resetEphemeral: () => void = () => undefined,
     onConnectionState: (state: RealtimeConnectionState) => void = () => undefined,
+    onCall: (frame: CallRealtimeFrame) => void = () => undefined,
   ): void {
     if (this.active) return
     this.active = true
@@ -40,6 +49,7 @@ export class RealtimeSyncService {
     this.onEphemeral = onEphemeral
     this.resetEphemeral = resetEphemeral
     this.onConnectionState = onConnectionState
+    this.onCall = onCall
     this.onConnectionState('connecting')
     this.fallbackTask = this.scheduler.repeat(
       FALLBACK_SYNC_INTERVAL_MS,
@@ -64,6 +74,7 @@ export class RealtimeSyncService {
     this.catchUpQueued = false
     this.onConnectionState?.('stopped')
     this.onConnectionState = null
+    this.onCall = null
   }
 
   private connect(): void {
@@ -78,6 +89,14 @@ export class RealtimeSyncService {
         onFrame: frame => {
           if (frame.type === 'typing' || frame.type === 'presence') {
             this.onEphemeral?.(frame)
+          } else if (
+            frame.type === 'call_offer'
+            || frame.type === 'call_answer'
+            || frame.type === 'ice_candidate'
+            || frame.type === 'call_rejected'
+            || frame.type === 'call_ended'
+          ) {
+            this.onCall?.(frame)
           } else if (frame.type !== 'ping' && frame.type !== 'hello') {
             void this.requestCatchUp()
           }
@@ -105,6 +124,10 @@ export class RealtimeSyncService {
 
   setTyping(conversationId: string, active: boolean): void {
     this.connection?.setTyping(conversationId, active)
+  }
+
+  sendCallSignal(signal: OutgoingCallSignal): boolean {
+    return this.connection?.sendCall(signal) ?? false
   }
 
   private scheduleReconnect(): void {

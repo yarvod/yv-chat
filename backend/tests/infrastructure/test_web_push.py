@@ -107,9 +107,11 @@ async def test_adapter_sends_only_opaque_routing_payload(
     payload = json.loads(cast(str, captured["data"]))
     assert payload == {
         "version": 1,
+        "event_type": "message_created",
         "event_id": str(notification.event_id),
         "conversation_id": str(notification.conversation_id),
         "message_id": str(notification.message_id),
+        "call_id": None,
         "sync_required": True,
     }
     serialized = json.dumps(payload)

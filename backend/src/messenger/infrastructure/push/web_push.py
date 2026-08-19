@@ -30,9 +30,11 @@ def _payload(notification: PushNotification) -> str:
     return json.dumps(
         {
             "version": 1,
+            "event_type": notification.event_type,
             "event_id": str(notification.event_id),
             "conversation_id": str(notification.conversation_id),
-            "message_id": str(notification.message_id),
+            "message_id": str(notification.message_id) if notification.message_id else None,
+            "call_id": str(notification.call_id) if notification.call_id else None,
             "sync_required": True,
         },
         separators=(",", ":"),

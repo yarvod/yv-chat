@@ -79,6 +79,7 @@ const props = withDefaults(defineProps<{
   targetMessageId?: string | null
   saveViewport?: (anchor: ConversationViewportAnchor) => Promise<void>
   videoNoteRecorder?: VideoNoteRecorder
+  startCall?: (conversationId: string) => Promise<void>
 }>(), {
   historyHasMore: false,
   historyHasNewer: false,
@@ -106,6 +107,7 @@ const props = withDefaults(defineProps<{
   targetMessageId: null,
   saveViewport: async () => undefined,
   videoNoteRecorder: undefined,
+  startCall: async () => undefined,
 })
 const emit = defineEmits<{ back: []; groupDetails: [] }>()
 
@@ -1187,6 +1189,15 @@ onBeforeUnmount(() => {
         :title="connectionLabel"
         :aria-label="connectionLabel"
       />
+      <button
+        v-if="conversation.conversationType === 'direct'"
+        class="voice-call-button"
+        type="button"
+        aria-label="Позвонить"
+        @click="startCall(conversation.conversationId)"
+      >
+        <AppIcon name="phone" />
+      </button>
       <button
         class="chat-search-button"
         type="button"

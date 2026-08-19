@@ -20,7 +20,7 @@ from messenger.application.messaging.policy import MessageEnvelopePolicy
 from messenger.application.messaging.retention import MessageRetentionPolicy
 from messenger.application.ports.clock import Clock
 from messenger.application.ports.messages import MessagingUnitOfWorkFactory
-from messenger.application.ports.push import PushNotification, PushNotifier
+from messenger.application.ports.push import PushEventType, PushNotification, PushNotifier
 from messenger.application.ports.realtime import RealtimeNotifier
 from messenger.application.push.publish import publish_push_best_effort
 from messenger.application.realtime import notifications_from_sync
@@ -288,6 +288,7 @@ class SendOpaqueMessage:
                 PushNotification(
                     user_id=event.user_id,
                     event_id=event.event_id,
+                    event_type=PushEventType.MESSAGE_CREATED,
                     conversation_id=conversation.id,
                     message_id=message.id,
                 )

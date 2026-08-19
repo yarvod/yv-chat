@@ -4,6 +4,7 @@ import asyncio
 from dataclasses import dataclass, field
 from uuid import UUID, uuid4
 
+from messenger.application.calls.service import CallSignalNotification
 from messenger.application.errors import RealtimeSubscriptionClosedError
 from messenger.application.ports.realtime import RealtimeSubscription
 from messenger.application.realtime import RealtimeNotification
@@ -14,11 +15,11 @@ class InMemoryRealtimeSubscription:
     id: UUID
     user_id: UUID
     session_id: UUID
-    queue: asyncio.Queue[RealtimeNotification]
+    queue: asyncio.Queue[RealtimeNotification | CallSignalNotification]
     became_online: bool = False
     closed: asyncio.Event = field(default_factory=asyncio.Event)
 
-    async def receive(self) -> RealtimeNotification:
+    async def receive(self) -> RealtimeNotification | CallSignalNotification:
         receive_task = asyncio.create_task(self.queue.get())
         close_task = asyncio.create_task(self.closed.wait())
         tasks = {receive_task, close_task}
@@ -91,7 +92,10 @@ class InMemoryRealtimeHub:
                 )
             }
 
-    async def publish(self, notifications: tuple[RealtimeNotification, ...]) -> None:
+    async def publish(
+        self,
+        notifications: tuple[RealtimeNotification | CallSignalNotification, ...],
+    ) -> None:
         slow: list[InMemoryRealtimeSubscription] = []
         async with self._lock:
             for notification in notifications:

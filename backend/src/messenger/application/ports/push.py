@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import StrEnum
 from types import TracebackType
 from typing import Protocol, Self
 from uuid import UUID
@@ -45,12 +46,27 @@ class PushUnitOfWorkFactory(Protocol):
     def __call__(self) -> PushUnitOfWork: ...
 
 
+class PushEventType(StrEnum):
+    MESSAGE_CREATED = "message_created"
+    INCOMING_CALL = "incoming_call"
+
+
 @dataclass(frozen=True, slots=True)
 class PushNotification:
     user_id: UUID
     event_id: UUID
     conversation_id: UUID
-    message_id: UUID
+    message_id: UUID | None
+    event_type: PushEventType = PushEventType.MESSAGE_CREATED
+    call_id: UUID | None = None
+
+    def __post_init__(self) -> None:
+        if self.event_type is PushEventType.MESSAGE_CREATED:
+            valid = self.message_id is not None and self.call_id is None
+        else:
+            valid = self.message_id is None and self.call_id is not None
+        if not valid:
+            raise ValueError("push notification shape does not match event type")
 
 
 class PushNotifier(Protocol):

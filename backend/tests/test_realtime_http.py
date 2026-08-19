@@ -2,10 +2,12 @@
 
 import base64
 from datetime import timedelta
+from typing import cast
 from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from starlette.testclient import WebSocketTestSession
 from starlette.websockets import WebSocketDisconnect
 
 from messenger.domain.entities import Conversation, User
@@ -35,6 +37,14 @@ def authenticated_headers(client: TestClient, origin: str = "https://test") -> d
         "Origin": origin,
         "Cookie": f"__Host-yv_session={credential}",
     }
+
+
+def receive_type(websocket: WebSocketTestSession, expected: str) -> dict[str, object]:
+    for _ in range(8):
+        payload = websocket.receive_json()
+        if payload.get("type") == expected:
+            return cast(dict[str, object], payload)
+    raise AssertionError(f"did not receive {expected}")
 
 
 def test_realtime_requires_exact_origin_and_cookie() -> None:
@@ -72,6 +82,20 @@ def test_realtime_requires_exact_origin_and_cookie() -> None:
         ):
             pass
         assert wrong_origin.value.code == 4403
+
+
+def test_call_ice_config_requires_session_and_declares_standard_encryption() -> None:
+    application, _, _ = build_test_application()
+    with TestClient(application, base_url="https://test") as client:
+        assert client.get("/api/v1/calls/config").status_code == 401
+        login(client)
+        response = client.get("/api/v1/calls/config")
+        assert response.status_code == 200
+        assert response.json() == {
+            "enabled": True,
+            "media_encryption": "DTLS-SRTP",
+            "ice_servers": [],
+        }
 
 
 def test_realtime_hello_and_pong_do_not_expose_or_touch_credentials() -> None:
@@ -370,3 +394,86 @@ def test_typing_frame_rejects_client_claimed_actor_or_expiry() -> None:
             with pytest.raises(WebSocketDisconnect) as malformed:
                 websocket.receive_json()
             assert malformed.value.code == 4400
+
+
+def test_direct_call_signaling_is_authorized_and_device_routed() -> None:
+    application, state, clock = build_test_application()
+    alice = next(user for user in state.users.values() if user.username == "alice")
+    bob = User.create(username="bob", display_name="Bob", now=clock.instant)
+    state.users[bob.id] = bob
+    state.password_hashes[bob.id] = "$argon2id$fake-hash"
+    conversation = Conversation.create_direct(
+        created_by=alice.id,
+        other_user_id=bob.id,
+        now=clock.instant,
+    )
+    state.conversations[conversation.id] = conversation
+    call_id = uuid4()
+
+    with (
+        TestClient(application, base_url="https://test") as alice_client,
+        TestClient(application, base_url="https://test") as bob_client,
+    ):
+        login_as(alice_client, "alice")
+        login_as(bob_client, "bob")
+        with (
+            alice_client.websocket_connect(
+                "/api/v1/realtime",
+                headers=authenticated_headers(alice_client),
+            ) as alice_socket,
+            bob_client.websocket_connect(
+                "/api/v1/realtime",
+                headers=authenticated_headers(bob_client),
+            ) as bob_socket,
+        ):
+            assert alice_socket.receive_json() == {"type": "hello"}
+            assert bob_socket.receive_json() == {"type": "hello"}
+            alice_socket.send_json(
+                {
+                    "type": "call_offer",
+                    "version": 1,
+                    "conversation_id": str(conversation.id),
+                    "call_id": str(call_id),
+                    "sdp": "v=0\r\n",
+                }
+            )
+            offer = receive_type(bob_socket, "call_offer")
+            assert offer["call_id"] == str(call_id)
+            assert offer["sdp"] == "v=0\r\n"
+            assert "token" not in str(offer)
+
+            bob_socket.send_json(
+                {
+                    "type": "call_answer",
+                    "version": 1,
+                    "conversation_id": str(conversation.id),
+                    "call_id": str(call_id),
+                    "sdp": "v=0\r\na=answer",
+                }
+            )
+            answer = receive_type(alice_socket, "call_answer")
+            assert answer["actor_user_id"] == str(bob.id)
+
+            bob_socket.send_json(
+                {
+                    "type": "ice_candidate",
+                    "version": 1,
+                    "conversation_id": str(conversation.id),
+                    "call_id": str(call_id),
+                    "candidate": '{"candidate":"candidate:1"}',
+                }
+            )
+            assert receive_type(alice_socket, "ice_candidate")["candidate"] == (
+                '{"candidate":"candidate:1"}'
+            )
+
+            alice_socket.send_json(
+                {
+                    "type": "call_ended",
+                    "version": 1,
+                    "conversation_id": str(conversation.id),
+                    "call_id": str(call_id),
+                    "reason": "hangup",
+                }
+            )
+            assert receive_type(bob_socket, "call_ended")["reason"] == "hangup"

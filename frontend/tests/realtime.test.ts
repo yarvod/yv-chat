@@ -51,7 +51,7 @@ class FakeRealtimeGateway implements RealtimeGateway {
 
   connect(callbacks: RealtimeCallbacks): RealtimeConnection {
     this.callbacks.push(callbacks)
-    return { close: this.close, setTyping: vi.fn() }
+    return { close: this.close, setTyping: vi.fn(), sendCall: vi.fn(() => true) }
   }
 }
 
@@ -77,6 +77,29 @@ class FakeWebSocket extends EventTarget {
 describe('realtime sync', () => {
   it('strictly parses only bounded routing frames', () => {
     expect(parseRealtimeFrame({ type: 'hello' })).toEqual({ type: 'hello' })
+    expect(parseRealtimeFrame({
+      type: 'call_offer',
+      version: 1,
+      event_id: 'call-event',
+      conversation_id: 'conversation',
+      call_id: 'call',
+      actor_user_id: 'alice',
+      actor_device_id: 'alice-phone',
+      sdp: 'v=0',
+      candidate: null,
+      reason: null,
+    })).toEqual({
+      type: 'call_offer',
+      version: 1,
+      eventId: 'call-event',
+      conversationId: 'conversation',
+      callId: 'call',
+      actorUserId: 'alice',
+      actorDeviceId: 'alice-phone',
+      sdp: 'v=0',
+      candidate: null,
+      reason: null,
+    })
     expect(parseRealtimeFrame({
       type: 'new_message',
       event_id: 'event',

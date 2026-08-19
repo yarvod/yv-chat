@@ -193,6 +193,10 @@ class RealtimeSubscriptionClosedError(ApplicationError):
     """A realtime connection was removed because its bounded inbox closed."""
 
 
+class CallStateConflictError(ApplicationError):
+    """A voice-call signaling transition conflicts with current ephemeral state."""
+
+
 class InvalidReadSequenceError(ApplicationError):
     """A read cursor does not identify an existing authorized message."""
 

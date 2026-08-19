@@ -217,8 +217,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .connection-dot--connected { background: var(--success); box-shadow: 0 0 0 5px color-mix(in srgb, var(--success) 12%, transparent); }
 .connection-dot--connecting, .connection-dot--reconnecting { background: var(--warning); box-shadow: 0 0 0 5px color-mix(in srgb, var(--warning) 12%, transparent); animation: connection-pulse 1.3s ease-in-out infinite; }
 .connection-dot--stopped { background: var(--danger); box-shadow: 0 0 0 5px color-mix(in srgb, var(--danger) 12%, transparent); }
-.group-info-button, .chat-search-button { display: grid; flex: 0 0 auto; width: 40px; height: 40px; place-items: center; padding: 0; border: 0; border-radius: 50%; color: var(--muted); background: transparent; }
-.group-info-button:hover, .chat-search-button:hover { color: var(--primary); background: var(--surface-hover); }
+.group-info-button, .chat-search-button, .voice-call-button { display: grid; flex: 0 0 auto; width: 40px; height: 40px; place-items: center; padding: 0; border: 0; border-radius: 50%; color: var(--muted); background: transparent; }
+.group-info-button:hover, .chat-search-button:hover, .voice-call-button:hover { color: var(--primary); background: var(--surface-hover); }
 .chat-search { position: absolute; z-index: 8; top: 76px; right: 18px; left: 18px; display: grid; grid-template-columns: 22px minmax(100px, 1fr) auto repeat(4, auto); align-items: center; gap: 6px; min-height: 50px; padding: 6px 8px 6px 12px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface-solid); box-shadow: var(--shadow); }
 .chat-search > .app-icon { color: var(--muted); }
 .chat-search input { min-width: 0; height: 38px; border: 0; background: transparent; }
@@ -805,6 +805,33 @@ legend { padding: 0 6px; color: var(--muted); font-size: .8rem; }
 .device-history-sync-banner small { color: var(--primary); font: inherit; }
 .device-history-sync-banner--complete { border-color: color-mix(in srgb, var(--success) 35%, var(--border)); }
 .device-history-sync-banner--complete i { background: var(--success); box-shadow: 0 0 0 4px color-mix(in srgb, var(--success) 12%, transparent); animation: none; }
+
+.voice-call {
+  position: fixed;
+  z-index: 120;
+  inset: 0;
+  display: flex;
+  overflow: hidden;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: max(2rem, env(safe-area-inset-top)) 1.5rem max(2rem, env(safe-area-inset-bottom));
+  background: linear-gradient(165deg, #07111f 0%, #15102c 52%, #090b12 100%);
+  color: #fff;
+  text-align: center;
+}
+.voice-call__glow { position: absolute; width: min(80vw, 34rem); aspect-ratio: 1; border-radius: 50%; background: radial-gradient(circle, color-mix(in srgb, var(--primary) 34%, transparent), transparent 67%); filter: blur(22px); opacity: .85; pointer-events: none; }
+.voice-call__avatar { position: relative; display: grid; width: clamp(7.5rem, 28vw, 11rem); aspect-ratio: 1; place-items: center; margin-bottom: 1.35rem; border: 1px solid rgba(255,255,255,.22); border-radius: 50%; background: linear-gradient(145deg, color-mix(in srgb, var(--primary) 70%, #fff), #7057e8); box-shadow: 0 22px 80px rgba(78,55,185,.48), inset 0 1px rgba(255,255,255,.35); font-size: clamp(2.8rem, 9vw, 4.5rem); font-weight: 780; }
+.voice-call h2 { position: relative; margin: 0; font-size: clamp(1.55rem, 5vw, 2.3rem); }
+.voice-call > p { position: relative; min-height: 1.5em; margin: .5rem 0; color: rgba(255,255,255,.72); }
+.voice-call__security { position: relative; display: inline-flex; align-items: center; gap: .35rem; margin-top: .25rem; color: rgba(255,255,255,.58); font-size: .78rem; }
+.voice-call__actions { position: relative; display: flex; align-items: center; justify-content: center; gap: clamp(2rem, 12vw, 5rem); min-height: 5rem; margin-top: clamp(3rem, 12vh, 7rem); }
+.voice-call__action { display: grid; width: 4.5rem; aspect-ratio: 1; place-items: center; padding: 0; border: 1px solid rgba(255,255,255,.18); border-radius: 50%; background: rgba(255,255,255,.14); color: #fff; box-shadow: 0 12px 34px rgba(0,0,0,.24); backdrop-filter: blur(16px); }
+.voice-call__action .app-icon { width: 1.65rem; height: 1.65rem; }
+.voice-call__action--accept { background: #2cce72; border-color: #2cce72; animation: connection-pulse 1.7s ease-in-out infinite; }
+.voice-call__action--reject { background: #ef4458; border-color: #ef4458; }
+.voice-call__action--muted { background: rgba(255,255,255,.92); color: #111525; }
+.voice-call__dismiss { min-width: 9rem; min-height: 2.8rem; border: 1px solid rgba(255,255,255,.22); border-radius: 999px; background: rgba(255,255,255,.13); color: #fff; }
 @media (max-width: 430px) {
   .auth-hero { min-height: 27dvh; }
   .auth-stage { min-height: 73dvh; }

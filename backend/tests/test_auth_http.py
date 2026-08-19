@@ -36,6 +36,7 @@ from messenger.application.attachments.cleanup import CleanupExpiredAttachments
 from messenger.application.attachments.download import DownloadGroupAttachment
 from messenger.application.attachments.policy import AttachmentPolicy
 from messenger.application.attachments.upload import UploadGroupAttachment
+from messenger.application.calls import VoiceCallCoordinator
 from messenger.application.conversation_crypto import (
     AcknowledgeConversationCryptoWelcome,
     BeginConversationCrypto,
@@ -120,7 +121,11 @@ from messenger.application.ports.messages import MessagingUnitOfWorkFactory
 from messenger.application.ports.password_reset_secrets import PasswordResetSecretService
 from messenger.application.ports.passwords import PasswordHasher
 from messenger.application.ports.push import PushNotifier
-from messenger.application.ports.realtime import RealtimeHub, RealtimeNotifier
+from messenger.application.ports.realtime import (
+    CallSignalNotifier,
+    RealtimeHub,
+    RealtimeNotifier,
+)
 from messenger.application.ports.session_credentials import SessionCredentialService
 from messenger.application.ports.sync import SyncUnitOfWorkFactory
 from messenger.application.realtime.presence import ListPresenceSnapshot, PublishPresence
@@ -322,8 +327,27 @@ class HttpTestProvider(Provider):
         return self._realtime_hub
 
     @provide(scope=Scope.APP)
+    def call_signal_notifier(self) -> CallSignalNotifier:
+        return self._realtime_hub
+
+    @provide(scope=Scope.APP)
     def push_notifier(self) -> PushNotifier:
         return RecordingPushNotifier()
+
+    @provide(scope=Scope.APP)
+    def voice_calls(
+        self,
+        unit_of_work: MessagingUnitOfWorkFactory,
+        clock: Clock,
+        realtime_notifier: CallSignalNotifier,
+        push_notifier: PushNotifier,
+    ) -> VoiceCallCoordinator:
+        return VoiceCallCoordinator(
+            unit_of_work=unit_of_work,
+            clock=clock,
+            realtime_notifier=realtime_notifier,
+            push_notifier=push_notifier,
+        )
 
     login = provide(Login, scope=Scope.REQUEST)
     authenticate_session = provide(AuthenticateSession, scope=Scope.REQUEST)

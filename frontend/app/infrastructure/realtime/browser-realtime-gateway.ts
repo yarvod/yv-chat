@@ -40,6 +40,11 @@ export class BrowserRealtimeGateway implements RealtimeGateway {
         if (socket.readyState !== WebSocket.OPEN) return
         socket.send(JSON.stringify({ type: 'typing', conversation_id: conversationId, active }))
       },
+      sendCall(signal): boolean {
+        if (socket.readyState !== WebSocket.OPEN) return false
+        socket.send(JSON.stringify(signal))
+        return true
+      },
       close(): void {
         explicitlyClosed = true
         socket.close(1000, 'page closed')

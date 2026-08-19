@@ -123,6 +123,7 @@ test: backend-test frontend-test
 compose-check:
 	docker compose -f compose.dev.yml config --quiet
 	docker compose config --quiet
+	docker compose -p yv-chat-coturn -f deploy/coturn/compose.yml config --quiet
 	BACKEND_IMAGE=ghcr.io/example/yv-chat-backend \
 	FRONTEND_IMAGE=ghcr.io/example/yv-chat-frontend \
 	IMAGE_TAG=sha-test \
@@ -138,6 +139,19 @@ compose-check:
 deploy-check:
 	sh -n deploy/remote-deploy.sh
 	sh -n deploy/bootstrap-server.sh
+	sh -n deploy/coturn/install.sh
+	sh -n deploy/coturn/certbot-renew-hook.sh
+	sh -n deploy/coturn/verify.sh
+	grep -q 'network_mode: host' deploy/coturn/compose.yml
+	grep -q 'user: "65534:65534"' deploy/coturn/compose.yml
+	grep -q 'mem_limit: 64m' deploy/coturn/compose.yml
+	grep -q 'cap_drop: \["ALL"\]' deploy/coturn/compose.yml
+	grep -q 'cap_add: \["NET_BIND_SERVICE"\]' deploy/coturn/compose.yml
+	grep -q 'coturn/coturn:4.16.0-r0-alpine@sha256:' deploy/coturn/compose.yml
+	grep -q 'denied-peer-ip=10.0.0.0-10.255.255.255' deploy/coturn/turnserver.conf.example
+	grep -q 'denied-peer-ip=172.16.0.0-172.31.255.255' deploy/coturn/turnserver.conf.example
+	grep -q 'denied-peer-ip=192.168.0.0-192.168.255.255' deploy/coturn/turnserver.conf.example
+	! grep -q 'network_mode: host' compose.prod.yml
 	grep -q '127.0.0.1:$${YV_CHAT_API_BIND_PORT:-18081}:8000' compose.prod.yml
 	grep -q '127.0.0.1:$${YV_CHAT_FRONTEND_BIND_PORT:-18082}:3000' compose.prod.yml
 	grep -q '172.30.243.1/32' compose.prod.yml

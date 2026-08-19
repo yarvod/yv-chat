@@ -1605,6 +1605,33 @@ Calls появляются только после стабильных messagin
 - SDP/media keys не попадают в notification preview;
 - PWA platform limitations документируются до обещаний native-like incoming calls.
 
+`WP-100` реализует voice-only direct-call vertical slice. Один app-scoped
+`VoiceCallCoordinator` держит bounded ephemeral state только в памяти single backend:
+call/conversation/participant/device IDs, offer/answer SDP и до 64 trickle ICE
+candidates на сторону. Состояние не входит в PostgreSQL/sync retention и исчезает
+при restart; WebSocket reconnect получает snapshot ещё активного call. Каждый client
+frame заново проверяет active account, owned non-revoked device, active membership и
+`direct` conversation type. Первый ответивший callee device становится единственным
+media endpoint; остальные устройства получают `answered_elsewhere`.
+
+Browser создаёт `RTCPeerConnection`, запрашивает только microphone с echo
+cancellation/noise suppression/auto gain и добавляет только audio tracks. WebRTC
+шифрует media стандартным DTLS-SRTP. При прямом пути audio идёт peer-to-peer; при
+relay пути coturn видит routing metadata и DTLS-SRTP ciphertext, но не media keys или
+plaintext. FastAPI/WebSocket никогда не становится media proxy. Это transport/media
+encryption браузерного WebRTC; UI не выдаёт его за отдельный самодельный crypto
+protocol и не показывает неподтверждённый safety number.
+
+Authenticated `GET /api/v1/calls/config` возвращает только ICE configuration.
+Долгоживущий `CALL_TURN_SHARED_SECRET` остаётся на backend/coturn; browser получает
+HMAC-derived coturn REST credential примерно на час. Production coturn работает
+отдельным root-managed Docker Compose project с host network, immutable image digest,
+`64 MiB` memory limit и bounded relay ports `49160:49200`. Он получает отдельную
+read-only копию TLS certificate/key, quotas и TURN shared secret, но не подключается
+к application networks, PostgreSQL, media volume или Nginx и не имеет
+storage/recording path. `incoming_call` Push не содержит SDP, ICE, display name или
+message/media content — только version/event/conversation/call IDs.
+
 ## 15. Security и trust boundaries
 
 Никогда не логировать passwords, activation/session credentials, Authorization headers, private keys, plaintext messages или decrypted attachments. Structured logs используют opaque IDs, sizes и event types.

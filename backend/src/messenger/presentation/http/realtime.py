@@ -11,7 +11,14 @@ from dishka import Scope
 from dishka.integrations.fastapi import FromDishka, inject
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
+from messenger.application.calls import (
+    CallSignalCommand,
+    CallSignalNotification,
+    CallSignalType,
+    VoiceCallCoordinator,
+)
 from messenger.application.errors import (
+    CallStateConflictError,
     ConversationNotFoundError,
     RealtimeSubscriptionClosedError,
     SessionNotAuthenticatedError,
@@ -92,8 +99,21 @@ async def _revalidate(websocket: WebSocket, principal: AuthenticateSessionResult
 
 
 def _notification_payload(
-    notification: RealtimeNotification,
+    notification: RealtimeNotification | CallSignalNotification,
 ) -> dict[str, str | int | bool | None]:
+    if isinstance(notification, CallSignalNotification):
+        return {
+            "type": notification.signal_type.value,
+            "version": 1,
+            "event_id": str(notification.event_id),
+            "conversation_id": str(notification.conversation_id),
+            "call_id": str(notification.call_id),
+            "actor_user_id": str(notification.actor_user_id),
+            "actor_device_id": str(notification.actor_device_id),
+            "sdp": notification.sdp,
+            "candidate": notification.candidate,
+            "reason": notification.reason,
+        }
     payload: dict[str, str | int | bool | None] = {
         "type": notification.event_type.value,
         "event_id": str(notification.event_id),
@@ -158,9 +178,17 @@ async def _send_notifications(
 ) -> None:
     while True:
         notification = await subscription.receive()
+        if isinstance(notification, CallSignalNotification) and (
+            notification.target_device_id not in {None, principal.device_id}
+            or notification.excluded_device_id == principal.device_id
+        ):
+            continue
         async with send_lock:
             await websocket.send_json(_notification_payload(notification))
-        if notification.event_type is RealtimeEventType.CONVERSATION_UPDATED:
+        if (
+            isinstance(notification, RealtimeNotification)
+            and notification.event_type is RealtimeEventType.CONVERSATION_UPDATED
+        ):
             snapshot = await _presence_snapshot(websocket, principal)
             async with send_lock:
                 for payload in snapshot:
@@ -189,6 +217,7 @@ async def _receive_client_frames(
     websocket: WebSocket,
     heartbeat: HeartbeatState,
     principal: AuthenticateSessionResult,
+    calls: VoiceCallCoordinator,
 ) -> None:
     tracked: dict[UUID, tuple[bool, float]] = {}
     while True:
@@ -199,6 +228,23 @@ async def _receive_client_frames(
             return
         if payload == {"type": "pong"}:
             heartbeat.pong_seen_at = monotonic()
+            continue
+        if isinstance(payload, dict) and payload.get("type") in {
+            item.value for item in CallSignalType
+        }:
+            try:
+                command = _parse_call_signal(payload, principal)
+                await _revalidate(websocket, principal)
+                await calls.execute(command)
+            except (ConversationNotFoundError, CallStateConflictError):
+                await websocket.close(code=FORBIDDEN_CLOSE)
+                return
+            except SessionNotAuthenticatedError:
+                await websocket.close(code=UNAUTHORIZED_CLOSE)
+                return
+            except (TypeError, ValueError):
+                await websocket.close(code=INVALID_PAYLOAD_CLOSE)
+                return
             continue
         if not isinstance(payload, dict) or set(payload) != {
             "type",
@@ -242,6 +288,49 @@ async def _receive_client_frames(
             tracked.pop(conversation_id, None)
 
 
+def _parse_call_signal(
+    payload: dict[object, object],
+    principal: AuthenticateSessionResult,
+) -> CallSignalCommand:
+    raw_type = payload.get("type")
+    if not isinstance(raw_type, str):
+        raise ValueError("invalid call signal type")
+    signal_type = CallSignalType(raw_type)
+    common = {"type", "version", "conversation_id", "call_id"}
+    variable: set[str]
+    if signal_type in {CallSignalType.OFFER, CallSignalType.ANSWER}:
+        variable = {"sdp"}
+    elif signal_type is CallSignalType.ICE_CANDIDATE:
+        variable = {"candidate"}
+    else:
+        variable = {"reason"}
+    if set(payload) != common | variable or payload.get("version") != 1:
+        raise ValueError("invalid call signal shape")
+    conversation_id = UUID(str(payload["conversation_id"]))
+    call_id = UUID(str(payload["call_id"]))
+    sdp = payload.get("sdp")
+    candidate = payload.get("candidate")
+    reason = payload.get("reason")
+    if sdp is not None and (not isinstance(sdp, str) or not 1 <= len(sdp) <= 65_536):
+        raise ValueError("invalid SDP")
+    if candidate is not None and (
+        not isinstance(candidate, str) or not 1 <= len(candidate) <= 2_048
+    ):
+        raise ValueError("invalid ICE candidate")
+    if reason is not None and (not isinstance(reason, str) or not 1 <= len(reason) <= 64):
+        raise ValueError("invalid call reason")
+    return CallSignalCommand(
+        signal_type=signal_type,
+        actor_user_id=principal.user_id,
+        actor_device_id=principal.device_id,
+        conversation_id=conversation_id,
+        call_id=call_id,
+        sdp=sdp,
+        candidate=candidate,
+        reason=reason,
+    )
+
+
 async def _monitor_connection(
     websocket: WebSocket,
     principal: AuthenticateSessionResult,
@@ -278,6 +367,7 @@ async def realtime_notifications(
     websocket: WebSocket,
     settings: FromDishka[AppSettings],
     hub: FromDishka[RealtimeHub],
+    calls: FromDishka[VoiceCallCoordinator],
 ) -> None:
     try:
         require_allowed_origin(websocket, settings)
@@ -302,9 +392,14 @@ async def realtime_notifications(
     await websocket.send_json({"type": "hello"})
     for payload in await _presence_snapshot(websocket, principal):
         await websocket.send_json(payload)
+    for notification in await calls.snapshot(
+        user_id=principal.user_id,
+        device_id=principal.device_id,
+    ):
+        await websocket.send_json(_notification_payload(notification))
     tasks = {
         asyncio.create_task(_send_notifications(websocket, subscription, send_lock, principal)),
-        asyncio.create_task(_receive_client_frames(websocket, heartbeat_state, principal)),
+        asyncio.create_task(_receive_client_frames(websocket, heartbeat_state, principal, calls)),
         asyncio.create_task(
             _monitor_connection(
                 websocket,

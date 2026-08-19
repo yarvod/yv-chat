@@ -6,9 +6,11 @@ function yvPushPayload(value) {
     || value === null
     || value.version !== 1
     || value.sync_required !== true
+    || !['message_created', 'incoming_call'].includes(value.event_type)
     || !YV_PUSH_UUID.test(value.event_id)
     || !YV_PUSH_UUID.test(value.conversation_id)
-    || !YV_PUSH_UUID.test(value.message_id)
+    || (value.event_type === 'message_created' && !YV_PUSH_UUID.test(value.message_id))
+    || (value.event_type === 'incoming_call' && !YV_PUSH_UUID.test(value.call_id))
   ) return null
   return value
 }
@@ -24,16 +26,17 @@ self.addEventListener('push', event => {
     if (!payload) return
     const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
     if (windows.some(client => client.visibilityState === 'visible')) return
-    const tag = `yv-message-${payload.event_id}`
+    const incomingCall = payload.event_type === 'incoming_call'
+    const tag = `yv-${incomingCall ? 'call' : 'message'}-${payload.event_id}`
     if ((await self.registration.getNotifications({ tag })).length > 0) return
-    await self.registration.showNotification('Новое сообщение', {
-      body: 'Откройте yv-chat, чтобы прочитать.',
+    await self.registration.showNotification(incomingCall ? 'Входящий звонок' : 'Новое сообщение', {
+      body: incomingCall ? 'Откройте yv-chat, чтобы ответить.' : 'Откройте yv-chat, чтобы прочитать.',
       icon: '/icons/icon-v3-any-192.png',
       tag,
       renotify: false,
       data: {
         conversationId: payload.conversation_id,
-        messageId: payload.message_id,
+        messageId: incomingCall ? null : payload.message_id,
       },
     })
   })())
@@ -46,15 +49,14 @@ self.addEventListener('notificationclick', event => {
     const messageId = event.notification.data?.messageId
     if (
       typeof conversationId !== 'string'
-      || typeof messageId !== 'string'
       || !YV_PUSH_UUID.test(conversationId)
-      || !YV_PUSH_UUID.test(messageId)
+      || (messageId !== null && (typeof messageId !== 'string' || !YV_PUSH_UUID.test(messageId)))
     ) return
-    const target = `/chat?conversation=${encodeURIComponent(conversationId)}&message=${encodeURIComponent(messageId)}`
+    const target = `/chat?conversation=${encodeURIComponent(conversationId)}${messageId ? `&message=${encodeURIComponent(messageId)}` : ''}`
     const navigation = {
       type: 'yv-notification-navigation',
       conversationId,
-      messageId,
+      ...(messageId ? { messageId } : {}),
     }
     const windows = [
       ...await self.clients.matchAll({ type: 'window', includeUncontrolled: true }),

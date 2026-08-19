@@ -83,6 +83,11 @@ class AppSettings(BaseSettings):
     realtime_queue_size: int = Field(default=64, ge=1, le=1_024)
     realtime_heartbeat_seconds: int = Field(default=25, ge=5, le=120)
     realtime_revalidation_seconds: int = Field(default=30, ge=5, le=300)
+    calls_enabled: bool = True
+    call_stun_urls: list[str] = Field(default_factory=list)
+    call_turn_urls: list[str] = Field(default_factory=list)
+    call_turn_shared_secret: SecretStr | None = None
+    call_turn_credential_ttl_seconds: int = Field(default=3_600, ge=300, le=86_400)
     vapid_public_key: str | None = None
     vapid_private_key: SecretStr | None = None
     vapid_contact: str | None = None
@@ -93,6 +98,35 @@ class AppSettings(BaseSettings):
     @classmethod
     def normalize_optional_vapid_value(cls, value: object) -> object:
         return None if value == "" else value
+
+    @field_validator("call_turn_shared_secret", mode="before")
+    @classmethod
+    def normalize_optional_turn_secret(cls, value: object) -> object:
+        return None if value == "" else value
+
+    @field_validator("call_stun_urls")
+    @classmethod
+    def validate_stun_urls(cls, urls: list[str]) -> list[str]:
+        return cls._validate_ice_urls(urls, {"stun", "stuns"})
+
+    @field_validator("call_turn_urls")
+    @classmethod
+    def validate_turn_urls(cls, urls: list[str]) -> list[str]:
+        return cls._validate_ice_urls(urls, {"turn", "turns"})
+
+    @staticmethod
+    def _validate_ice_urls(urls: list[str], schemes: set[str]) -> list[str]:
+        if len(urls) > 8:
+            raise ValueError("too many ICE URLs")
+        normalized: list[str] = []
+        for url in urls:
+            scheme = url.partition(":")[0].lower()
+            if scheme not in schemes or len(url) > 512 or "@" in url:
+                raise ValueError("invalid ICE server URL")
+            normalized.append(url)
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("ICE server URLs must be unique")
+        return normalized
 
     @field_validator("allowed_origins")
     @classmethod
@@ -171,6 +205,8 @@ class AppSettings(BaseSettings):
             contact = self.vapid_contact or ""
             if not (contact.startswith("mailto:") or contact.startswith("https://")):
                 raise ValueError("VAPID contact must use mailto: or https://")
+        if bool(self.call_turn_urls) != (self.call_turn_shared_secret is not None):
+            raise ValueError("TURN URLs and shared secret must be configured together")
         return self
 
     @property

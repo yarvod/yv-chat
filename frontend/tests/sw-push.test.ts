@@ -85,9 +85,20 @@ function harness(options: {
 
 const PAYLOAD = {
   version: 1,
+  event_type: 'message_created',
   event_id: '12d9b642-165a-45f0-bceb-d09778f88ff7',
   conversation_id: 'd2e0a3c9-3dcc-4737-a7c9-1fbffd28c84e',
   message_id: '7befbd28-1b77-48ee-8b6c-6f279fc1b92e',
+  sync_required: true,
+}
+
+const CALL_PAYLOAD = {
+  version: 1,
+  event_type: 'incoming_call',
+  event_id: '58e81609-a352-4bb0-8c2e-5de4ecf38876',
+  conversation_id: 'd2e0a3c9-3dcc-4737-a7c9-1fbffd28c84e',
+  message_id: null,
+  call_id: '60cf6877-9dd1-454e-86ac-f42303c7775a',
   sync_required: true,
 }
 
@@ -105,6 +116,13 @@ async function dispatchPush(
 }
 
 describe('privacy-safe push service worker', () => {
+  it('shows an opaque incoming-call wake-up without signaling data', async () => {
+    const target = harness()
+    await dispatchPush(target, CALL_PAYLOAD)
+    expect(target.notifications[0]?.title).toBe('Входящий звонок')
+    expect(JSON.stringify(target.notifications[0])).not.toContain('sdp')
+    expect(JSON.stringify(target.notifications[0])).not.toContain('candidate')
+  })
   it('shows one generic notification only while no visible app client exists', async () => {
     const background = harness()
     await dispatchPush(background, PAYLOAD)

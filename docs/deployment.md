@@ -40,6 +40,50 @@ frontend joins only ingress, PostgreSQL/cleanup only private. Non-internal ingre
 required for active Docker loopback port publishing in the target runtime. Re-check
 both subnets for conflicts before deploying to another host.
 
+### coturn для голосовых звонков
+
+WebRTC сначала пробует direct ICE path, но production обязан иметь TURN fallback для
+carrier-grade NAT, mobile networks и restrictive Wi-Fi. coturn работает отдельным
+root-managed Docker Compose project `yv-chat-coturn`: он не входит в application
+Compose, не подключается к PostgreSQL/media volume/application networks и не имеет
+доступа к session/VAPID secrets. Образ закреплён immutable digest, host networking
+избавляет relay UDP range от Docker NAT, а `64 MiB` limit ограничивает влияние на
+маленький VPS.
+
+1. Проверить, что public `3478/udp`, `3478/tcp`, `5349/tcp` и UDP relay range
+   `49160:49200` свободны и разрешены provider firewall/security group. Nginx не
+   меняется и продолжает единолично владеть `80/443`.
+2. Как root скопировать `deploy/coturn` во временный каталог и выполнить:
+
+   ```bash
+   TURN_PUBLIC_IP=31.192.110.84 ./install.sh
+   ```
+
+   Installer создаёт `/opt/yv-chat-coturn`, генерирует secret без вывода, копирует
+   только certificate/key `chat.yoowee.ru` с доступом для container user, атомарно
+   добавляет `CALL_*` в `/home/devuser/yv-chat/.env` и запускает отдельный Compose.
+3. Installer также ставит root-owned Certbot deploy hook в
+   `/etc/letsencrypt/renewal-hooks/deploy/yv-chat-coturn`. Hook реагирует только на
+   lineage `chat.yoowee.ru`, обновляет отдельную TLS-копию и перезапускает coturn.
+4. Обычным immutable application rollout перезапустить API и проверить authenticated
+   `/api/v1/calls/config`: browser должен получить short-lived username/credential,
+   но не shared secret.
+
+TURN relay переносит DTLS-SRTP ciphertext и не записывает audio. Nginx не проксирует
+TURN: это отдельные UDP/TCP listeners. Если `CALL_TURN_URLS=[]`, UI остаётся доступен,
+но звонок за NAT считается best-effort и production acceptance не пройден. Проверка
+после rollout выполняется между двумя реальными сетями (например, домашний Wi-Fi и
+LTE), затем через browser WebRTC internals подтверждается `relay` candidate pair.
+
+Operational check отдельного сервиса:
+
+```bash
+docker compose -p yv-chat-coturn -f /opt/yv-chat-coturn/compose.yml ps
+TURN_PUBLIC_IP=31.192.110.84 /opt/yv-chat-coturn/verify.sh
+ss -lntup | grep -E ':(3478|5349|4916[0-9]|491[7-9][0-9]|49200) '
+docker inspect yv-chat-coturn-coturn-1 --format '{{.HostConfig.Memory}}'
+```
+
 Host-to-container traffic was observed from bridge gateway `172.30.243.1`; production
 `TRUSTED_PROXY_CIDRS` contains only `172.30.243.1/32`. Client IP, User-Agent and
 network changes remain metadata and never revoke an otherwise valid session.

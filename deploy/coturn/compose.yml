@@ -1,0 +1,23 @@
+services:
+  coturn:
+    image: coturn/coturn:4.16.0-r0-alpine@sha256:901954a6b057079e1b12b2e4b4de06e3419e503336ba76c18f62debca3ac4b42
+    command: ["-c", "/etc/coturn/turnserver.conf"]
+    # Match the host nogroup GID used by the root-owned 0640 config/TLS copies.
+    user: "65534:65534"
+    network_mode: host
+    volumes:
+      - ./turnserver.conf:/etc/coturn/turnserver.conf:ro
+      - ./tls/fullchain.pem:/etc/coturn/tls/fullchain.pem:ro
+      - ./tls/privkey.pem:/etc/coturn/tls/privkey.pem:ro
+    restart: unless-stopped
+    mem_limit: 64m
+    pids_limit: 64
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    # The official binary carries this file capability; keep it in the bounding set.
+    cap_add: ["NET_BIND_SERVICE"]
+    read_only: true
+    tmpfs:
+      - /tmp:size=4m,mode=1777
+      - /var/lib/coturn:size=1m,mode=0700,uid=65534,gid=65534
+    stop_grace_period: 10s

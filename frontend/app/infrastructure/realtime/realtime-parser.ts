@@ -1,6 +1,7 @@
 import { ApplicationError } from '../../application/errors'
 import type {
   DurableRealtimeEventType,
+  CallRealtimeFrame,
   RealtimeFrame,
 } from '../../domain/messaging/realtime'
 
@@ -13,6 +14,13 @@ const DURABLE_TYPES = new Set<DurableRealtimeEventType>([
   'read_receipt',
   'delivery_receipt',
 ])
+const CALL_TYPES = new Set([
+  'call_offer',
+  'call_answer',
+  'ice_candidate',
+  'call_rejected',
+  'call_ended',
+] as const)
 
 function record(value: unknown): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -89,6 +97,50 @@ export function parseRealtimeFrame(value: unknown): RealtimeFrame {
       conversationId: requiredString(frame, 'conversation_id'),
       actorUserId: requiredString(frame, 'actor_user_id'),
       online: requiredBoolean(frame, 'online'),
+    }
+  }
+  if (CALL_TYPES.has(type as CallRealtimeFrame['type'])) {
+    const keys = [
+      'type', 'version', 'event_id', 'conversation_id', 'call_id',
+      'actor_user_id', 'actor_device_id', 'sdp', 'candidate', 'reason',
+    ]
+    if (Object.keys(frame).length !== keys.length || !keys.every(key => key in frame)) {
+      throw new ApplicationError(200, 'invalid-response', 'invalid realtime frame')
+    }
+    const nullableString = (key: 'sdp' | 'candidate' | 'reason'): string | null => {
+      const value = frame[key]
+      if (value === null) return null
+      if (typeof value !== 'string' || value.length === 0) {
+        throw new ApplicationError(200, 'invalid-response', 'invalid realtime frame')
+      }
+      return value
+    }
+    if (frame.version !== 1) {
+      throw new ApplicationError(200, 'invalid-response', 'invalid realtime frame')
+    }
+    const sdp = nullableString('sdp')
+    const candidate = nullableString('candidate')
+    const reason = nullableString('reason')
+    if (
+      (type === 'call_offer' || type === 'call_answer')
+        ? sdp === null || candidate !== null || reason !== null
+        : type === 'ice_candidate'
+          ? candidate === null || sdp !== null || reason !== null
+          : reason === null || sdp !== null || candidate !== null
+    ) {
+      throw new ApplicationError(200, 'invalid-response', 'invalid realtime frame')
+    }
+    return {
+      type: type as CallRealtimeFrame['type'],
+      version: 1,
+      eventId: requiredString(frame, 'event_id'),
+      conversationId: requiredString(frame, 'conversation_id'),
+      callId: requiredString(frame, 'call_id'),
+      actorUserId: requiredString(frame, 'actor_user_id'),
+      actorDeviceId: requiredString(frame, 'actor_device_id'),
+      sdp,
+      candidate,
+      reason,
     }
   }
   if (!DURABLE_TYPES.has(type as DurableRealtimeEventType)) {

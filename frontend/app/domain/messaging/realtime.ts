@@ -26,6 +26,26 @@ export interface PresenceRealtimeFrame {
 
 export type EphemeralRealtimeFrame = TypingRealtimeFrame | PresenceRealtimeFrame
 
+export type CallSignalType =
+  | 'call_offer'
+  | 'call_answer'
+  | 'ice_candidate'
+  | 'call_rejected'
+  | 'call_ended'
+
+export interface CallRealtimeFrame {
+  type: CallSignalType
+  version: 1
+  eventId: string
+  conversationId: string
+  callId: string
+  actorUserId: string
+  actorDeviceId: string
+  sdp: string | null
+  candidate: string | null
+  reason: string | null
+}
+
 export type RealtimeFrame =
   | { type: 'hello' }
   | { type: 'ping' }
@@ -40,6 +60,7 @@ export type RealtimeFrame =
     }
   | TypingRealtimeFrame
   | PresenceRealtimeFrame
+  | CallRealtimeFrame
 
 export interface RealtimeCloseReason {
   unauthorized: boolean

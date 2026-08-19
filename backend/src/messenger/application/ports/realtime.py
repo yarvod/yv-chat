@@ -1,9 +1,14 @@
 """Process-local realtime notification boundary."""
 
-from typing import Protocol
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Protocol
 from uuid import UUID
 
 from messenger.application.realtime.events import RealtimeNotification
+
+if TYPE_CHECKING:
+    from messenger.application.calls.service import CallSignalNotification
 
 
 class RealtimeSubscription(Protocol):
@@ -14,7 +19,7 @@ class RealtimeSubscription(Protocol):
     session_id: UUID
     became_online: bool
 
-    async def receive(self) -> RealtimeNotification: ...
+    async def receive(self) -> RealtimeNotification | CallSignalNotification: ...
 
     def close(self) -> None: ...
 
@@ -23,6 +28,12 @@ class RealtimeNotifier(Protocol):
     """Best-effort post-commit notification publisher."""
 
     async def publish(self, notifications: tuple[RealtimeNotification, ...]) -> None: ...
+
+
+class CallSignalNotifier(Protocol):
+    """Best-effort publisher for ephemeral SDP/ICE signaling only."""
+
+    async def publish(self, notifications: tuple[CallSignalNotification, ...]) -> None: ...
 
 
 class RealtimeHub(RealtimeNotifier, Protocol):

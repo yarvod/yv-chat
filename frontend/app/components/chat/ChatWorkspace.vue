@@ -6,12 +6,14 @@ import type { CurrentAccount } from '../../domain/accounts/account'
 import type { TypingIndicator } from '../../application/messaging/typing-indicator-service'
 import type { PresenceIndicator } from '../../application/messaging/presence-indicator-service'
 import type { RealtimeConnectionState } from '../../application/messaging/realtime-sync-service'
+import type { VoiceCallState } from '../../domain/calls/voice-call'
 import {
   selectedConversationId,
   selectedMessageId,
 } from '../../presentation/chat/conversation-route'
 import ConversationSidebar from './ConversationSidebar.vue'
 import MessagePanel from './MessagePanel.vue'
+import VoiceCallOverlay from './VoiceCallOverlay.vue'
 import GroupDetailsPanel from './GroupDetailsPanel.vue'
 
 const props = defineProps<{ user: CurrentAccount }>()
@@ -24,11 +26,13 @@ const messenger = useMessenger(
 const { $frontend } = useNuxtApp()
 const route = useRoute()
 const realtime = $frontend.createRealtimeSync()
+const calls = $frontend.createVoiceCalls(realtime)
 const typing = $frontend.createTypingIndicators(realtime)
 const presence = $frontend.createPresenceIndicators()
 const typingIndicators = ref<readonly TypingIndicator[]>([])
 const presenceIndicators = ref<readonly PresenceIndicator[]>([])
 const connectionState = ref<RealtimeConnectionState>('connecting')
+const callState = ref<VoiceCallState>(callsState())
 const groupDetailsOpen = ref(false)
 const openingConversationId = ref<string | null>(null)
 const mobilePane = computed<'list' | 'conversation'>(() => (
@@ -39,7 +43,27 @@ const mobilePane = computed<'list' | 'conversation'>(() => (
 let unsubscribeVisibility: (() => void) | null = null
 let unsubscribeTyping: (() => void) | null = null
 let unsubscribePresence: (() => void) | null = null
+let unsubscribeCalls: (() => void) | null = null
 let routeSelectionReady = false
+
+function callsState() {
+  return {
+    phase: 'idle' as const,
+    conversationId: null,
+    callId: null,
+    muted: false,
+    startedAt: null,
+    notice: null,
+  }
+}
+
+const callPeerName = computed(() => {
+  const conversation = messenger.state.conversations.find(item => (
+    item.conversationId === callState.value.conversationId
+  ))
+  return conversation?.members.find(member => member.userId !== props.user.userId)?.displayName
+    ?? 'Собеседник'
+})
 
 const activeTypingActorIds = computed(() => typingIndicators.value
   .filter(item => item.conversationId === messenger.state.activeConversationId)
@@ -139,6 +163,7 @@ onMounted(async () => {
   unsubscribePresence = presence.subscribe(indicators => {
     presenceIndicators.value = indicators
   })
+  unsubscribeCalls = calls.subscribe(state => { callState.value = state })
   unsubscribeVisibility = $frontend.pageVisibility.subscribe(() => {
     void messenger.markActiveRead()
   })
@@ -156,6 +181,7 @@ onMounted(async () => {
     state => {
       connectionState.value = state
     },
+    frame => { void calls.apply(frame).catch(() => calls.hangup()) },
   )
 })
 
@@ -171,8 +197,10 @@ onBeforeUnmount(() => {
   typing.clear()
   unsubscribeTyping?.()
   unsubscribePresence?.()
+  unsubscribeCalls?.()
   presence.clear()
   realtime.stop()
+  calls.reset()
   unsubscribeVisibility?.()
 })
 </script>
@@ -242,8 +270,19 @@ onBeforeUnmount(() => {
         :target-message-id="targetMessageId"
         :save-viewport="messenger.rememberViewport"
         :video-note-recorder="$frontend.videoNoteRecorder"
+        :start-call="calls.start.bind(calls)"
         @back="closeConversation"
         @group-details="groupDetailsOpen = true"
+      />
+      <VoiceCallOverlay
+        v-if="callState.phase !== 'idle'"
+        :state="callState"
+        :peer-name="callPeerName"
+        :accept="calls.accept.bind(calls)"
+        :reject="calls.reject.bind(calls)"
+        :hangup="calls.hangup.bind(calls)"
+        :toggle-mute="calls.toggleMute.bind(calls)"
+        :dismiss="calls.reset.bind(calls)"
       />
       <GroupDetailsPanel
         v-if="groupDetailsOpen && messenger.activeConversation.value?.conversationType === 'group'"

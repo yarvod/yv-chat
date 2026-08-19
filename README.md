@@ -40,6 +40,13 @@ timeline автоматически воспроизводит muted тольк�
 их на pause сразу после выхода за viewport, не накапливая фоновые decoder-ы;
 в group v1 это тот же явно server-readable flow, в direct v2 bytes и metadata E2EE;
 в обоих случаях это attachment, а не WebRTC call.
+Личные чаты поддерживают голосовые 1:1 звонки: authenticated WebSocket переносит
+только короткоживущие SDP/ICE signaling frames, а audio идёт напрямую через WebRTC
+DTLS-SRTP либо как зашифрованный relay traffic через coturn. FastAPI не получает
+audio и не записывает звонки. Интерфейс показывает входящий/исходящий звонок,
+accept/reject, mute, duration и hangup; Web Push содержит только generic
+`incoming_call` wake-up с opaque IDs. Browser PWA не обещает нативный background
+ringing на платформах, где OS не даёт его обычной web-странице.
 В Settings можно посмотреть размер и число локальных media-копий и после отдельного
 подтверждения очистить только этот кэш: переписки, offline-очередь, session/device
 identity и MLS keys не удаляются. `http/https` ссылки в тексте сообщений кликабельны

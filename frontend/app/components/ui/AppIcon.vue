@@ -62,6 +62,18 @@ defineProps<{ name: AppIconName }>()
       <path d="M11 5 6.5 9H3v6h3.5l4.5 4Z" />
       <path d="m16.5 9.5 5 5M21.5 9.5l-5 5" />
     </template>
+    <template v-else-if="name === 'phone'">
+      <path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 2 .7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2.1Z" />
+    </template>
+    <template v-else-if="name === 'phone-off'">
+      <path d="m3 3 18 18M8.5 8.5 8.1 9.9a16 16 0 0 0 6 6l1.3-1.3M5.2 2H4.1a2 2 0 0 0-2 2.2 19.8 19.8 0 0 0 3.1 8.6 19.5 19.5 0 0 0 6 6 19.8 19.8 0 0 0 8.6 3.1 2 2 0 0 0 2.2-2v-3a2 2 0 0 0-1.7-2.1c-1-.1-1.9-.4-2.8-.7" />
+    </template>
+    <template v-else-if="name === 'microphone'">
+      <rect x="9" y="2" width="6" height="12" rx="3" /><path d="M5 10a7 7 0 0 0 14 0M12 17v5M8 22h8" />
+    </template>
+    <template v-else-if="name === 'microphone-off'">
+      <path d="m3 3 18 18M9 9v2a3 3 0 0 0 5.1 2.1M15 9.3V5a3 3 0 0 0-5.8-1M5 10a7 7 0 0 0 11.9 5M12 17v5M8 22h8" />
+    </template>
     <template v-else>
       <path d="M18 6 6 18M6 6l12 12" />
     </template>

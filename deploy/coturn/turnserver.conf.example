@@ -1,0 +1,44 @@
+# Installed by install.sh into the separate root-managed coturn Compose project.
+# CALL_TURN_SHARED_SECRET in the API environment is updated atomically to match.
+listening-port=3478
+tls-listening-port=5349
+listening-ip=__TURN_PUBLIC_IP__
+relay-ip=__TURN_PUBLIC_IP__
+external-ip=__TURN_PUBLIC_IP__
+fingerprint
+use-auth-secret
+static-auth-secret=__TURN_SHARED_SECRET__
+realm=chat.yoowee.ru
+server-name=chat.yoowee.ru
+
+# Keep the firewall and provider security-group range identical and bounded.
+min-port=49160
+max-port=49200
+
+# TLS certificate paths are host-managed; coturn never receives application cookies.
+cert=/etc/coturn/tls/fullchain.pem
+pkey=/etc/coturn/tls/privkey.pem
+
+stale-nonce=600
+user-quota=4
+total-quota=64
+no-multicast-peers
+no-tcp-relay
+no-dtls
+allocation-default-address-family=ipv4
+no-software-attribute
+simple-log
+log-file=stdout
+pidfile=/tmp/turnserver.pid
+
+# Do not let temporary TURN credentials become an SSRF route into host/private networks.
+denied-peer-ip=0.0.0.0-0.255.255.255
+denied-peer-ip=10.0.0.0-10.255.255.255
+denied-peer-ip=100.64.0.0-100.127.255.255
+denied-peer-ip=127.0.0.0-127.255.255.255
+denied-peer-ip=169.254.0.0-169.254.255.255
+denied-peer-ip=172.16.0.0-172.31.255.255
+denied-peer-ip=192.0.0.0-192.0.0.255
+denied-peer-ip=192.168.0.0-192.168.255.255
+denied-peer-ip=198.18.0.0-198.19.255.255
+denied-peer-ip=224.0.0.0-255.255.255.255
