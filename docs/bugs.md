@@ -4,6 +4,21 @@
 
 ## Active
 
+### BUG-090 — WebSocket presence test принимал heartbeat за typing event
+
+- Статус: `fixed locally; GitHub CI retry pending`.
+- Severity: `low test reliability`.
+- Reproduction: общий GitHub backend suite пересекает 25-секундный heartbeat interval;
+  после закрытия первого device socket тест читает следующий Bob frame и получает
+  законный `ping` раньше отправленного `typing`.
+- Root cause: тест напрямую вызывал один `receive_json()` и предполагал, что transport
+  heartbeat не может вклиниться между application events.
+- Исправление: общий typed receive helper отвечает `pong` на каждый `ping` и продолжает
+  bounded ожидание exact application frame; неожиданные non-heartbeat типы не
+  принимаются за ожидаемое событие.
+- Проверка: exact regression пять раз прошёл в отдельных процессах; полный local
+  backend lint/import boundaries и suite `276 passed, 12 skipped` зелёные.
+
 ### BUG-089 — Web Push мог выбрать замороженное окно и не открыть точное сообщение
 
 - Статус: `fixed, full-CI/Docker/browser verified in WP-099; production and physical mobile acceptance pending`.

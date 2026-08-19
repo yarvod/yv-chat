@@ -42,6 +42,9 @@ def authenticated_headers(client: TestClient, origin: str = "https://test") -> d
 def receive_type(websocket: WebSocketTestSession, expected: str) -> dict[str, object]:
     for _ in range(8):
         payload = websocket.receive_json()
+        if payload.get("type") == "ping":
+            websocket.send_json({"type": "pong"})
+            continue
         if payload.get("type") == expected:
             return cast(dict[str, object], payload)
     raise AssertionError(f"did not receive {expected}")
@@ -369,8 +372,7 @@ def test_one_device_disconnect_does_not_mark_multi_device_user_offline() -> None
                         "active": active,
                     }
                 )
-                next_frame = bob_socket.receive_json()
-                assert next_frame["type"] == "typing"
+                next_frame = receive_type(bob_socket, "typing")
                 assert next_frame["active"] is active
 
 
