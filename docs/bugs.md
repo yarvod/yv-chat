@@ -6,7 +6,8 @@
 
 ### BUG-095 — Камера callee не доходила caller и вертикальное видео обрезалось
 
-- Статус: `fixed locally in WP-107; physical two-device acceptance pending`.
+- Статус: `fixed and production deployed in WP-107; physical two-device acceptance pending`
+  (`ec96762`, workflow `32313296867`).
 - Severity: `high call correctness and usability`.
 - Reproduction: принять аудиозвонок, после соединения включить камеру на callee;
   local preview активен и callee видит caller, но caller не видит callee. При
@@ -24,8 +25,9 @@
   adaptive fit на desktop `1280×720` и mobile `390×844` с настоящим synthetic video
   stream без console errors, а real offer/answer lifecycle — одинаковый video MID,
   `sendrecv` и late callee track в negotiated sender. Browser QA sandbox не поднимает
-  ICE transport, поэтому нужен physical вызов в обе стороны на phone + desktop до
-  production rollout.
+  ICE transport, поэтому нужен physical вызов в обе стороны на phone + desktop для
+  финальной packet-delivery acceptance. Production images `sha-ec96762d8062b247a470e03f39b1a6470d0c48ce`
+  healthy; оба chat origin и публичный API проверены после rollout.
 
 ### BUG-094 — Nginx отклонял зашифрованные chunks синхронизации устройств
 

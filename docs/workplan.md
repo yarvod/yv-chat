@@ -2,7 +2,7 @@
 
 ## WP-107 — Symmetric callee video and orientation-aware fullscreen fit
 
-Статус: **implemented and locally verified; physical two-device acceptance pending**
+Статус: **implemented, full-CI verified and production deployed; physical two-device acceptance pending**
 Backlog: `BL-036`, bug `BUG-095`
 
 Цель: устранить случай, когда принимающий участник включает камеру и видит local
@@ -43,7 +43,7 @@ preview, но звонящий не получает его video track, а та
 
 - изменение MLS call binding, backend signaling state machine или coturn;
 - server-side transcoding, forced orientation или фиксированное качество сети;
-- production rollout до physical caller/callee acceptance.
+- physical caller/callee packet-delivery acceptance на phone + desktop.
 
 ### Definition of Done
 
@@ -66,3 +66,16 @@ preview, но звонящий не получает его video track, а та
   на обеих сторонах и late callee video track в negotiated sender; browser QA sandbox
   не поднимает ICE transport, поэтому packet delivery остаётся physical acceptance;
 - frontend: `347 passed`, ESLint, Nuxt typecheck и production build зелёные.
+
+### Production rollout
+
+- commit `ec96762` развёрнут workflow `32313296867`; отдельный CI workflow
+  `32313296698` также завершился успешно;
+- production frontend/API используют immutable images
+  `sha-ec96762d8062b247a470e03f39b1a6470d0c48ce` и healthy;
+- внутренний и публичный `/api/v1/health` отвечают `{"status":"ok"}`, оба chat
+  origin отвечают `200`;
+- system Nginx остался manual-only, active, `nginx -t` успешен; rollout не менял
+  `/etc/nginx`;
+- остаётся физически проверить включение камеры callee в обе стороны и portrait ↔
+  landscape fit на phone + desktop.
