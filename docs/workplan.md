@@ -2,7 +2,7 @@
 
 ## WP-106 — Call reliability and fullscreen video regression hardening
 
-Статус: **implemented; full CI and real-browser verified locally, production rollout pending**
+Статус: **completed and production deployed; physical two-device acceptance pending**
 Backlog: `BL-036`, bugs `BUG-091`–`BUG-093`
 
 Цель: устранить intermittent WebRTC connection failure после MLS call binding,
@@ -74,3 +74,6 @@ Backlog: `BL-036`, bugs `BUG-091`–`BUG-093`
   compact metadata/actions без overflow;
 - `make ci`: `279 passed`, `12 skipped`; Rust call identity/crypto, frontend tests,
   lint, mypy, typecheck и production Nuxt build зелёные.
+- GitHub CI `32286917754` и production deploy `32286917649` зелёные; на `ru1`
+  запущены frontend/backend/worker images `sha-cba2997f8c76c04ae7d6844cc1a8109e19894703`;
+  оба production chat-домена возвращают `ok` на post-rollout healthcheck.

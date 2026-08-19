@@ -6,7 +6,7 @@
 
 ### BUG-093 — Fullscreen call overlay исчезает на mobile list route
 
-- Статус: `fixed and full-CI verified locally in WP-106; production rollout pending`.
+- Статус: `fixed and production deployed in WP-106` (`cba2997`, workflow `32286917649`).
 - Severity: `high call usability`.
 - Reproduction: свернуть активный звонок, перейти назад к списку либо в другой чат,
   нажать expand; overlay появляется только после возврата в conversation звонка.
@@ -16,7 +16,7 @@
 
 ### BUG-092 — Remote camera могла остаться чёрной только у одного участника
 
-- Статус: `fixed and full-CI verified locally in WP-106; physical two-device acceptance pending`.
+- Статус: `fixed and production deployed in WP-106; physical two-device acceptance pending`.
 - Severity: `high video reliability`.
 - Reproduction: установить audio call, затем включить camera; один peer видит video,
   второй сохраняет black/placeholder surface при реально активном camera track.
@@ -27,7 +27,7 @@
 
 ### BUG-091 — ICE candidate мог закрыть signaling до MLS offer/answer
 
-- Статус: `fixed and full-CI verified locally in WP-106; production rollout pending`.
+- Статус: `fixed and production deployed in WP-106` (`cba2997`, workflow `32286917649`).
 - Severity: `critical intermittent call connectivity`.
 - Reproduction: browser быстро генерирует trickle ICE после local description, пока
   asynchronous MLS signing/verification ещё не отправил offer/answer; звонок случайно

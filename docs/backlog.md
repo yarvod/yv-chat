@@ -616,8 +616,8 @@ replacement покрыты negative tests. Frontend/backend v2 rollout выпо�
 соответствующего authenticated SDP frame; verified connection/disconnect имеют
 bounded timeout; remote video sink постоянно смонтирован; fullscreen remote media,
 corner local PiP и global expand не зависят от выбранного чата. Реализовано и
-проверено full CI/real-browser локально; production rollout и физическая
-двухустройственная проверка остаются следующими acceptance шагами.
+проверено full CI/real-browser и production deployed (`cba2997`, workflow
+`32286917649`); физическая двухустройственная проверка остаётся acceptance шагом.
 
 ## Completed
 
