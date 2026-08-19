@@ -557,7 +557,8 @@ focus/navigation для frozen/discarded mobile PWA tasks.
 
 Результат: audio идёт peer-to-peer с TURN fallback.
 
-Статус: **core implemented and deployed; UX hardening active** (`WP-100`, `WP-101`).
+Статус: **implemented and deployed; physical mobile UX acceptance pending**
+(`WP-100`, `WP-101`).
 
 - browser capability/permission UX;
 - STUN/TURN configuration и coturn production secrets/ports;

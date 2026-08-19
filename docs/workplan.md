@@ -2,7 +2,7 @@
 
 ## WP-101 — Voice-call UX, encrypted call history и audio routing
 
-Статус: **in progress**
+Статус: **implemented and deployed; physical mobile UX acceptance pending**
 Backlog: `BL-035`
 
 Цель: довести уже развернутые голосовые звонки в личных чатах до пригодного
@@ -54,3 +54,29 @@ Backlog: `BL-035`
 - terminal/reset paths освобождают microphone, peer, timers, tones и device listeners;
 - frontend lint/typecheck/tests/build и repository CI зелёные;
 - production rollout и физический smoke подтверждены отдельно.
+
+### Result
+
+- foreground PWA синтезирует отдельный incoming ringtone и outgoing ringback через
+  Web Audio, останавливает tone/vibration вместе с call state и сохраняет явный tap
+  fallback для browser autoplay policy;
+- background `incoming_call` Push получил generic action/vibration без имени, SDP,
+  ICE или audio; permission prompt и Settings теперь явно включают звонки;
+- после microphone permission client перечисляет `audiooutput`, отслеживает
+  `devicechange` и переключает поддерживаемые speaker/headset/Bluetooth sinks через
+  `setSinkId`; unsupported browser оставляет routing системе;
+- caller один раз ставит typed call summary в обычный direct MLS v2 outbox; timeline
+  показывает completed/missed/declined/busy/cancelled/failed и duration, а server
+  хранит только прежний opaque message ciphertext;
+- proximity/forced screen-off и гарантированный native earpiece честно оставлены за
+  будущим native wrapper: текущий web Proximity Sensor не реализован engines;
+- coturn production получил stateless nonce, UDP `401` limit 10 rps/source,
+  `256 KiB/s` per allocation и `4 MiB/s` aggregate caps; root-managed backup
+  `turnserver.conf.pre-wp101` сохранён, Nginx/соседние services не менялись;
+- feature commit `191e314`, heartbeat test fix `ccbdb07`; GitHub CI
+  `32267603203` и production deploy `32267603231` зелёные;
+- full local CI зелёный: backend `276 passed, 12 skipped`, Rust/OpenMLS `23 passed`,
+  frontend `325 passed`, lint/format/import boundaries/mypy/typecheck/build/Compose;
+- оба public origins отвечают health `200`, unauthenticated call config — `401`,
+  production app tag `sha-ccbdb07…`; authenticated TURN relay self-test — `2/2`,
+  `0%` packet loss.

@@ -6,7 +6,7 @@
 
 ### BUG-090 — WebSocket tests принимали heartbeat за typing event
 
-- Статус: `fixed locally; GitHub CI retry pending`.
+- Статус: `fixed; GitHub CI 32267603203 and deploy 32267603231 passed`.
 - Severity: `low test reliability`.
 - Reproduction: общий GitHub backend suite с PostgreSQL пересекает 25-секундный
   heartbeat interval; multi-device и typing authorization tests читают следующий Bob
@@ -17,7 +17,7 @@
   bounded ожидание exact application frame; неожиданные non-heartbeat типы не
   принимаются за ожидаемое событие.
 - Проверка: оба typing receive path используют один heartbeat-aware helper; local
-  backend lint/import boundaries и suite зелёные, deploy PostgreSQL retry pending.
+  backend suite и deploy PostgreSQL gate зелёные.
 
 ### BUG-089 — Web Push мог выбрать замороженное окно и не открыть точное сообщение
 
