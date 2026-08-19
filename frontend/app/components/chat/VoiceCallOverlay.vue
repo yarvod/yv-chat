@@ -81,7 +81,11 @@ function outputIcon(kind: VoiceCallAudioOutput['kind']): AppIconName {
     <h2>{{ peerName }}</h2>
     <p aria-live="polite">{{ status }}</p>
     <span class="voice-call__security">
-      <span aria-hidden="true">🔒</span> Аудио защищено WebRTC
+      <span aria-hidden="true">🔒</span>
+      {{ state.identityVerified ? 'Устройство подтверждено MLS' : 'Проверяем устройство…' }}
+    </span>
+    <span v-if="state.verificationCode" class="voice-call__security">
+      Код сверки: {{ state.verificationCode }}
     </span>
     <section v-if="audioRoutingVisible" class="voice-call__routing" aria-labelledby="audio-routing-title">
       <strong id="audio-routing-title">Куда выводить звук</strong>

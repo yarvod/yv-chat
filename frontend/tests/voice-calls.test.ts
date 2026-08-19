@@ -3,6 +3,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { OutgoingCallSignal } from '../app/application/ports/realtime-gateway'
 import { BrowserVoiceCallService } from '../app/infrastructure/webrtc/browser-voice-call-service'
 
+const ALICE_USER = '1b0a32e8-144f-4f60-bcb6-112f71bd5316'
+const ALICE_DEVICE = '50d6b08a-84ae-4bd7-829a-f40f38e9a2c1'
+const BOB_USER = 'abfef0af-10d0-4655-b4c7-84b3b418e4b7'
+const BOB_DEVICE = 'd44483ee-2c69-4eef-aeba-5ce92bc9181d'
+const CONVERSATION = 'f6a5941b-c417-4e50-a69c-9a30bd7ed28c'
+const SIGNATURE = new Uint8Array(64).fill(7)
+
 class FakeTrack {
   enabled = true
   stop = vi.fn()
@@ -65,6 +72,14 @@ function fakeTones() {
   }
 }
 
+function fakeIdentity() {
+  return {
+    signCallBinding: vi.fn(async () => ({ signature: SIGNATURE.slice() })),
+    verifyCallBinding: vi.fn(async () => ({ verified: true as const })),
+    deriveCallVerificationCode: vi.fn(async () => ({ code: '1234 5678 9012' })),
+  }
+}
+
 describe('browser voice calls', () => {
   const signals: OutgoingCallSignal[] = []
   const stream = new FakeStream()
@@ -97,17 +112,21 @@ describe('browser voice calls', () => {
   })
 
   it('creates an audio-only encrypted WebRTC offer and handles answer/mute/hangup', async () => {
-    const service = new BrowserVoiceCallService(signaling, config)
+    const identity = fakeIdentity()
+    const service = new BrowserVoiceCallService(
+      signaling, config, identity, ALICE_USER, ALICE_DEVICE,
+    )
     const states: string[] = []
     service.subscribe(state => states.push(state.phase))
 
-    await service.start('conversation')
+    await service.start(CONVERSATION, BOB_USER)
     const offer = signals[0]
     expect(offer).toMatchObject({
       type: 'call_offer',
-      version: 1,
-      conversation_id: 'conversation',
+      version: 2,
+      conversation_id: CONVERSATION,
       sdp: 'offer-sdp',
+      identity_signature: '07'.repeat(64),
     })
     expect(FakePeerConnection.instances[0]?.configuration).toEqual({
       iceServers: [{ urls: ['stun:example.test'] }],
@@ -116,15 +135,16 @@ describe('browser voice calls', () => {
 
     await service.apply({
       type: 'call_answer',
-      version: 1,
+      version: 2,
       eventId: 'event',
-      conversationId: 'conversation',
+      conversationId: CONVERSATION,
       callId: offer?.call_id ?? '',
-      actorUserId: 'bob',
-      actorDeviceId: 'bob-phone',
+      actorUserId: BOB_USER,
+      actorDeviceId: BOB_DEVICE,
       sdp: 'answer-sdp',
       candidate: null,
       reason: null,
+      identitySignature: '07'.repeat(64),
     })
     expect(FakePeerConnection.instances[0]?.remoteDescription?.sdp).toBe('answer-sdp')
     service.toggleMute()
@@ -137,18 +157,21 @@ describe('browser voice calls', () => {
   it('does not request microphone until an incoming call is accepted', async () => {
     const getUserMedia = vi.mocked(navigator.mediaDevices.getUserMedia)
     const tones = fakeTones()
-    const service = new BrowserVoiceCallService(signaling, config, null, tones)
+    const service = new BrowserVoiceCallService(
+      signaling, config, fakeIdentity(), BOB_USER, BOB_DEVICE, null, tones,
+    )
     await service.apply({
       type: 'call_offer',
-      version: 1,
+      version: 2,
       eventId: 'event',
-      conversationId: 'conversation',
-      callId: 'call',
-      actorUserId: 'alice',
-      actorDeviceId: 'alice-phone',
+      conversationId: CONVERSATION,
+      callId: '538998bb-1943-4cf3-beb1-8b87cadf0fc1',
+      actorUserId: ALICE_USER,
+      actorDeviceId: ALICE_DEVICE,
       sdp: 'offer-sdp',
       candidate: null,
       reason: null,
+      identitySignature: '07'.repeat(64),
     })
     expect(getUserMedia).not.toHaveBeenCalled()
     expect(tones.startIncoming).toHaveBeenCalledOnce()
@@ -183,11 +206,13 @@ describe('browser voice calls', () => {
     })
     const recordHistory = vi.fn(async () => true)
     const tones = fakeTones()
-    const service = new BrowserVoiceCallService(signaling, config, recordHistory, tones)
+    const service = new BrowserVoiceCallService(
+      signaling, config, fakeIdentity(), ALICE_USER, ALICE_DEVICE, recordHistory, tones,
+    )
     let latest = null
     service.subscribe(state => { latest = state })
 
-    await service.start('conversation')
+    await service.start(CONVERSATION, BOB_USER)
     expect(tones.unlock).toHaveBeenCalled()
     expect(tones.startOutgoing).toHaveBeenCalledOnce()
     expect(latest).toMatchObject({
@@ -208,15 +233,16 @@ describe('browser voice calls', () => {
     const callId = signals.find(signal => signal.type === 'call_offer')?.call_id ?? ''
     await service.apply({
       type: 'call_answer',
-      version: 1,
+      version: 2,
       eventId: 'event',
-      conversationId: 'conversation',
+      conversationId: CONVERSATION,
       callId,
-      actorUserId: 'bob',
-      actorDeviceId: 'bob-phone',
+      actorUserId: BOB_USER,
+      actorDeviceId: BOB_DEVICE,
       sdp: 'answer-sdp',
       candidate: null,
       reason: null,
+      identitySignature: '07'.repeat(64),
     })
     const peer = FakePeerConnection.instances[0]!
     peer.connectionState = 'connected'
@@ -224,7 +250,7 @@ describe('browser voice calls', () => {
     service.hangup()
 
     expect(recordHistory).toHaveBeenCalledOnce()
-    expect(recordHistory).toHaveBeenCalledWith('conversation', {
+    expect(recordHistory).toHaveBeenCalledWith(CONVERSATION, {
       callId,
       outcome: 'completed',
       durationSeconds: 1,
@@ -248,11 +274,13 @@ describe('browser voice calls', () => {
         selectAudioOutput,
       },
     })
-    const service = new BrowserVoiceCallService(signaling, config)
+    const service = new BrowserVoiceCallService(
+      signaling, config, fakeIdentity(), ALICE_USER, ALICE_DEVICE,
+    )
     let latest = null
     service.subscribe(state => { latest = state })
 
-    await service.start('conversation')
+    await service.start(CONVERSATION, BOB_USER)
     expect(latest).toMatchObject({
       audioOutputSupported: true,
       audioOutputPickerSupported: true,
@@ -271,5 +299,71 @@ describe('browser voice calls', () => {
       }],
     })
     service.reset()
+  })
+
+  it('rejects a signaling-tampered offer before ringing or requesting media', async () => {
+    const tones = fakeTones()
+    const identity = fakeIdentity()
+    identity.verifyCallBinding.mockRejectedValueOnce(new Error('modified fingerprint'))
+    const service = new BrowserVoiceCallService(
+      signaling, config, identity, BOB_USER, BOB_DEVICE, null, tones,
+    )
+    let latest = null
+    service.subscribe(state => { latest = state })
+
+    await service.apply({
+      type: 'call_offer',
+      version: 2,
+      eventId: 'event',
+      conversationId: CONVERSATION,
+      callId: '538998bb-1943-4cf3-beb1-8b87cadf0fc1',
+      actorUserId: ALICE_USER,
+      actorDeviceId: ALICE_DEVICE,
+      sdp: 'tampered-sdp',
+      candidate: null,
+      reason: null,
+      identitySignature: '07'.repeat(64),
+    })
+
+    expect(tones.startIncoming).not.toHaveBeenCalled()
+    expect(navigator.mediaDevices.getUserMedia).not.toHaveBeenCalled()
+    expect(latest).toMatchObject({
+      phase: 'error',
+      notice: 'Не удалось подтвердить устройство звонящего',
+    })
+    expect(signals).toHaveLength(0)
+  })
+
+  it('does not apply a tampered answer from a compromised signaling relay', async () => {
+    const identity = fakeIdentity()
+    const service = new BrowserVoiceCallService(
+      signaling, config, identity, ALICE_USER, ALICE_DEVICE,
+    )
+    let latest = null
+    service.subscribe(state => { latest = state })
+    await service.start(CONVERSATION, BOB_USER)
+    const offer = signals.find(signal => signal.type === 'call_offer')!
+    identity.verifyCallBinding.mockRejectedValueOnce(new Error('wrong device binding'))
+
+    await service.apply({
+      type: 'call_answer',
+      version: 2,
+      eventId: 'event',
+      conversationId: CONVERSATION,
+      callId: offer.call_id,
+      actorUserId: BOB_USER,
+      actorDeviceId: BOB_DEVICE,
+      sdp: 'tampered-answer-sdp',
+      candidate: null,
+      reason: null,
+      identitySignature: '07'.repeat(64),
+    })
+
+    expect(FakePeerConnection.instances[0]?.remoteDescription).toBeNull()
+    expect(latest).toMatchObject({
+      phase: 'error',
+      identityVerified: false,
+      notice: 'Не удалось подтвердить устройство собеседника',
+    })
   })
 })

@@ -13,7 +13,7 @@ import { IndexedDbCryptoVault } from '../app/infrastructure/storage/indexeddb-cr
 import initOpenMls, {
   DeviceBootstrap,
   validatePublicKeyPackage,
-} from '../public/crypto/v7/yv_chat_openmls_provider.js'
+} from '../public/crypto/v8/yv_chat_openmls_provider.js'
 
 const userId = '1b0a32e8-144f-4f60-bcb6-112f71bd5316'
 const deviceId = '50d6b08a-84ae-4bd7-829a-f40f38e9a2c1'
@@ -23,6 +23,9 @@ const thirdDeviceId = '47782869-4399-4534-9202-ae53bed6a0fa'
 const thirdUserId = 'f26cf4db-07c7-41c5-9925-01da4a7f7b22'
 const conversationId = 'f6a5941b-c417-4e50-a69c-9a30bd7ed28c'
 const messageId = '538998bb-1943-4cf3-beb1-8b87cadf0fc1'
+const callId = '784ace60-fba9-445d-b1e4-df34d56ad053'
+const offerSdp = 'v=0\r\na=fingerprint:sha-256 00:01:02:03:04:05:06:07:08:09:0A:0B:0C:0D:0E:0F:10:11:12:13:14:15:16:17:18:19:1A:1B:1C:1D:1E:1F\r\n'
+const answerSdp = 'v=0\r\na=fingerprint:sha-256 20:21:22:23:24:25:26:27:28:29:2A:2B:2C:2D:2E:2F:30:31:32:33:34:35:36:37:38:39:3A:3B:3C:3D:3E:3F\r\n'
 
 const openMlsModule: OpenMlsModule = {
   default: async () => undefined,
@@ -43,7 +46,7 @@ function vault(indexedDb: IDBFactory): IndexedDbCryptoVault {
 }
 
 beforeAll(async () => {
-  const wasm = await readFile('public/crypto/v7/yv_chat_openmls_provider_bg.wasm')
+  const wasm = await readFile('public/crypto/v8/yv_chat_openmls_provider_bg.wasm')
   await initOpenMls({ module_or_path: wasm })
 })
 
@@ -165,6 +168,55 @@ describe('device crypto runtime with the release OpenMLS WASM', () => {
       deviceIds: [deviceId, otherDeviceId].sort(),
       revision: 2,
     })
+    const offerCommand = {
+      role: 'offer' as const,
+      conversationId,
+      callId,
+      callerUserId: userId,
+      callerDeviceId: deviceId,
+      calleeUserId: otherUserId,
+      calleeDeviceId: null,
+      sdp: offerSdp,
+    }
+    const offerProof = await alice.signCallBinding(offerCommand)
+    await expect(bob.verifyCallBinding({
+      ...offerCommand,
+      signature: offerProof.signature,
+    })).resolves.toEqual({ verified: true })
+    await expect(bob.verifyCallBinding({
+      ...offerCommand,
+      sdp: answerSdp,
+      signature: offerProof.signature,
+    })).rejects.toMatchObject({ code: 'operation-failed' })
+    const answerCommand = {
+      role: 'answer' as const,
+      conversationId,
+      callId,
+      callerUserId: userId,
+      callerDeviceId: deviceId,
+      calleeUserId: otherUserId,
+      calleeDeviceId: otherDeviceId,
+      sdp: answerSdp,
+    }
+    const answerProof = await bob.signCallBinding(answerCommand)
+    await expect(alice.verifyCallBinding({
+      ...answerCommand,
+      signature: answerProof.signature,
+    })).resolves.toEqual({ verified: true })
+    const codeCommand = {
+      conversationId,
+      callId,
+      callerUserId: userId,
+      callerDeviceId: deviceId,
+      calleeUserId: otherUserId,
+      calleeDeviceId: otherDeviceId,
+      offerSdp,
+      offerSignature: offerProof.signature,
+      answerSdp,
+      answerSignature: answerProof.signature,
+    }
+    expect(await alice.deriveCallVerificationCode(codeCommand))
+      .toEqual(await bob.deriveCallVerificationCode(codeCommand))
     alice.dispose()
     bob.dispose()
 

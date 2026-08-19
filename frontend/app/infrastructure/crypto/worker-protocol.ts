@@ -13,6 +13,12 @@ import {
   type MlsWorkerRequest,
   type MlsWorkerResult,
 } from './mls-worker-protocol'
+import {
+  parseCallWorkerRequest,
+  parseCallWorkerResult,
+  type CallWorkerRequest,
+  type CallWorkerResult,
+} from './call-worker-protocol'
 
 const PROTOCOL_VERSION = 2
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
@@ -41,7 +47,7 @@ interface WorkerRequestBase {
   requestId: string
 }
 
-export type DeviceCryptoWorkerRequest = MlsWorkerRequest
+export type DeviceCryptoWorkerRequest = MlsWorkerRequest | CallWorkerRequest
   | (WorkerRequestBase & {
       type: 'provision'
       command: DeviceCryptoIdentityCommand
@@ -67,7 +73,7 @@ export type DeviceCryptoWorkerResponse =
       requestId: string
       ok: true
       result: DeviceCryptoIdentity | PublicKeyPackageValidationResult
-        | GeneratedDeviceKeyPackages | MlsWorkerResult
+        | GeneratedDeviceKeyPackages | MlsWorkerResult | CallWorkerResult
         | { disposed: true }
     }
   | {
@@ -258,7 +264,7 @@ export function parseWorkerRequest(value: unknown): DeviceCryptoWorkerRequest | 
       command: candidate.command,
     }
   }
-  return parseMlsWorkerRequest(value)
+  return parseMlsWorkerRequest(value) ?? parseCallWorkerRequest(value)
 }
 
 export function parseWorkerResponse(value: unknown): DeviceCryptoWorkerResponse | null {
@@ -325,6 +331,15 @@ export function parseWorkerResponse(value: unknown): DeviceCryptoWorkerResponse 
       result: mlsResult,
     }
   }
+  const callResult = parseCallWorkerResult(candidate.result)
+  if (callResult) {
+    return {
+      version: PROTOCOL_VERSION,
+      requestId: candidate.requestId,
+      ok: true,
+      result: callResult,
+    }
+  }
   const identity = parseIdentity(candidate.result)
   if (!identity) return null
   return {
@@ -383,7 +398,7 @@ export function requestEnvelope(
 export function successResponse(
   requestId: string,
   result: DeviceCryptoIdentity | PublicKeyPackageValidationResult
-    | GeneratedDeviceKeyPackages | MlsWorkerResult
+    | GeneratedDeviceKeyPackages | MlsWorkerResult | CallWorkerResult
     | { disposed: true },
 ): DeviceCryptoWorkerResponse {
   return { version: PROTOCOL_VERSION, requestId, ok: true, result }

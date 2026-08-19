@@ -123,6 +123,26 @@ impl DeviceBootstrap {
         }))
     }
 
+    pub(crate) fn device_signature_key(
+        &self,
+        conversation_id: &str,
+        user_id: &str,
+        device_id: &str,
+    ) -> Result<Vec<u8>, ConversationError> {
+        let expected = crate::encode_credential_identity(user_id, device_id)
+            .map_err(|_| ConversationError::MembershipUpdateFailed)?;
+        let group = self.load_group(conversation_id)?;
+        let matches = group
+            .members()
+            .filter(|member| member.credential.serialized_content() == expected)
+            .map(|member| member.signature_key.as_slice().to_vec())
+            .collect::<Vec<_>>();
+        if matches.len() != 1 {
+            return Err(ConversationError::MembershipUpdateFailed);
+        }
+        Ok(matches[0].clone())
+    }
+
     pub fn create_conversation(&mut self, conversation_id: &str) -> Result<u64, ConversationError> {
         let group_id = canonical_group_id(conversation_id)?;
         if MlsGroup::load(self._provider.storage(), &group_id)

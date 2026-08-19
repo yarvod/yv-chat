@@ -27,7 +27,12 @@ const messenger = useMessenger(
 const { $frontend } = useNuxtApp()
 const route = useRoute()
 const realtime = $frontend.createRealtimeSync()
-const calls = $frontend.createVoiceCalls(realtime, messenger.recordCallSummary)
+const calls = $frontend.createVoiceCalls(
+  realtime,
+  messenger.recordCallSummary,
+  props.user.userId,
+  props.user.deviceId,
+)
 const typing = $frontend.createTypingIndicators(realtime)
 const presence = $frontend.createPresenceIndicators()
 const typingIndicators = ref<readonly TypingIndicator[]>([])
@@ -60,7 +65,18 @@ function callsState() {
     audioOutputPickerSupported: false,
     audioOutputs: [],
     selectedAudioOutputId: '',
+    identityVerified: false,
+    verificationCode: null,
   }
+}
+
+async function startCall(conversationId: string): Promise<void> {
+  const conversation = messenger.state.conversations.find(item => (
+    item.conversationId === conversationId && item.conversationType === 'direct'
+  ))
+  const peer = conversation?.members.find(member => member.userId !== props.user.userId)
+  if (!peer) return
+  await calls.start(conversationId, peer.userId)
 }
 
 const callPeerName = computed(() => {
@@ -324,7 +340,7 @@ onBeforeUnmount(() => {
         :target-message-id="targetMessageId"
         :save-viewport="messenger.rememberViewport"
         :video-note-recorder="$frontend.videoNoteRecorder"
-        :start-call="calls.start.bind(calls)"
+        :start-call="startCall"
         @back="closeConversation"
         @group-details="groupDetailsOpen = true"
       />

@@ -301,8 +301,17 @@ export default defineNuxtPlugin(() => {
         createVoiceCalls: (
           realtime: RealtimeSyncService,
           recordHistory: VoiceCallHistoryRecorder,
+          localUserId: string,
+          localDeviceId: string,
         ) => (
-          new BrowserVoiceCallService(realtime, callConfigGateway, recordHistory)
+          new BrowserVoiceCallService(
+            realtime,
+            callConfigGateway,
+            deviceCryptoSession,
+            localUserId,
+            localDeviceId,
+            recordHistory,
+          )
         ),
         createTypingIndicators: (transport: TypingTransport) => (
           new TypingIndicatorService(transport, scheduler, clock)

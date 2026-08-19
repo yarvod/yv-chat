@@ -35,7 +35,7 @@ export type CallSignalType =
 
 export interface CallRealtimeFrame {
   type: CallSignalType
-  version: 1
+  version: 2
   eventId: string
   conversationId: string
   callId: string
@@ -44,6 +44,7 @@ export interface CallRealtimeFrame {
   sdp: string | null
   candidate: string | null
   reason: string | null
+  identitySignature: string | null
 }
 
 export type RealtimeFrame =

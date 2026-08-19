@@ -9,6 +9,7 @@ import {
   BrowserCallToneService,
   type CallTonePlayer,
 } from '../browser/browser-call-tone-service'
+import type { CallIdentityGateway } from '../../application/ports/call-identity-gateway'
 
 interface CallSignalingTransport {
   sendCallSignal(signal: OutgoingCallSignal): boolean
@@ -38,6 +39,16 @@ const IDLE_STATE: VoiceCallState = {
   audioOutputPickerSupported: false,
   audioOutputs: [],
   selectedAudioOutputId: '',
+  identityVerified: false,
+  verificationCode: null,
+}
+
+interface AuthenticatedOffer {
+  sdp: string
+  signature: Uint8Array
+  callerUserId: string
+  callerDeviceId: string
+  calleeUserId: string
 }
 
 export class BrowserVoiceCallService {
@@ -46,7 +57,8 @@ export class BrowserVoiceCallService {
   private peer: RTCPeerConnection | null = null
   private localStream: MediaStream | null = null
   private remoteAudio: HTMLAudioElement | null = null
-  private pendingOffer: string | null = null
+  private pendingOffer: AuthenticatedOffer | null = null
+  private localOffer: AuthenticatedOffer | null = null
   private pendingCandidates: RTCIceCandidateInit[] = []
   private ringTimer: ReturnType<typeof setTimeout> | null = null
   private caller = false
@@ -58,6 +70,9 @@ export class BrowserVoiceCallService {
   constructor(
     private readonly signaling: CallSignalingTransport,
     private readonly config: CallConfigGateway,
+    private readonly identity: CallIdentityGateway,
+    private readonly localUserId: string,
+    private readonly localDeviceId: string,
     private readonly recordHistory: VoiceCallHistoryRecorder | null = null,
     private readonly tones: CallTonePlayer = new BrowserCallToneService(),
   ) {}
@@ -68,7 +83,7 @@ export class BrowserVoiceCallService {
     return () => this.listeners.delete(listener)
   }
 
-  async start(conversationId: string): Promise<void> {
+  async start(conversationId: string, calleeUserId: string): Promise<void> {
     if (this.state.phase !== 'idle' && this.state.phase !== 'ended' && this.state.phase !== 'error') {
       return
     }
@@ -89,17 +104,39 @@ export class BrowserVoiceCallService {
       audioOutputPickerSupported: false,
       audioOutputs: [],
       selectedAudioOutputId: '',
+      identityVerified: false,
+      verificationCode: null,
     })
     try {
       const peer = await this.preparePeer()
       const offer = await peer.createOffer({ offerToReceiveAudio: true })
       await peer.setLocalDescription(offer)
-      if (!offer.sdp || !this.send({
+      const sdp = peer.localDescription?.sdp
+      if (!sdp) throw new Error('missing local SDP')
+      const signed = await this.identity.signCallBinding({
+        role: 'offer',
+        conversationId,
+        callId,
+        callerUserId: this.localUserId,
+        callerDeviceId: this.localDeviceId,
+        calleeUserId,
+        calleeDeviceId: null,
+        sdp,
+      })
+      this.localOffer = {
+        sdp,
+        signature: signed.signature,
+        callerUserId: this.localUserId,
+        callerDeviceId: this.localDeviceId,
+        calleeUserId,
+      }
+      if (!this.send({
         type: 'call_offer',
-        version: 1,
+        version: 2,
         conversation_id: conversationId,
         call_id: callId,
-        sdp: offer.sdp,
+        sdp,
+        identity_signature: bytesToHex(signed.signature),
       })) {
         throw new Error('signaling unavailable')
       }
@@ -125,18 +162,50 @@ export class BrowserVoiceCallService {
     this.update({ ...this.state, phase: 'connecting', notice: 'Соединяем…' })
     try {
       const peer = await this.preparePeer()
-      await peer.setRemoteDescription({ type: 'offer', sdp: this.pendingOffer })
+      await peer.setRemoteDescription({ type: 'offer', sdp: this.pendingOffer.sdp })
       await this.flushCandidates()
       const answer = await peer.createAnswer()
       await peer.setLocalDescription(answer)
-      if (!answer.sdp || !this.send({
+      const sdp = peer.localDescription?.sdp
+      if (!sdp) throw new Error('missing local SDP')
+      const offer = this.pendingOffer
+      const signed = await this.identity.signCallBinding({
+        role: 'answer',
+        conversationId: this.state.conversationId,
+        callId: this.state.callId,
+        callerUserId: offer.callerUserId,
+        callerDeviceId: offer.callerDeviceId,
+        calleeUserId: this.localUserId,
+        calleeDeviceId: this.localDeviceId,
+        sdp,
+      })
+      const verification = await this.identity.deriveCallVerificationCode({
+        conversationId: this.state.conversationId,
+        callId: this.state.callId,
+        callerUserId: offer.callerUserId,
+        callerDeviceId: offer.callerDeviceId,
+        calleeUserId: this.localUserId,
+        calleeDeviceId: this.localDeviceId,
+        offerSdp: offer.sdp,
+        offerSignature: offer.signature,
+        answerSdp: sdp,
+        answerSignature: signed.signature,
+      })
+      if (!this.send({
         type: 'call_answer',
-        version: 1,
+        version: 2,
         conversation_id: this.state.conversationId,
         call_id: this.state.callId,
-        sdp: answer.sdp,
+        sdp,
+        identity_signature: bytesToHex(signed.signature),
       })) throw new Error('signaling unavailable')
       this.pendingOffer = null
+      this.update({
+        ...this.state,
+        identityVerified: true,
+        verificationCode: verification.code,
+        notice: 'Устройство подтверждено MLS',
+      })
     } catch (error) {
       this.fail(this.microphoneError(error), true)
     }
@@ -240,10 +309,43 @@ export class BrowserVoiceCallService {
       ) {
         this.send({
           type: 'call_rejected',
-          version: 1,
+          version: 2,
           conversation_id: frame.conversationId,
           call_id: frame.callId,
           reason: 'busy',
+        })
+        return
+      }
+      if (!frame.sdp || !frame.identitySignature) return
+      let verifiedOffer: AuthenticatedOffer
+      try {
+        const signature = hexToBytes(frame.identitySignature)
+        await this.identity.verifyCallBinding({
+          role: 'offer',
+          conversationId: frame.conversationId,
+          callId: frame.callId,
+          callerUserId: frame.actorUserId,
+          callerDeviceId: frame.actorDeviceId,
+          calleeUserId: this.localUserId,
+          calleeDeviceId: null,
+          sdp: frame.sdp,
+          signature,
+        })
+        verifiedOffer = {
+          sdp: frame.sdp,
+          signature,
+          callerUserId: frame.actorUserId,
+          callerDeviceId: frame.actorDeviceId,
+          calleeUserId: this.localUserId,
+        }
+      } catch {
+        this.cleanup()
+        this.update({
+          ...IDLE_STATE,
+          phase: 'error',
+          conversationId: frame.conversationId,
+          callId: frame.callId,
+          notice: 'Не удалось подтвердить устройство звонящего',
         })
         return
       }
@@ -252,7 +354,7 @@ export class BrowserVoiceCallService {
       this.offerSent = false
       this.summaryRecorded = false
       this.connectedAt = null
-      this.pendingOffer = frame.sdp
+      this.pendingOffer = verifiedOffer
       this.update({
         phase: 'incoming',
         conversationId: frame.conversationId,
@@ -264,6 +366,8 @@ export class BrowserVoiceCallService {
         audioOutputPickerSupported: false,
         audioOutputs: [],
         selectedAudioOutputId: '',
+        identityVerified: true,
+        verificationCode: null,
       })
       this.tones.startIncoming()
       navigator.vibrate?.([280, 140, 280])
@@ -271,12 +375,51 @@ export class BrowserVoiceCallService {
       return
     }
     if (frame.callId !== this.state.callId) return
-    if (frame.type === 'call_answer' && this.peer && frame.sdp) {
-      this.tones.stop()
-      this.clearRingTimeout()
-      await this.peer.setRemoteDescription({ type: 'answer', sdp: frame.sdp })
-      await this.flushCandidates()
-      this.update({ ...this.state, phase: 'connecting', notice: 'Соединяем…' })
+    if (
+      frame.type === 'call_answer' && this.peer && frame.sdp
+      && frame.identitySignature && this.localOffer
+    ) {
+      try {
+        const signature = hexToBytes(frame.identitySignature)
+        const offer = this.localOffer
+        await this.identity.verifyCallBinding({
+          role: 'answer',
+          conversationId: frame.conversationId,
+          callId: frame.callId,
+          callerUserId: this.localUserId,
+          callerDeviceId: this.localDeviceId,
+          calleeUserId: frame.actorUserId,
+          calleeDeviceId: frame.actorDeviceId,
+          sdp: frame.sdp,
+          signature,
+        })
+        const verification = await this.identity.deriveCallVerificationCode({
+          conversationId: frame.conversationId,
+          callId: frame.callId,
+          callerUserId: this.localUserId,
+          callerDeviceId: this.localDeviceId,
+          calleeUserId: frame.actorUserId,
+          calleeDeviceId: frame.actorDeviceId,
+          offerSdp: offer.sdp,
+          offerSignature: offer.signature,
+          answerSdp: frame.sdp,
+          answerSignature: signature,
+        })
+        this.tones.stop()
+        this.clearRingTimeout()
+        await this.peer.setRemoteDescription({ type: 'answer', sdp: frame.sdp })
+        await this.flushCandidates()
+        this.update({
+          ...this.state,
+          phase: 'connecting',
+          identityVerified: true,
+          verificationCode: verification.code,
+          notice: 'Устройство подтверждено MLS',
+        })
+      } catch {
+        this.sendTerminal('call_ended', 'identity_error')
+        this.fail('Не удалось подтвердить устройство собеседника')
+      }
       return
     }
     if (frame.type === 'ice_candidate' && frame.candidate) {
@@ -338,7 +481,7 @@ export class BrowserVoiceCallService {
       if (!event.candidate || !this.state.conversationId || !this.state.callId) return
       this.send({
         type: 'ice_candidate',
-        version: 1,
+        version: 2,
         conversation_id: this.state.conversationId,
         call_id: this.state.callId,
         candidate: JSON.stringify(event.candidate.toJSON()),
@@ -348,6 +491,10 @@ export class BrowserVoiceCallService {
       if (peer.connectionState === 'connected') {
         this.tones.stop()
         this.connectedAt = Date.now()
+        if (!this.state.identityVerified) {
+          this.fail('Не удалось подтвердить устройство собеседника', true)
+          return
+        }
         this.update({ ...this.state, phase: 'active', startedAt: this.connectedAt, notice: null })
       } else if (peer.connectionState === 'failed') {
         this.finish('Не удалось установить соединение', 'failed')
@@ -383,7 +530,7 @@ export class BrowserVoiceCallService {
     if (!this.state.conversationId || !this.state.callId) return
     this.send({
       type,
-      version: 1,
+      version: 2,
       conversation_id: this.state.conversationId,
       call_id: this.state.callId,
       reason,
@@ -427,6 +574,7 @@ export class BrowserVoiceCallService {
     if (this.remoteAudio) this.remoteAudio.srcObject = null
     this.remoteAudio = null
     this.pendingOffer = null
+    this.localOffer = null
     this.pendingCandidates = []
     if (this.listeningForDeviceChanges) {
       navigator.mediaDevices?.removeEventListener?.('devicechange', this.handleDeviceChange)
@@ -555,4 +703,17 @@ export class BrowserVoiceCallService {
     this.state = state
     for (const listener of this.listeners) listener(state)
   }
+}
+
+function bytesToHex(value: Uint8Array): string {
+  return [...value].map(byte => byte.toString(16).padStart(2, '0')).join('')
+}
+
+function hexToBytes(value: string): Uint8Array {
+  if (!/^[0-9a-f]{128}$/.test(value)) throw new TypeError('invalid call signature')
+  const result = new Uint8Array(64)
+  for (let index = 0; index < result.length; index += 1) {
+    result[index] = Number.parseInt(value.slice(index * 2, index * 2 + 2), 16)
+  }
+  return result
 }

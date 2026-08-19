@@ -1,8 +1,8 @@
 import { DeviceCryptoError } from '../../application/device-crypto/errors'
 
 // A new immutable path is mandatory whenever the generated JS/WASM binding changes.
-// v7 adds public local epoch/roster inspection; v1-v6 remain rolling assets.
-const MODULE_URL = '/crypto/v7/yv_chat_openmls_provider.js'
+// v8 adds MLS-authenticated WebRTC call bindings; v1-v7 remain rolling assets.
+const MODULE_URL = '/crypto/v8/yv_chat_openmls_provider.js'
 
 export interface OpenMlsSealedSnapshot {
   readonly revision: bigint
@@ -54,6 +54,39 @@ export interface OpenMlsDeviceBootstrap {
     clientMessageId: string,
     ciphertext: Uint8Array,
   ): Uint8Array
+  signCallBinding(
+    role: 'offer' | 'answer',
+    conversationId: string,
+    callId: string,
+    callerUserId: string,
+    callerDeviceId: string,
+    calleeUserId: string,
+    calleeDeviceId: string,
+    sdp: string,
+  ): Uint8Array
+  verifyCallBinding(
+    role: 'offer' | 'answer',
+    conversationId: string,
+    callId: string,
+    callerUserId: string,
+    callerDeviceId: string,
+    calleeUserId: string,
+    calleeDeviceId: string,
+    sdp: string,
+    signature: Uint8Array,
+  ): void
+  callVerificationCode(
+    conversationId: string,
+    callId: string,
+    callerUserId: string,
+    callerDeviceId: string,
+    calleeUserId: string,
+    calleeDeviceId: string,
+    offerSdp: string,
+    offerSignature: Uint8Array,
+    answerSdp: string,
+    answerSignature: Uint8Array,
+  ): string
   sealState(key: CryptoKey, revision: bigint): Promise<OpenMlsSealedSnapshot>
   free(): void
 }
@@ -124,6 +157,9 @@ function isOpenMlsModule(value: unknown): value is OpenMlsModule {
     && typeof prototype.rejoinConversation === 'function'
     && typeof prototype.protectApplicationMessage === 'function'
     && typeof prototype.unprotectApplicationMessage === 'function'
+    && typeof prototype.signCallBinding === 'function'
+    && typeof prototype.verifyCallBinding === 'function'
+    && typeof prototype.callVerificationCode === 'function'
 }
 
 type OpenMlsModuleLoader = () => Promise<unknown>

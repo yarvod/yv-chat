@@ -23,6 +23,9 @@ function moduleFixture(initialize: () => Promise<unknown>): OpenMlsModule {
     rejoinConversation: vi.fn(),
     protectApplicationMessage: vi.fn(),
     unprotectApplicationMessage: vi.fn(),
+    signCallBinding: vi.fn(),
+    verifyCallBinding: vi.fn(),
+    callVerificationCode: vi.fn(),
   })
   return {
     default: initialize,

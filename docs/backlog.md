@@ -576,6 +576,8 @@ focus/navigation для frozen/discarded mobile PWA tasks.
 
 ### BL-078 — MLS-authenticated WebRTC call identity
 
+Статус: **completed and locally verified; not deployed** (`WP-104`).
+
 Результат: участники могут криптографически проверить, что DTLS-SRTP media endpoint
 принадлежит ожидаемому MLS device identity, а signaling backend не может незаметно
 подменить WebRTC fingerprint.
@@ -588,6 +590,13 @@ focus/navigation для frozen/discarded mobile PWA tasks.
 - negative tests для modified SDP/fingerprint, stale signature, wrong device,
   compromised signaling relay и multi-device answer race;
 - versioned rollout без silent fallback к unauthenticated call identity.
+
+Реализовано локально: v2 offer/answer signatures используют sealed Ed25519
+credential keys current MLS leaves, strict SHA-256 DTLS fingerprint parsing и exact
+call/party context; обе стороны вычисляют одинаковый server-independent comparison
+code. Modified SDP, stale/wrong-device bindings, v1 downgrade и multi-device answer
+replacement покрыты negative tests. Production остаётся на предыдущей версии до
+отдельного атомарного rollout frontend/backend.
 
 ### BL-036 — Video calls и platform evaluation
 

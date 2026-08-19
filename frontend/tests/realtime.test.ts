@@ -79,7 +79,7 @@ describe('realtime sync', () => {
     expect(parseRealtimeFrame({ type: 'hello' })).toEqual({ type: 'hello' })
     expect(parseRealtimeFrame({
       type: 'call_offer',
-      version: 1,
+      version: 2,
       event_id: 'call-event',
       conversation_id: 'conversation',
       call_id: 'call',
@@ -88,9 +88,10 @@ describe('realtime sync', () => {
       sdp: 'v=0',
       candidate: null,
       reason: null,
+      identity_signature: 'a'.repeat(128),
     })).toEqual({
       type: 'call_offer',
-      version: 1,
+      version: 2,
       eventId: 'call-event',
       conversationId: 'conversation',
       callId: 'call',
@@ -99,6 +100,7 @@ describe('realtime sync', () => {
       sdp: 'v=0',
       candidate: null,
       reason: null,
+      identitySignature: 'a'.repeat(128),
     })
     expect(parseRealtimeFrame({
       type: 'new_message',

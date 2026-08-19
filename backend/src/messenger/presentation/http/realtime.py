@@ -104,7 +104,7 @@ def _notification_payload(
     if isinstance(notification, CallSignalNotification):
         return {
             "type": notification.signal_type.value,
-            "version": 1,
+            "version": 2,
             "event_id": str(notification.event_id),
             "conversation_id": str(notification.conversation_id),
             "call_id": str(notification.call_id),
@@ -113,6 +113,7 @@ def _notification_payload(
             "sdp": notification.sdp,
             "candidate": notification.candidate,
             "reason": notification.reason,
+            "identity_signature": notification.identity_signature,
         }
     payload: dict[str, str | int | bool | None] = {
         "type": notification.event_type.value,
@@ -299,18 +300,19 @@ def _parse_call_signal(
     common = {"type", "version", "conversation_id", "call_id"}
     variable: set[str]
     if signal_type in {CallSignalType.OFFER, CallSignalType.ANSWER}:
-        variable = {"sdp"}
+        variable = {"sdp", "identity_signature"}
     elif signal_type is CallSignalType.ICE_CANDIDATE:
         variable = {"candidate"}
     else:
         variable = {"reason"}
-    if set(payload) != common | variable or payload.get("version") != 1:
+    if set(payload) != common | variable or payload.get("version") != 2:
         raise ValueError("invalid call signal shape")
     conversation_id = UUID(str(payload["conversation_id"]))
     call_id = UUID(str(payload["call_id"]))
     sdp = payload.get("sdp")
     candidate = payload.get("candidate")
     reason = payload.get("reason")
+    identity_signature = payload.get("identity_signature")
     if sdp is not None and (not isinstance(sdp, str) or not 1 <= len(sdp) <= 65_536):
         raise ValueError("invalid SDP")
     if candidate is not None and (
@@ -319,6 +321,14 @@ def _parse_call_signal(
         raise ValueError("invalid ICE candidate")
     if reason is not None and (not isinstance(reason, str) or not 1 <= len(reason) <= 64):
         raise ValueError("invalid call reason")
+    if identity_signature is not None and (
+        not isinstance(identity_signature, str)
+        or len(identity_signature) != 128
+        or any(character not in "0123456789abcdef" for character in identity_signature)
+    ):
+        raise ValueError("invalid call identity signature")
+    if signal_type in {CallSignalType.OFFER, CallSignalType.ANSWER} and identity_signature is None:
+        raise ValueError("call identity signature is required")
     return CallSignalCommand(
         signal_type=signal_type,
         actor_user_id=principal.user_id,
@@ -328,6 +338,7 @@ def _parse_call_signal(
         sdp=sdp,
         candidate=candidate,
         reason=reason,
+        identity_signature=identity_signature,
     )
 
 

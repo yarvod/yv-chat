@@ -103,6 +103,7 @@ export function parseRealtimeFrame(value: unknown): RealtimeFrame {
     const keys = [
       'type', 'version', 'event_id', 'conversation_id', 'call_id',
       'actor_user_id', 'actor_device_id', 'sdp', 'candidate', 'reason',
+      'identity_signature',
     ]
     if (Object.keys(frame).length !== keys.length || !keys.every(key => key in frame)) {
       throw new ApplicationError(200, 'invalid-response', 'invalid realtime frame')
@@ -115,24 +116,32 @@ export function parseRealtimeFrame(value: unknown): RealtimeFrame {
       }
       return value
     }
-    if (frame.version !== 1) {
+    if (frame.version !== 2) {
       throw new ApplicationError(200, 'invalid-response', 'invalid realtime frame')
     }
     const sdp = nullableString('sdp')
     const candidate = nullableString('candidate')
     const reason = nullableString('reason')
+    const identitySignature = (() => {
+      const value = frame.identity_signature
+      if (value === null) return null
+      if (typeof value !== 'string' || !/^[0-9a-f]{128}$/.test(value)) {
+        throw new ApplicationError(200, 'invalid-response', 'invalid realtime frame')
+      }
+      return value
+    })()
     if (
       (type === 'call_offer' || type === 'call_answer')
-        ? sdp === null || candidate !== null || reason !== null
+        ? sdp === null || candidate !== null || reason !== null || identitySignature === null
         : type === 'ice_candidate'
-          ? candidate === null || sdp !== null || reason !== null
-          : reason === null || sdp !== null || candidate !== null
+          ? candidate === null || sdp !== null || reason !== null || identitySignature !== null
+          : reason === null || sdp !== null || candidate !== null || identitySignature !== null
     ) {
       throw new ApplicationError(200, 'invalid-response', 'invalid realtime frame')
     }
     return {
       type: type as CallRealtimeFrame['type'],
-      version: 1,
+      version: 2,
       eventId: requiredString(frame, 'event_id'),
       conversationId: requiredString(frame, 'conversation_id'),
       callId: requiredString(frame, 'call_id'),
@@ -141,6 +150,7 @@ export function parseRealtimeFrame(value: unknown): RealtimeFrame {
       sdp,
       candidate,
       reason,
+      identitySignature,
     }
   }
   if (!DURABLE_TYPES.has(type as DurableRealtimeEventType)) {

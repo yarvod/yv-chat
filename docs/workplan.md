@@ -1,70 +1,72 @@
 # Текущий workplan
 
-## WP-103 — Выбор аудиовыхода в полноэкранном звонке
+## WP-104 — MLS-authenticated WebRTC call identity
 
-Статус: **implemented and deployed; physical device acceptance pending**
-Backlog: `BL-035`
+Статус: **completed and locally verified; not deployed**
+Backlog: `BL-078`
 
-Цель: дать пользователю понятный полноэкранный выбор доступного маршрута звука
-во время голосового звонка: громкий динамик, разговорный динамик, проводные или
-Bluetooth-наушники — если конкретный браузер действительно предоставляет этот
-аудиовыход, и системный маршрут как безопасный fallback.
+Цель: сделать подмену WebRTC DTLS fingerprint через скомпрометированный signaling
+обнаруживаемой до принятия remote SDP и показать одинаковый код сверки на обоих
+устройствах. Изменения остаются на локальной feature branch и не деплоятся.
 
 ### Security и architecture invariants
 
-- переключение меняет только sink удалённого WebRTC audio element и не затрагивает
-  microphone track, signaling, TURN credentials или MLS state;
-- UI не изображает неподдерживаемый разговорный динамик как работающую кнопку;
-- browser/system picker вызывается только прямым действием пользователя;
-- server и Nginx не участвуют в выборе аудиоустройства и не получают его label/id;
-- отсутствие browser API не прерывает звонок: маршрут остаётся под контролем ОС.
+- WebRTC media по-прежнему шифруется стандартным DTLS-SRTP; FastAPI и coturn не
+  получают media keys или plaintext;
+- offer/answer binding подписывается sealed Ed25519 device key, credential которого
+  уже является leaf локального MLS group;
+- verifier получает public key и identity из локального MLS roster, а не доверяет
+  данным signaling backend;
+- canonical binding включает protocol/role, `conversation_id`, `call_id`, обе
+  user/device стороны и единственный canonical SHA-256 DTLS fingerprint;
+- modified/ambiguous fingerprint, stale signature, wrong device или отсутствующий
+  MLS leaf отклоняются до `setRemoteDescription`;
+- signaling protocol v2 не имеет silent fallback к unauthenticated v1;
+- private key не экспортируется из Rust/WASM runtime.
 
 ### Scope
 
-- capability-aware панель «Куда выводить звук» в полноэкранном call UI;
-- системный маршрут и отдельные кнопки для реально enumerated audio outputs;
-- понятные типы: громкая связь, телефон, наушники, Bluetooth и другой аудиовыход;
-- native browser/system output picker через `MediaDevices.selectAudioOutput()`, если
-  он доступен;
-- сохранение выбранного устройства при повторном enumerate и корректный fallback
-  на системный маршрут при отключении гарнитуры;
-- component/service tests и platform limitation copy.
+- отдельный threat model и ADR;
+- Rust/OpenMLS intent API для sign/verify и детерминированного verification code;
+- worker/session boundary без выдачи private key в TypeScript;
+- version 2 call signaling DTO/parser/snapshot для authenticated offer/answer;
+- fail-closed WebRTC integration и MLS-verified state/code в call UI;
+- negative Rust, frontend и backend tests, включая answer race semantics;
+- immutable `/crypto/v8/` browser asset и обновлённый service-worker precache.
 
 ### Exclusions
 
-- принудительное управление iOS earpiece/speaker там, где WebKit не предоставляет
-  Audio Output Devices API;
-- native iOS/Android wrapper, CallKit/ConnectionService;
-- изменение WebRTC encryption, signaling, coturn или Nginx.
+- production rollout, SSH, Nginx/coturn changes или push/deploy;
+- group calls, video calls и native mobile wrapper;
+- скрытие signaling metadata или TURN IP metadata;
+- обещание Telegram protocol equivalence: Telegram использует другую call/key
+  architecture, а здесь identity authentication построена поверх MLS device roster.
 
 ### Definition of Done
 
-- fullscreen UI показывает текущий маршрут и доступные реальные варианты;
-- Bluetooth/наушники можно выбрать непосредственно или через browser picker;
-- отключённое устройство безопасно возвращает звонок на системный маршрут;
-- на неподдерживаемой платформе UI объясняет, что выбор выполняется средствами ОС;
-- frontend tests, lint, typecheck и production build зелёные;
-- rollout проверен на production.
+- обе стороны проверяют remote fingerprint по MLS device identity до применения SDP;
+- обе стороны получают один и тот же server-independent verification code;
+- tampered SDP/fingerprint, replayed binding и wrong actor device fail closed;
+- v1 frames отклоняются parser/server tests;
+- full local CI, Rust/WASM build и frontend production build зелёные;
+- ветка и коммиты остаются локальными, production не изменён.
 
 ### Result
 
-- fullscreen call UI получил отдельную панель «Куда выводить звук» с текущим
-  system default и реальными browser-enumerated routes;
-- browser labels классифицируются только для presentation как «Громкая связь»,
-  «Телефон», «Наушники», «Bluetooth» или общий аудиовыход; несуществующий sink не
-  синтезируется;
-- `MediaDevices.selectAudioOutput()` вызывается из прямого клика и добавляет
-  разрешённое устройство к selector, затем routing выполняется через `setSinkId()`;
-- `devicechange` удаляет пропавшую гарнитуру и возвращает remote audio на системный
-  sink; отказ/cancel picker не роняет текущий звонок;
-- unsupported mobile WebKit получает явную подсказку про системное меню вместо
-  ложного phone/speaker toggle;
-- frontend `332` tests, ESLint, Nuxt typecheck и production build зелёные;
-- полный repository CI зелёный: backend `276 passed, 12 skipped`, Rust/OpenMLS
-  `23 passed`, frontend `332 passed`, lint/format/import boundaries/mypy/typecheck,
-  production build и Compose/deployment checks;
-- local browser shell smoke выполнен без console errors; end-to-end physical
-  speaker/earpiece/Bluetooth acceptance ещё ожидается;
-- feature commit `a21d154`; GitHub CI `32274481108` и production deploy
-  `32274481103` зелёные; оба public origins отвечают health `200`, unauthenticated
-  call config — `401`, production frontend/backend healthy на tag `sha-a21d154…`.
+- Rust/OpenMLS sealed runtime подписывает и проверяет domain-separated offer/answer
+  bindings без экспорта private key; verifier разрешает public key только из exact
+  current MLS leaf локальной conversation;
+- signaling v2 передаёт bounded lowercase Ed25519 signature вместе с SDP, сохраняет
+  её в reconnect snapshot и полностью отклоняет v1 вместо downgrade;
+- caller и callee применяют remote SDP только после MLS-проверки, а UI показывает
+  подтверждённый identity status и одинаковый 12-digit comparison code;
+- offer остаётся адресованным user, поэтому может звонить на все его MLS devices;
+  answer фиксирует exact winning device, а поздний ответ другого device отклоняется;
+- строгий SDP parser принимает только один unique SHA-256 DTLS fingerprint и fail
+  closed для modified/ambiguous SDP, stale call, wrong conversation/user/device;
+- immutable `/crypto/v8/` release WASM с новыми intent APIs собран и включён в PWA
+  precache; старые rolling assets сохранены;
+- полный локальный `make ci` зелёный: backend `278 passed, 12 skipped`, Rust `26
+  passed`, frontend `334 passed`, lint/format/import contracts/mypy/typecheck,
+  native+WASM clippy/build, Nuxt production build, Compose/deployment/docs checks;
+- production, Nginx, coturn, SSH и GitHub не изменялись.

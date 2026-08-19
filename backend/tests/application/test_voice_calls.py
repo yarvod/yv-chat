@@ -22,6 +22,8 @@ from tests.application.fakes import (
 )
 
 NOW = datetime(2026, 8, 19, 12, 0, tzinfo=UTC)
+OFFER_SIGNATURE = "a" * 128
+ANSWER_SIGNATURE = "b" * 128
 
 
 @dataclass(slots=True)
@@ -95,12 +97,16 @@ async def test_offer_answer_candidate_and_end_are_device_scoped() -> None:
             conversation.id,
             call_id,
             sdp="offer-sdp",
+            identity_signature=OFFER_SIGNATURE,
         )
     )
     offer = realtime.notifications.pop()
     assert offer.user_id == bob.id
     assert offer.target_device_id is None
     assert offer.sdp == "offer-sdp"
+    assert offer.identity_signature == OFFER_SIGNATURE
+    snapshot = await coordinator.snapshot(user_id=bob.id, device_id=bob_device.id)
+    assert snapshot[0].identity_signature == OFFER_SIGNATURE
     assert push.notifications[0].event_type == "incoming_call"
     assert push.notifications[0].message_id is None
     assert push.notifications[0].call_id == call_id
@@ -113,11 +119,13 @@ async def test_offer_answer_candidate_and_end_are_device_scoped() -> None:
             conversation.id,
             call_id,
             sdp="answer-sdp",
+            identity_signature=ANSWER_SIGNATURE,
         )
     )
     answer, answered_elsewhere = realtime.notifications
     assert answer.user_id == alice.id
     assert answer.target_device_id == alice_device.id
+    assert answer.identity_signature == ANSWER_SIGNATURE
     assert answered_elsewhere.excluded_device_id == bob_device.id
 
     realtime.notifications.clear()
@@ -161,6 +169,7 @@ async def test_outsider_and_group_calls_are_rejected() -> None:
                 conversation.id,
                 uuid4(),
                 sdp="offer",
+                identity_signature=OFFER_SIGNATURE,
             )
         )
 
@@ -179,5 +188,48 @@ async def test_outsider_and_group_calls_are_rejected() -> None:
                 group.id,
                 uuid4(),
                 sdp="offer",
+                identity_signature=OFFER_SIGNATURE,
+            )
+        )
+
+
+async def test_first_answer_device_wins_and_later_device_cannot_replace_its_binding() -> None:
+    coordinator, _, _, alice, alice_device, bob, bob_device, _, state, conversation = fixture()
+    bob_tablet = Device.create(user_id=bob.id, name="Bob tablet", now=NOW)
+    state.devices[bob_tablet.id] = bob_tablet
+    call_id = uuid4()
+    await coordinator.execute(
+        CallSignalCommand(
+            CallSignalType.OFFER,
+            alice.id,
+            alice_device.id,
+            conversation.id,
+            call_id,
+            sdp="offer-sdp",
+            identity_signature=OFFER_SIGNATURE,
+        )
+    )
+    await coordinator.execute(
+        CallSignalCommand(
+            CallSignalType.ANSWER,
+            bob.id,
+            bob_device.id,
+            conversation.id,
+            call_id,
+            sdp="phone-answer",
+            identity_signature=ANSWER_SIGNATURE,
+        )
+    )
+
+    with pytest.raises(CallStateConflictError, match="answered on another device"):
+        await coordinator.execute(
+            CallSignalCommand(
+                CallSignalType.ANSWER,
+                bob.id,
+                bob_tablet.id,
+                conversation.id,
+                call_id,
+                sdp="tablet-answer",
+                identity_signature="c" * 128,
             )
         )

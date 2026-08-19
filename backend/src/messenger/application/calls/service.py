@@ -40,6 +40,7 @@ class CallSignalCommand:
     sdp: str | None = None
     candidate: str | None = None
     reason: str | None = None
+    identity_signature: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,6 +57,7 @@ class CallSignalNotification:
     sdp: str | None = None
     candidate: str | None = None
     reason: str | None = None
+    identity_signature: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,7 +69,9 @@ class ActiveCall:
     callee_user_id: UUID
     callee_device_id: UUID | None
     offer_sdp: str
+    offer_identity_signature: str
     answer_sdp: str | None
+    answer_identity_signature: str | None
     caller_candidates: tuple[str, ...]
     callee_candidates: tuple[str, ...]
     expires_at: datetime
@@ -133,6 +137,7 @@ class VoiceCallCoordinator:
                         actor_device_id=call.caller_device_id,
                         target_device_id=device_id,
                         sdp=call.offer_sdp,
+                        identity_signature=call.offer_identity_signature,
                     )
                 )
                 for candidate in call.caller_candidates:
@@ -162,6 +167,7 @@ class VoiceCallCoordinator:
                         actor_device_id=call.callee_device_id,
                         target_device_id=device_id,
                         sdp=call.answer_sdp,
+                        identity_signature=call.answer_identity_signature,
                     )
                 )
                 for candidate in call.callee_candidates:
@@ -237,8 +243,8 @@ class VoiceCallCoordinator:
         callee_user_id: UUID,
         now: datetime,
     ) -> tuple[tuple[CallSignalNotification, ...], PushNotification]:
-        if command.sdp is None:
-            raise CallStateConflictError("call offer requires SDP")
+        if command.sdp is None or command.identity_signature is None:
+            raise CallStateConflictError("call offer requires authenticated SDP")
         if command.call_id in self._calls or command.conversation_id in self._conversation_calls:
             raise CallStateConflictError("conversation already has an active call")
         call = ActiveCall(
@@ -249,7 +255,9 @@ class VoiceCallCoordinator:
             callee_user_id=callee_user_id,
             callee_device_id=None,
             offer_sdp=command.sdp,
+            offer_identity_signature=command.identity_signature,
             answer_sdp=None,
+            answer_identity_signature=None,
             caller_candidates=(),
             callee_candidates=(),
             expires_at=now + self._ringing_timeout,
@@ -263,6 +271,7 @@ class VoiceCallCoordinator:
             actor_user_id=command.actor_user_id,
             actor_device_id=command.actor_device_id,
             sdp=command.sdp,
+            identity_signature=command.identity_signature,
         )
         return (notification,), PushNotification(
             user_id=callee_user_id,
@@ -278,14 +287,19 @@ class VoiceCallCoordinator:
         call: ActiveCall,
         command: CallSignalCommand,
     ) -> tuple[CallSignalNotification, ...]:
-        if command.actor_user_id != call.callee_user_id or command.sdp is None:
-            raise CallStateConflictError("only callee can answer with SDP")
+        if (
+            command.actor_user_id != call.callee_user_id
+            or command.sdp is None
+            or command.identity_signature is None
+        ):
+            raise CallStateConflictError("only callee can answer with authenticated SDP")
         if call.callee_device_id not in {None, command.actor_device_id}:
             raise CallStateConflictError("call was answered on another device")
         updated = replace(
             call,
             callee_device_id=command.actor_device_id,
             answer_sdp=command.sdp,
+            answer_identity_signature=command.identity_signature,
             expires_at=self._clock.now() + self._active_timeout,
         )
         self._calls[call.call_id] = updated
@@ -298,6 +312,7 @@ class VoiceCallCoordinator:
                 actor_device_id=command.actor_device_id,
                 target_device_id=call.caller_device_id,
                 sdp=command.sdp,
+                identity_signature=command.identity_signature,
             ),
             self._notification(
                 user_id=call.callee_user_id,
@@ -389,6 +404,7 @@ class VoiceCallCoordinator:
         sdp: str | None = None,
         candidate: str | None = None,
         reason: str | None = None,
+        identity_signature: str | None = None,
     ) -> CallSignalNotification:
         return CallSignalNotification(
             user_id=user_id,
@@ -403,6 +419,7 @@ class VoiceCallCoordinator:
             sdp=sdp,
             candidate=candidate,
             reason=reason,
+            identity_signature=identity_signature,
         )
 
     def _purge_expired(self, now: datetime) -> None:

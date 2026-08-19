@@ -10,7 +10,9 @@ from fastapi.testclient import TestClient
 from starlette.testclient import WebSocketTestSession
 from starlette.websockets import WebSocketDisconnect
 
+from messenger.application.sessions.authenticate import AuthenticateSessionResult
 from messenger.domain.entities import Conversation, User
+from messenger.presentation.http.realtime import _parse_call_signal
 from tests.test_auth_http import NOW, PASSWORD, build_test_application
 
 
@@ -48,6 +50,29 @@ def receive_type(websocket: WebSocketTestSession, expected: str) -> dict[str, ob
         if payload.get("type") == expected:
             return cast(dict[str, object], payload)
     raise AssertionError(f"did not receive {expected}")
+
+
+def test_call_parser_rejects_v1_and_missing_or_malformed_identity_binding() -> None:
+    principal = AuthenticateSessionResult(
+        user_id=uuid4(),
+        session_id=uuid4(),
+        device_id=uuid4(),
+        rotated_session_credential=None,
+        absolute_expires_at=NOW + timedelta(days=1),
+    )
+    base: dict[object, object] = {
+        "type": "call_offer",
+        "conversation_id": str(uuid4()),
+        "call_id": str(uuid4()),
+        "sdp": "v=0\r\n",
+        "identity_signature": "a" * 128,
+    }
+    with pytest.raises(ValueError, match="shape"):
+        _parse_call_signal({**base, "version": 1}, principal)
+    with pytest.raises(ValueError, match="required"):
+        _parse_call_signal({**base, "version": 2, "identity_signature": None}, principal)
+    with pytest.raises(ValueError, match="identity signature"):
+        _parse_call_signal({**base, "version": 2, "identity_signature": "A" * 128}, principal)
 
 
 def test_realtime_requires_exact_origin_and_cookie() -> None:
@@ -433,24 +458,27 @@ def test_direct_call_signaling_is_authorized_and_device_routed() -> None:
             alice_socket.send_json(
                 {
                     "type": "call_offer",
-                    "version": 1,
+                    "version": 2,
                     "conversation_id": str(conversation.id),
                     "call_id": str(call_id),
                     "sdp": "v=0\r\n",
+                    "identity_signature": "a" * 128,
                 }
             )
             offer = receive_type(bob_socket, "call_offer")
             assert offer["call_id"] == str(call_id)
             assert offer["sdp"] == "v=0\r\n"
+            assert offer["identity_signature"] == "a" * 128
             assert "token" not in str(offer)
 
             bob_socket.send_json(
                 {
                     "type": "call_answer",
-                    "version": 1,
+                    "version": 2,
                     "conversation_id": str(conversation.id),
                     "call_id": str(call_id),
                     "sdp": "v=0\r\na=answer",
+                    "identity_signature": "b" * 128,
                 }
             )
             answer = receive_type(alice_socket, "call_answer")
@@ -459,7 +487,7 @@ def test_direct_call_signaling_is_authorized_and_device_routed() -> None:
             bob_socket.send_json(
                 {
                     "type": "ice_candidate",
-                    "version": 1,
+                    "version": 2,
                     "conversation_id": str(conversation.id),
                     "call_id": str(call_id),
                     "candidate": '{"candidate":"candidate:1"}',
@@ -472,7 +500,7 @@ def test_direct_call_signaling_is_authorized_and_device_routed() -> None:
             alice_socket.send_json(
                 {
                     "type": "call_ended",
-                    "version": 1,
+                    "version": 2,
                     "conversation_id": str(conversation.id),
                     "call_id": str(call_id),
                     "reason": "hangup",

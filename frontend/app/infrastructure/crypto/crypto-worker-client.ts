@@ -24,6 +24,18 @@ import type {
   UpdateMlsConversationCommand,
   UpdateMlsConversationResult,
 } from '../../application/ports/mls-conversation-gateway'
+import type {
+  CallBindingCommand,
+  CallBindingSignatureResult,
+  CallBindingVerificationResult,
+  CallIdentityGateway,
+  CallVerificationCodeCommand,
+  CallVerificationCodeResult,
+} from '../../application/ports/call-identity-gateway'
+import {
+  callRequestEnvelope,
+  type CallWorkerResult,
+} from './call-worker-protocol'
 import {
   mlsRequestEnvelope,
   type MlsWorkerResult,
@@ -53,9 +65,10 @@ function defaultWorkerFactory(): Worker {
 
 type WorkerResult = DeviceCryptoIdentity | PublicKeyPackageValidationResult
   | GeneratedDeviceKeyPackages
-  | MlsWorkerResult | { disposed: true }
+  | MlsWorkerResult | CallWorkerResult | { disposed: true }
 
-export class CryptoWorkerClient implements DeviceCryptoGateway, MlsConversationGateway {
+export class CryptoWorkerClient implements DeviceCryptoGateway, MlsConversationGateway,
+  CallIdentityGateway {
   private readonly worker: Worker
   private readonly pending = new Map<string, PendingRequest>()
   private disposed = false
@@ -174,6 +187,28 @@ export class CryptoWorkerClient implements DeviceCryptoGateway, MlsConversationG
   ): Promise<UnprotectMlsMessageResult> {
     const result = await this.send(mlsRequestEnvelope(this.requestId(), 'mls-unprotect', command))
     if (!('plaintext' in result)) throw new DeviceCryptoError('worker-protocol')
+    return result
+  }
+
+  async signCallBinding(command: CallBindingCommand): Promise<CallBindingSignatureResult> {
+    const result = await this.send(callRequestEnvelope(this.requestId(), 'call-sign', command))
+    if (!('signature' in result)) throw new DeviceCryptoError('worker-protocol')
+    return result
+  }
+
+  async verifyCallBinding(
+    command: CallBindingCommand & { signature: Uint8Array },
+  ): Promise<CallBindingVerificationResult> {
+    const result = await this.send(callRequestEnvelope(this.requestId(), 'call-verify', command))
+    if (!('verified' in result)) throw new DeviceCryptoError('worker-protocol')
+    return result
+  }
+
+  async deriveCallVerificationCode(
+    command: CallVerificationCodeCommand,
+  ): Promise<CallVerificationCodeResult> {
+    const result = await this.send(callRequestEnvelope(this.requestId(), 'call-code', command))
+    if (!('code' in result)) throw new DeviceCryptoError('worker-protocol')
     return result
   }
 

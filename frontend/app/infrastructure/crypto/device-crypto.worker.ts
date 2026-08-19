@@ -5,6 +5,7 @@ import { IndexedDbCryptoVault } from '../storage/indexeddb-crypto-vault'
 import { DeviceCryptoRuntime } from './device-crypto-runtime'
 import { loadOpenMlsModule } from './openmls-module'
 import { mlsResultTransferables, type MlsWorkerResult } from './mls-worker-protocol'
+import { callResultTransferables, type CallWorkerResult } from './call-worker-protocol'
 import {
   errorResponse,
   parseWorkerRequest,
@@ -56,6 +57,12 @@ scope.addEventListener('message', async (event: MessageEvent<unknown>) => {
       result = await current.applyCommit(request.command)
     } else if (request.type === 'mls-protect') {
       result = await current.protectMessage(request.command)
+    } else if (request.type === 'call-sign') {
+      result = await current.signCallBinding(request.command)
+    } else if (request.type === 'call-verify') {
+      result = await current.verifyCallBinding(request.command)
+    } else if (request.type === 'call-code') {
+      result = await current.deriveCallVerificationCode(request.command)
     } else {
       result = await current.unprotectMessage(request.command)
     }
@@ -63,6 +70,7 @@ scope.addEventListener('message', async (event: MessageEvent<unknown>) => {
     const transfer = 'credentialIdentity' in result
       ? [result.credentialIdentity.buffer, result.signaturePublicKey.buffer, result.keyPackage.buffer]
       : 'keyPackages' in result ? result.keyPackages.map(item => item.buffer)
+      : isCallResult(result) ? callResultTransferables(result)
       : isMlsResult(result) ? mlsResultTransferables(result) : []
     scope.postMessage(response, { transfer })
   } catch (error) {
@@ -73,4 +81,8 @@ scope.addEventListener('message', async (event: MessageEvent<unknown>) => {
 
 function isMlsResult(value: object): value is MlsWorkerResult {
   return 'revision' in value && !('credentialIdentity' in value)
+}
+
+function isCallResult(value: object): value is CallWorkerResult {
+  return 'signature' in value || 'verified' in value || 'code' in value
 }

@@ -22,9 +22,11 @@ use js_sys::{Array, Uint8Array};
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
+mod call_identity;
 mod conversation;
 mod snapshot;
 
+pub use call_identity::{CallBindingInput, CallBindingRole, CallIdentityError};
 pub use conversation::{
     AddMembersOutput, ConversationError, LocalConversationState, ProtectedApplicationMessage,
     UpdateMembersOutput,
@@ -545,6 +547,124 @@ impl DeviceBootstrap {
     ) -> Result<Vec<u8>, JsError> {
         self.unprotect_application_message(conversation_id, client_message_id, ciphertext)
             .map_err(|error| JsError::new(error.to_string().as_str()))
+    }
+
+    #[wasm_bindgen(js_name = signCallBinding)]
+    #[allow(clippy::too_many_arguments)]
+    pub fn wasm_sign_call_binding(
+        &self,
+        role: &str,
+        conversation_id: &str,
+        call_id: &str,
+        caller_user_id: &str,
+        caller_device_id: &str,
+        callee_user_id: &str,
+        callee_device_id: &str,
+        sdp: &str,
+    ) -> Result<Vec<u8>, JsError> {
+        let role = wasm_call_role(role)?;
+        self.sign_call_binding(&CallBindingInput {
+            role,
+            conversation_id,
+            call_id,
+            caller_user_id,
+            caller_device_id,
+            callee_user_id,
+            callee_device_id: wasm_callee_device(role, callee_device_id)?,
+            sdp,
+        })
+        .map_err(|error| JsError::new(error.to_string().as_str()))
+    }
+
+    #[wasm_bindgen(js_name = verifyCallBinding)]
+    #[allow(clippy::too_many_arguments)]
+    pub fn wasm_verify_call_binding(
+        &self,
+        role: &str,
+        conversation_id: &str,
+        call_id: &str,
+        caller_user_id: &str,
+        caller_device_id: &str,
+        callee_user_id: &str,
+        callee_device_id: &str,
+        sdp: &str,
+        signature: &[u8],
+    ) -> Result<(), JsError> {
+        let role = wasm_call_role(role)?;
+        self.verify_call_binding(
+            &CallBindingInput {
+                role,
+                conversation_id,
+                call_id,
+                caller_user_id,
+                caller_device_id,
+                callee_user_id,
+                callee_device_id: wasm_callee_device(role, callee_device_id)?,
+                sdp,
+            },
+            signature,
+        )
+        .map_err(|error| JsError::new(error.to_string().as_str()))
+    }
+
+    #[wasm_bindgen(js_name = callVerificationCode)]
+    #[allow(clippy::too_many_arguments)]
+    pub fn wasm_call_verification_code(
+        &self,
+        conversation_id: &str,
+        call_id: &str,
+        caller_user_id: &str,
+        caller_device_id: &str,
+        callee_user_id: &str,
+        callee_device_id: &str,
+        offer_sdp: &str,
+        offer_signature: &[u8],
+        answer_sdp: &str,
+        answer_signature: &[u8],
+    ) -> Result<String, JsError> {
+        self.call_verification_code(
+            &CallBindingInput {
+                role: CallBindingRole::Offer,
+                conversation_id,
+                call_id,
+                caller_user_id,
+                caller_device_id,
+                callee_user_id,
+                callee_device_id: None,
+                sdp: offer_sdp,
+            },
+            offer_signature,
+            &CallBindingInput {
+                role: CallBindingRole::Answer,
+                conversation_id,
+                call_id,
+                caller_user_id,
+                caller_device_id,
+                callee_user_id,
+                callee_device_id: Some(callee_device_id),
+                sdp: answer_sdp,
+            },
+            answer_signature,
+        )
+        .map_err(|error| JsError::new(error.to_string().as_str()))
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn wasm_call_role(value: &str) -> Result<CallBindingRole, JsError> {
+    match value {
+        "offer" => Ok(CallBindingRole::Offer),
+        "answer" => Ok(CallBindingRole::Answer),
+        _ => Err(JsError::new("invalid call binding role")),
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn wasm_callee_device(role: CallBindingRole, value: &str) -> Result<Option<&str>, JsError> {
+    match (role, value.is_empty()) {
+        (CallBindingRole::Offer, true) => Ok(None),
+        (CallBindingRole::Answer, false) => Ok(Some(value)),
+        _ => Err(JsError::new("invalid callee device binding")),
     }
 }
 

@@ -38,4 +38,6 @@ export interface VoiceCallState {
   audioOutputPickerSupported: boolean
   audioOutputs: readonly VoiceCallAudioOutput[]
   selectedAudioOutputId: string
+  identityVerified: boolean
+  verificationCode: string | null
 }

@@ -30,17 +30,25 @@ import type {
   UpdateMlsConversationCommand,
   UpdateMlsConversationResult,
 } from '../application/ports/mls-conversation-gateway'
+import type {
+  CallBindingCommand,
+  CallBindingSignatureResult,
+  CallBindingVerificationResult,
+  CallIdentityGateway,
+  CallVerificationCodeCommand,
+  CallVerificationCodeResult,
+} from '../application/ports/call-identity-gateway'
 
 interface ActiveDeviceCryptoScope {
   readonly binding: string
-  readonly gateway: DeviceCryptoGateway & MlsConversationGateway
+  readonly gateway: DeviceCryptoGateway & MlsConversationGateway & CallIdentityGateway
   readonly reconcile: ReconcileConversationCrypto
   readonly initialized: InitializedDeviceCrypto
 }
 
-type CryptoGatewayFactory = () => DeviceCryptoGateway & MlsConversationGateway
+type CryptoGatewayFactory = () => DeviceCryptoGateway & MlsConversationGateway & CallIdentityGateway
 
-export class DeviceCryptoSession implements MlsConversationGateway {
+export class DeviceCryptoSession implements MlsConversationGateway, CallIdentityGateway {
   private active: ActiveDeviceCryptoScope | null = null
   private initializing: { binding: string, promise: Promise<InitializedDeviceCrypto> } | null = null
   private readonly reconciliation = new Map<
@@ -140,6 +148,22 @@ export class DeviceCryptoSession implements MlsConversationGateway {
 
   unprotectMessage(command: UnprotectMlsMessageCommand): Promise<UnprotectMlsMessageResult> {
     return this.requireActive().gateway.unprotectMessage(command)
+  }
+
+  signCallBinding(command: CallBindingCommand): Promise<CallBindingSignatureResult> {
+    return this.requireActive().gateway.signCallBinding(command)
+  }
+
+  verifyCallBinding(
+    command: CallBindingCommand & { signature: Uint8Array },
+  ): Promise<CallBindingVerificationResult> {
+    return this.requireActive().gateway.verifyCallBinding(command)
+  }
+
+  deriveCallVerificationCode(
+    command: CallVerificationCodeCommand,
+  ): Promise<CallVerificationCodeResult> {
+    return this.requireActive().gateway.deriveCallVerificationCode(command)
   }
 
   async dispose(): Promise<void> {

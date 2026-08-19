@@ -1680,6 +1680,14 @@ workspace, не создавая второй media/signaling owner. Полно�
 anti-replay call context, verification-code UX, ADR и negative MITM tests до любых
 заявлений о защите от compromised signaling backend.
 
+`WP-104` реализует эту границу по ADR-0005 и отдельному call threat model. Sealed
+Rust/OpenMLS runtime подписывает canonical SHA-256 DTLS fingerprint credential key
+текущего MLS leaf; remote key ищется исключительно в локальном MLS roster. Call
+signaling v2 связывает signature с role, conversation/call UUID и обеими сторонами,
+а answer также с конкретным ответившим device. SDP применяется только после
+успешной проверки. Одинаковый comparison code выводится из обоих локально
+проверенных bindings и не принимается от signaling. V1 не является fallback.
+
 ## 15. Security и trust boundaries
 
 Никогда не логировать passwords, activation/session credentials, Authorization headers, private keys, plaintext messages или decrypted attachments. Structured logs используют opaque IDs, sizes и event types.

@@ -22,6 +22,13 @@ import type {
   UpdateMlsConversationCommand,
   UpdateMlsConversationResult,
 } from '../../application/ports/mls-conversation-gateway'
+import type {
+  CallBindingCommand,
+  CallBindingSignatureResult,
+  CallBindingVerificationResult,
+  CallVerificationCodeCommand,
+  CallVerificationCodeResult,
+} from '../../application/ports/call-identity-gateway'
 import {
   CryptoVaultError,
   type CryptoVault,
@@ -42,6 +49,8 @@ const MAX_KEY_PACKAGE_BYTES = 1024 * 1024
 const MAX_MLS_APPLICATION_BYTES = 256 * 1024
 const MAX_MLS_WIRE_BYTES = 1024 * 1024
 const MAX_MLS_ADD_MEMBERS = 49
+const MAX_CALL_SDP_BYTES = 64 * 1024
+const CALL_SIGNATURE_BYTES = 64
 
 interface ActiveBootstrap {
   userId: string
@@ -385,6 +394,101 @@ export class DeviceCryptoRuntime {
     }))
   }
 
+  async signCallBinding(command: CallBindingCommand): Promise<CallBindingSignatureResult> {
+    this.assertCallBinding(command)
+    const active = this.active
+    if (!active) throw new DeviceCryptoError('not-provisioned')
+    try {
+      const signature = active.value.signCallBinding(
+        command.role,
+        command.conversationId,
+        command.callId,
+        command.callerUserId,
+        command.callerDeviceId,
+        command.calleeUserId,
+        command.calleeDeviceId ?? '',
+        command.sdp,
+      ).slice()
+      if (signature.byteLength !== CALL_SIGNATURE_BYTES) {
+        throw new DeviceCryptoError('operation-failed')
+      }
+      return { signature }
+    } catch (error) {
+      throw translateError(error)
+    }
+  }
+
+  async verifyCallBinding(
+    command: CallBindingCommand & { signature: Uint8Array },
+  ): Promise<CallBindingVerificationResult> {
+    this.assertCallBinding(command)
+    if (command.signature.byteLength !== CALL_SIGNATURE_BYTES) {
+      throw new DeviceCryptoError('invalid-request')
+    }
+    const active = this.active
+    if (!active) throw new DeviceCryptoError('not-provisioned')
+    try {
+      active.value.verifyCallBinding(
+        command.role,
+        command.conversationId,
+        command.callId,
+        command.callerUserId,
+        command.callerDeviceId,
+        command.calleeUserId,
+        command.calleeDeviceId ?? '',
+        command.sdp,
+        command.signature,
+      )
+      return { verified: true }
+    } catch {
+      throw new DeviceCryptoError('operation-failed')
+    }
+  }
+
+  async deriveCallVerificationCode(
+    command: CallVerificationCodeCommand,
+  ): Promise<CallVerificationCodeResult> {
+    const offer: CallBindingCommand = {
+      role: 'offer',
+      conversationId: command.conversationId,
+      callId: command.callId,
+      callerUserId: command.callerUserId,
+      callerDeviceId: command.callerDeviceId,
+      calleeUserId: command.calleeUserId,
+      calleeDeviceId: null,
+      sdp: command.offerSdp,
+    }
+    this.assertCallBinding(offer)
+    if (
+      !UUID_PATTERN.test(command.calleeDeviceId)
+      || !validCallSdp(command.answerSdp)
+      || command.offerSignature.byteLength !== CALL_SIGNATURE_BYTES
+      || command.answerSignature.byteLength !== CALL_SIGNATURE_BYTES
+    ) throw new DeviceCryptoError('invalid-request')
+    const active = this.active
+    if (!active) throw new DeviceCryptoError('not-provisioned')
+    try {
+      const code = active.value.callVerificationCode(
+        command.conversationId,
+        command.callId,
+        command.callerUserId,
+        command.callerDeviceId,
+        command.calleeUserId,
+        command.calleeDeviceId,
+        command.offerSdp,
+        command.offerSignature,
+        command.answerSdp,
+        command.answerSignature,
+      )
+      if (!/^\d{4} \d{4} \d{4}$/.test(code)) {
+        throw new DeviceCryptoError('operation-failed')
+      }
+      return { code }
+    } catch (error) {
+      throw translateError(error)
+    }
+  }
+
   dispose(): void {
     this.active?.value.free()
     this.active = null
@@ -393,6 +497,22 @@ export class DeviceCryptoRuntime {
 
   private assertCommand(command: DeviceCryptoIdentityCommand): void {
     if (!validCommand(command)) throw new DeviceCryptoError('invalid-request')
+  }
+
+  private assertCallBinding(command: CallBindingCommand): void {
+    if (
+      !UUID_PATTERN.test(command.conversationId)
+      || !UUID_PATTERN.test(command.callId)
+      || !UUID_PATTERN.test(command.callerUserId)
+      || !UUID_PATTERN.test(command.callerDeviceId)
+      || !UUID_PATTERN.test(command.calleeUserId)
+      || command.callerUserId === command.calleeUserId
+      || !validCallSdp(command.sdp)
+      || (command.role === 'offer' && command.calleeDeviceId !== null)
+      || (command.role === 'answer' && (
+        command.calleeDeviceId === null || !UUID_PATTERN.test(command.calleeDeviceId)
+      ))
+    ) throw new DeviceCryptoError('invalid-request')
   }
 
   private existing(command: DeviceCryptoIdentityCommand): ActiveBootstrap | null {
@@ -574,6 +694,11 @@ function validWireBytes(value: unknown): value is Uint8Array {
 
 function validMessageRouting(conversationId: string, clientMessageId: string): boolean {
   return UUID_PATTERN.test(conversationId) && UUID_PATTERN.test(clientMessageId)
+}
+
+function validCallSdp(value: string): boolean {
+  return value.length > 0
+    && new TextEncoder().encode(value).byteLength <= MAX_CALL_SDP_BYTES
 }
 
 function validConversationRoster(

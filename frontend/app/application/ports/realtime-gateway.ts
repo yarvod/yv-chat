@@ -6,12 +6,13 @@ import type {
 
 export interface OutgoingCallSignal {
   type: CallSignalType
-  version: 1
+  version: 2
   conversation_id: string
   call_id: string
   sdp?: string
   candidate?: string
   reason?: string
+  identity_signature?: string
 }
 
 export interface RealtimeConnection {
