@@ -227,7 +227,7 @@ def test_typing_is_authorized_ephemeral_and_not_written_to_sync() -> None:
                     "active": True,
                 }
             )
-            started = bob_socket.receive_json()
+            started = receive_type(bob_socket, "typing")
             assert set(started) == {
                 "type",
                 "event_id",
@@ -248,7 +248,7 @@ def test_typing_is_authorized_ephemeral_and_not_written_to_sync() -> None:
                     "active": False,
                 }
             )
-            stopped = bob_socket.receive_json()
+            stopped = receive_type(bob_socket, "typing")
             assert stopped["active"] is False
             assert stopped["expires_at"] == NOW.isoformat()
 
