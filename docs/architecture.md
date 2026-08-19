@@ -1767,14 +1767,17 @@ API подключён одновременно к non-internal project-owned in
 Host Nginx владеет TLS/Certbot, HTTP→HTTPS, security headers и WebSocket upgrade для
 двух production origins — `chat.yoowee.ru` и `chat.yoowee.com.de` — в двух exact
 HTTPS server blocks с отдельной Certbot lineage на каждый domain; backend strict
-Origin allowlist содержит оба имени. Общие security headers, rate limit и
-API/WebSocket/frontend proxy rules находятся в одном project-owned Nginx snippet,
-поэтому certificate independence не создаёт drift transport policy.
+Origin allowlist содержит оба имени. Вся production Nginx configuration является
+ручной host infrastructure под `/etc/nginx`: application repository и GitHub deploy
+не содержат, не копируют, не устанавливают, не валидируют и не перезагружают её.
+Репозиторий фиксирует только ingress contract (loopback upstreams, WebSocket upgrade,
+body/time limits и retained public assets), а его реализация и проверка принадлежат
+host administrator.
 Cookies с `__Host-`, Service Worker, IndexedDB и E2EE device state не разделяются
 между origins, поэтому вход через второе имя создаёт отдельную browser session/device,
 не копируя local crypto state. Соседние `yoowee.ru`/`s3.yoowee.ru` vhost не
-изменяются. Vhost устанавливается из temp file с backup, `nginx -t`, reload и
-acceptance обоих upstream; graceful reload проверяется bounded retry, потому что
+изменяются. Server-owned chat vhost редактируется вручную с backup, `nginx -t`, reload
+и acceptance обоих upstream; graceful reload проверяется bounded retry, потому что
 старые workers короткое время могут обслуживать прежнюю конфигурацию. Workflow
 использует immutable `sha-<commit>` GHCR tags, выполняет migration новым backend
 image до health-checked rollout и не запускает Docker build на VPS. Runtime `.env`
@@ -1794,8 +1797,8 @@ update. Поэтому system Nginx обслуживает только `/_nuxt/
 дольше семи дней. App shell и Service Worker требуют network revalidation, а hashed
 chunks получают годовой cache TTL. Перед публикацией удаляются symlinks; каталог
 содержит только публичные regular build artifacts и не является user/media storage.
-Project-owned snippet меняется host admin через backup, `nginx -t`, graceful reload
-и rollback. Normal GitHub deployment остаётся unprivileged, требует заранее созданный
+Server-owned `/etc/nginx` configuration меняется host admin через backup, `nginx -t`,
+graceful reload и rollback. Normal GitHub deployment остаётся unprivileged, требует заранее созданный
 `devuser`-owned asset parent и fail-closed проверяет его owner.
 
 ## 18. Documentation-driven workflow

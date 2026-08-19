@@ -105,7 +105,7 @@ On push to `main` or manual dispatch, `.github/workflows/deploy.yml`:
 1. runs migration-aware repository verification;
 2. builds backend/frontend images in Actions;
 3. publishes immutable `sha-<commit>` and convenience `latest` tags;
-4. copies the production Compose, deploy scripts and reviewed host vhost sources;
+4. copies the production Compose and application deployment scripts;
 5. starts PostgreSQL and applies Alembic migrations with the new backend image;
 6. rolls out PostgreSQL/media-init/API/cleanup and waits for container health;
 7. validates the pre-provisioned `devuser`-owned `/var/www/yv-chat`, then atomically
@@ -176,27 +176,35 @@ delete expired opaque storage keys.
 ## Host Nginx ownership
 
 The existing system Nginx is the only public listener on `80/443` and system Certbot
-owns the certificate. Versioned source files are:
+owns the certificates. Production Nginx configuration is host infrastructure and is
+managed manually under `/etc/nginx` by the server administrator. This repository and
+the GitHub application deployment do not contain, copy, install, validate, reload,
+restart or back up production Nginx configuration. `deploy/nginx/local.conf` is only
+the disposable same-origin proxy used by local `compose.yml`; it is not a source for
+the server configuration.
 
-- `deploy/nginx/host-chat.http.conf` — ACME/bootstrap HTTP route;
-- `deploy/nginx/host-chat.conf` — production TLS redirect/proxy/security headers.
+The manually maintained production ingress must preserve this application contract:
 
-The production vhost routes API/WebSocket and frontend separately. It preserves
-`Host`, scheme and the forwarding chain; a conditional `Connection` map upgrades
-actual WebSocket requests without forcing upgrade semantics on ordinary HTTP.
-Both production names share one port-80 ACME/redirect server. Each HTTPS name has its
-own exact server block and Certbot certificate; both include the project-owned
-`/etc/nginx/snippets/yv-chat-server.conf` so security headers, registration rate
-limit, API/WebSocket and frontend routing cannot drift. Browser cookies, Service
-Worker, IndexedDB and E2EE device state remain origin-scoped: signing in on the
-second domain creates a separate browser session/device and does not copy local
-crypto state from the first domain.
+- `chat.yoowee.ru` and `chat.yoowee.com.de` terminate HTTPS and redirect HTTP;
+- `/api/` and WebSocket traffic proxy to `127.0.0.1:18081` with upgrade and trusted
+  forwarding headers; long-lived WebSockets must not use short ordinary HTTP timeouts;
+- `/` proxies to `127.0.0.1:18082`;
+- if retained cross-release assets are enabled, `/_nuxt/` serves only the public
+  `/var/www/yv-chat/current/` tree;
+- the device-pairing route accepts the bounded encrypted history envelope (currently
+  `704k`) while the overall body limit remains compatible with application media limits;
+- camera/microphone permissions, CSP, rate limits and TLS policy are reviewed manually.
+
+Browser cookies, Service Worker, IndexedDB and E2EE device state remain origin-scoped:
+signing in on the second domain creates a separate browser session/device and does not
+copy local crypto state from the first domain.
 
 `Permissions-Policy` allows `camera` and `microphone` only for the top-level
 same-origin PWA because group video notes call `getUserMedia` after an explicit user
 gesture. Both capabilities remain unavailable to cross-origin content; geolocation
 remains disabled. Setting either capture capability to an empty allowlist blocks the
-browser permission prompt entirely and must be rejected by `make deploy-check`.
+browser permission prompt entirely; this is part of manual ingress acceptance, not an
+application deploy check.
 
 Never run Certbot/Nginx in the yv-chat production Compose. Never edit neighboring
 `yoowee.ru` or `s3.yoowee.ru` vhosts as part of chat deployment.
@@ -211,9 +219,9 @@ install -d -o devuser -g www-data -m 0755 /var/www/yv-chat
 The normal GitHub deployment has no `sudo`; it fails closed unless this directory
 exists and belongs to `devuser`.
 
-When adding or restoring a production name, first install the reviewed dual-name
-port-80 chat vhost so its ACME webroot is reachable. Issue each certificate through
-the existing webroot without letting Certbot rewrite Nginx configs:
+When adding or restoring a production name, manually make its ACME webroot reachable.
+Issue each certificate through the existing webroot without letting Certbot rewrite
+unrelated Nginx configs:
 
 ```bash
 certbot certonly --webroot --webroot-path /var/www/html \
@@ -241,17 +249,14 @@ curl --fail http://127.0.0.1:18081/api/v1/health
 curl --fail http://127.0.0.1:18082/
 ```
 
-Install with a unique backup and test before reload:
+Edit only the server-owned chat files with unique backups and test before reload:
 
 ```bash
 cp -p /etc/nginx/conf.d/chat.yoowee.ru.conf \
-  /etc/nginx/conf.d/chat.yoowee.ru.conf.before-change
-install -o root -g root -m 0644 \
-  /home/devuser/yv-chat/deploy/nginx/host-chat.conf \
-  /etc/nginx/conf.d/chat.yoowee.ru.conf
-install -o root -g root -m 0644 \
-  /home/devuser/yv-chat/deploy/nginx/host-chat.server.conf \
-  /etc/nginx/snippets/yv-chat-server.conf
+  /etc/nginx/conf.d/chat.yoowee.ru.conf.before-change-YYYYMMDD-HHMMSS
+cp -p /etc/nginx/snippets/yv-chat-server.conf \
+  /etc/nginx/snippets/yv-chat-server.conf.before-change-YYYYMMDD-HHMMSS
+# Edit only these /etc/nginx files as root.
 nginx -t
 systemctl reload nginx
 ```

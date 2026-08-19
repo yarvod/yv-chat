@@ -191,18 +191,13 @@ jobs:
           )
           ssh "${ssh_options[@]}" -p "$DEPLOY_PORT" \
             "$DEPLOY_USER@$DEPLOY_HOST" \
-            "mkdir -p '$DEPLOY_ROOT/deploy/nginx'"
+            "mkdir -p '$DEPLOY_ROOT/deploy'"
           scp "${ssh_options[@]}" -P "$DEPLOY_PORT" \
             compose.prod.yml \
             "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_ROOT/compose.prod.yml"
           scp "${ssh_options[@]}" -P "$DEPLOY_PORT" \
             deploy/bootstrap-server.sh deploy/remote-deploy.sh \
             "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_ROOT/deploy/"
-          scp "${ssh_options[@]}" -P "$DEPLOY_PORT" \
-            deploy/nginx/host-chat.http.conf \
-            deploy/nginx/host-chat.conf \
-            deploy/nginx/host-chat.server.conf \
-            "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_ROOT/deploy/nginx/"
       - name: Migrate and roll out isolated stack
         shell: bash
         run: |
