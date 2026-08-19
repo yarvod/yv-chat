@@ -4,6 +4,26 @@
 
 ## Active
 
+### BUG-094 — Nginx отклонял зашифрованные chunks синхронизации устройств
+
+- Статус: `fixed in production by manual host change` (2026-08-19 UTC).
+- Severity: `high multi-device reliability`.
+- Production reproduction: связать уже авторизованные телефон и компьютер по QR;
+  обе стороны переходят к history relay, но первые ciphertext chunks размером
+  23,180 bytes получают HTTP `413`, UI показывает `0` переданных записей и завершает
+  попытку как непредвиденную ошибку.
+- Root cause: весь `/api/v1/device-pairings/` был ограничен Nginx до `16k`, хотя
+  application/domain контракт допускает до 700,000 base64 characters
+  (512,000 decoded bytes) на один opaque E2EE history chunk.
+- Исправление: вручную управляемый host Nginx получил для pairing ingress отдельный
+  bounded лимит `704k`, достаточный
+  для максимального JSON envelope, но значительно ниже общего media limit `150m`;
+  прежние per-IP rate limits и backend validation сохранены. Production Nginx config
+  не хранится и не разворачивается из application repository.
+- Проверка: `nginx -t` и graceful reload прошли; обе production chat-зоны отвечают
+  `200`. Полная acceptance должна повторить bidirectional QR sync и подтвердить
+  отсутствие `413` на максимальном encrypted history envelope.
+
 ### BUG-093 — Fullscreen call overlay исчезает на mobile list route
 
 - Статус: `fixed and production deployed in WP-106` (`cba2997`, workflow `32286917649`).
