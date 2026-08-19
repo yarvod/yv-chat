@@ -569,7 +569,7 @@ focus/navigation для frozen/discarded mobile PWA tasks.
 - standard browser audio-output/Bluetooth routing with explicit PWA limitations;
 - MLS-encrypted typed call summaries in the direct-chat timeline.
 - in-app minimizable call UI so conversations remain usable during an ongoing call
-  (`WP-102`, implemented and locally verified; rollout pending).
+  (`WP-102`, implemented and deployed; physical mobile acceptance pending).
 
 ### BL-078 — MLS-authenticated WebRTC call identity
 

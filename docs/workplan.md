@@ -2,7 +2,7 @@
 
 ## WP-102 — Сворачиваемый голосовой звонок
 
-Статус: **implemented and locally verified; production rollout pending**
+Статус: **implemented and deployed; physical mobile acceptance pending**
 Backlog: `BL-035`
 
 Цель: позволить продолжать пользоваться чатами во время голосового звонка, сохраняя
@@ -61,3 +61,6 @@ Backlog: `BL-035`
 - полный repository CI зелёный: backend `276 passed, 12 skipped`, Rust/OpenMLS
   `23 passed`, frontend `329 passed`, lint/format/import boundaries/mypy/typecheck,
   production build и Compose/deployment checks.
+- feature commit `8aca541`; GitHub CI `32272004038` и production deploy
+  `32272004059` зелёные; оба public origins отвечают health `200`, unauthenticated
+  call config — `401`, production app tag `sha-8aca541…`.
