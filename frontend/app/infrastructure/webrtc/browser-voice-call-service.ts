@@ -24,6 +24,9 @@ interface AudioOutputMediaDevices extends MediaDevices {
 }
 
 const VIDEO_MAX_BITRATE = 1_200_000
+const CALL_CONNECTION_TIMEOUT_MS = 30_000
+const CALL_RECONNECT_TIMEOUT_MS = 15_000
+const MAX_BUFFERED_ICE_CANDIDATES = 64
 
 function cameraConstraints(facingMode: VoiceCallState['cameraFacingMode']): MediaTrackConstraints {
   return {
@@ -83,7 +86,10 @@ export class BrowserVoiceCallService {
   private pendingOffer: AuthenticatedOffer | null = null
   private localOffer: AuthenticatedOffer | null = null
   private pendingCandidates: RTCIceCandidateInit[] = []
+  private pendingLocalCandidates: string[] = []
+  private localDescriptionSignaled = false
   private ringTimer: ReturnType<typeof setTimeout> | null = null
+  private connectionTimer: ReturnType<typeof setTimeout> | null = null
   private caller = false
   private offerSent = false
   private summaryRecorded = false
@@ -114,6 +120,8 @@ export class BrowserVoiceCallService {
     const callId = crypto.randomUUID()
     this.caller = true
     this.offerSent = false
+    this.localDescriptionSignaled = false
+    this.pendingLocalCandidates = []
     this.summaryRecorded = false
     this.connectedAt = null
     this.update({
@@ -168,6 +176,8 @@ export class BrowserVoiceCallService {
       })) {
         throw new Error('signaling unavailable')
       }
+      this.localDescriptionSignaled = true
+      this.flushLocalCandidates()
       this.offerSent = true
       this.update({ ...this.state, phase: 'outgoing', notice: 'Вызываем…' })
       this.tones.startOutgoing()
@@ -227,6 +237,8 @@ export class BrowserVoiceCallService {
         sdp,
         identity_signature: bytesToHex(signed.signature),
       })) throw new Error('signaling unavailable')
+      this.localDescriptionSignaled = true
+      this.flushLocalCandidates()
       this.pendingOffer = null
       this.update({
         ...this.state,
@@ -234,6 +246,7 @@ export class BrowserVoiceCallService {
         verificationCode: verification.code,
         notice: 'Устройство подтверждено MLS',
       })
+      this.armConnectionTimeout(CALL_CONNECTION_TIMEOUT_MS)
     } catch (error) {
       this.fail(this.microphoneError(error), true)
     }
@@ -289,6 +302,7 @@ export class BrowserVoiceCallService {
     local: HTMLVideoElement | null,
     remote: HTMLVideoElement | null,
   ): void {
+    this.detachRemoteVideoListeners()
     if (this.localVideoElement && this.localVideoElement !== local) {
       this.localVideoElement.srcObject = null
     }
@@ -297,6 +311,7 @@ export class BrowserVoiceCallService {
     }
     this.localVideoElement = local
     this.remoteVideoElement = remote
+    this.attachRemoteVideoListeners()
     this.attachStream(local, this.cameraStream)
     this.attachStream(remote, this.remoteMediaStream)
   }
@@ -421,6 +436,8 @@ export class BrowserVoiceCallService {
       this.cleanup()
       this.caller = false
       this.offerSent = false
+      this.localDescriptionSignaled = false
+      this.pendingLocalCandidates = []
       this.summaryRecorded = false
       this.connectedAt = null
       this.pendingOffer = verifiedOffer
@@ -490,6 +507,7 @@ export class BrowserVoiceCallService {
           verificationCode: verification.code,
           notice: 'Устройство подтверждено MLS',
         })
+        this.armConnectionTimeout(CALL_CONNECTION_TIMEOUT_MS)
       } catch {
         this.sendTerminal('call_ended', 'identity_error')
         this.fail('Не удалось подтвердить устройство собеседника')
@@ -585,25 +603,27 @@ export class BrowserVoiceCallService {
     })
     peer.addEventListener('icecandidate', event => {
       if (!event.candidate || !this.state.conversationId || !this.state.callId) return
-      this.send({
-        type: 'ice_candidate',
-        version: 2,
-        conversation_id: this.state.conversationId,
-        call_id: this.state.callId,
-        candidate: JSON.stringify(event.candidate.toJSON()),
-      })
+      this.queueOrSendLocalCandidate(JSON.stringify(event.candidate.toJSON()))
     })
     peer.addEventListener('connectionstatechange', () => {
       if (peer.connectionState === 'connected') {
         this.tones.stop()
-        this.connectedAt = Date.now()
+        this.clearConnectionTimeout()
+        this.connectedAt ??= Date.now()
         if (!this.state.identityVerified) {
           this.fail('Не удалось подтвердить устройство собеседника', true)
           return
         }
         this.update({ ...this.state, phase: 'active', startedAt: this.connectedAt, notice: null })
+      } else if (peer.connectionState === 'disconnected') {
+        this.update({
+          ...this.state,
+          phase: 'connecting',
+          notice: 'Восстанавливаем защищённое соединение…',
+        })
+        this.armConnectionTimeout(CALL_RECONNECT_TIMEOUT_MS)
       } else if (peer.connectionState === 'failed') {
-        this.finish('Не удалось установить соединение', 'failed')
+        this.fail('Не удалось установить соединение', true)
       }
     })
     return peer
@@ -614,6 +634,33 @@ export class BrowserVoiceCallService {
     for (const candidate of this.pendingCandidates.splice(0)) {
       await this.peer.addIceCandidate(candidate)
     }
+  }
+
+  private queueOrSendLocalCandidate(candidate: string): void {
+    if (!this.localDescriptionSignaled) {
+      if (this.pendingLocalCandidates.length < MAX_BUFFERED_ICE_CANDIDATES) {
+        this.pendingLocalCandidates.push(candidate)
+      }
+      return
+    }
+    this.sendLocalCandidate(candidate)
+  }
+
+  private flushLocalCandidates(): void {
+    for (const candidate of this.pendingLocalCandidates.splice(0)) {
+      this.sendLocalCandidate(candidate)
+    }
+  }
+
+  private sendLocalCandidate(candidate: string): void {
+    if (!this.state.conversationId || !this.state.callId) return
+    this.send({
+      type: 'ice_candidate',
+      version: 2,
+      conversation_id: this.state.conversationId,
+      call_id: this.state.callId,
+      candidate,
+    })
   }
 
   private async enableCamera(
@@ -712,6 +759,33 @@ export class BrowserVoiceCallService {
     if (stream) void element.play().catch(() => undefined)
   }
 
+  private attachRemoteVideoListeners(): void {
+    for (const type of ['playing', 'loadeddata', 'resize'] as const) {
+      this.remoteVideoElement?.addEventListener(type, this.handleRemoteVideoPlayback)
+    }
+  }
+
+  private detachRemoteVideoListeners(): void {
+    for (const type of ['playing', 'loadeddata', 'resize'] as const) {
+      this.remoteVideoElement?.removeEventListener(type, this.handleRemoteVideoPlayback)
+    }
+  }
+
+  private readonly handleRemoteVideoPlayback = (): void => {
+    const element = this.remoteVideoElement
+    const hasLiveTrack = this.remoteMediaStream?.getVideoTracks().some(track => (
+      track.readyState === 'live'
+    )) ?? false
+    if (
+      !element
+      || !this.state.identityVerified
+      || !hasLiveTrack
+      || element.readyState < 2
+      || element.videoWidth === 0
+    ) return
+    this.update({ ...this.state, remoteVideoEnabled: true })
+  }
+
   private parseCandidate(value: string): RTCIceCandidateInit {
     const parsed = JSON.parse(value) as unknown
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
@@ -752,6 +826,20 @@ export class BrowserVoiceCallService {
     this.ringTimer = null
   }
 
+  private armConnectionTimeout(delay: number): void {
+    this.clearConnectionTimeout()
+    const peer = this.peer
+    this.connectionTimer = setTimeout(() => {
+      if (this.peer !== peer || peer?.connectionState === 'connected') return
+      this.fail('Не удалось установить защищённое соединение. Попробуйте ещё раз', true)
+    }, delay)
+  }
+
+  private clearConnectionTimeout(): void {
+    if (this.connectionTimer !== null) clearTimeout(this.connectionTimer)
+    this.connectionTimer = null
+  }
+
   private fail(notice: string, notifyPeer = false): void {
     if (notifyPeer) this.sendTerminal('call_ended', 'media_error')
     this.recordSummary('failed')
@@ -785,6 +873,7 @@ export class BrowserVoiceCallService {
     this.tones.stop()
     navigator.vibrate?.(0)
     this.clearRingTimeout()
+    this.clearConnectionTimeout()
     this.peer?.close()
     this.peer = null
     for (const track of this.localStream?.getTracks() ?? []) track.stop()
@@ -795,6 +884,7 @@ export class BrowserVoiceCallService {
     this.cameraOperationToken += 1
     this.cameraOperation = null
     if (this.localVideoElement) this.localVideoElement.srcObject = null
+    this.detachRemoteVideoListeners()
     if (this.remoteVideoElement) this.remoteVideoElement.srcObject = null
     this.remoteMediaStream = null
     if (this.remoteAudio) this.remoteAudio.srcObject = null
@@ -802,6 +892,8 @@ export class BrowserVoiceCallService {
     this.pendingOffer = null
     this.localOffer = null
     this.pendingCandidates = []
+    this.pendingLocalCandidates = []
+    this.localDescriptionSignaled = false
     if (this.listeningForDeviceChanges) {
       navigator.mediaDevices?.removeEventListener?.('devicechange', this.handleDeviceChange)
       this.listeningForDeviceChanges = false

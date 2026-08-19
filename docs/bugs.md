@@ -4,6 +4,40 @@
 
 ## Active
 
+### BUG-093 — Fullscreen call overlay исчезает на mobile list route
+
+- Статус: `fixed and full-CI verified locally in WP-106; production rollout pending`.
+- Severity: `high call usability`.
+- Reproduction: свернуть активный звонок, перейти назад к списку либо в другой чат,
+  нажать expand; overlay появляется только после возврата в conversation звонка.
+- Root cause: fixed overlay вложен в `.workspace-main`, который mobile list layout
+  скрывает целиком через `display:none`.
+- Ожидаемая семантика: один app-scoped call owner и overlay не зависят от active route.
+
+### BUG-092 — Remote camera могла остаться чёрной только у одного участника
+
+- Статус: `fixed and full-CI verified locally in WP-106; physical two-device acceptance pending`.
+- Severity: `high video reliability`.
+- Reproduction: установить audio call, затем включить camera; один peer видит video,
+  второй сохраняет black/placeholder surface при реально активном camera track.
+- Root cause: remote `<video>` монтируется только после derived track mute state,
+  вместо постоянного sink и дополнительного browser playback confirmation.
+- Ожидаемая семантика: sink существует после verified negotiation, late RTP playback
+  симметрично открывает remote surface, camera-off возвращает placeholder.
+
+### BUG-091 — ICE candidate мог закрыть signaling до MLS offer/answer
+
+- Статус: `fixed and full-CI verified locally in WP-106; production rollout pending`.
+- Severity: `critical intermittent call connectivity`.
+- Reproduction: browser быстро генерирует trickle ICE после local description, пока
+  asynchronous MLS signing/verification ещё не отправил offer/answer; звонок случайно
+  не соединяется либо остаётся в `Соединяем…`.
+- Root cause: client немедленно отправляет ICE event, но coordinator требует active
+  call для caller candidate и accepted answer для callee candidate; invalid ordering
+  fail-closed закрывает WebSocket.
+- Ожидаемая семантика: local candidates buffer-ятся и flush-ятся только после
+  соответствующего authenticated SDP frame; connecting имеет bounded timeout.
+
 ### BUG-090 — WebSocket tests принимали heartbeat за typing event
 
 - Статус: `fixed; GitHub CI 32267603203 and deploy 32267603231 passed`.

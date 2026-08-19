@@ -1700,6 +1700,23 @@ storage-free encrypted packet path, Nginx и call signaling schema не меня
 Signaling relay всё ещё может испортить media sections и сорвать/понизить video как
 DoS, но не может незаметно заменить DTLS media endpoint без ошибки MLS binding.
 
+`WP-106` фиксирует transport ordering как явный client invariant: trickle ICE,
+сгенерированный после `setLocalDescription()`, остаётся в bounded local buffer до
+успешной отправки соответствующего MLS-authenticated offer/answer. Это сохраняет
+fail-closed backend state machine, где callee candidate не принимается до device-bound
+answer, и устраняет timing race между WebRTC ICE gathering и async MLS signing.
+После verified answer initial connection ограничен 30 секундами, а временный
+`disconnected` — 15 секундами; timeout завершает только ephemeral call и не меняет
+MLS/session/message state. SDP всё так же применяется лишь после device signature
+verification, поэтому ordering/timeout не создают новый источник crypto trust.
+
+Remote video sink существует весь negotiated call lifecycle независимо от текущего
+track mute state; browser track остаётся единственным источником camera visibility.
+Fullscreen overlay является app-scoped sibling route workspace, поэтому смена или
+скрытие active conversation не прячет текущий звонок и не создаёт второй call owner.
+Remote media заполняет viewport, local camera остаётся corner PiP, а audio-output
+selector открывается только явным user action.
+
 ## 15. Security и trust boundaries
 
 Никогда не логировать passwords, activation/session credentials, Authorization headers, private keys, plaintext messages или decrypted attachments. Structured logs используют opaque IDs, sizes и event types.

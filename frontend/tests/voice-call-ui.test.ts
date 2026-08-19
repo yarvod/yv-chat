@@ -97,22 +97,26 @@ describe('voice call presentation', () => {
       },
     })
 
+    expect(wrapper.text()).not.toContain('Куда выводить звук')
+    await wrapper.get('[aria-label="Выбрать аудиовыход"]').trigger('click')
     expect(wrapper.text()).toContain('Куда выводить звук')
     expect(wrapper.text()).toContain('Громкая связь')
     expect(wrapper.text()).toContain('Телефон')
     expect(wrapper.text()).toContain('Bluetooth')
+    expect(wrapper.get('[aria-pressed="true"]').text()).toContain('Громкая связь')
 
     const routes = wrapper.findAll('.voice-call__route')
     await routes.find(route => route.text().includes('Телефон'))?.trigger('click')
-    await routes.find(route => route.text().includes('Выбрать устройство'))?.trigger('click')
+    await wrapper.get('[aria-label="Выбрать аудиовыход"]').trigger('click')
+    await wrapper.findAll('.voice-call__route')
+      .find(route => route.text().includes('Выбрать устройство'))?.trigger('click')
 
     expect(selectAudioOutput).toHaveBeenCalledWith('receiver')
     expect(requestAudioOutput).toHaveBeenCalledOnce()
-    expect(wrapper.get('[aria-pressed="true"]').text()).toContain('Громкая связь')
     wrapper.unmount()
   })
 
-  it('explains system routing when the browser cannot select an output', () => {
+  it('explains system routing when the browser cannot select an output', async () => {
     const wrapper = mount(VoiceCallOverlay, {
       props: {
         state: callState(),
@@ -126,6 +130,7 @@ describe('voice call presentation', () => {
       },
     })
 
+    await wrapper.get('[aria-label="Выбрать аудиовыход"]').trigger('click')
     expect(wrapper.text()).toContain('маршрут выбирается в системном меню звука')
     expect(wrapper.text()).toContain('громкая связь')
     wrapper.unmount()
@@ -184,6 +189,29 @@ describe('voice call presentation', () => {
     expect(video.attachVideoElements).toHaveBeenLastCalledWith(null, null)
   })
 
+  it('always mounts the full-screen remote video sink before camera media arrives', async () => {
+    const video = videoActions()
+    const wrapper = mount(VoiceCallOverlay, {
+      props: {
+        state: callState({ cameraEnabled: false, remoteVideoEnabled: false }),
+        peerName: 'Алиса',
+        minimize: vi.fn(),
+        dismiss: vi.fn(),
+        selectAudioOutput: vi.fn().mockResolvedValue(undefined),
+        requestAudioOutput: vi.fn().mockResolvedValue(undefined),
+        ...video,
+        ...actions(),
+      },
+    })
+
+    expect(wrapper.get('.voice-call__stage').exists()).toBe(true)
+    expect(wrapper.get('.voice-call__remote-video').exists()).toBe(true)
+    expect(wrapper.get('.voice-call__video-placeholder').exists()).toBe(true)
+    await wrapper.vm.$nextTick()
+    expect(video.attachVideoElements).toHaveBeenCalledWith(null, expect.any(HTMLVideoElement))
+    wrapper.unmount()
+  })
+
   it('offers accept and reject when an incoming call is compact', async () => {
     const handlers = actions()
     const wrapper = mount(VoiceCallMiniBar, {
@@ -215,5 +243,8 @@ describe('voice call presentation', () => {
     expect(workspace).toContain('callState.phase !== \'idle\' && !callMinimized')
     expect(workspace).toMatch(/\(\) => callState\.value\.callId,[\s\S]*callMinimized\.value = false/)
     expect(workspace).toMatch(/phase === 'idle' \|\| phase === 'ended' \|\| phase === 'error'/)
+    expect(workspace.indexOf('<VoiceCallOverlay')).toBeLessThan(
+      workspace.indexOf('<div v-else class="workspace-main">'),
+    )
   })
 })

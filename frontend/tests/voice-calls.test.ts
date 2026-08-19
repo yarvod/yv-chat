@@ -79,6 +79,12 @@ class FakePeerConnection extends EventTarget {
   async setRemoteDescription(value: RTCSessionDescriptionInit): Promise<void> {
     this.remoteDescription = value as RTCSessionDescription
   }
+
+  emitIceCandidate(candidate = 'candidate:1 1 udp 1 192.0.2.1 5000 typ host'): void {
+    this.dispatchEvent(Object.assign(new Event('icecandidate'), {
+      candidate: { toJSON: () => ({ candidate, sdpMid: '0', sdpMLineIndex: 0 }) },
+    }))
+  }
 }
 
 class FakeAudio {
@@ -89,6 +95,13 @@ class FakeAudio {
   setSinkId = vi.fn(async (_deviceId: string) => undefined)
 
   constructor() { FakeAudio.instances.push(this) }
+}
+
+class FakeVideo extends EventTarget {
+  srcObject: MediaStream | null = null
+  readyState = 4
+  videoWidth = 1280
+  play = vi.fn(async () => undefined)
 }
 
 function fakeTones() {
@@ -218,6 +231,135 @@ describe('browser voice calls', () => {
       video: false,
     })
     expect(signals.at(-1)).toMatchObject({ type: 'call_answer', sdp: 'answer-sdp' })
+  })
+
+  it('sends caller ICE only after the authenticated offer is accepted by signaling', async () => {
+    let releaseSignature!: (value: { signature: Uint8Array }) => void
+    const identity = fakeIdentity()
+    identity.signCallBinding.mockImplementationOnce(() => new Promise(resolve => {
+      releaseSignature = resolve
+    }))
+    const service = new BrowserVoiceCallService(
+      signaling, config, identity, ALICE_USER, ALICE_DEVICE,
+    )
+
+    const start = service.start(CONVERSATION, BOB_USER)
+    await vi.waitFor(() => expect(identity.signCallBinding).toHaveBeenCalledOnce())
+    FakePeerConnection.instances[0]!.emitIceCandidate()
+    expect(signals).toHaveLength(0)
+
+    releaseSignature({ signature: SIGNATURE.slice() })
+    await start
+
+    expect(signals.map(signal => signal.type)).toEqual(['call_offer', 'ice_candidate'])
+    service.reset()
+  })
+
+  it('sends callee ICE only after the authenticated answer is accepted by signaling', async () => {
+    let releaseSignature!: (value: { signature: Uint8Array }) => void
+    const identity = fakeIdentity()
+    identity.signCallBinding.mockImplementationOnce(() => new Promise(resolve => {
+      releaseSignature = resolve
+    }))
+    const service = new BrowserVoiceCallService(
+      signaling, config, identity, BOB_USER, BOB_DEVICE,
+    )
+    await service.apply({
+      type: 'call_offer',
+      version: 2,
+      eventId: 'event',
+      conversationId: CONVERSATION,
+      callId: '538998bb-1943-4cf3-beb1-8b87cadf0fc1',
+      actorUserId: ALICE_USER,
+      actorDeviceId: ALICE_DEVICE,
+      sdp: 'offer-sdp',
+      candidate: null,
+      reason: null,
+      identitySignature: '07'.repeat(64),
+    })
+
+    const accept = service.accept()
+    await vi.waitFor(() => expect(identity.signCallBinding).toHaveBeenCalledOnce())
+    FakePeerConnection.instances[0]!.emitIceCandidate()
+    expect(signals).toHaveLength(0)
+
+    releaseSignature({ signature: SIGNATURE.slice() })
+    await accept
+
+    expect(signals.map(signal => signal.type)).toEqual(['call_answer', 'ice_candidate'])
+    service.reset()
+  })
+
+  it('fails a verified call that never establishes a media connection', async () => {
+    vi.useFakeTimers()
+    const service = new BrowserVoiceCallService(
+      signaling, config, fakeIdentity(), ALICE_USER, ALICE_DEVICE,
+    )
+    let latest = null
+    service.subscribe(state => { latest = state })
+    await service.start(CONVERSATION, BOB_USER)
+    const offer = signals.find(signal => signal.type === 'call_offer')!
+    await service.apply({
+      type: 'call_answer',
+      version: 2,
+      eventId: 'event',
+      conversationId: CONVERSATION,
+      callId: offer.call_id,
+      actorUserId: BOB_USER,
+      actorDeviceId: BOB_DEVICE,
+      sdp: 'answer-sdp',
+      candidate: null,
+      reason: null,
+      identitySignature: '07'.repeat(64),
+    })
+
+    vi.advanceTimersByTime(30_000)
+
+    expect(latest).toMatchObject({
+      phase: 'error',
+      notice: 'Не удалось установить защищённое соединение. Попробуйте ещё раз',
+    })
+    expect(signals.at(-1)).toMatchObject({ type: 'call_ended', reason: 'media_error' })
+  })
+
+  it('bounds recovery when an established media connection stays disconnected', async () => {
+    vi.useFakeTimers()
+    const service = new BrowserVoiceCallService(
+      signaling, config, fakeIdentity(), ALICE_USER, ALICE_DEVICE,
+    )
+    let latest = null
+    service.subscribe(state => { latest = state })
+    await service.start(CONVERSATION, BOB_USER)
+    const offer = signals.find(signal => signal.type === 'call_offer')!
+    await service.apply({
+      type: 'call_answer',
+      version: 2,
+      eventId: 'event',
+      conversationId: CONVERSATION,
+      callId: offer.call_id,
+      actorUserId: BOB_USER,
+      actorDeviceId: BOB_DEVICE,
+      sdp: 'answer-sdp',
+      candidate: null,
+      reason: null,
+      identitySignature: '07'.repeat(64),
+    })
+    const peer = FakePeerConnection.instances[0]!
+    peer.connectionState = 'connected'
+    peer.dispatchEvent(new Event('connectionstatechange'))
+    peer.connectionState = 'disconnected'
+    peer.dispatchEvent(new Event('connectionstatechange'))
+    expect(latest).toMatchObject({
+      phase: 'connecting',
+      notice: 'Восстанавливаем защищённое соединение…',
+    })
+
+    vi.advanceTimersByTime(15_000)
+
+    expect(latest).toMatchObject({
+      phase: 'error',
+      notice: 'Не удалось установить защищённое соединение. Попробуйте ещё раз',
+    })
   })
 
   it('plays ringback, follows new audio outputs and records one encrypted-call summary', async () => {
@@ -498,10 +640,7 @@ describe('browser voice calls', () => {
       reason: null,
       identitySignature: '07'.repeat(64),
     })
-    const remoteVideo = {
-      srcObject: null,
-      play: vi.fn(async () => undefined),
-    } as unknown as HTMLVideoElement
+    const remoteVideo = new FakeVideo() as unknown as HTMLVideoElement
     service.attachVideoElements(null, remoteVideo)
     const remoteTrack = new FakeTrack('video')
     const trackEvent = Object.assign(new Event('track'), {
@@ -515,6 +654,43 @@ describe('browser voice calls', () => {
     remoteTrack.muted = true
     remoteTrack.dispatchEvent(new Event('mute'))
     expect(latest).toMatchObject({ remoteVideoEnabled: false })
+  })
+
+  it('confirms authenticated remote video from browser playback when unmute is missed', async () => {
+    const service = new BrowserVoiceCallService(
+      signaling, config, fakeIdentity(), ALICE_USER, ALICE_DEVICE,
+    )
+    let latest = null
+    service.subscribe(state => { latest = state })
+    await service.start(CONVERSATION, BOB_USER)
+    const offer = signals.find(signal => signal.type === 'call_offer')!
+    await service.apply({
+      type: 'call_answer',
+      version: 2,
+      eventId: 'event',
+      conversationId: CONVERSATION,
+      callId: offer.call_id,
+      actorUserId: BOB_USER,
+      actorDeviceId: BOB_DEVICE,
+      sdp: 'answer-sdp',
+      candidate: null,
+      reason: null,
+      identitySignature: '07'.repeat(64),
+    })
+    const remoteVideo = new FakeVideo()
+    service.attachVideoElements(null, remoteVideo as unknown as HTMLVideoElement)
+    const remoteTrack = new FakeTrack('video')
+    remoteTrack.muted = true
+    FakePeerConnection.instances[0]!.dispatchEvent(Object.assign(new Event('track'), {
+      track: remoteTrack as unknown as MediaStreamTrack,
+      streams: [],
+    }))
+    expect(latest).toMatchObject({ remoteVideoEnabled: false })
+
+    remoteVideo.dispatchEvent(new Event('playing'))
+
+    expect(latest).toMatchObject({ remoteVideoEnabled: true, identityVerified: true })
+    service.reset()
   })
 
   it('keeps the audio call alive when camera permission is denied', async () => {

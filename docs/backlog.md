@@ -612,6 +612,13 @@ replacement покрыты negative tests. Frontend/backend v2 rollout выпо�
 - [x] camera permission/cleanup regressions и документированные PWA limitations;
 - [ ] решение о native wrapper — только после физической platform evaluation.
 
+Регрессионное укрепление `WP-106`: local ICE теперь отправляется только после
+соответствующего authenticated SDP frame; verified connection/disconnect имеют
+bounded timeout; remote video sink постоянно смонтирован; fullscreen remote media,
+corner local PiP и global expand не зависят от выбранного чата. Реализовано и
+проверено full CI/real-browser локально; production rollout и физическая
+двухустройственная проверка остаются следующими acceptance шагами.
+
 ## Completed
 
 ### BL-077 — Telegram-like message interactions

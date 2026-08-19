@@ -283,6 +283,23 @@ onBeforeUnmount(() => {
       :toggle-camera="calls.toggleCamera.bind(calls)"
       :resume-audio="calls.resumeAudio.bind(calls)"
     />
+    <VoiceCallOverlay
+      v-if="callState.phase !== 'idle' && !callMinimized"
+      :state="callState"
+      :peer-name="callPeerName"
+      :accept="calls.accept.bind(calls)"
+      :reject="calls.reject.bind(calls)"
+      :hangup="calls.hangup.bind(calls)"
+      :toggle-mute="calls.toggleMute.bind(calls)"
+      :toggle-camera="calls.toggleCamera.bind(calls)"
+      :switch-camera="calls.switchCamera.bind(calls)"
+      :attach-video-elements="calls.attachVideoElements.bind(calls)"
+      :select-audio-output="calls.selectAudioOutput.bind(calls)"
+      :request-audio-output="calls.requestAudioOutput.bind(calls)"
+      :resume-audio="calls.resumeAudio.bind(calls)"
+      :minimize="minimizeCall"
+      :dismiss="calls.reset.bind(calls)"
+    />
     <ConversationSidebar
       :user="user"
       :conversations="messenger.state.conversations"
@@ -349,23 +366,6 @@ onBeforeUnmount(() => {
         :start-call="startCall"
         @back="closeConversation"
         @group-details="groupDetailsOpen = true"
-      />
-      <VoiceCallOverlay
-        v-if="callState.phase !== 'idle' && !callMinimized"
-        :state="callState"
-        :peer-name="callPeerName"
-        :accept="calls.accept.bind(calls)"
-        :reject="calls.reject.bind(calls)"
-        :hangup="calls.hangup.bind(calls)"
-        :toggle-mute="calls.toggleMute.bind(calls)"
-        :toggle-camera="calls.toggleCamera.bind(calls)"
-        :switch-camera="calls.switchCamera.bind(calls)"
-        :attach-video-elements="calls.attachVideoElements.bind(calls)"
-        :select-audio-output="calls.selectAudioOutput.bind(calls)"
-        :request-audio-output="calls.requestAudioOutput.bind(calls)"
-        :resume-audio="calls.resumeAudio.bind(calls)"
-        :minimize="minimizeCall"
-        :dismiss="calls.reset.bind(calls)"
       />
       <GroupDetailsPanel
         v-if="groupDetailsOpen && messenger.activeConversation.value?.conversationType === 'group'"

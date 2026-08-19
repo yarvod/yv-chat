@@ -156,6 +156,34 @@ async def test_offer_answer_candidate_and_end_are_device_scoped() -> None:
     assert await coordinator.snapshot(user_id=bob.id, device_id=bob_device.id) == ()
 
 
+async def test_callee_candidate_is_rejected_until_authenticated_answer_is_bound() -> None:
+    coordinator, _, _, alice, alice_device, bob, bob_device, _, _, conversation = fixture()
+    call_id = uuid4()
+    await coordinator.execute(
+        CallSignalCommand(
+            CallSignalType.OFFER,
+            alice.id,
+            alice_device.id,
+            conversation.id,
+            call_id,
+            sdp="offer-sdp",
+            identity_signature=OFFER_SIGNATURE,
+        )
+    )
+
+    with pytest.raises(CallStateConflictError, match="callee must answer"):
+        await coordinator.execute(
+            CallSignalCommand(
+                CallSignalType.ICE_CANDIDATE,
+                bob.id,
+                bob_device.id,
+                conversation.id,
+                call_id,
+                candidate='{"candidate":"candidate:early"}',
+            )
+        )
+
+
 async def test_outsider_and_group_calls_are_rejected() -> None:
     coordinator, _, _, alice, alice_device, bob, _, mallory, state, conversation = fixture()
     mallory_device = Device.create(user_id=mallory.id, name="Mallory phone", now=NOW)

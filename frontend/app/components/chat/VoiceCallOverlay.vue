@@ -29,6 +29,7 @@ const props = defineProps<{
 const now = ref(Date.now())
 const localVideo = ref<HTMLVideoElement | null>(null)
 const remoteVideo = ref<HTMLVideoElement | null>(null)
+const audioRoutingOpen = ref(false)
 const timer = setInterval(() => { now.value = Date.now() }, 1_000)
 const stopVideoAttachment = watch(
   [localVideo, remoteVideo],
@@ -49,14 +50,25 @@ const minimizable = computed(() => (
   || props.state.phase === 'active'
 ))
 
-const audioRoutingVisible = computed(() => (
+const audioRoutingAvailable = computed(() => (
   props.state.phase === 'outgoing'
   || props.state.phase === 'connecting'
   || props.state.phase === 'active'
 ))
-const videoVisible = computed(() => (
-  props.state.cameraEnabled || props.state.remoteVideoEnabled
-))
+
+watch(
+  () => props.state.phase,
+  phase => {
+    if (phase === 'incoming' || phase === 'ended' || phase === 'error') {
+      audioRoutingOpen.value = false
+    }
+  },
+)
+
+async function chooseAudioOutput(deviceId: string): Promise<void> {
+  await props.selectAudioOutput(deviceId)
+  audioRoutingOpen.value = false
+}
 
 function outputTitle(kind: VoiceCallAudioOutput['kind']): string {
   return {
@@ -79,23 +91,13 @@ function outputIcon(kind: VoiceCallAudioOutput['kind']): AppIconName {
 <template>
   <aside
     class="voice-call"
+    :class="{ 'voice-call--remote-video': state.remoteVideoEnabled }"
     role="dialog"
     aria-modal="true"
     aria-label="Аудио- или видеозвонок"
     @pointerdown="resumeAudio"
   >
-    <button
-      v-if="minimizable"
-      class="voice-call__minimize"
-      type="button"
-      aria-label="Свернуть звонок"
-      @click="minimize"
-    >
-      <AppIcon name="collapse" />
-      <span>Свернуть</span>
-    </button>
-    <div class="voice-call__glow" aria-hidden="true" />
-    <section v-if="videoVisible" class="voice-call__video" aria-label="Видео звонка">
+    <section class="voice-call__stage" aria-label="Видео звонка">
       <video
         ref="remoteVideo"
         class="voice-call__remote-video"
@@ -105,7 +107,7 @@ function outputIcon(kind: VoiceCallAudioOutput['kind']): AppIconName {
       />
       <div v-if="!state.remoteVideoEnabled" class="voice-call__video-placeholder">
         <span>{{ peerName.slice(0, 1).toUpperCase() }}</span>
-        <small>Камера собеседника выключена</small>
+        <small>{{ state.phase === 'connecting' ? 'Устанавливаем защищённое видео…' : 'Камера собеседника выключена' }}</small>
       </div>
       <video
         v-if="state.cameraEnabled"
@@ -117,27 +119,46 @@ function outputIcon(kind: VoiceCallAudioOutput['kind']): AppIconName {
         playsinline
       />
     </section>
-    <div v-else class="voice-call__avatar" aria-hidden="true">
-      {{ peerName.slice(0, 1).toUpperCase() }}
-    </div>
-    <h2>{{ peerName }}</h2>
-    <p aria-live="polite">{{ status }}</p>
-    <span class="voice-call__security">
-      <span aria-hidden="true">🔒</span>
-      {{ state.identityVerified ? 'Устройство подтверждено MLS' : 'Проверяем устройство…' }}
-    </span>
-    <span v-if="state.verificationCode" class="voice-call__security">
-      Код сверки: {{ state.verificationCode }}
-    </span>
-    <section v-if="audioRoutingVisible" class="voice-call__routing" aria-labelledby="audio-routing-title">
-      <strong id="audio-routing-title">Куда выводить звук</strong>
+    <div class="voice-call__scrim" aria-hidden="true" />
+    <header class="voice-call__topbar">
+      <button
+        v-if="minimizable"
+        class="voice-call__minimize"
+        type="button"
+        aria-label="Свернуть звонок"
+        @click.stop="minimize"
+      >
+        <AppIcon name="collapse" />
+      </button>
+      <div class="voice-call__identity">
+        <h2>{{ peerName }}</h2>
+        <p aria-live="polite">{{ status }}</p>
+        <span class="voice-call__security">
+          <span aria-hidden="true">🔒</span>
+          {{ state.identityVerified ? 'Защищённый звонок · MLS' : 'Проверяем устройство…' }}
+        </span>
+        <span v-if="state.verificationCode" class="voice-call__verification">
+          Код сверки: {{ state.verificationCode }}
+        </span>
+      </div>
+    </header>
+    <section
+      v-if="audioRoutingOpen && audioRoutingAvailable"
+      class="voice-call__routing"
+      aria-labelledby="audio-routing-title"
+      @pointerdown.stop
+    >
+      <div class="voice-call__routing-head">
+        <strong id="audio-routing-title">Куда выводить звук</strong>
+        <button type="button" aria-label="Закрыть выбор аудиовыхода" @click="audioRoutingOpen = false">×</button>
+      </div>
       <div v-if="state.audioOutputSupported" class="voice-call__routes">
         <button
           class="voice-call__route"
           :class="{ 'voice-call__route--selected': state.selectedAudioOutputId === '' }"
           type="button"
           :aria-pressed="state.selectedAudioOutputId === ''"
-          @click="selectAudioOutput('')"
+          @click="chooseAudioOutput('')"
         >
           <AppIcon name="speaker" />
           <span><b>Система</b><small>Маршрут телефона</small></span>
@@ -149,7 +170,7 @@ function outputIcon(kind: VoiceCallAudioOutput['kind']): AppIconName {
           :class="{ 'voice-call__route--selected': state.selectedAudioOutputId === output.deviceId }"
           type="button"
           :aria-pressed="state.selectedAudioOutputId === output.deviceId"
-          @click="selectAudioOutput(output.deviceId)"
+          @click="chooseAudioOutput(output.deviceId)"
         >
           <AppIcon :name="outputIcon(output.kind)" />
           <span><b>{{ outputTitle(output.kind) }}</b><small>{{ output.label }}</small></span>
@@ -209,6 +230,17 @@ function outputIcon(kind: VoiceCallAudioOutput['kind']): AppIconName {
         @click="toggleMute"
       >
         <AppIcon :name="state.muted ? 'microphone-off' : 'microphone'" />
+      </button>
+      <button
+        v-if="audioRoutingAvailable"
+        class="voice-call__action"
+        :class="{ 'voice-call__action--selected': audioRoutingOpen }"
+        type="button"
+        aria-label="Выбрать аудиовыход"
+        :aria-expanded="audioRoutingOpen"
+        @click.stop="audioRoutingOpen = !audioRoutingOpen"
+      >
+        <AppIcon name="speaker" />
       </button>
       <button class="voice-call__action voice-call__action--reject" type="button" aria-label="Завершить" @click="hangup">
         <AppIcon name="phone-off" />
