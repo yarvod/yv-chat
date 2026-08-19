@@ -23,6 +23,17 @@ interface AudioOutputMediaDevices extends MediaDevices {
   selectAudioOutput?: () => Promise<MediaDeviceInfo>
 }
 
+const VIDEO_MAX_BITRATE = 1_200_000
+
+function cameraConstraints(facingMode: VoiceCallState['cameraFacingMode']): MediaTrackConstraints {
+  return {
+    facingMode: { ideal: facingMode },
+    width: { ideal: 1_280, max: 1_280 },
+    height: { ideal: 720, max: 720 },
+    frameRate: { ideal: 24, max: 30 },
+  }
+}
+
 export type VoiceCallHistoryRecorder = (
   conversationId: string,
   summary: VoiceCallSummary,
@@ -41,6 +52,11 @@ const IDLE_STATE: VoiceCallState = {
   selectedAudioOutputId: '',
   identityVerified: false,
   verificationCode: null,
+  cameraSupported: false,
+  cameraEnabled: false,
+  cameraBusy: false,
+  cameraFacingMode: 'user',
+  remoteVideoEnabled: false,
 }
 
 interface AuthenticatedOffer {
@@ -57,6 +73,13 @@ export class BrowserVoiceCallService {
   private peer: RTCPeerConnection | null = null
   private localStream: MediaStream | null = null
   private remoteAudio: HTMLAudioElement | null = null
+  private remoteMediaStream: MediaStream | null = null
+  private cameraStream: MediaStream | null = null
+  private videoSender: RTCRtpSender | null = null
+  private localVideoElement: HTMLVideoElement | null = null
+  private remoteVideoElement: HTMLVideoElement | null = null
+  private cameraOperation: Promise<void> | null = null
+  private cameraOperationToken = 0
   private pendingOffer: AuthenticatedOffer | null = null
   private localOffer: AuthenticatedOffer | null = null
   private pendingCandidates: RTCIceCandidateInit[] = []
@@ -106,6 +129,11 @@ export class BrowserVoiceCallService {
       selectedAudioOutputId: '',
       identityVerified: false,
       verificationCode: null,
+      cameraSupported: false,
+      cameraEnabled: false,
+      cameraBusy: false,
+      cameraFacingMode: 'user',
+      remoteVideoEnabled: false,
     })
     try {
       const peer = await this.preparePeer()
@@ -230,6 +258,47 @@ export class BrowserVoiceCallService {
     const next = !this.state.muted
     for (const track of this.localStream?.getAudioTracks() ?? []) track.enabled = !next
     this.update({ ...this.state, muted: next })
+  }
+
+  toggleCamera(): Promise<void> {
+    if (this.cameraOperation) return this.cameraOperation
+    const operation = this.state.cameraEnabled
+      ? this.disableCamera()
+      : this.enableCamera(this.state.cameraFacingMode)
+    const token = ++this.cameraOperationToken
+    this.cameraOperation = operation.finally(() => {
+      if (this.cameraOperationToken === token) this.cameraOperation = null
+    })
+    return this.cameraOperation
+  }
+
+  switchCamera(): Promise<void> {
+    if (this.cameraOperation || !this.state.cameraEnabled) {
+      return this.cameraOperation ?? Promise.resolve()
+    }
+    const facingMode = this.state.cameraFacingMode === 'user' ? 'environment' : 'user'
+    const operation = this.enableCamera(facingMode)
+    const token = ++this.cameraOperationToken
+    this.cameraOperation = operation.finally(() => {
+      if (this.cameraOperationToken === token) this.cameraOperation = null
+    })
+    return this.cameraOperation
+  }
+
+  attachVideoElements(
+    local: HTMLVideoElement | null,
+    remote: HTMLVideoElement | null,
+  ): void {
+    if (this.localVideoElement && this.localVideoElement !== local) {
+      this.localVideoElement.srcObject = null
+    }
+    if (this.remoteVideoElement && this.remoteVideoElement !== remote) {
+      this.remoteVideoElement.srcObject = null
+    }
+    this.localVideoElement = local
+    this.remoteVideoElement = remote
+    this.attachStream(local, this.cameraStream)
+    this.attachStream(remote, this.remoteMediaStream)
   }
 
   async selectAudioOutput(deviceId: string): Promise<void> {
@@ -365,7 +434,12 @@ export class BrowserVoiceCallService {
         audioOutputSupported: false,
         audioOutputPickerSupported: false,
         audioOutputs: [],
-        selectedAudioOutputId: '',
+      selectedAudioOutputId: '',
+      cameraSupported: typeof navigator.mediaDevices?.getUserMedia === 'function',
+      cameraEnabled: false,
+      cameraBusy: false,
+      cameraFacingMode: 'user',
+      remoteVideoEnabled: false,
         identityVerified: true,
         verificationCode: null,
       })
@@ -461,17 +535,49 @@ export class BrowserVoiceCallService {
     const peer = new RTCPeerConnection(loaded.configuration)
     this.peer = peer
     for (const track of this.localStream.getAudioTracks()) peer.addTrack(track, this.localStream)
+    if (typeof peer.addTransceiver === 'function') {
+      try {
+        this.videoSender = peer.addTransceiver('video', { direction: 'sendrecv' }).sender
+      } catch {
+        this.videoSender = null
+      }
+    }
+    this.update({
+      ...this.state,
+      cameraSupported: this.videoSender !== null,
+      cameraEnabled: false,
+      cameraBusy: false,
+      cameraFacingMode: 'user',
+      remoteVideoEnabled: false,
+    })
+    this.remoteMediaStream = new MediaStream()
     this.remoteAudio = new Audio()
     this.remoteAudio.autoplay = true
+    this.remoteAudio.srcObject = this.remoteMediaStream
     await this.refreshAudioOutputs()
     if (!this.listeningForDeviceChanges) {
       navigator.mediaDevices.addEventListener?.('devicechange', this.handleDeviceChange)
       this.listeningForDeviceChanges = true
     }
     peer.addEventListener('track', event => {
-      const [stream] = event.streams
-      if (stream && this.remoteAudio) {
-        this.remoteAudio.srcObject = stream
+      if (this.peer !== peer || !this.remoteMediaStream) return
+      if (!this.remoteMediaStream.getTracks().some(track => track.id === event.track.id)) {
+        this.remoteMediaStream.addTrack(event.track)
+      }
+      if (event.track.kind === 'video') {
+        const updateRemoteVideo = (): void => {
+          if (this.peer !== peer) return
+          this.update({
+            ...this.state,
+            remoteVideoEnabled: event.track.readyState === 'live' && !event.track.muted,
+          })
+        }
+        event.track.addEventListener('mute', updateRemoteVideo)
+        event.track.addEventListener('unmute', updateRemoteVideo)
+        event.track.addEventListener('ended', updateRemoteVideo)
+        updateRemoteVideo()
+        this.attachStream(this.remoteVideoElement, this.remoteMediaStream)
+      } else if (this.remoteAudio) {
         void this.remoteAudio.play().catch(() => {
           this.update({ ...this.state, notice: 'Нажмите на экран, чтобы включить звук' })
         })
@@ -508,6 +614,102 @@ export class BrowserVoiceCallService {
     for (const candidate of this.pendingCandidates.splice(0)) {
       await this.peer.addIceCandidate(candidate)
     }
+  }
+
+  private async enableCamera(
+    facingMode: VoiceCallState['cameraFacingMode'],
+  ): Promise<void> {
+    const peer = this.peer
+    const sender = this.videoSender
+    if (
+      !peer || !sender || !this.state.identityVerified
+      || !['connecting', 'active'].includes(this.state.phase)
+      || !navigator.mediaDevices?.getUserMedia
+    ) return
+    this.update({ ...this.state, cameraBusy: true, notice: 'Включаем камеру…' })
+    let stream: MediaStream | null = null
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: cameraConstraints(facingMode),
+      })
+      const track = stream.getVideoTracks()[0]
+      if (!track) throw new Error('camera track unavailable')
+      try {
+        track.contentHint = 'motion'
+      } catch {
+        // Some otherwise compatible WebViews expose a read-only property.
+      }
+      if (this.peer !== peer || this.videoSender !== sender) {
+        for (const item of stream.getTracks()) item.stop()
+        return
+      }
+      await sender.replaceTrack(track)
+      await this.limitVideoSender(sender)
+      if (this.peer !== peer || this.videoSender !== sender) {
+        for (const item of stream.getTracks()) item.stop()
+        return
+      }
+      const previous = this.cameraStream
+      this.cameraStream = stream
+      stream = null
+      this.attachStream(this.localVideoElement, this.cameraStream)
+      for (const item of previous?.getTracks() ?? []) item.stop()
+      this.update({
+        ...this.state,
+        cameraEnabled: true,
+        cameraBusy: false,
+        cameraFacingMode: facingMode,
+        notice: null,
+      })
+    } catch (error) {
+      for (const item of stream?.getTracks() ?? []) item.stop()
+      if (this.peer !== peer) return
+      const denied = error instanceof DOMException && error.name === 'NotAllowedError'
+      this.update({
+        ...this.state,
+        cameraBusy: false,
+        notice: denied
+          ? 'Разрешите доступ к камере в настройках браузера'
+          : 'Не удалось включить камеру — аудиозвонок продолжается',
+      })
+    }
+  }
+
+  private async disableCamera(): Promise<void> {
+    const peer = this.peer
+    const sender = this.videoSender
+    this.update({ ...this.state, cameraBusy: true })
+    try {
+      await sender?.replaceTrack(null)
+    } catch {
+      // Stopping the local track below is the privacy-preserving fallback.
+    }
+    for (const track of this.cameraStream?.getTracks() ?? []) track.stop()
+    this.cameraStream = null
+    this.attachStream(this.localVideoElement, null)
+    if (this.peer !== peer) return
+    this.update({ ...this.state, cameraEnabled: false, cameraBusy: false, notice: null })
+  }
+
+  private async limitVideoSender(sender: RTCRtpSender): Promise<void> {
+    try {
+      const parameters = sender.getParameters()
+      parameters.encodings ??= []
+      if (parameters.encodings.length === 0) parameters.encodings.push({})
+      parameters.encodings[0]!.maxBitrate = VIDEO_MAX_BITRATE
+      parameters.encodings[0]!.maxFramerate = 30
+      parameters.degradationPreference = 'balanced'
+      await sender.setParameters(parameters)
+    } catch {
+      // Browser congestion control remains active when explicit caps are unsupported.
+    }
+  }
+
+  private attachStream(element: HTMLVideoElement | null, stream: MediaStream | null): void {
+    if (!element) return
+    if (element.srcObject !== stream) element.srcObject = stream
+    if (stream) void element.play().catch(() => undefined)
   }
 
   private parseCandidate(value: string): RTCIceCandidateInit {
@@ -554,13 +756,29 @@ export class BrowserVoiceCallService {
     if (notifyPeer) this.sendTerminal('call_ended', 'media_error')
     this.recordSummary('failed')
     this.cleanup()
-    this.update({ ...this.state, phase: 'error', notice, startedAt: null })
+    this.update({
+      ...this.state,
+      phase: 'error',
+      notice,
+      startedAt: null,
+      cameraEnabled: false,
+      cameraBusy: false,
+      remoteVideoEnabled: false,
+    })
   }
 
   private finish(notice: string, outcome: VoiceCallSummary['outcome']): void {
     this.recordSummary(outcome)
     this.cleanup()
-    this.update({ ...this.state, phase: 'ended', notice, startedAt: null })
+    this.update({
+      ...this.state,
+      phase: 'ended',
+      notice,
+      startedAt: null,
+      cameraEnabled: false,
+      cameraBusy: false,
+      remoteVideoEnabled: false,
+    })
   }
 
   private cleanup(): void {
@@ -571,6 +789,14 @@ export class BrowserVoiceCallService {
     this.peer = null
     for (const track of this.localStream?.getTracks() ?? []) track.stop()
     this.localStream = null
+    for (const track of this.cameraStream?.getTracks() ?? []) track.stop()
+    this.cameraStream = null
+    this.videoSender = null
+    this.cameraOperationToken += 1
+    this.cameraOperation = null
+    if (this.localVideoElement) this.localVideoElement.srcObject = null
+    if (this.remoteVideoElement) this.remoteVideoElement.srcObject = null
+    this.remoteMediaStream = null
     if (this.remoteAudio) this.remoteAudio.srcObject = null
     this.remoteAudio = null
     this.pendingOffer = null

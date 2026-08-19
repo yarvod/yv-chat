@@ -13,6 +13,7 @@ const props = defineProps<{
   reject: () => void
   hangup: () => void
   toggleMute: () => void
+  toggleCamera: () => Promise<void>
   resumeAudio: () => void
 }>()
 
@@ -27,7 +28,7 @@ const status = computed(() => voiceCallStatus(props.state, now.value))
   <aside
     class="voice-call-mini"
     role="region"
-    aria-label="Текущий голосовой звонок"
+    aria-label="Текущий звонок"
     @pointerdown="resumeAudio"
   >
     <button
@@ -65,6 +66,16 @@ const status = computed(() => voiceCallStatus(props.state, now.value))
       </button>
     </div>
     <div v-else class="voice-call-mini__actions">
+      <button
+        class="voice-call-mini__action"
+        :class="{ 'voice-call-mini__action--muted': !state.cameraEnabled }"
+        type="button"
+        :disabled="!state.cameraSupported || state.cameraBusy || !state.identityVerified"
+        :aria-label="state.cameraEnabled ? 'Выключить камеру' : 'Включить камеру'"
+        @click="toggleCamera"
+      >
+        <AppIcon :name="state.cameraEnabled ? 'camera' : 'camera-off'" />
+      </button>
       <button
         class="voice-call-mini__action"
         :class="{ 'voice-call-mini__action--muted': state.muted }"

@@ -40,4 +40,9 @@ export interface VoiceCallState {
   selectedAudioOutputId: string
   identityVerified: boolean
   verificationCode: string | null
+  cameraSupported: boolean
+  cameraEnabled: boolean
+  cameraBusy: boolean
+  cameraFacingMode: 'user' | 'environment'
+  remoteVideoEnabled: boolean
 }

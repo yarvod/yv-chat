@@ -85,6 +85,17 @@ defineProps<{ name: AppIconName }>()
     <template v-else-if="name === 'phone-off'">
       <path d="m3 3 18 18M8.5 8.5 8.1 9.9a16 16 0 0 0 6 6l1.3-1.3M5.2 2H4.1a2 2 0 0 0-2 2.2 19.8 19.8 0 0 0 3.1 8.6 19.5 19.5 0 0 0 6 6 19.8 19.8 0 0 0 8.6 3.1 2 2 0 0 0 2.2-2v-3a2 2 0 0 0-1.7-2.1c-1-.1-1.9-.4-2.8-.7" />
     </template>
+    <template v-else-if="name === 'camera'">
+      <rect x="3" y="6" width="14" height="12" rx="3" />
+      <path d="m17 10 4-2v8l-4-2Z" />
+    </template>
+    <template v-else-if="name === 'camera-off'">
+      <path d="m3 3 18 18M10.5 6H6a3 3 0 0 0-3 3v6a3 3 0 0 0 3 3h8a3 3 0 0 0 2.3-1.1M17 13.5V10l4-2v8l-1.7-.9" />
+    </template>
+    <template v-else-if="name === 'camera-switch'">
+      <rect x="3" y="5" width="18" height="14" rx="3" />
+      <path d="M9 9 7 11l2 2M15 13l2-2-2-2M7 11h10" />
+    </template>
     <template v-else-if="name === 'microphone'">
       <rect x="9" y="2" width="6" height="12" rx="3" /><path d="M5 10a7 7 0 0 0 14 0M12 17v5M8 22h8" />
     </template>

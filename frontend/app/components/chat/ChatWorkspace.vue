@@ -67,6 +67,11 @@ function callsState() {
     selectedAudioOutputId: '',
     identityVerified: false,
     verificationCode: null,
+    cameraSupported: false,
+    cameraEnabled: false,
+    cameraBusy: false,
+    cameraFacingMode: 'user' as const,
+    remoteVideoEnabled: false,
   }
 }
 
@@ -275,6 +280,7 @@ onBeforeUnmount(() => {
       :reject="calls.reject.bind(calls)"
       :hangup="calls.hangup.bind(calls)"
       :toggle-mute="calls.toggleMute.bind(calls)"
+      :toggle-camera="calls.toggleCamera.bind(calls)"
       :resume-audio="calls.resumeAudio.bind(calls)"
     />
     <ConversationSidebar
@@ -352,6 +358,9 @@ onBeforeUnmount(() => {
         :reject="calls.reject.bind(calls)"
         :hangup="calls.hangup.bind(calls)"
         :toggle-mute="calls.toggleMute.bind(calls)"
+        :toggle-camera="calls.toggleCamera.bind(calls)"
+        :switch-camera="calls.switchCamera.bind(calls)"
+        :attach-video-elements="calls.attachVideoElements.bind(calls)"
         :select-audio-output="calls.selectAudioOutput.bind(calls)"
         :request-audio-output="calls.requestAudioOutput.bind(calls)"
         :resume-audio="calls.resumeAudio.bind(calls)"

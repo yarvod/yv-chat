@@ -20,6 +20,13 @@ function callState(overrides: Partial<VoiceCallState> = {}): VoiceCallState {
     audioOutputPickerSupported: false,
     audioOutputs: [],
     selectedAudioOutputId: '',
+    identityVerified: true,
+    verificationCode: '1234 5678 9012',
+    cameraSupported: true,
+    cameraEnabled: false,
+    cameraBusy: false,
+    cameraFacingMode: 'user',
+    remoteVideoEnabled: false,
     ...overrides,
   }
 }
@@ -29,7 +36,13 @@ const actions = () => ({
   reject: vi.fn(),
   hangup: vi.fn(),
   toggleMute: vi.fn(),
+  toggleCamera: vi.fn().mockResolvedValue(undefined),
   resumeAudio: vi.fn(),
+})
+
+const videoActions = () => ({
+  switchCamera: vi.fn().mockResolvedValue(undefined),
+  attachVideoElements: vi.fn(),
 })
 
 afterEach(() => {
@@ -47,6 +60,7 @@ describe('voice call presentation', () => {
         dismiss: vi.fn(),
         selectAudioOutput: vi.fn().mockResolvedValue(undefined),
         requestAudioOutput: vi.fn().mockResolvedValue(undefined),
+        ...videoActions(),
         ...actions(),
       },
     })
@@ -78,6 +92,7 @@ describe('voice call presentation', () => {
         dismiss: vi.fn(),
         selectAudioOutput,
         requestAudioOutput,
+        ...videoActions(),
         ...actions(),
       },
     })
@@ -106,6 +121,7 @@ describe('voice call presentation', () => {
         dismiss: vi.fn(),
         selectAudioOutput: vi.fn().mockResolvedValue(undefined),
         requestAudioOutput: vi.fn().mockResolvedValue(undefined),
+        ...videoActions(),
         ...actions(),
       },
     })
@@ -139,6 +155,33 @@ describe('voice call presentation', () => {
     expect(handlers.toggleMute).toHaveBeenCalledOnce()
     expect(handlers.hangup).toHaveBeenCalledOnce()
     wrapper.unmount()
+  })
+
+  it('shows remote video, mirrored local preview and camera controls', async () => {
+    const handlers = actions()
+    const video = videoActions()
+    const wrapper = mount(VoiceCallOverlay, {
+      props: {
+        state: callState({ cameraEnabled: true, remoteVideoEnabled: true }),
+        peerName: 'Алиса',
+        minimize: vi.fn(),
+        dismiss: vi.fn(),
+        selectAudioOutput: vi.fn().mockResolvedValue(undefined),
+        requestAudioOutput: vi.fn().mockResolvedValue(undefined),
+        ...video,
+        ...handlers,
+      },
+    })
+
+    expect(wrapper.get('.voice-call__remote-video').attributes('muted')).toBeDefined()
+    expect(wrapper.get('.voice-call__local-video').classes())
+      .toContain('voice-call__local-video--mirrored')
+    await wrapper.get('[aria-label="Выключить камеру"]').trigger('click')
+    await wrapper.get('[aria-label="Переключить камеру"]').trigger('click')
+    expect(handlers.toggleCamera).toHaveBeenCalledOnce()
+    expect(video.switchCamera).toHaveBeenCalledOnce()
+    wrapper.unmount()
+    expect(video.attachVideoElements).toHaveBeenLastCalledWith(null, null)
   })
 
   it('offers accept and reject when an incoming call is compact', async () => {

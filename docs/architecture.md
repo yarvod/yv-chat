@@ -1688,6 +1688,18 @@ signaling v2 связывает signature с role, conversation/call UUID и о�
 успешной проверки. Одинаковый comparison code выводится из обоих локально
 проверенных bindings и не принимается от signaling. V1 не является fallback.
 
+`WP-105` добавляет opt-in video без второго signaling/key lifecycle. Caller и callee
+заранее согласуют bidirectional video transceiver в offer/answer с тем же
+MLS-authenticated DTLS fingerprint, а явное user action позднее устанавливает или
+убирает camera track через `RTCRtpSender.replaceTrack()`. Camera capture не начинается
+автоматически; local track останавливается на camera-off и любом terminal cleanup.
+Remote video state следует browser track mute/unmute/ended, а не доверенному server
+флагу. Bounded 720p/24–30fps capture и sender bitrate работают вместе со стандартным
+WebRTC congestion control; fixed HD/fps не гарантируются. FastAPI/coturn остаются
+storage-free encrypted packet path, Nginx и call signaling schema не меняются.
+Signaling relay всё ещё может испортить media sections и сорвать/понизить video как
+DoS, но не может незаметно заменить DTLS media endpoint без ошибки MLS binding.
+
 ## 15. Security и trust boundaries
 
 Никогда не логировать passwords, activation/session credentials, Authorization headers, private keys, plaintext messages или decrypted attachments. Structured logs используют opaque IDs, sizes и event types.

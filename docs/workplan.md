@@ -1,72 +1,72 @@
 # Текущий workplan
 
-## WP-104 — MLS-authenticated WebRTC call identity
+## WP-105 — Secure in-call video
 
 Статус: **completed and locally verified; not deployed**
-Backlog: `BL-078`
+Backlog: `BL-036`
 
-Цель: сделать подмену WebRTC DTLS fingerprint через скомпрометированный signaling
-обнаруживаемой до принятия remote SDP и показать одинаковый код сверки на обоих
-устройствах. Изменения остаются на локальной feature branch и не деплоятся.
+Цель: позволить каждому участнику 1:1 звонка независимо включить или выключить
+камеру во время разговора, видеть remote video и своё локальное preview без нового
+доверия к signaling/server и без ухудшения стабильного audio path.
 
 ### Security и architecture invariants
 
-- WebRTC media по-прежнему шифруется стандартным DTLS-SRTP; FastAPI и coturn не
-  получают media keys или plaintext;
-- offer/answer binding подписывается sealed Ed25519 device key, credential которого
-  уже является leaf локального MLS group;
-- verifier получает public key и identity из локального MLS roster, а не доверяет
-  данным signaling backend;
-- canonical binding включает protocol/role, `conversation_id`, `call_id`, обе
-  user/device стороны и единственный canonical SHA-256 DTLS fingerprint;
-- modified/ambiguous fingerprint, stale signature, wrong device или отсутствующий
-  MLS leaf отклоняются до `setRemoteDescription`;
-- signaling protocol v2 не имеет silent fallback к unauthenticated v1;
-- private key не экспортируется из Rust/WASM runtime.
+- audio/video используют один MLS-authenticated WebRTC PeerConnection и один
+  DTLS-SRTP transport; FastAPI, Nginx и coturn не получают media keys/plaintext;
+- video transceiver согласуется в offer/answer с MLS-authenticated DTLS fingerprint,
+  поэтому позднее `replaceTrack()` не требует нового renegotiation;
+- камера открывается только после прямого user action, никогда при входящем звонке,
+  загрузке чата или автоматическом reconnect;
+- локальный camera track немедленно останавливается при выключении, hangup, error,
+  reset и dispose; сервер не записывает, не транскодирует и не хранит video;
+- remote video отображается только в звонке, чей answer прошёл MLS device binding;
+- отказ/отсутствие камеры не завершает audio call и не меняет microphone state;
+- UI не обещает фиксированное качество: browser congestion control адаптирует media
+  к direct/TURN path в bounded 720p/30fps profile.
 
 ### Scope
 
-- отдельный threat model и ADR;
-- Rust/OpenMLS intent API для sign/verify и детерминированного verification code;
-- worker/session boundary без выдачи private key в TypeScript;
-- version 2 call signaling DTO/parser/snapshot для authenticated offer/answer;
-- fail-closed WebRTC integration и MLS-verified state/code в call UI;
-- negative Rust, frontend и backend tests, включая answer race semantics;
-- immutable `/crypto/v8/` browser asset и обновлённый service-worker precache.
+- pre-negotiated bidirectional video transceiver в 1:1 call;
+- camera on/off во время connecting/active call и camera facing switch;
+- local muted mirrored preview и remote autoplay/playsinline surface;
+- 720p ideal, 24 fps ideal/30 max, bounded sender bitrate и balanced degradation;
+- remote track mute/unmute/ended state без отдельного доверенного server event;
+- сохранение media при minimize/expand с повторным attach video elements;
+- permission/device failure UX и unit/component/security regression tests;
+- обновление README/backlog/architecture без production rollout.
 
 ### Exclusions
 
-- production rollout, SSH, Nginx/coturn changes или push/deploy;
-- group calls, video calls и native mobile wrapper;
-- скрытие signaling metadata или TURN IP metadata;
-- обещание Telegram protocol equivalence: Telegram использует другую call/key
-  architecture, а здесь identity authentication построена поверх MLS device roster.
+- group calls/SFU, screen sharing, background blur и recording;
+- server-side transcoding, thumbnails или media storage;
+- native CallKit/ConnectionService и background camera;
+- гарантия HD/fps на слабой сети или в browser/OS power-saving mode;
+- production, SSH, Nginx/coturn changes, push или deploy.
 
 ### Definition of Done
 
-- обе стороны проверяют remote fingerprint по MLS device identity до применения SDP;
-- обе стороны получают один и тот же server-independent verification code;
-- tampered SDP/fingerprint, replayed binding и wrong actor device fail closed;
-- v1 frames отклоняются parser/server tests;
-- full local CI, Rust/WASM build и frontend production build зелёные;
-- ветка и коммиты остаются локальными, production не изменён.
+- любой участник может включить камеру после соединения, второй видит video;
+- camera off прекращает отправку и освобождает local hardware track;
+- front/back switch заменяет track атомарно, не обрывая audio;
+- minimize/expand не пересоздаёт PeerConnection или camera capture;
+- camera denial/failure оставляет audio call активным с понятным сообщением;
+- MLS identity verification остаётся mandatory до active media;
+- full local CI и production frontend build зелёные;
+- локальная feature branch не pushed/deployed.
 
-### Result
+### Результат
 
-- Rust/OpenMLS sealed runtime подписывает и проверяет domain-separated offer/answer
-  bindings без экспорта private key; verifier разрешает public key только из exact
-  current MLS leaf локальной conversation;
-- signaling v2 передаёт bounded lowercase Ed25519 signature вместе с SDP, сохраняет
-  её в reconnect snapshot и полностью отклоняет v1 вместо downgrade;
-- caller и callee применяют remote SDP только после MLS-проверки, а UI показывает
-  подтверждённый identity status и одинаковый 12-digit comparison code;
-- offer остаётся адресованным user, поэтому может звонить на все его MLS devices;
-  answer фиксирует exact winning device, а поздний ответ другого device отклоняется;
-- строгий SDP parser принимает только один unique SHA-256 DTLS fingerprint и fail
-  closed для modified/ambiguous SDP, stale call, wrong conversation/user/device;
-- immutable `/crypto/v8/` release WASM с новыми intent APIs собран и включён в PWA
-  precache; старые rolling assets сохранены;
-- полный локальный `make ci` зелёный: backend `278 passed, 12 skipped`, Rust `26
-  passed`, frontend `334 passed`, lint/format/import contracts/mypy/typecheck,
-  native+WASM clippy/build, Nuxt production build, Compose/deployment/docs checks;
-- production, Nginx, coturn, SSH и GitHub не изменялись.
+- caller и callee заранее согласуют `sendrecv` video transceiver внутри offer/answer
+  с MLS-authenticated DTLS fingerprint, а камера добавляется без renegotiation через
+  `replaceTrack()`;
+- fullscreen и compact UI позволяют включить/выключить камеру, fullscreen также
+  переключает front/rear camera и показывает remote video с локальным preview;
+- camera capture ограничен ideal 720p/24fps, max 720p/30fps и sender cap 1.2 Mbit/s;
+  WebRTC congestion control сохраняет право снизить качество на слабом direct/TURN path;
+- permission failure оставляет audio path активным; camera-off, hangup, error и cleanup
+  останавливают local track, а minimize только безопасно detach-ит DOM video elements;
+- unit/component regressions проверяют explicit camera permission, sender caps,
+  switch/off, remote mute state, denial fallback, terminal cleanup и UI controls;
+- `make ci` прошёл локально: backend `278 passed, 12 skipped`, crypto `26 passed`,
+  frontend lint/typecheck/tests/production build и config checks зелёные;
+- production, SSH, Nginx/coturn и deploy не затрагивались.

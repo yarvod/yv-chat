@@ -40,10 +40,13 @@ timeline автоматически воспроизводит muted тольк�
 их на pause сразу после выхода за viewport, не накапливая фоновые decoder-ы;
 в group v1 это тот же явно server-readable flow, в direct v2 bytes и metadata E2EE;
 в обоих случаях это attachment, а не WebRTC call.
-Личные чаты поддерживают голосовые 1:1 звонки: authenticated WebSocket переносит
-только короткоживущие SDP/ICE signaling frames, а audio идёт напрямую через WebRTC
-DTLS-SRTP либо как зашифрованный relay traffic через coturn. FastAPI не получает
-audio и не записывает звонки. Интерфейс показывает входящий/исходящий звонок,
+Личные чаты поддерживают аудио- и opt-in видеозвонки 1:1: authenticated WebSocket
+переносит только короткоживущие SDP/ICE signaling frames, а media идёт напрямую
+через WebRTC DTLS-SRTP либо как зашифрованный relay traffic через coturn. FastAPI
+не получает audio/video и не записывает звонки. Камера включается только явным
+действием после MLS-проверки устройства, использует bounded 720p/30fps profile и
+немедленно освобождается при выключении или завершении звонка. Интерфейс показывает
+remote video и локальное preview, входящий/исходящий звонок,
 accept/reject, mute, duration, hangup, локальный ringtone/ringback и полноэкранный
 выбор реально доступных browser/system speaker/earpiece/headset/Bluetooth outputs.
 Полноэкранный звонок сворачивается

@@ -600,12 +600,15 @@ replacement покрыты negative tests. Production остаётся на пр
 
 ### BL-036 — Video calls и platform evaluation
 
+Статус: **completed and locally verified; not deployed** (`WP-105`).
+
 Результат: video добавляется после стабильного audio; ограничения PWA документированы.
 
-- camera switching, mute, bandwidth/failure UX;
-- TURN load/storage-free architecture;
-- mobile background/incoming-call limitations;
-- решение о native wrapper только при подтверждённой необходимости.
+- [x] независимые camera on/off, front/rear switching и local/remote video UI;
+- [x] bounded 720p/30fps capture, sender bitrate cap и congestion/failure UX;
+- [x] тот же MLS-authenticated DTLS-SRTP direct/TURN path без media storage;
+- [x] camera permission/cleanup regressions и документированные PWA limitations;
+- [ ] решение о native wrapper — только после физической platform evaluation.
 
 ## Completed
 

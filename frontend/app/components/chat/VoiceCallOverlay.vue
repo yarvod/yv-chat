@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
 import type { VoiceCallAudioOutput, VoiceCallState } from '../../domain/calls/voice-call'
 import { voiceCallStatus } from '../../presentation/calls/voice-call-status'
@@ -13,6 +13,12 @@ const props = defineProps<{
   reject: () => void
   hangup: () => void
   toggleMute: () => void
+  toggleCamera: () => Promise<void>
+  switchCamera: () => Promise<void>
+  attachVideoElements: (
+    local: HTMLVideoElement | null,
+    remote: HTMLVideoElement | null,
+  ) => void
   selectAudioOutput: (deviceId: string) => Promise<void>
   requestAudioOutput: () => Promise<void>
   resumeAudio: () => void
@@ -21,8 +27,19 @@ const props = defineProps<{
 }>()
 
 const now = ref(Date.now())
+const localVideo = ref<HTMLVideoElement | null>(null)
+const remoteVideo = ref<HTMLVideoElement | null>(null)
 const timer = setInterval(() => { now.value = Date.now() }, 1_000)
-onBeforeUnmount(() => clearInterval(timer))
+const stopVideoAttachment = watch(
+  [localVideo, remoteVideo],
+  ([local, remote]) => props.attachVideoElements(local, remote),
+  { flush: 'post', immediate: true },
+)
+onBeforeUnmount(() => {
+  clearInterval(timer)
+  stopVideoAttachment()
+  props.attachVideoElements(null, null)
+})
 
 const status = computed(() => voiceCallStatus(props.state, now.value))
 const minimizable = computed(() => (
@@ -36,6 +53,9 @@ const audioRoutingVisible = computed(() => (
   props.state.phase === 'outgoing'
   || props.state.phase === 'connecting'
   || props.state.phase === 'active'
+))
+const videoVisible = computed(() => (
+  props.state.cameraEnabled || props.state.remoteVideoEnabled
 ))
 
 function outputTitle(kind: VoiceCallAudioOutput['kind']): string {
@@ -61,7 +81,7 @@ function outputIcon(kind: VoiceCallAudioOutput['kind']): AppIconName {
     class="voice-call"
     role="dialog"
     aria-modal="true"
-    aria-label="Голосовой звонок"
+    aria-label="Аудио- или видеозвонок"
     @pointerdown="resumeAudio"
   >
     <button
@@ -75,7 +95,29 @@ function outputIcon(kind: VoiceCallAudioOutput['kind']): AppIconName {
       <span>Свернуть</span>
     </button>
     <div class="voice-call__glow" aria-hidden="true" />
-    <div class="voice-call__avatar" aria-hidden="true">
+    <section v-if="videoVisible" class="voice-call__video" aria-label="Видео звонка">
+      <video
+        ref="remoteVideo"
+        class="voice-call__remote-video"
+        autoplay
+        muted
+        playsinline
+      />
+      <div v-if="!state.remoteVideoEnabled" class="voice-call__video-placeholder">
+        <span>{{ peerName.slice(0, 1).toUpperCase() }}</span>
+        <small>Камера собеседника выключена</small>
+      </div>
+      <video
+        v-if="state.cameraEnabled"
+        ref="localVideo"
+        class="voice-call__local-video"
+        :class="{ 'voice-call__local-video--mirrored': state.cameraFacingMode === 'user' }"
+        autoplay
+        muted
+        playsinline
+      />
+    </section>
+    <div v-else class="voice-call__avatar" aria-hidden="true">
       {{ peerName.slice(0, 1).toUpperCase() }}
     </div>
     <h2>{{ peerName }}</h2>
@@ -139,6 +181,26 @@ function outputIcon(kind: VoiceCallAudioOutput['kind']): AppIconName {
       <button class="voice-call__dismiss" type="button" @click="dismiss">Закрыть</button>
     </div>
     <div v-else class="voice-call__actions">
+      <button
+        class="voice-call__action"
+        :class="{ 'voice-call__action--muted': !state.cameraEnabled }"
+        type="button"
+        :disabled="!state.cameraSupported || state.cameraBusy || !state.identityVerified"
+        :aria-label="state.cameraEnabled ? 'Выключить камеру' : 'Включить камеру'"
+        @click="toggleCamera"
+      >
+        <AppIcon :name="state.cameraEnabled ? 'camera' : 'camera-off'" />
+      </button>
+      <button
+        v-if="state.cameraEnabled"
+        class="voice-call__action"
+        type="button"
+        :disabled="state.cameraBusy"
+        aria-label="Переключить камеру"
+        @click="switchCamera"
+      >
+        <AppIcon name="camera-switch" />
+      </button>
       <button
         class="voice-call__action"
         :class="{ 'voice-call__action--muted': state.muted }"
