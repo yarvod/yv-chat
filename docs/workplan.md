@@ -2,7 +2,7 @@
 
 ## WP-105 — Secure in-call video
 
-Статус: **completed and locally verified; not deployed**
+Статус: **completed and production deployed; physical two-device acceptance pending**
 Backlog: `BL-036`
 
 Цель: позволить каждому участнику 1:1 звонка независимо включить или выключить
@@ -69,4 +69,7 @@ Backlog: `BL-036`
   switch/off, remote mute state, denial fallback, terminal cleanup и UI controls;
 - `make ci` прошёл локально: backend `278 passed, 12 skipped`, crypto `26 passed`,
   frontend lint/typecheck/tests/production build и config checks зелёные;
-- production, SSH, Nginx/coturn и deploy не затрагивались.
+- production rollout `32282897389` для `8cabf4e` прошёл; оба public origins, loopback
+  health, WebSocket auth boundary, `/crypto/v8` WASM, security headers и exact
+  immutable container tag проверены. Nginx/coturn configuration не менялась;
+  физический видеозвонок между двумя устройствами остаётся manual acceptance.

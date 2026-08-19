@@ -339,6 +339,16 @@ vhost regression restore only its immediate backup. Never use `docker system pru
 
 ## Rollout records
 
+`WP-104` MLS-authenticated WebRTC identity и `WP-105` opt-in video calls deployed
+2026-08-19 workflow `32282897389` for commit `8cabf4e`; обычный CI
+`32282897451` также прошёл. Оба public origin вернули health/frontend `200`,
+unauthenticated WebSocket upgrade достиг FastAPI с ожидаемым `403`, call config
+сохранил `401`, а `/crypto/v8/yv_chat_openmls_provider_bg.wasm` вернул `200`,
+`application/wasm` и `2214992` bytes. API/frontend запущены с exact immutable
+`sha-8cabf4e76804ce334a95323aa27c842d36515a4c`, PostgreSQL/API/frontend healthy,
+cleanup и отдельный coturn работают. Nginx/coturn configuration не менялась.
+Physical two-device comparison-code/video acceptance остаётся обязательной.
+
 `WP-100` voice calls were first deployed 2026-08-19 in workflow `32253791036` for
 commit `67b179d`; strict post-rollout verification hardening `69d8d72` passed workflow
 `32254630466`.

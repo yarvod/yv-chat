@@ -576,7 +576,8 @@ focus/navigation для frozen/discarded mobile PWA tasks.
 
 ### BL-078 — MLS-authenticated WebRTC call identity
 
-Статус: **completed and locally verified; not deployed** (`WP-104`).
+Статус: **completed and production deployed; physical two-device acceptance pending**
+(`WP-104`, workflow `32282897389`).
 
 Результат: участники могут криптографически проверить, что DTLS-SRTP media endpoint
 принадлежит ожидаемому MLS device identity, а signaling backend не может незаметно
@@ -595,12 +596,13 @@ focus/navigation для frozen/discarded mobile PWA tasks.
 credential keys current MLS leaves, strict SHA-256 DTLS fingerprint parsing и exact
 call/party context; обе стороны вычисляют одинаковый server-independent comparison
 code. Modified SDP, stale/wrong-device bindings, v1 downgrade и multi-device answer
-replacement покрыты negative tests. Production остаётся на предыдущей версии до
-отдельного атомарного rollout frontend/backend.
+replacement покрыты negative tests. Frontend/backend v2 rollout выполнен атомарно;
+финальная проверка одинакового comparison code остаётся на двух реальных устройствах.
 
 ### BL-036 — Video calls и platform evaluation
 
-Статус: **completed and locally verified; not deployed** (`WP-105`).
+Статус: **completed and production deployed; physical two-device acceptance pending**
+(`WP-105`, workflow `32282897389`).
 
 Результат: video добавляется после стабильного audio; ограничения PWA документированы.
 
