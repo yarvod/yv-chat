@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, ref } from 'vue'
 
 import type { VoiceCallState } from '../../domain/calls/voice-call'
+import { voiceCallStatus } from '../../presentation/calls/voice-call-status'
 import AppIcon from '../ui/AppIcon.vue'
 
 const props = defineProps<{
@@ -13,6 +14,7 @@ const props = defineProps<{
   toggleMute: () => void
   selectAudioOutput: (deviceId: string) => Promise<void>
   resumeAudio: () => void
+  minimize: () => void
   dismiss: () => void
 }>()
 
@@ -20,14 +22,12 @@ const now = ref(Date.now())
 const timer = setInterval(() => { now.value = Date.now() }, 1_000)
 onBeforeUnmount(() => clearInterval(timer))
 
-const duration = computed(() => {
-  if (!props.state.startedAt) return null
-  const seconds = Math.max(0, Math.floor((now.value - props.state.startedAt) / 1_000))
-  const minutes = Math.floor(seconds / 60).toString().padStart(2, '0')
-  return `${minutes}:${(seconds % 60).toString().padStart(2, '0')}`
-})
-const status = computed(() => duration.value ?? props.state.notice ?? (
-  props.state.phase === 'outgoing' ? 'Вызываем…' : 'Голосовой звонок'
+const status = computed(() => voiceCallStatus(props.state, now.value))
+const minimizable = computed(() => (
+  props.state.phase === 'incoming'
+  || props.state.phase === 'outgoing'
+  || props.state.phase === 'connecting'
+  || props.state.phase === 'active'
 ))
 
 function changeAudioOutput(event: Event): void {
@@ -43,6 +43,16 @@ function changeAudioOutput(event: Event): void {
     aria-label="Голосовой звонок"
     @pointerdown="resumeAudio"
   >
+    <button
+      v-if="minimizable"
+      class="voice-call__minimize"
+      type="button"
+      aria-label="Свернуть звонок"
+      @click="minimize"
+    >
+      <AppIcon name="collapse" />
+      <span>Свернуть</span>
+    </button>
     <div class="voice-call__glow" aria-hidden="true" />
     <div class="voice-call__avatar" aria-hidden="true">
       {{ peerName.slice(0, 1).toUpperCase() }}

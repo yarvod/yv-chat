@@ -1659,6 +1659,20 @@ Remote audio output выбирается только через standard secure
 screen-off и native incoming-call surface требуют отдельного mobile wrapper и не
 могут быть обещаны этой PWA.
 
+`WP-102` добавляет локальное presentation-состояние `callMinimized` в chat
+workspace, не создавая второй media/signaling owner. Полноэкранный call dialog может
+уступить место компактной строке над conversation list/workspace; она получает тот
+же immutable `VoiceCallState` и вызывает те же accept/reject/mute/hangup operations
+единственного `BrowserVoiceCallService`. Смена active conversation не меняет peer
+текущего звонка, не пересоздаёт `RTCPeerConnection` и не останавливает microphone.
+Новый `call_id`, `ended` или `error` сбрасывают compact state и снова открывают
+полный call UI.
+
+Криптографическая аутентификация WebRTC endpoint не смешивается с этим UI slice.
+`BL-078` отдельно требует versioned DTLS fingerprint binding к MLS device identity,
+anti-replay call context, verification-code UX, ADR и negative MITM tests до любых
+заявлений о защите от compromised signaling backend.
+
 ## 15. Security и trust boundaries
 
 Никогда не логировать passwords, activation/session credentials, Authorization headers, private keys, plaintext messages или decrypted attachments. Structured logs используют opaque IDs, sizes и event types.

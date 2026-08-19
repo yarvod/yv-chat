@@ -14,6 +14,7 @@ import {
 import ConversationSidebar from './ConversationSidebar.vue'
 import MessagePanel from './MessagePanel.vue'
 import VoiceCallOverlay from './VoiceCallOverlay.vue'
+import VoiceCallMiniBar from './VoiceCallMiniBar.vue'
 import GroupDetailsPanel from './GroupDetailsPanel.vue'
 
 const props = defineProps<{ user: CurrentAccount }>()
@@ -33,6 +34,7 @@ const typingIndicators = ref<readonly TypingIndicator[]>([])
 const presenceIndicators = ref<readonly PresenceIndicator[]>([])
 const connectionState = ref<RealtimeConnectionState>('connecting')
 const callState = ref<VoiceCallState>(callsState())
+const callMinimized = ref(false)
 const groupDetailsOpen = ref(false)
 const openingConversationId = ref<string | null>(null)
 const mobilePane = computed<'list' | 'conversation'>(() => (
@@ -67,6 +69,23 @@ const callPeerName = computed(() => {
   return conversation?.members.find(member => member.userId !== props.user.userId)?.displayName
     ?? 'Собеседник'
 })
+const callCanMinimize = computed(() => (
+  callState.value.phase === 'incoming'
+  || callState.value.phase === 'outgoing'
+  || callState.value.phase === 'connecting'
+  || callState.value.phase === 'active'
+))
+
+function minimizeCall(): void {
+  if (!callCanMinimize.value) return
+  callMinimized.value = true
+  $frontend.haptics.perform('selection')
+}
+
+function expandCall(): void {
+  callMinimized.value = false
+  $frontend.haptics.perform('selection')
+}
 
 const activeTypingActorIds = computed(() => typingIndicators.value
   .filter(item => item.conversationId === messenger.state.activeConversationId)
@@ -195,6 +214,20 @@ watch(
   },
 )
 
+watch(
+  () => callState.value.callId,
+  () => { callMinimized.value = false },
+)
+
+watch(
+  () => callState.value.phase,
+  phase => {
+    if (phase === 'idle' || phase === 'ended' || phase === 'error') {
+      callMinimized.value = false
+    }
+  },
+)
+
 onBeforeUnmount(() => {
   messenger.dispose()
   typing.clear()
@@ -209,7 +242,24 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="messenger-shell" :class="`messenger-shell--${mobilePane}`">
+  <section
+    class="messenger-shell"
+    :class="[
+      `messenger-shell--${mobilePane}`,
+      { 'messenger-shell--call-minimized': callMinimized },
+    ]"
+  >
+    <VoiceCallMiniBar
+      v-if="callState.phase !== 'idle' && callMinimized"
+      :state="callState"
+      :peer-name="callPeerName"
+      :expand="expandCall"
+      :accept="calls.accept.bind(calls)"
+      :reject="calls.reject.bind(calls)"
+      :hangup="calls.hangup.bind(calls)"
+      :toggle-mute="calls.toggleMute.bind(calls)"
+      :resume-audio="calls.resumeAudio.bind(calls)"
+    />
     <ConversationSidebar
       :user="user"
       :conversations="messenger.state.conversations"
@@ -278,7 +328,7 @@ onBeforeUnmount(() => {
         @group-details="groupDetailsOpen = true"
       />
       <VoiceCallOverlay
-        v-if="callState.phase !== 'idle'"
+        v-if="callState.phase !== 'idle' && !callMinimized"
         :state="callState"
         :peer-name="callPeerName"
         :accept="calls.accept.bind(calls)"
@@ -287,6 +337,7 @@ onBeforeUnmount(() => {
         :toggle-mute="calls.toggleMute.bind(calls)"
         :select-audio-output="calls.selectAudioOutput.bind(calls)"
         :resume-audio="calls.resumeAudio.bind(calls)"
+        :minimize="minimizeCall"
         :dismiss="calls.reset.bind(calls)"
       />
       <GroupDetailsPanel

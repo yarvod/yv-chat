@@ -46,8 +46,9 @@ controls. Encrypted OPFS cache, byte-bounded eviction и safe device clear уж�
 
 ### P3 — после стабильного messaging/E2EE
 
-`BL-034` → `BL-035` → `BL-036`: signaling, audio, затем video calls. Эти задачи не
-должны вытеснять recovery, backup, local storage или attachment security.
+`BL-034` → `BL-035` → `BL-078` → `BL-036`: signaling, audio, authenticated call
+identity, затем video calls. Эти задачи не должны вытеснять recovery, backup, local
+storage или attachment security.
 
 ## Frontend application и administration
 
@@ -567,6 +568,23 @@ focus/navigation для frozen/discarded mobile PWA tasks.
 - foreground ringtone/ringback, generic background incoming-call notification;
 - standard browser audio-output/Bluetooth routing with explicit PWA limitations;
 - MLS-encrypted typed call summaries in the direct-chat timeline.
+- in-app minimizable call UI so conversations remain usable during an ongoing call
+  (`WP-102`, implemented and locally verified; rollout pending).
+
+### BL-078 — MLS-authenticated WebRTC call identity
+
+Результат: участники могут криптографически проверить, что DTLS-SRTP media endpoint
+принадлежит ожидаемому MLS device identity, а signaling backend не может незаметно
+подменить WebRTC fingerprint.
+
+- отдельный threat model и ADR до protocol changes;
+- binding offer/answer DTLS fingerprints к MLS-authenticated device keys;
+- anti-replay и точная привязка к `call_id`, conversation и сторонам звонка;
+- одинаковый verification code/safety number на обоих устройствах без передачи
+  доверия server-supplied display data;
+- negative tests для modified SDP/fingerprint, stale signature, wrong device,
+  compromised signaling relay и multi-device answer race;
+- versioned rollout без silent fallback к unauthenticated call identity.
 
 ### BL-036 — Video calls и platform evaluation
 
