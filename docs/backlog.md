@@ -557,7 +557,7 @@ focus/navigation для frozen/discarded mobile PWA tasks.
 
 Результат: audio идёт peer-to-peer с TURN fallback.
 
-Статус: **implemented; production coturn rollout and physical NAT acceptance pending**
+Статус: **implemented and deployed; physical two-network NAT acceptance pending**
 (`WP-100`).
 
 - browser capability/permission UX;

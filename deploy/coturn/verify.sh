@@ -13,7 +13,14 @@ fi
 
 test -s "$INSTALL_DIR/shared-secret"
 
-docker run --rm \
+acceptance_user="yv-chat-acceptance-$(date +%s)-$$"
+output_file=$(mktemp)
+cleanup() {
+    rm -f -- "$output_file"
+}
+trap cleanup EXIT HUP INT TERM
+
+if ! docker run --rm \
     --network host \
     --user 0:0 \
     --cap-drop ALL \
@@ -21,8 +28,19 @@ docker run --rm \
     --security-opt no-new-privileges:true \
     --read-only \
     --tmpfs /tmp:size=4m,mode=1777 \
+    --env TURN_ACCEPTANCE_USER="$acceptance_user" \
     --volume "$INSTALL_DIR/shared-secret:/run/turn-secret:ro" \
     --entrypoint sh \
     "$IMAGE" \
-    -c 'turnutils_uclient -u yv-chat-acceptance -W "$(sed -n "1p" /run/turn-secret)" -y -c -n 1 "$1"' \
-    sh "$TURN_PUBLIC_IP"
+    -c 'turnutils_uclient -u "$TURN_ACCEPTANCE_USER" -W "$(sed -n "1p" /run/turn-secret)" -y -c -n 1 "$1"' \
+    sh "$TURN_PUBLIC_IP" >"$output_file" 2>&1; then
+    cat "$output_file"
+    exit 1
+fi
+
+cat "$output_file"
+if grep -Eiq 'error|cannot|fail' "$output_file"; then
+    exit 1
+fi
+grep -Eq 'tot_send_msgs=2, tot_recv_msgs=2' "$output_file"
+grep -Eq 'Total lost packets 0 ' "$output_file"

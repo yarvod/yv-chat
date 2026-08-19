@@ -339,6 +339,16 @@ vhost regression restore only its immediate backup. Never use `docker system pru
 
 ## Rollout records
 
+`WP-100` voice calls deployed 2026-08-19 in workflow `32253791036` for commit
+`67b179d`. API/frontend run immutable `sha-67b179d64092b7c8e59e6411ae82db59afcc3523`.
+The separate `yv-chat-coturn` project uses pinned coturn `4.16.0-r0-alpine`, host
+networking, an unprivileged process, read-only root, `64 MiB` memory/64 PID limits
+and the bounded `49160:49200` relay range. External UDP STUN, TURN TLS certificate,
+strict authenticated client-to-client relay self-test, both public origin health
+checks and unauthenticated `calls/config` rejection passed. System Nginx and all
+pre-existing `infra-*` services remained unchanged. A physical browser call between
+two user devices on different real networks remains the final manual acceptance.
+
 Initial production rollout completed 2026-08-11 in workflow `31452613018` for
 commit `dffae45`: immutable images, migrations, TLS, opaque-session acceptance and
 all eight pre-existing `infra-*` containers were verified.

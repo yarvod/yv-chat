@@ -2,7 +2,7 @@
 
 ## WP-100 — E2EE голосовые звонки в личных чатах
 
-Статус: **implemented; full CI and production coturn acceptance passed; application rollout and physical two-network call pending**
+Статус: **implemented and deployed; automated production acceptance passed; physical two-network call pending**
 Backlog: `BL-034`, `BL-035`
 
 Цель: добавить в direct conversations браузерные голосовые звонки с Telegram-like
@@ -72,6 +72,9 @@ FastAPI.
 - external UDP STUN и TLS acceptance на `31.192.110.84`, а также authenticated
   client-to-client TURN REST relay self-test прошли; Nginx и соседние `infra-*`
   services не изменялись;
+- commit `67b179d` развернут production workflow `32253791036`; API/frontend используют
+  exact immutable `sha-67b179d64092b7c8e59e6411ae82db59afcc3523`, оба public origins
+  отвечают health `200`, а unauthenticated call config остаётся закрыт `401`;
 - `make ci` зелёный: backend `276 passed, 12 skipped`, Rust/OpenMLS `23 passed`,
   frontend `322 passed`, lint/format/import boundaries/mypy/typecheck/build и все
   Compose/repository gates прошли.
