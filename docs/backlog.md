@@ -619,6 +619,11 @@ corner local PiP и global expand не зависят от выбранного 
 проверено full CI/real-browser и production deployed (`cba2997`, workflow
 `32286917649`); физическая двухустройственная проверка остаётся acceptance шагом.
 
+`WP-107` локально устраняет asymmetric callee video: принимающая сторона использует
+sender negotiated remote-offer video transceiver до signed answer, а fullscreen fit
+переключается между `cover` и `contain` по реальному aspect ratio. Frontend checks
+зелёные; production rollout ожидает физическую проверку phone ↔ desktop.
+
 ## Completed
 
 ### BL-077 — Telegram-like message interactions

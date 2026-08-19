@@ -828,6 +828,7 @@ legend { padding: 0 6px; color: var(--muted); font-size: .8rem; }
 }
 .voice-call__stage { position: absolute; inset: 0; overflow: hidden; background: #05080e; }
 .voice-call__remote-video { width: 100%; height: 100%; object-fit: cover; background: #05080e; }
+.voice-call__remote-video--contained { object-fit: contain; }
 .voice-call__video-placeholder { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 1rem; background: radial-gradient(circle at 50% 38%, color-mix(in srgb, var(--primary) 30%, #101627), #05080e 70%); }
 .voice-call__video-placeholder span { display: grid; width: clamp(7.5rem, 24vw, 12rem); aspect-ratio: 1; place-items: center; border: 1px solid rgba(255,255,255,.2); border-radius: 50%; background: linear-gradient(145deg, color-mix(in srgb, var(--primary) 70%, #fff), #7057e8); box-shadow: 0 22px 80px rgba(78,55,185,.42); font-size: clamp(2.8rem, 8vw, 5rem); font-weight: 780; }
 .voice-call__video-placeholder small { color: rgba(255,255,255,.65); }

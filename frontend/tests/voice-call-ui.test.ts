@@ -189,6 +189,39 @@ describe('voice call presentation', () => {
     expect(video.attachVideoElements).toHaveBeenLastCalledWith(null, null)
   })
 
+  it('contains strongly mismatched portrait video and covers matching landscape video', async () => {
+    const wrapper = mount(VoiceCallOverlay, {
+      props: {
+        state: callState({ remoteVideoEnabled: true }),
+        peerName: 'Алиса',
+        minimize: vi.fn(),
+        dismiss: vi.fn(),
+        selectAudioOutput: vi.fn().mockResolvedValue(undefined),
+        requestAudioOutput: vi.fn().mockResolvedValue(undefined),
+        ...videoActions(),
+        ...actions(),
+      },
+    })
+    const remote = wrapper.get('.voice-call__remote-video')
+    Object.defineProperties(remote.element, {
+      videoWidth: { configurable: true, value: 720 },
+      videoHeight: { configurable: true, value: 1_280 },
+      clientWidth: { configurable: true, value: 1_280 },
+      clientHeight: { configurable: true, value: 720 },
+    })
+
+    await remote.trigger('resize')
+    expect(remote.classes()).toContain('voice-call__remote-video--contained')
+
+    Object.defineProperties(remote.element, {
+      videoWidth: { configurable: true, value: 1_280 },
+      videoHeight: { configurable: true, value: 720 },
+    })
+    await remote.trigger('resize')
+    expect(remote.classes()).not.toContain('voice-call__remote-video--contained')
+    wrapper.unmount()
+  })
+
   it('always mounts the full-screen remote video sink before camera media arrives', async () => {
     const video = videoActions()
     const wrapper = mount(VoiceCallOverlay, {

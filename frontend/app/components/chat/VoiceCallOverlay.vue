@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import type { VoiceCallAudioOutput, VoiceCallState } from '../../domain/calls/voice-call'
 import { voiceCallStatus } from '../../presentation/calls/voice-call-status'
@@ -29,6 +29,7 @@ const props = defineProps<{
 const now = ref(Date.now())
 const localVideo = ref<HTMLVideoElement | null>(null)
 const remoteVideo = ref<HTMLVideoElement | null>(null)
+const remoteVideoContained = ref(false)
 const audioRoutingOpen = ref(false)
 const timer = setInterval(() => { now.value = Date.now() }, 1_000)
 const stopVideoAttachment = watch(
@@ -36,9 +37,17 @@ const stopVideoAttachment = watch(
   ([local, remote]) => props.attachVideoElements(local, remote),
   { flush: 'post', immediate: true },
 )
+const stopRemoteFitWatch = watch(
+  [remoteVideo, () => props.state.remoteVideoEnabled],
+  () => syncRemoteVideoFit(),
+  { flush: 'post' },
+)
+onMounted(() => window.addEventListener('resize', syncRemoteVideoFit))
 onBeforeUnmount(() => {
   clearInterval(timer)
   stopVideoAttachment()
+  stopRemoteFitWatch()
+  window.removeEventListener('resize', syncRemoteVideoFit)
   props.attachVideoElements(null, null)
 })
 
@@ -55,6 +64,25 @@ const audioRoutingAvailable = computed(() => (
   || props.state.phase === 'connecting'
   || props.state.phase === 'active'
 ))
+
+function syncRemoteVideoFit(): void {
+  const video = remoteVideo.value
+  if (
+    !video
+    || !props.state.remoteVideoEnabled
+    || video.videoWidth <= 0
+    || video.videoHeight <= 0
+    || video.clientWidth <= 0
+    || video.clientHeight <= 0
+  ) {
+    remoteVideoContained.value = false
+    return
+  }
+  const mediaAspect = video.videoWidth / video.videoHeight
+  const stageAspect = video.clientWidth / video.clientHeight
+  const cropRatio = Math.max(mediaAspect / stageAspect, stageAspect / mediaAspect)
+  remoteVideoContained.value = cropRatio > 1.3
+}
 
 watch(
   () => props.state.phase,
@@ -101,9 +129,12 @@ function outputIcon(kind: VoiceCallAudioOutput['kind']): AppIconName {
       <video
         ref="remoteVideo"
         class="voice-call__remote-video"
+        :class="{ 'voice-call__remote-video--contained': remoteVideoContained }"
         autoplay
         muted
         playsinline
+        @loadedmetadata="syncRemoteVideoFit"
+        @resize="syncRemoteVideoFit"
       />
       <div v-if="!state.remoteVideoEnabled" class="voice-call__video-placeholder">
         <span>{{ peerName.slice(0, 1).toUpperCase() }}</span>

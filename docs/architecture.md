@@ -1700,6 +1700,12 @@ storage-free encrypted packet path, Nginx и call signaling schema не меня
 Signaling relay всё ещё может испортить media sections и сорвать/понизить video как
 DoS, но не может незаметно заменить DTLS media endpoint без ошибки MLS binding.
 
+На caller video transceiver создаётся до offer. Callee не создаёт конкурирующий media
+section в browser с `getTransceivers()`: после verified remote offer он выбирает
+negotiated remote video transceiver, выставляет `sendrecv` до `createAnswer()` и
+сохраняет именно его sender для последующего `replaceTrack()`. Это делает позднее
+включение камеры симметричным, не добавляя renegotiation или новый trust source.
+
 `WP-106` фиксирует transport ordering как явный client invariant: trickle ICE,
 сгенерированный после `setLocalDescription()`, остаётся в bounded local buffer до
 успешной отправки соответствующего MLS-authenticated offer/answer. Это сохраняет
@@ -1714,8 +1720,10 @@ Remote video sink существует весь negotiated call lifecycle нез
 track mute state; browser track остаётся единственным источником camera visibility.
 Fullscreen overlay является app-scoped sibling route workspace, поэтому смена или
 скрытие active conversation не прячет текущий звонок и не создаёт второй call owner.
-Remote media заполняет viewport, local camera остаётся corner PiP, а audio-output
-selector открывается только явным user action.
+Remote media заполняет viewport через `cover` при близком aspect ratio, но использует
+`contain` при сильном несовпадении decoded stream и viewport, чтобы portrait video не
+обрезалось на landscape screen и наоборот. Local camera остаётся corner PiP, а
+audio-output selector открывается только явным user action.
 
 ## 15. Security и trust boundaries
 

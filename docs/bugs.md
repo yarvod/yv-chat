@@ -4,6 +4,29 @@
 
 ## Active
 
+### BUG-095 — Камера callee не доходила caller и вертикальное видео обрезалось
+
+- Статус: `fixed locally in WP-107; physical two-device acceptance pending`.
+- Severity: `high call correctness and usability`.
+- Reproduction: принять аудиозвонок, после соединения включить камеру на callee;
+  local preview активен и callee видит caller, но caller не видит callee. При
+  portrait camera на телефоне и landscape desktop viewport remote video сильно
+  обрезается по вертикали из-за постоянного `cover`.
+- Root cause: callee сохранял sender собственного pre-created video transceiver,
+  тогда как browser мог связать remote offer с другим transceiver; `replaceTrack()`
+  не попадал в negotiated media section. UI независимо от aspect ratio использовал
+  `object-fit: cover`.
+- Исправление: callee после verified remote offer выбирает его negotiated video
+  transceiver, ставит `sendrecv` до signed answer и использует именно его sender.
+  При сильном различии media/viewport aspect ratio UI переключается на `contain`.
+- Проверка: asymmetric callee sender и portrait/landscape fit покрыты regressions;
+  frontend suite `347 passed`, lint/typecheck/build зелёные; in-app browser подтвердил
+  adaptive fit на desktop `1280×720` и mobile `390×844` с настоящим synthetic video
+  stream без console errors, а real offer/answer lifecycle — одинаковый video MID,
+  `sendrecv` и late callee track в negotiated sender. Browser QA sandbox не поднимает
+  ICE transport, поэтому нужен physical вызов в обе стороны на phone + desktop до
+  production rollout.
+
 ### BUG-094 — Nginx отклонял зашифрованные chunks синхронизации устройств
 
 - Статус: `fixed in production by manual host change` (2026-08-19 UTC).

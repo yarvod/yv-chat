@@ -201,6 +201,7 @@ export class BrowserVoiceCallService {
     try {
       const peer = await this.preparePeer()
       await peer.setRemoteDescription({ type: 'offer', sdp: this.pendingOffer.sdp })
+      this.bindIncomingVideoSender(peer)
       await this.flushCandidates()
       const answer = await peer.createAnswer()
       await peer.setLocalDescription(answer)
@@ -553,7 +554,10 @@ export class BrowserVoiceCallService {
     const peer = new RTCPeerConnection(loaded.configuration)
     this.peer = peer
     for (const track of this.localStream.getAudioTracks()) peer.addTrack(track, this.localStream)
-    if (typeof peer.addTransceiver === 'function') {
+    if (
+      typeof peer.addTransceiver === 'function'
+      && (this.caller || typeof peer.getTransceivers !== 'function')
+    ) {
       try {
         this.videoSender = peer.addTransceiver('video', { direction: 'sendrecv' }).sender
       } catch {
@@ -627,6 +631,27 @@ export class BrowserVoiceCallService {
       }
     })
     return peer
+  }
+
+  private bindIncomingVideoSender(peer: RTCPeerConnection): void {
+    if (this.caller || typeof peer.getTransceivers !== 'function') return
+    const transceiver = peer.getTransceivers().find(item => (
+      item.receiver.track.kind === 'video'
+    ))
+    if (!transceiver) {
+      this.videoSender = null
+      this.update({ ...this.state, cameraSupported: false })
+      return
+    }
+    try {
+      transceiver.direction = 'sendrecv'
+    } catch {
+      this.videoSender = null
+      this.update({ ...this.state, cameraSupported: false })
+      return
+    }
+    this.videoSender = transceiver.sender
+    this.update({ ...this.state, cameraSupported: true })
   }
 
   private async flushCandidates(): Promise<void> {

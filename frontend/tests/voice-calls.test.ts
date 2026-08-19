@@ -55,7 +55,15 @@ class FakePeerConnection extends EventTarget {
     getParameters: vi.fn(() => ({ encodings: [] }) as RTCRtpSendParameters),
     setParameters: vi.fn(async (_parameters: RTCRtpSendParameters) => undefined),
   }
-  addTransceiver = vi.fn(() => ({ sender: this.videoSender }))
+  readonly videoTransceiver = {
+    sender: this.videoSender,
+    receiver: { track: new FakeTrack('video') },
+    direction: 'sendrecv' as RTCRtpTransceiverDirection,
+  }
+  addTransceiver = vi.fn(() => this.videoTransceiver)
+  getTransceivers = vi.fn(() => (
+    [this.videoTransceiver] as unknown as RTCRtpTransceiver[]
+  ))
   addIceCandidate = vi.fn(async () => undefined)
   close = vi.fn(() => { this.connectionState = 'closed' })
 
@@ -230,6 +238,44 @@ describe('browser voice calls', () => {
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       video: false,
     })
+    expect(signals.at(-1)).toMatchObject({ type: 'call_answer', sdp: 'answer-sdp' })
+  })
+
+  it('binds callee camera to the video transceiver created by the remote offer', async () => {
+    const camera = new FakeStream([new FakeTrack('video')])
+    const getUserMedia = vi.fn(async (constraints: MediaStreamConstraints) => (
+      constraints.video === false ? stream : camera
+    ) as unknown as MediaStream)
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: { getUserMedia },
+    })
+    const service = new BrowserVoiceCallService(
+      signaling, config, fakeIdentity(), BOB_USER, BOB_DEVICE,
+    )
+    await service.apply({
+      type: 'call_offer',
+      version: 2,
+      eventId: 'event',
+      conversationId: CONVERSATION,
+      callId: '538998bb-1943-4cf3-beb1-8b87cadf0fc1',
+      actorUserId: ALICE_USER,
+      actorDeviceId: ALICE_DEVICE,
+      sdp: 'offer-sdp',
+      candidate: null,
+      reason: null,
+      identitySignature: '07'.repeat(64),
+    })
+
+    await service.accept()
+    const peer = FakePeerConnection.instances[0]!
+    expect(peer.addTransceiver).not.toHaveBeenCalled()
+    expect(peer.getTransceivers).toHaveBeenCalledOnce()
+    expect(peer.videoTransceiver.direction).toBe('sendrecv')
+
+    await service.toggleCamera()
+
+    expect(peer.videoSender.replaceTrack).toHaveBeenCalledWith(camera.track)
     expect(signals.at(-1)).toMatchObject({ type: 'call_answer', sdp: 'answer-sdp' })
   })
 
