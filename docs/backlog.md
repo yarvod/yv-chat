@@ -558,8 +558,8 @@ focus/navigation для frozen/discarded mobile PWA tasks.
 
 Результат: audio идёт peer-to-peer с TURN fallback.
 
-Статус: **implemented and deployed; physical mobile UX acceptance pending**
-(`WP-100`, `WP-101`).
+Статус: **implemented; WP-103 locally verified and pending deployment**
+(`WP-100`, `WP-101`, `WP-102`, `WP-103`).
 
 - browser capability/permission UX;
 - STUN/TURN configuration и coturn production secrets/ports;
@@ -570,6 +570,8 @@ focus/navigation для frozen/discarded mobile PWA tasks.
 - MLS-encrypted typed call summaries in the direct-chat timeline.
 - in-app minimizable call UI so conversations remain usable during an ongoing call
   (`WP-102`, implemented and deployed; physical mobile acceptance pending).
+- capability-aware fullscreen audio route selector for system default, speaker,
+  earpiece, wired headphones and Bluetooth (`WP-103`, locally verified).
 
 ### BL-078 — MLS-authenticated WebRTC call identity
 

@@ -72,6 +72,13 @@ defineProps<{ name: AppIconName }>()
       <path d="M11 5 6.5 9H3v6h3.5l4.5 4Z" />
       <path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" />
     </template>
+    <template v-else-if="name === 'headphones'">
+      <path d="M4 14v-2a8 8 0 0 1 16 0v2" />
+      <path d="M4 14h3v7H5a2 2 0 0 1-2-2v-3a2 2 0 0 1 1-2ZM20 14h-3v7h2a2 2 0 0 0 2-2v-3a2 2 0 0 0-1-2Z" />
+    </template>
+    <template v-else-if="name === 'bluetooth'">
+      <path d="m7 7 10 10-5 4V3l5 4L7 17" />
+    </template>
     <template v-else-if="name === 'phone'">
       <path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 2 .7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2.1Z" />
     </template>

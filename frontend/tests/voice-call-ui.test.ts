@@ -17,6 +17,7 @@ function callState(overrides: Partial<VoiceCallState> = {}): VoiceCallState {
     startedAt: Date.now() - 125_000,
     notice: null,
     audioOutputSupported: false,
+    audioOutputPickerSupported: false,
     audioOutputs: [],
     selectedAudioOutputId: '',
     ...overrides,
@@ -45,6 +46,7 @@ describe('voice call presentation', () => {
         minimize,
         dismiss: vi.fn(),
         selectAudioOutput: vi.fn().mockResolvedValue(undefined),
+        requestAudioOutput: vi.fn().mockResolvedValue(undefined),
         ...actions(),
       },
     })
@@ -53,6 +55,63 @@ describe('voice call presentation', () => {
     expect(wrapper.text()).toContain('02:05')
     await wrapper.get('[aria-label="Свернуть звонок"]').trigger('click')
     expect(minimize).toHaveBeenCalledOnce()
+    wrapper.unmount()
+  })
+
+  it('shows and selects the real full-screen audio routes', async () => {
+    const selectAudioOutput = vi.fn().mockResolvedValue(undefined)
+    const requestAudioOutput = vi.fn().mockResolvedValue(undefined)
+    const wrapper = mount(VoiceCallOverlay, {
+      props: {
+        state: callState({
+          audioOutputSupported: true,
+          audioOutputPickerSupported: true,
+          selectedAudioOutputId: 'speaker',
+          audioOutputs: [
+            { deviceId: 'speaker', label: 'Speakerphone', kind: 'speaker' },
+            { deviceId: 'receiver', label: 'Receiver', kind: 'earpiece' },
+            { deviceId: 'buds', label: 'Bluetooth Buds', kind: 'bluetooth' },
+          ],
+        }),
+        peerName: 'Алиса',
+        minimize: vi.fn(),
+        dismiss: vi.fn(),
+        selectAudioOutput,
+        requestAudioOutput,
+        ...actions(),
+      },
+    })
+
+    expect(wrapper.text()).toContain('Куда выводить звук')
+    expect(wrapper.text()).toContain('Громкая связь')
+    expect(wrapper.text()).toContain('Телефон')
+    expect(wrapper.text()).toContain('Bluetooth')
+
+    const routes = wrapper.findAll('.voice-call__route')
+    await routes.find(route => route.text().includes('Телефон'))?.trigger('click')
+    await routes.find(route => route.text().includes('Выбрать устройство'))?.trigger('click')
+
+    expect(selectAudioOutput).toHaveBeenCalledWith('receiver')
+    expect(requestAudioOutput).toHaveBeenCalledOnce()
+    expect(wrapper.get('[aria-pressed="true"]').text()).toContain('Громкая связь')
+    wrapper.unmount()
+  })
+
+  it('explains system routing when the browser cannot select an output', () => {
+    const wrapper = mount(VoiceCallOverlay, {
+      props: {
+        state: callState(),
+        peerName: 'Алиса',
+        minimize: vi.fn(),
+        dismiss: vi.fn(),
+        selectAudioOutput: vi.fn().mockResolvedValue(undefined),
+        requestAudioOutput: vi.fn().mockResolvedValue(undefined),
+        ...actions(),
+      },
+    })
+
+    expect(wrapper.text()).toContain('маршрут выбирается в системном меню звука')
+    expect(wrapper.text()).toContain('громкая связь')
     wrapper.unmount()
   })
 

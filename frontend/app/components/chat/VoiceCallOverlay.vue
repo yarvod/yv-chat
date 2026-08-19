@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
 
-import type { VoiceCallState } from '../../domain/calls/voice-call'
+import type { VoiceCallAudioOutput, VoiceCallState } from '../../domain/calls/voice-call'
 import { voiceCallStatus } from '../../presentation/calls/voice-call-status'
+import type { AppIconName } from '../../presentation/icons'
 import AppIcon from '../ui/AppIcon.vue'
 
 const props = defineProps<{
@@ -13,6 +14,7 @@ const props = defineProps<{
   hangup: () => void
   toggleMute: () => void
   selectAudioOutput: (deviceId: string) => Promise<void>
+  requestAudioOutput: () => Promise<void>
   resumeAudio: () => void
   minimize: () => void
   dismiss: () => void
@@ -30,8 +32,27 @@ const minimizable = computed(() => (
   || props.state.phase === 'active'
 ))
 
-function changeAudioOutput(event: Event): void {
-  void props.selectAudioOutput((event.target as HTMLSelectElement).value)
+const audioRoutingVisible = computed(() => (
+  props.state.phase === 'outgoing'
+  || props.state.phase === 'connecting'
+  || props.state.phase === 'active'
+))
+
+function outputTitle(kind: VoiceCallAudioOutput['kind']): string {
+  return {
+    speaker: 'Громкая связь',
+    earpiece: 'Телефон',
+    headphones: 'Наушники',
+    bluetooth: 'Bluetooth',
+    other: 'Аудиовыход',
+  }[kind]
+}
+
+function outputIcon(kind: VoiceCallAudioOutput['kind']): AppIconName {
+  if (kind === 'earpiece') return 'phone'
+  if (kind === 'headphones') return 'headphones'
+  if (kind === 'bluetooth') return 'bluetooth'
+  return 'speaker'
 }
 </script>
 
@@ -62,29 +83,46 @@ function changeAudioOutput(event: Event): void {
     <span class="voice-call__security">
       <span aria-hidden="true">🔒</span> Аудио защищено WebRTC
     </span>
-    <label
-      v-if="state.audioOutputSupported && state.audioOutputs.length > 0"
-      class="voice-call__output"
-    >
-      <AppIcon name="speaker" />
-      <span class="sr-only">Аудиовыход</span>
-      <select :value="state.selectedAudioOutputId" @change="changeAudioOutput">
-        <option value="">Системный выбор</option>
-        <option
+    <section v-if="audioRoutingVisible" class="voice-call__routing" aria-labelledby="audio-routing-title">
+      <strong id="audio-routing-title">Куда выводить звук</strong>
+      <div v-if="state.audioOutputSupported" class="voice-call__routes">
+        <button
+          class="voice-call__route"
+          :class="{ 'voice-call__route--selected': state.selectedAudioOutputId === '' }"
+          type="button"
+          :aria-pressed="state.selectedAudioOutputId === ''"
+          @click="selectAudioOutput('')"
+        >
+          <AppIcon name="speaker" />
+          <span><b>Система</b><small>Маршрут телефона</small></span>
+        </button>
+        <button
           v-for="output in state.audioOutputs"
           :key="output.deviceId"
-          :value="output.deviceId"
+          class="voice-call__route"
+          :class="{ 'voice-call__route--selected': state.selectedAudioOutputId === output.deviceId }"
+          type="button"
+          :aria-pressed="state.selectedAudioOutputId === output.deviceId"
+          @click="selectAudioOutput(output.deviceId)"
         >
-          {{ output.label }}
-        </option>
-      </select>
-    </label>
-    <small
-      v-else-if="state.phase === 'active'"
-      class="voice-call__routing-note"
-    >
-      Динамик, телефон и Bluetooth переключаются средствами системы
-    </small>
+          <AppIcon :name="outputIcon(output.kind)" />
+          <span><b>{{ outputTitle(output.kind) }}</b><small>{{ output.label }}</small></span>
+        </button>
+        <button
+          v-if="state.audioOutputPickerSupported"
+          class="voice-call__route voice-call__route--picker"
+          type="button"
+          @click="requestAudioOutput"
+        >
+          <AppIcon name="headphones" />
+          <span><b>Выбрать устройство…</b><small>Наушники или Bluetooth</small></span>
+        </button>
+      </div>
+      <small v-else class="voice-call__routing-note">
+        На этой платформе маршрут выбирается в системном меню звука: телефон,
+        громкая связь или подключённые наушники.
+      </small>
+    </section>
     <div v-if="state.phase === 'incoming'" class="voice-call__actions">
       <button class="voice-call__action voice-call__action--reject" type="button" aria-label="Отклонить" @click="reject">
         <AppIcon name="phone-off" />

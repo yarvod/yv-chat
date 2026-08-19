@@ -57,6 +57,7 @@ function callsState() {
     startedAt: null,
     notice: null,
     audioOutputSupported: false,
+    audioOutputPickerSupported: false,
     audioOutputs: [],
     selectedAudioOutputId: '',
   }
@@ -336,6 +337,7 @@ onBeforeUnmount(() => {
         :hangup="calls.hangup.bind(calls)"
         :toggle-mute="calls.toggleMute.bind(calls)"
         :select-audio-output="calls.selectAudioOutput.bind(calls)"
+        :request-audio-output="calls.requestAudioOutput.bind(calls)"
         :resume-audio="calls.resumeAudio.bind(calls)"
         :minimize="minimizeCall"
         :dismiss="calls.reset.bind(calls)"

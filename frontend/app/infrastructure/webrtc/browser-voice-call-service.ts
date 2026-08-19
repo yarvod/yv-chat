@@ -1,6 +1,10 @@
 import type { CallRealtimeFrame } from '../../domain/messaging/realtime'
 import type { OutgoingCallSignal } from '../../application/ports/realtime-gateway'
-import type { VoiceCallState, VoiceCallSummary } from '../../domain/calls/voice-call'
+import type {
+  VoiceCallAudioOutput,
+  VoiceCallState,
+  VoiceCallSummary,
+} from '../../domain/calls/voice-call'
 import {
   BrowserCallToneService,
   type CallTonePlayer,
@@ -12,6 +16,10 @@ interface CallSignalingTransport {
 
 interface CallConfigGateway {
   load(): Promise<{ enabled: boolean, configuration: RTCConfiguration }>
+}
+
+interface AudioOutputMediaDevices extends MediaDevices {
+  selectAudioOutput?: () => Promise<MediaDeviceInfo>
 }
 
 export type VoiceCallHistoryRecorder = (
@@ -27,6 +35,7 @@ const IDLE_STATE: VoiceCallState = {
   startedAt: null,
   notice: null,
   audioOutputSupported: false,
+  audioOutputPickerSupported: false,
   audioOutputs: [],
   selectedAudioOutputId: '',
 }
@@ -77,6 +86,7 @@ export class BrowserVoiceCallService {
       startedAt: null,
       notice: 'Подключаем микрофон…',
       audioOutputSupported: false,
+      audioOutputPickerSupported: false,
       audioOutputs: [],
       selectedAudioOutputId: '',
     })
@@ -168,6 +178,37 @@ export class BrowserVoiceCallService {
     }
   }
 
+  async requestAudioOutput(): Promise<void> {
+    const audio = this.remoteAudio
+    const mediaDevices = navigator.mediaDevices as AudioOutputMediaDevices | undefined
+    if (
+      !audio?.setSinkId
+      || !this.state.audioOutputPickerSupported
+      || typeof mediaDevices?.selectAudioOutput !== 'function'
+    ) return
+    try {
+      const selected = await mediaDevices.selectAudioOutput()
+      if (selected.kind !== 'audiooutput' || selected.deviceId.length === 0) return
+      await audio.setSinkId(selected.deviceId)
+      const output = this.describeAudioOutput(selected, this.state.audioOutputs.length)
+      const outputs = this.state.audioOutputs.some(item => item.deviceId === output.deviceId)
+        ? this.state.audioOutputs
+        : [...this.state.audioOutputs, output]
+      this.update({
+        ...this.state,
+        audioOutputs: outputs,
+        selectedAudioOutputId: output.deviceId,
+        notice: null,
+      })
+      await this.refreshAudioOutputs(output)
+    } catch (error) {
+      if (error instanceof DOMException && (
+        error.name === 'NotAllowedError' || error.name === 'AbortError'
+      )) return
+      this.update({ ...this.state, notice: 'Браузер не разрешил выбрать аудиовыход' })
+    }
+  }
+
   resumeAudio(): void {
     this.tones.unlock()
     void this.remoteAudio?.play().catch(() => undefined)
@@ -220,6 +261,7 @@ export class BrowserVoiceCallService {
         startedAt: null,
         notice: 'Входящий голосовой звонок',
         audioOutputSupported: false,
+        audioOutputPickerSupported: false,
         audioOutputs: [],
         selectedAudioOutputId: '',
       })
@@ -396,31 +438,44 @@ export class BrowserVoiceCallService {
     void this.refreshAudioOutputs()
   }
 
-  private async refreshAudioOutputs(): Promise<void> {
+  private async refreshAudioOutputs(preferred?: VoiceCallAudioOutput): Promise<void> {
     const audio = this.remoteAudio
-    const supported = typeof audio?.setSinkId === 'function'
-      && typeof navigator.mediaDevices?.enumerateDevices === 'function'
-    if (!supported) {
+    const mediaDevices = navigator.mediaDevices as AudioOutputMediaDevices | undefined
+    const sinkSupported = typeof audio?.setSinkId === 'function'
+    const pickerSupported = sinkSupported
+      && typeof mediaDevices?.selectAudioOutput === 'function'
+    if (!sinkSupported) {
       this.update({
         ...this.state,
         audioOutputSupported: false,
+        audioOutputPickerSupported: false,
         audioOutputs: [],
         selectedAudioOutputId: '',
       })
       return
     }
+    if (typeof mediaDevices?.enumerateDevices !== 'function') {
+      this.update({
+        ...this.state,
+        audioOutputSupported: pickerSupported,
+        audioOutputPickerSupported: pickerSupported,
+        audioOutputs: preferred ? [preferred] : this.state.audioOutputs,
+      })
+      return
+    }
     try {
-      const devices = await navigator.mediaDevices.enumerateDevices()
+      const devices = await mediaDevices.enumerateDevices()
       const seen = new Set<string>()
       const outputs = devices.filter(device => (
         device.kind === 'audiooutput'
         && device.deviceId.length > 0
+        && device.deviceId !== 'default'
         && !seen.has(device.deviceId)
         && seen.add(device.deviceId)
-      )).map((device, index) => ({
-        deviceId: device.deviceId,
-        label: device.label || `Аудиовыход ${index + 1}`,
-      }))
+      )).map((device, index) => this.describeAudioOutput(device, index))
+      if (preferred && !outputs.some(item => item.deviceId === preferred.deviceId)) {
+        outputs.push(preferred)
+      }
       const selected = outputs.some(item => item.deviceId === this.state.selectedAudioOutputId)
         ? this.state.selectedAudioOutputId
         : ''
@@ -428,12 +483,38 @@ export class BrowserVoiceCallService {
       this.update({
         ...this.state,
         audioOutputSupported: true,
+        audioOutputPickerSupported: pickerSupported,
         audioOutputs: outputs,
         selectedAudioOutputId: selected,
       })
     } catch {
-      this.update({ ...this.state, audioOutputSupported: false, audioOutputs: [] })
+      this.update({
+        ...this.state,
+        audioOutputSupported: pickerSupported,
+        audioOutputPickerSupported: pickerSupported,
+        audioOutputs: preferred ? [preferred] : this.state.audioOutputs,
+      })
     }
+  }
+
+  private describeAudioOutput(
+    device: Pick<MediaDeviceInfo, 'deviceId' | 'label'>,
+    index: number,
+  ): VoiceCallAudioOutput {
+    const label = device.label || `Аудиовыход ${index + 1}`
+    const normalized = label.toLocaleLowerCase('ru-RU')
+    const kind: VoiceCallAudioOutput['kind'] = (
+      /bluetooth|airpods|galaxy buds|pixel buds|wireless/.test(normalized)
+        ? 'bluetooth'
+        : /earpiece|receiver|разговорн|телефон/.test(normalized)
+          ? 'earpiece'
+          : /headphone|headset|earphone|наушник|гарнитур/.test(normalized)
+            ? 'headphones'
+            : /speaker|динамик|громк/.test(normalized)
+              ? 'speaker'
+              : 'other'
+    )
+    return { deviceId: device.deviceId, label, kind }
   }
 
   private recordSummary(outcome: VoiceCallSummary['outcome']): void {

@@ -1652,6 +1652,13 @@ database.
 
 Remote audio output выбирается только через standard secure-context
 `HTMLMediaElement.setSinkId()` и `audiooutput` devices, обновляемые по `devicechange`.
+`WP-103` показывает в fullscreen call UI системный маршрут и только реально
+enumerated speaker/earpiece/headphones/Bluetooth sinks. Если browser поддерживает
+`MediaDevices.selectAudioOutput()`, отдельное прямое user action открывает его native
+picker; выданный устройству permission sink добавляется в список и применяется через
+тот же `setSinkId()`. Отключение выбранной гарнитуры атомарно возвращает remote audio
+на system default (`sinkId = ""`). Device IDs и labels остаются только в browser и не
+передаются backend, signaling или coturn.
 Если browser не раскрывает отдельный earpiece/speaker/Bluetooth sink, routing остаётся
 за системой. Web PWA не использует камеру или другие эвристики как fake proximity:
 текущий Proximity Sensor draft не реализован browser engines, а web API для

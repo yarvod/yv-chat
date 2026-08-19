@@ -24,6 +24,7 @@ export interface VoiceCallSummary {
 export interface VoiceCallAudioOutput {
   deviceId: string
   label: string
+  kind: 'speaker' | 'earpiece' | 'headphones' | 'bluetooth' | 'other'
 }
 
 export interface VoiceCallState {
@@ -34,6 +35,7 @@ export interface VoiceCallState {
   startedAt: number | null
   notice: string | null
   audioOutputSupported: boolean
+  audioOutputPickerSupported: boolean
   audioOutputs: readonly VoiceCallAudioOutput[]
   selectedAudioOutputId: string
 }

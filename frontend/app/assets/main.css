@@ -838,12 +838,22 @@ legend { padding: 0 6px; color: var(--muted); font-size: .8rem; }
 .voice-call h2 { position: relative; margin: 0; font-size: clamp(1.55rem, 5vw, 2.3rem); }
 .voice-call > p { position: relative; min-height: 1.5em; margin: .5rem 0; color: rgba(255,255,255,.72); }
 .voice-call__security { position: relative; display: inline-flex; align-items: center; gap: .35rem; margin-top: .25rem; color: rgba(255,255,255,.58); font-size: .78rem; }
-.voice-call__output { position: relative; display: inline-flex; max-width: min(23rem, 86vw); align-items: center; gap: .5rem; margin-top: 1rem; padding: .42rem .75rem; border: 1px solid rgba(255,255,255,.16); border-radius: 999px; background: rgba(255,255,255,.09); }
-.voice-call__output .app-icon { width: 1rem; height: 1rem; flex: none; }
-.voice-call__output select { min-width: 0; max-width: 18rem; border: 0; outline: 0; color: #fff; background: transparent; font: inherit; font-size: .78rem; }
-.voice-call__output option { color: #111525; background: #fff; }
-.voice-call__routing-note { position: relative; max-width: min(22rem, 88vw); margin-top: .8rem; color: rgba(255,255,255,.58); font-size: .72rem; }
+.voice-call__routing { position: relative; width: min(34rem, 92vw); margin-top: 1rem; padding: .75rem; border: 1px solid rgba(255,255,255,.16); border-radius: 20px; background: rgba(255,255,255,.07); text-align: left; backdrop-filter: blur(18px); }
+.voice-call__routing > strong { display: block; margin: 0 .2rem .55rem; color: rgba(255,255,255,.74); font-size: .72rem; letter-spacing: .03em; text-transform: uppercase; }
+.voice-call__routes { display: grid; max-height: 10.5rem; overflow: auto; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .45rem; scrollbar-width: thin; }
+.voice-call__route { display: grid; min-width: 0; min-height: 54px; grid-template-columns: 34px minmax(0, 1fr); align-items: center; gap: .55rem; padding: .42rem .55rem; border: 1px solid rgba(255,255,255,.12); border-radius: 14px; color: rgba(255,255,255,.82); background: rgba(255,255,255,.06); text-align: left; }
+.voice-call__route:hover { background: rgba(255,255,255,.11); }
+.voice-call__route--selected { border-color: color-mix(in srgb, var(--success) 75%, white); background: color-mix(in srgb, var(--success) 18%, transparent); color: #fff; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--success) 34%, transparent); }
+.voice-call__route--picker { border-style: dashed; }
+.voice-call__route > .app-icon { width: 1.25rem; height: 1.25rem; justify-self: center; }
+.voice-call__route > span { display: grid; min-width: 0; gap: .08rem; }
+.voice-call__route b,
+.voice-call__route small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.voice-call__route b { font-size: .78rem; }
+.voice-call__route small { color: rgba(255,255,255,.52); font-size: .67rem; }
+.voice-call__routing-note { display: block; margin: .2rem; color: rgba(255,255,255,.58); font-size: .72rem; line-height: 1.45; text-align: center; }
 .voice-call__actions { position: relative; display: flex; align-items: center; justify-content: center; gap: clamp(2rem, 12vw, 5rem); min-height: 5rem; margin-top: clamp(3rem, 12vh, 7rem); }
+.voice-call__routing + .voice-call__actions { margin-top: clamp(1.4rem, 5vh, 3rem); }
 .voice-call__action { display: grid; width: 4.5rem; aspect-ratio: 1; place-items: center; padding: 0; border: 1px solid rgba(255,255,255,.18); border-radius: 50%; background: rgba(255,255,255,.14); color: #fff; box-shadow: 0 12px 34px rgba(0,0,0,.24); backdrop-filter: blur(16px); }
 .voice-call__action .app-icon { width: 1.65rem; height: 1.65rem; }
 .voice-call__action--accept { background: #2cce72; border-color: #2cce72; animation: connection-pulse 1.7s ease-in-out infinite; }
@@ -869,6 +879,9 @@ legend { padding: 0 6px; color: var(--muted); font-size: .8rem; }
 @media (max-width: 430px) {
   .voice-call__minimize span { display: none; }
   .voice-call__minimize { width: 42px; padding: 0; justify-content: center; }
+  .voice-call__routing { padding: .6rem; }
+  .voice-call__routes { max-height: 9rem; }
+  .voice-call__route { min-height: 50px; grid-template-columns: 28px minmax(0, 1fr); gap: .4rem; padding-inline: .4rem; }
   .voice-call-mini { min-height: 58px; gap: .35rem; padding-block: .3rem; }
   .voice-call-mini__main { min-height: 46px; grid-template-columns: 36px minmax(0, 1fr) 18px; gap: .5rem; padding-inline: .2rem; }
   .voice-call-mini__avatar { width: 36px; }
@@ -885,6 +898,13 @@ legend { padding: 0 6px; color: var(--muted); font-size: .8rem; }
   .managed-user-actions { grid-column: 1 / -1; }
   .settings-confirm__actions { width: 100%; }
   .settings-confirm__actions button { flex: 1; }
+}
+@media (max-height: 720px) {
+  .voice-call__avatar { width: 5.8rem; margin-bottom: .7rem; }
+  .voice-call__routing { margin-top: .65rem; }
+  .voice-call__routes { max-height: 7.5rem; }
+  .voice-call__routing + .voice-call__actions { min-height: 4.2rem; margin-top: .8rem; }
+  .voice-call__action { width: 4rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {

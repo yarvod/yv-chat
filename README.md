@@ -44,8 +44,9 @@ timeline автоматически воспроизводит muted тольк�
 только короткоживущие SDP/ICE signaling frames, а audio идёт напрямую через WebRTC
 DTLS-SRTP либо как зашифрованный relay traffic через coturn. FastAPI не получает
 audio и не записывает звонки. Интерфейс показывает входящий/исходящий звонок,
-accept/reject, mute, duration, hangup, локальный ringtone/ringback и доступный
-браузеру выбор speaker/headset/Bluetooth output. Полноэкранный звонок сворачивается
+accept/reject, mute, duration, hangup, локальный ringtone/ringback и полноэкранный
+выбор реально доступных browser/system speaker/earpiece/headset/Bluetooth outputs.
+Полноэкранный звонок сворачивается
 в компактную строку над чатами с актуальным status/timer и быстрыми действиями,
 поэтому во время разговора можно переходить между диалогами; Web Push содержит generic
 `incoming_call` wake-up с opaque IDs. Итог звонка появляется в direct timeline как

@@ -163,17 +163,18 @@ describe('browser voice calls', () => {
 
   it('plays ringback, follows new audio outputs and records one encrypted-call summary', async () => {
     const listeners = new Map<string, EventListener>()
+    let audioOutputs: MediaDeviceInfo[] = [{
+      kind: 'audiooutput',
+      deviceId: 'bluetooth-headset',
+      groupId: 'headset',
+      label: 'Bluetooth наушники',
+      toJSON: () => ({}),
+    } as MediaDeviceInfo]
     Object.defineProperty(navigator, 'mediaDevices', {
       configurable: true,
       value: {
         getUserMedia: vi.fn(async () => stream),
-        enumerateDevices: vi.fn(async () => [{
-          kind: 'audiooutput',
-          deviceId: 'bluetooth-headset',
-          groupId: 'headset',
-          label: 'Bluetooth наушники',
-          toJSON: () => ({}),
-        }]),
+        enumerateDevices: vi.fn(async () => audioOutputs),
         addEventListener: vi.fn((type: string, listener: EventListener) => {
           listeners.set(type, listener)
         }),
@@ -191,10 +192,18 @@ describe('browser voice calls', () => {
     expect(tones.startOutgoing).toHaveBeenCalledOnce()
     expect(latest).toMatchObject({
       audioOutputSupported: true,
-      audioOutputs: [{ deviceId: 'bluetooth-headset', label: 'Bluetooth наушники' }],
+      audioOutputs: [{
+        deviceId: 'bluetooth-headset',
+        label: 'Bluetooth наушники',
+        kind: 'bluetooth',
+      }],
     })
     await service.selectAudioOutput('bluetooth-headset')
     expect(FakeAudio.instances[0]?.setSinkId).toHaveBeenCalledWith('bluetooth-headset')
+    audioOutputs = []
+    listeners.get('devicechange')?.(new Event('devicechange'))
+    await vi.waitFor(() => expect(latest).toMatchObject({ selectedAudioOutputId: '' }))
+    expect(FakeAudio.instances[0]?.setSinkId).toHaveBeenCalledWith('')
 
     const callId = signals.find(signal => signal.type === 'call_offer')?.call_id ?? ''
     await service.apply({
@@ -221,5 +230,46 @@ describe('browser voice calls', () => {
       durationSeconds: 1,
     })
     expect(tones.stop).toHaveBeenCalled()
+  })
+
+  it('uses the browser output picker and exposes the chosen route', async () => {
+    const selectAudioOutput = vi.fn(async () => ({
+      kind: 'audiooutput',
+      deviceId: 'phone-receiver',
+      groupId: 'phone',
+      label: 'Разговорный динамик телефона',
+      toJSON: () => ({}),
+    } as MediaDeviceInfo))
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn(async () => stream),
+        enumerateDevices: vi.fn(async () => []),
+        selectAudioOutput,
+      },
+    })
+    const service = new BrowserVoiceCallService(signaling, config)
+    let latest = null
+    service.subscribe(state => { latest = state })
+
+    await service.start('conversation')
+    expect(latest).toMatchObject({
+      audioOutputSupported: true,
+      audioOutputPickerSupported: true,
+    })
+
+    await service.requestAudioOutput()
+
+    expect(selectAudioOutput).toHaveBeenCalledOnce()
+    expect(FakeAudio.instances[0]?.setSinkId).toHaveBeenCalledWith('phone-receiver')
+    expect(latest).toMatchObject({
+      selectedAudioOutputId: 'phone-receiver',
+      audioOutputs: [{
+        deviceId: 'phone-receiver',
+        label: 'Разговорный динамик телефона',
+        kind: 'earpiece',
+      }],
+    })
+    service.reset()
   })
 })
