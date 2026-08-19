@@ -44,9 +44,16 @@ timeline автоматически воспроизводит muted тольк�
 только короткоживущие SDP/ICE signaling frames, а audio идёт напрямую через WebRTC
 DTLS-SRTP либо как зашифрованный relay traffic через coturn. FastAPI не получает
 audio и не записывает звонки. Интерфейс показывает входящий/исходящий звонок,
-accept/reject, mute, duration и hangup; Web Push содержит только generic
-`incoming_call` wake-up с opaque IDs. Browser PWA не обещает нативный background
-ringing на платформах, где OS не даёт его обычной web-странице.
+accept/reject, mute, duration, hangup, локальный ringtone/ringback и доступный
+браузеру выбор speaker/headset/Bluetooth output; Web Push содержит только generic
+`incoming_call` wake-up с opaque IDs. Итог звонка появляется в direct timeline как
+обычное MLS-зашифрованное typed-сообщение — server видит ciphertext, но не его outcome
+или duration. Browser PWA не может гарантировать custom background ringtone,
+разговорный динамик или автоматическое гашение экрана по датчику приближения там,
+где OS не предоставляет эти возможности web-приложению; для них нужен native wrapper.
+Публичный coturn принимает обычный STUN для NAT discovery, но TURN relay требует
+короткоживущую HMAC-учётку authenticated пользователя и ограничен allocation,
+bandwidth, relay-port и unauthenticated-response квотами.
 В Settings можно посмотреть размер и число локальных media-копий и после отдельного
 подтверждения очистить только этот кэш: переписки, offline-очередь, session/device
 identity и MLS keys не удаляются. `http/https` ссылки в тексте сообщений кликабельны

@@ -20,8 +20,19 @@ cert=/etc/coturn/tls/fullchain.pem
 pkey=/etc/coturn/tls/privkey.pem
 
 stale-nonce=600
+# Bound unauthenticated UDP challenge reflection without affecting normal
+# browser challenge/retry handshakes. Stateless nonces also avoid keeping
+# per-source challenge state before authentication succeeds.
+unauthorized-ratelimit
+unauthorized-ratelimit-rps=10
+stateless-nonce
 user-quota=4
 total-quota=64
+# Audio-only WebRTC remains far below 256 KiB/s per allocation. The aggregate
+# cap bounds damage from leaked temporary credentials while leaving room for
+# every expected 1:1 call on the 10–15 user deployment.
+max-bps=262144
+bps-capacity=4194304
 no-multicast-peers
 no-tcp-relay
 no-dtls

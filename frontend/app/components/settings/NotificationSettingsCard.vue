@@ -30,8 +30,8 @@ onMounted(() => void push.inspect())
       </div>
     </div>
     <p class="notification-privacy-note">
-      Push содержит только технический идентификатор. Имя отправителя и текст сообщения
-      не передаются службе уведомлений.
+      Push содержит только технические идентификаторы сообщения или звонка. Имя
+      отправителя, текст, SDP и аудио не передаются службе уведомлений.
     </p>
     <p v-if="push.state.value.status === 'unsupported'" class="settings-message">
       На iPhone и iPad сначала добавьте yv-chat на экран «Домой» и откройте его как PWA.

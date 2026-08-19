@@ -11,6 +11,8 @@ const props = defineProps<{
   reject: () => void
   hangup: () => void
   toggleMute: () => void
+  selectAudioOutput: (deviceId: string) => Promise<void>
+  resumeAudio: () => void
   dismiss: () => void
 }>()
 
@@ -27,10 +29,20 @@ const duration = computed(() => {
 const status = computed(() => duration.value ?? props.state.notice ?? (
   props.state.phase === 'outgoing' ? 'Вызываем…' : 'Голосовой звонок'
 ))
+
+function changeAudioOutput(event: Event): void {
+  void props.selectAudioOutput((event.target as HTMLSelectElement).value)
+}
 </script>
 
 <template>
-  <aside class="voice-call" role="dialog" aria-modal="true" aria-label="Голосовой звонок">
+  <aside
+    class="voice-call"
+    role="dialog"
+    aria-modal="true"
+    aria-label="Голосовой звонок"
+    @pointerdown="resumeAudio"
+  >
     <div class="voice-call__glow" aria-hidden="true" />
     <div class="voice-call__avatar" aria-hidden="true">
       {{ peerName.slice(0, 1).toUpperCase() }}
@@ -40,6 +52,29 @@ const status = computed(() => duration.value ?? props.state.notice ?? (
     <span class="voice-call__security">
       <span aria-hidden="true">🔒</span> Аудио защищено WebRTC
     </span>
+    <label
+      v-if="state.audioOutputSupported && state.audioOutputs.length > 0"
+      class="voice-call__output"
+    >
+      <AppIcon name="speaker" />
+      <span class="sr-only">Аудиовыход</span>
+      <select :value="state.selectedAudioOutputId" @change="changeAudioOutput">
+        <option value="">Системный выбор</option>
+        <option
+          v-for="output in state.audioOutputs"
+          :key="output.deviceId"
+          :value="output.deviceId"
+        >
+          {{ output.label }}
+        </option>
+      </select>
+    </label>
+    <small
+      v-else-if="state.phase === 'active'"
+      class="voice-call__routing-note"
+    >
+      Динамик, телефон и Bluetooth переключаются средствами системы
+    </small>
     <div v-if="state.phase === 'incoming'" class="voice-call__actions">
       <button class="voice-call__action voice-call__action--reject" type="button" aria-label="Отклонить" @click="reject">
         <AppIcon name="phone-off" />

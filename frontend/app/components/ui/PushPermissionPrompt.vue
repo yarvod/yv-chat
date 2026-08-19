@@ -25,7 +25,7 @@ function dismiss(): void {
     aria-label="Настройка уведомлений"
   >
     <div>
-      <strong>Не пропускайте сообщения</strong>
+      <strong>Не пропускайте звонки и сообщения</strong>
       <span>Включить системные уведомления на этом устройстве?</span>
     </div>
     <div class="push-permission-prompt__actions">

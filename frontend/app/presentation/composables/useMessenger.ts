@@ -24,6 +24,7 @@ import {
   outgoingProtocolVersion,
 } from '../../application/messaging/conversation-message-policy'
 import type { TimelineMessage } from '../../application/messaging/timeline-message'
+import type { VoiceCallSummary } from '../../domain/calls/voice-call'
 import {
   encodeGroupMessageContent,
 } from '../../application/messaging/group-message-content'
@@ -1180,6 +1181,29 @@ export function useMessenger(
     }
   }
 
+  async function recordCallSummary(
+    conversationId: string,
+    summary: VoiceCallSummary,
+  ): Promise<boolean> {
+    const conversation = state.conversations.find(item => (
+      item.conversationId === conversationId && item.conversationType === 'direct'
+    ))
+    if (!conversation) return false
+    try {
+      return await outbox.enqueue(
+        conversationId,
+        conversation.conversationType,
+        encodeDirectMessageContent({
+          text: '',
+          attachments: [],
+          call: summary,
+        }),
+      )
+    } catch {
+      return false
+    }
+  }
+
   async function loadAttachment(
     conversationId: string,
     attachment: MessageAttachment,
@@ -1412,6 +1436,7 @@ export function useMessenger(
     removeActiveGroupMember,
     leaveActiveGroup,
     send,
+    recordCallSummary,
     loadAttachment,
     retryOutgoing,
     searchActiveConversation,

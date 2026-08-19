@@ -1632,6 +1632,33 @@ read-only копию TLS certificate/key, quotas и TURN shared secret, но н�
 storage/recording path. `incoming_call` Push не содержит SDP, ICE, display name или
 message/media content — только version/event/conversation/call IDs.
 
+Public STUN/TURN listeners неизбежно доступны для scan/flood traffic, но успешная
+relay allocation требует short-lived HMAC credential. Coturn дополнительно имеет
+per-user/global allocation quotas, per-allocation и aggregate bandwidth caps,
+bounded relay-port range, stateless challenge nonces и per-source UDP `401`
+rate-limit. Это ограничивает abuse/reflection и ущерб от временно утёкшей browser
+credential; обычный STUN Binding остаётся публичным для NAT discovery и сам по себе
+не может создать application call или получить доступ к chat/session state.
+
+`WP-101` добавляет только client-side UX поверх этого media/signaling boundary.
+Foreground ringtone и ringback синтезируются локальным Web Audio adapter и
+останавливаются вместе с call state; background Service Worker может запросить
+generic notification/vibration, но конкретный sound и delivery остаются политикой
+browser/OS. После terminal transition caller один раз создаёт typed call summary
+(`completed/missed/declined/busy/cancelled/failed`, bounded duration) через обычный
+direct MLS v2 outbox. Поэтому summary синхронизируется и хранится как opaque message
+ciphertext; ephemeral SDP/ICE call coordinator при этом не становится durable call
+database.
+
+Remote audio output выбирается только через standard secure-context
+`HTMLMediaElement.setSinkId()` и `audiooutput` devices, обновляемые по `devicechange`.
+Если browser не раскрывает отдельный earpiece/speaker/Bluetooth sink, routing остаётся
+за системой. Web PWA не использует камеру или другие эвристики как fake proximity:
+текущий Proximity Sensor draft не реализован browser engines, а web API для
+принудительного выключения дисплея нет. Настоящий phone audio-session, proximity
+screen-off и native incoming-call surface требуют отдельного mobile wrapper и не
+могут быть обещаны этой PWA.
+
 ## 15. Security и trust boundaries
 
 Никогда не логировать passwords, activation/session credentials, Authorization headers, private keys, plaintext messages или decrypted attachments. Structured logs используют opaque IDs, sizes и event types.

@@ -31,6 +31,54 @@ const conversation = {
 }
 
 describe('message panel', () => {
+  it('renders an encrypted missed-call item as call history instead of empty text', () => {
+    const wrapper = mount(MessagePanel, {
+      props: {
+        conversation,
+        messages: [{
+          messageId: 'call-message',
+          clientMessageId: 'call-client',
+          conversationId: 'conversation-1',
+          senderUserId: 'bob-id',
+          senderDeviceId: 'bob-device',
+          protocolVersion: 2,
+          cryptoGenerationId: 'generation',
+          cryptoEpoch: 4,
+          sequence: 1,
+          createdAt: '2026-08-19T12:00:00Z',
+          expiresAt: '2026-09-18T12:00:00Z',
+          ciphertextBase64: 'b3BhcXVl',
+          deletionReason: null,
+          deletedAt: null,
+          contentState: 'available' as const,
+          displayBody: '',
+          call: {
+            callId: '60cf6877-9dd1-454e-86ac-f42303c7775a',
+            outcome: 'missed' as const,
+            durationSeconds: 0,
+          },
+          contentSecure: true,
+        }],
+        actorUserId: 'alice-id',
+        sending: false,
+        protectionSecure: true,
+        protectionLabel: 'E2EE',
+        sendMessage: vi.fn(),
+        deleteMessage: vi.fn(),
+        deletingMessageId: null,
+        typingActorIds: [],
+        onlineActorIds: [],
+        deliveryStates: [],
+        connectionState: 'connected',
+        setTyping: vi.fn(),
+      },
+    })
+
+    expect(wrapper.get('.message-bubble--call').text()).toContain('Пропущенный звонок')
+    expect(wrapper.get('.call-history').text()).toContain('Входящий')
+    expect(wrapper.find('.message-unavailable').exists()).toBe(false)
+  })
+
   it('cycles multiple pins, opens the exact message and exposes direct-chat pin actions', async () => {
     const messages = [1, 2].map(sequence => ({
       messageId: `message-${sequence}`,

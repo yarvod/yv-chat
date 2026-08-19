@@ -26,7 +26,7 @@ const messenger = useMessenger(
 const { $frontend } = useNuxtApp()
 const route = useRoute()
 const realtime = $frontend.createRealtimeSync()
-const calls = $frontend.createVoiceCalls(realtime)
+const calls = $frontend.createVoiceCalls(realtime, messenger.recordCallSummary)
 const typing = $frontend.createTypingIndicators(realtime)
 const presence = $frontend.createPresenceIndicators()
 const typingIndicators = ref<readonly TypingIndicator[]>([])
@@ -54,6 +54,9 @@ function callsState() {
     muted: false,
     startedAt: null,
     notice: null,
+    audioOutputSupported: false,
+    audioOutputs: [],
+    selectedAudioOutputId: '',
   }
 }
 
@@ -200,7 +203,7 @@ onBeforeUnmount(() => {
   unsubscribeCalls?.()
   presence.clear()
   realtime.stop()
-  calls.reset()
+  calls.dispose()
   unsubscribeVisibility?.()
 })
 </script>
@@ -282,6 +285,8 @@ onBeforeUnmount(() => {
         :reject="calls.reject.bind(calls)"
         :hangup="calls.hangup.bind(calls)"
         :toggle-mute="calls.toggleMute.bind(calls)"
+        :select-audio-output="calls.selectAudioOutput.bind(calls)"
+        :resume-audio="calls.resumeAudio.bind(calls)"
         :dismiss="calls.reset.bind(calls)"
       />
       <GroupDetailsPanel

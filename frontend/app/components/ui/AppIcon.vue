@@ -62,6 +62,10 @@ defineProps<{ name: AppIconName }>()
       <path d="M11 5 6.5 9H3v6h3.5l4.5 4Z" />
       <path d="m16.5 9.5 5 5M21.5 9.5l-5 5" />
     </template>
+    <template v-else-if="name === 'speaker'">
+      <path d="M11 5 6.5 9H3v6h3.5l4.5 4Z" />
+      <path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" />
+    </template>
     <template v-else-if="name === 'phone'">
       <path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 2 .7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2.1Z" />
     </template>

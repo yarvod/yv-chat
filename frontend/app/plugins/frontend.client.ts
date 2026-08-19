@@ -103,6 +103,7 @@ import { BrowserPushAdapter } from '../infrastructure/browser/browser-push'
 import { HttpPushRegistrationGateway } from '../infrastructure/http/push-registration-gateway'
 import { HttpCallConfigGateway } from '../infrastructure/http/call-config-gateway'
 import { BrowserVoiceCallService } from '../infrastructure/webrtc/browser-voice-call-service'
+import type { VoiceCallHistoryRecorder } from '../infrastructure/webrtc/browser-voice-call-service'
 
 export default defineNuxtPlugin(() => {
   const apiClient = new ApiClient()
@@ -297,8 +298,11 @@ export default defineNuxtPlugin(() => {
         securityReset: new SecurityReset(accountSecurityGateway),
         listSecurityEvents: new ListSecurityEvents(accountSecurityGateway),
         createRealtimeSync: () => new RealtimeSyncService(realtimeGateway, scheduler),
-        createVoiceCalls: (realtime: RealtimeSyncService) => (
-          new BrowserVoiceCallService(realtime, callConfigGateway)
+        createVoiceCalls: (
+          realtime: RealtimeSyncService,
+          recordHistory: VoiceCallHistoryRecorder,
+        ) => (
+          new BrowserVoiceCallService(realtime, callConfigGateway, recordHistory)
         ),
         createTypingIndicators: (transport: TypingTransport) => (
           new TypingIndicatorService(transport, scheduler, clock)

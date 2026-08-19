@@ -1,8 +1,10 @@
 import type { MessageAttachment, OpaqueMessage } from '../../domain/messaging/models'
+import type { VoiceCallSummary } from '../../domain/calls/voice-call'
 import type { ArchivedMessage } from '../ports/message-archive'
 import { decodeGroupMessageContent } from './group-message-content'
 import {
   decodeDirectMessageContent,
+  type DecodedDirectMessageContent,
   type DirectAttachmentSecrets,
 } from './direct-message-content'
 import {
@@ -18,6 +20,7 @@ export interface TimelineMessage extends OpaqueMessage {
   displayAttachments?: readonly MessageAttachment[]
   replyToMessageId?: string
   mentionedUserIds?: readonly string[]
+  call?: VoiceCallSummary
   contentSecure: boolean
 }
 
@@ -58,11 +61,15 @@ export async function prepareTimelineMessage(
     const decoded = message.protocolVersion === 1
       ? decodeGroupMessageContent(content.plaintext)
       : decodeDirectMessageContent(content.plaintext, message.conversationId, directSecrets)
+    const call = message.protocolVersion === 2
+      ? (decoded as DecodedDirectMessageContent).call
+      : undefined
     return {
       ...envelope,
       contentState: 'available',
       displayBody: decoded.text,
       ...(decoded.attachments.length > 0 ? { displayAttachments: decoded.attachments } : {}),
+      ...(call ? { call } : {}),
       ...(decoded.replyToMessageId ? { replyToMessageId: decoded.replyToMessageId } : {}),
       ...((decoded.mentionedUserIds?.length ?? 0) > 0
         ? { mentionedUserIds: decoded.mentionedUserIds }

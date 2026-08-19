@@ -260,6 +260,13 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .message-bubble.own { align-self: flex-end; border-color: color-mix(in srgb, var(--primary) 28%, var(--border)); border-radius: 17px 5px 17px 17px; background: color-mix(in srgb, var(--primary) 13%, var(--surface-solid)); }
 .message-bubble.own.joined { border-top-right-radius: 12px; }
 .message-bubble.message-bubble--video-note { max-width: min(380px, 92%); padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.message-bubble.message-bubble--call { min-width: min(18rem, 78vw); }
+.call-history { display: flex; align-items: center; gap: .72rem; min-height: 3.1rem; }
+.call-history__icon { display: grid; width: 2.45rem; height: 2.45rem; flex: none; place-items: center; border-radius: 50%; color: var(--primary); background: color-mix(in srgb, var(--primary) 13%, transparent); }
+.call-history__icon .app-icon { width: 1.2rem; height: 1.2rem; }
+.call-history > span:last-child { display: grid; gap: .14rem; }
+.call-history small { color: var(--muted); font-size: .72rem; }
+.call-history--missed .call-history__icon { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
 .message-bubble--video-note .message-attachments { margin: 0 0 4px; overflow: visible; border-radius: 0; }
 .message-bubble--video-note .message-meta { padding-inline: 6px; }
 .message-bubble.targeted { animation: message-target 1.8s ease-out both; }
@@ -825,6 +832,11 @@ legend { padding: 0 6px; color: var(--muted); font-size: .8rem; }
 .voice-call h2 { position: relative; margin: 0; font-size: clamp(1.55rem, 5vw, 2.3rem); }
 .voice-call > p { position: relative; min-height: 1.5em; margin: .5rem 0; color: rgba(255,255,255,.72); }
 .voice-call__security { position: relative; display: inline-flex; align-items: center; gap: .35rem; margin-top: .25rem; color: rgba(255,255,255,.58); font-size: .78rem; }
+.voice-call__output { position: relative; display: inline-flex; max-width: min(23rem, 86vw); align-items: center; gap: .5rem; margin-top: 1rem; padding: .42rem .75rem; border: 1px solid rgba(255,255,255,.16); border-radius: 999px; background: rgba(255,255,255,.09); }
+.voice-call__output .app-icon { width: 1rem; height: 1rem; flex: none; }
+.voice-call__output select { min-width: 0; max-width: 18rem; border: 0; outline: 0; color: #fff; background: transparent; font: inherit; font-size: .78rem; }
+.voice-call__output option { color: #111525; background: #fff; }
+.voice-call__routing-note { position: relative; max-width: min(22rem, 88vw); margin-top: .8rem; color: rgba(255,255,255,.58); font-size: .72rem; }
 .voice-call__actions { position: relative; display: flex; align-items: center; justify-content: center; gap: clamp(2rem, 12vw, 5rem); min-height: 5rem; margin-top: clamp(3rem, 12vh, 7rem); }
 .voice-call__action { display: grid; width: 4.5rem; aspect-ratio: 1; place-items: center; padding: 0; border: 1px solid rgba(255,255,255,.18); border-radius: 50%; background: rgba(255,255,255,.14); color: #fff; box-shadow: 0 12px 34px rgba(0,0,0,.24); backdrop-filter: blur(16px); }
 .voice-call__action .app-icon { width: 1.65rem; height: 1.65rem; }

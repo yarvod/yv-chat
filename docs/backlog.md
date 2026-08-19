@@ -557,13 +557,15 @@ focus/navigation для frozen/discarded mobile PWA tasks.
 
 Результат: audio идёт peer-to-peer с TURN fallback.
 
-Статус: **implemented and deployed; physical two-network NAT acceptance pending**
-(`WP-100`).
+Статус: **core implemented and deployed; UX hardening active** (`WP-100`, `WP-101`).
 
 - browser capability/permission UX;
 - STUN/TURN configuration и coturn production secrets/ports;
 - NAT/failure/reconnect tests;
 - ресурсные метрики и отсутствие FastAPI media proxy.
+- foreground ringtone/ringback, generic background incoming-call notification;
+- standard browser audio-output/Bluetooth routing with explicit PWA limitations;
+- MLS-encrypted typed call summaries in the direct-chat timeline.
 
 ### BL-036 — Video calls и platform evaluation
 

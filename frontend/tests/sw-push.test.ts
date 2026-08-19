@@ -120,6 +120,10 @@ describe('privacy-safe push service worker', () => {
     const target = harness()
     await dispatchPush(target, CALL_PAYLOAD)
     expect(target.notifications[0]?.title).toBe('Входящий звонок')
+    expect(target.notifications[0]?.options.vibrate).toEqual([280, 140, 280, 140, 420])
+    expect(target.notifications[0]?.options.actions).toEqual([{
+      action: 'open', title: 'Открыть звонок',
+    }])
     expect(JSON.stringify(target.notifications[0])).not.toContain('sdp')
     expect(JSON.stringify(target.notifications[0])).not.toContain('candidate')
   })

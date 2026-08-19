@@ -7,6 +7,25 @@ export type VoiceCallPhase =
   | 'ended'
   | 'error'
 
+export type VoiceCallOutcome =
+  | 'completed'
+  | 'missed'
+  | 'declined'
+  | 'busy'
+  | 'cancelled'
+  | 'failed'
+
+export interface VoiceCallSummary {
+  callId: string
+  outcome: VoiceCallOutcome
+  durationSeconds: number
+}
+
+export interface VoiceCallAudioOutput {
+  deviceId: string
+  label: string
+}
+
 export interface VoiceCallState {
   phase: VoiceCallPhase
   conversationId: string | null
@@ -14,4 +33,7 @@ export interface VoiceCallState {
   muted: boolean
   startedAt: number | null
   notice: string | null
+  audioOutputSupported: boolean
+  audioOutputs: readonly VoiceCallAudioOutput[]
+  selectedAudioOutputId: string
 }

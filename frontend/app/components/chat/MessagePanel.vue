@@ -28,6 +28,7 @@ import { buildTimelineLayout } from '../../presentation/chat/timeline-layout'
 import AppIcon from '../ui/AppIcon.vue'
 import MessageAttachments from './MessageAttachments.vue'
 import MessageText from './MessageText.vue'
+import CallHistoryMessage from './CallHistoryMessage.vue'
 import VideoNoteCapture from './VideoNoteCapture.vue'
 
 const props = withDefaults(defineProps<{
@@ -304,9 +305,14 @@ function isStandaloneVideoNote(message: TimelineMessage): boolean {
     && attachments[0].presentation === 'video_note'
 }
 
+function isCallHistory(message: TimelineMessage): boolean {
+  return message.contentState === 'available' && message.call !== undefined
+}
+
 function replyPreview(message: TimelineMessage | null): string {
   if (!message) return 'Сообщение'
   if (message.contentState === 'deleted') return 'Удалённое сообщение'
+  if (message.call) return 'Голосовой звонок'
   return message.displayBody?.trim().slice(0, 120)
     || message.displayAttachments?.[0]?.name
     || `Сообщение #${message.sequence}`
@@ -1329,6 +1335,7 @@ onBeforeUnmount(() => {
             joined: item.joinedToPrevious,
             targeted: item.message.messageId === highlightedMessageId,
             'message-bubble--video-note': isStandaloneVideoNote(item.message),
+            'message-bubble--call': isCallHistory(item.message),
             'message-bubble--swiping': messageSwipe?.messageId === item.message.messageId,
           }"
           :style="messageSwipeStyle(item.message.messageId)"
@@ -1363,8 +1370,13 @@ onBeforeUnmount(() => {
             <strong>{{ repliedMessage(item.message) ? senderName(repliedMessage(item.message)!) : 'Ответ' }}</strong>
             <span>{{ replyPreview(repliedMessage(item.message)) }}</span>
           </button>
+          <CallHistoryMessage
+            v-if="item.message.contentState === 'available' && item.message.call"
+            :call="item.message.call"
+            :outgoing="item.message.senderUserId === actorUserId"
+          />
           <MessageText
-            v-if="item.message.contentState === 'available' && item.message.displayBody"
+            v-else-if="item.message.contentState === 'available' && item.message.displayBody"
             :body="item.message.displayBody"
             :members="conversation.members"
             :mentioned-user-ids="item.message.mentionedUserIds ?? []"
@@ -1373,7 +1385,7 @@ onBeforeUnmount(() => {
           <p v-else-if="item.message.contentState === 'deleted'" class="message-tombstone">
             {{ item.message.deletionReason === 'expired' ? 'Срок хранения сообщения истёк' : 'Сообщение удалено для всех' }}
           </p>
-          <p v-else class="message-unavailable" role="status">
+          <p v-else-if="item.message.contentState === 'unavailable'" class="message-unavailable" role="status">
             {{ item.message.displayBody }}
           </p>
           <div v-if="reactionsFor(item.message.messageId).length > 0" class="message-reactions">
@@ -1415,6 +1427,7 @@ onBeforeUnmount(() => {
           </span>
         </div>
         <MessageText v-if="message.displayBody" :body="message.displayBody" />
+        <CallHistoryMessage v-else-if="message.call" :call="message.call" :outgoing="true" />
         <small class="message-meta outbox-meta">
           <time :datetime="message.createdAt">
             {{ new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}

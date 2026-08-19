@@ -1,9 +1,11 @@
 import type { OutboxFailureCode, OutboxMessage, OutboxMessageStatus } from '../../domain/messaging/outbox'
 import type { ProtocolMessageProtection } from './message-protection'
 import type { MessageAttachment } from '../../domain/messaging/models'
+import type { VoiceCallSummary } from '../../domain/calls/voice-call'
 import { decodeGroupMessageContent } from './group-message-content'
 import {
   decodeDirectMessageContent,
+  type DecodedDirectMessageContent,
   type DirectAttachmentSecrets,
 } from './direct-message-content'
 
@@ -13,6 +15,7 @@ export interface OutgoingMessageView {
   createdAt: string
   displayBody: string
   displayAttachments?: readonly MessageAttachment[]
+  call?: VoiceCallSummary
   contentSecure: boolean
   status: OutboxMessageStatus
   attemptCount: number
@@ -35,12 +38,16 @@ export async function prepareOutgoingMessageView(
     const decoded = message.protocolVersion === 1
       ? decodeGroupMessageContent(content.plaintext)
       : decodeDirectMessageContent(content.plaintext, message.conversationId, directSecrets)
+    const call = message.protocolVersion === 2
+      ? (decoded as DecodedDirectMessageContent).call
+      : undefined
     return {
       clientMessageId: message.clientMessageId,
       conversationId: message.conversationId,
       createdAt: message.createdAt,
       displayBody: decoded.text,
       ...(decoded.attachments.length > 0 ? { displayAttachments: decoded.attachments } : {}),
+      ...(call ? { call } : {}),
       contentSecure: content.secure,
       status: message.status,
       attemptCount: message.attemptCount,

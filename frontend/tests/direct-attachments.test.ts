@@ -24,6 +24,32 @@ function cipher(): WebCryptoAttachmentCipher {
 }
 
 describe('direct attachment content', () => {
+  it('round-trips a typed call summary without pretending it is message text', () => {
+    const encoded = encodeDirectMessageContent({
+      text: '',
+      attachments: [],
+      call: {
+        callId: '60cf6877-9dd1-454e-86ac-f42303c7775a',
+        outcome: 'completed',
+        durationSeconds: 83,
+      },
+    })
+    expect(decodeDirectMessageContent(encoded, CONVERSATION_ID)).toEqual({
+      text: '',
+      attachments: [],
+      call: {
+        callId: '60cf6877-9dd1-454e-86ac-f42303c7775a',
+        outcome: 'completed',
+        durationSeconds: 83,
+      },
+    })
+    expect(() => encodeDirectMessageContent({
+      text: 'hidden duplicate',
+      attachments: [],
+      call: { callId: 'call', outcome: 'missed', durationSeconds: 0 },
+    })).toThrow('invalid direct message content')
+  })
+
   it('keeps key material out of the display projection and supports old direct text', () => {
     const secrets = new DirectAttachmentSecrets()
     const encoded = encodeDirectMessageContent({

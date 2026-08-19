@@ -32,6 +32,9 @@ self.addEventListener('push', event => {
     await self.registration.showNotification(incomingCall ? 'Входящий звонок' : 'Новое сообщение', {
       body: incomingCall ? 'Откройте yv-chat, чтобы ответить.' : 'Откройте yv-chat, чтобы прочитать.',
       icon: '/icons/icon-v3-any-192.png',
+      badge: '/icons/icon-v3-any-192.png',
+      vibrate: incomingCall ? [280, 140, 280, 140, 420] : [180],
+      actions: incomingCall ? [{ action: 'open', title: 'Открыть звонок' }] : [],
       tag,
       renotify: false,
       data: {

@@ -1,4 +1,5 @@
 import type { MessageAttachment } from '../../domain/messaging/models'
+import type { VoiceCallSummary } from '../../domain/calls/voice-call'
 
 import { maximumAttachmentBytes } from './group-attachment-policy'
 import { decodeTextMessageContent } from './text-message-content'
@@ -23,6 +24,7 @@ export interface DirectMessageAttachment {
 export interface DirectMessageContent {
   text: string
   attachments: readonly DirectMessageAttachment[]
+  call?: VoiceCallSummary | null
   replyToMessageId?: string | null
   mentionedUserIds?: readonly string[]
 }
@@ -30,6 +32,7 @@ export interface DirectMessageContent {
 export interface DecodedDirectMessageContent {
   text: string
   attachments: readonly MessageAttachment[]
+  call?: VoiceCallSummary
   replyToMessageId?: string | null
   mentionedUserIds?: readonly string[]
 }
@@ -110,26 +113,47 @@ function validInteractionId(value: unknown): value is string {
   return validId(value)
 }
 
+function validCall(value: unknown): value is VoiceCallSummary {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const item = value as Record<string, unknown>
+  return validId(item.callId)
+    && ['completed', 'missed', 'declined', 'busy', 'cancelled', 'failed'].includes(
+      String(item.outcome),
+    )
+    && Number.isInteger(item.durationSeconds)
+    && Number(item.durationSeconds) >= 0
+    && Number(item.durationSeconds) <= 8 * 60 * 60
+}
+
 export function encodeDirectMessageContent(content: DirectMessageContent): string {
   const text = content.text.trim()
   const replyToMessageId = content.replyToMessageId ?? null
   const mentionedUserIds = [...new Set(content.mentionedUserIds ?? [])]
+  const call = content.call ?? null
   if (
     text.length > 4_000
     || content.attachments.length > MAX_ATTACHMENTS
     || (replyToMessageId !== null && !validInteractionId(replyToMessageId))
     || mentionedUserIds.length > 50
     || !mentionedUserIds.every(validInteractionId)
-    || (!text && content.attachments.length === 0)
+    || (call !== null && !validCall(call))
+    || (!text && content.attachments.length === 0 && call === null)
+    || (call !== null && (text.length > 0 || content.attachments.length > 0))
     || !content.attachments.every(item => (
       validAttachment(item.attachment) && validSecret(item.secret)
     ))
   ) throw new TypeError('invalid direct message content')
-  if (content.attachments.length === 0 && replyToMessageId === null && mentionedUserIds.length === 0) {
+  if (
+    call === null
+    && content.attachments.length === 0
+    && replyToMessageId === null
+    && mentionedUserIds.length === 0
+  ) {
     return text
   }
   return `${PREFIX}${JSON.stringify({
     text,
+    call,
     attachments: content.attachments.map(item => ({
       attachment_id: item.attachment.attachmentId,
       kind: item.attachment.kind,
@@ -159,6 +183,7 @@ export function decodeDirectMessageContent(
     const value: unknown = JSON.parse(plaintext.slice(PREFIX.length))
     if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error()
     const item = value as Record<string, unknown>
+    const call = item.call ?? null
     if (
       typeof item.text !== 'string'
       || item.text.length > 4_000
@@ -169,7 +194,9 @@ export function decodeDirectMessageContent(
       || item.mentioned_user_ids.length > 50
       || !item.mentioned_user_ids.every(validInteractionId)
       || new Set(item.mentioned_user_ids).size !== item.mentioned_user_ids.length
-      || (item.text.length === 0 && item.attachments.length === 0)
+      || (call !== null && !validCall(call))
+      || (item.text.length === 0 && item.attachments.length === 0 && call === null)
+      || (call !== null && (item.text.length > 0 || item.attachments.length > 0))
     ) throw new Error()
     const attachments = item.attachments.map(value => {
       if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error()
@@ -198,6 +225,7 @@ export function decodeDirectMessageContent(
     return {
       text: item.text,
       attachments,
+      ...(call !== null ? { call } : {}),
       ...(item.reply_to_message_id ? { replyToMessageId: String(item.reply_to_message_id) } : {}),
       ...(item.mentioned_user_ids.length > 0
         ? { mentionedUserIds: item.mentioned_user_ids as string[] }
