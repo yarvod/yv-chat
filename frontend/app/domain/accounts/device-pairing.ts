@@ -68,7 +68,10 @@ export function encodePairingQr(created: CreatedDevicePairing, origin: string): 
   return JSON.stringify(payload)
 }
 
-export function decodePairingQr(raw: string, expectedOrigin: string): DevicePairingQrPayload {
+export function decodePairingQr(
+  raw: string,
+  expectedOrigins: string | readonly string[],
+): DevicePairingQrPayload {
   let value: unknown
   try {
     value = JSON.parse(raw)
@@ -80,9 +83,13 @@ export function decodePairingQr(raw: string, expectedOrigin: string): DevicePair
   }
   const item = value as Record<string, unknown>
   const purpose = item.purpose
+  const trustedOrigins = typeof expectedOrigins === 'string'
+    ? new Set([expectedOrigins])
+    : new Set(expectedOrigins)
   if (
     item.type !== 'yv-chat-device-pairing'
-    || item.origin !== expectedOrigin
+    || typeof item.origin !== 'string'
+    || !trustedOrigins.has(item.origin)
     || item.version !== 1
     || (purpose !== 'enrollment_request' && purpose !== 'enrollment_offer')
     || typeof item.pairingId !== 'string'
@@ -98,7 +105,7 @@ export function decodePairingQr(raw: string, expectedOrigin: string): DevicePair
   }
   return {
     type: 'yv-chat-device-pairing',
-    origin: expectedOrigin,
+    origin: item.origin,
     version: 1,
     purpose,
     pairingId: item.pairingId,

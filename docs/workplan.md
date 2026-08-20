@@ -1,70 +1,85 @@
 # Текущий workplan
 
-## WP-108 — Installed-PWA zoom policy and swipe overflow containment
+## WP-109 — Unified QR routing across trusted production origins
 
-Статус: **implemented, full-CI verified and production deployed**
-Backlog: `BL-041A`, `BL-077`; bug `BUG-096`
+Статус: **implemented and locally verified**
+Backlog: `BL-015`, `BL-075`; bug `BUG-097`
 
-Цель: исключить случайный viewport zoom установленной mobile PWA и горизонтальную
-scroll-area при swipe-to-reply, сохранив управляемое увеличение фотографий и
-системное воспроизведение видео.
+Цель: один scanner на телефоне должен принимать QR компьютера во всех трёх
+поддержанных состояниях и маршрутизировать результат по pairing purpose/session
+state, даже если два устройства открыли разные официальные production origins.
 
 ### Подтверждённая причина
 
-- message timeline задавал только `overflow-y: auto`; при translated bubble browser
-  создавал горизонтальную scroll-area;
-- swipe-to-reply сдвигает bubble вправо до 76 px, что особенно заметно для own
-  message, уже выровненного по правому краю;
-- viewport оставался масштабируемым и в standalone PWA, поэтому случайный pinch мог
-  увеличить всю оболочку приложения;
-- media viewer уже имеет отдельный bounded image transform 1×–5×, pinch, double-click
-  и кнопки; видео использует стандартный `video controls`/system fullscreen.
+- `enrollment_request` уже моделирует вход неавторизованного компьютера через
+  авторизованный телефон;
+- `enrollment_offer` уже моделирует как вход неавторизованного телефона через
+  авторизованный компьютер, так и history/MLS sync двух авторизованных устройств;
+- client decoder до обращения к backend требовал `payload.origin ===
+  window.location.origin`;
+- `chat.yoowee.ru` и `chat.yoowee.com.de` используют общий backend/pairing store, но
+  имеют разные origin-scoped cookies, PWA storage и device identities;
+- поэтому корректный QR одного production origin отклонялся scanner-ом другого как
+  недействительный, хотя server state machine могла безопасно обработать pairing.
+
+### Security invariants
+
+- QR принимается только от current origin или exact origins из уже настроенного
+  backend `ALLOWED_ORIGINS`, переданного frontend как non-secret runtime config;
+- wildcard, arbitrary payload origin, path, query, fragment и credential-bearing URL
+  не принимаются;
+- QR origin не выбирает network destination: scanner обращается только к своему
+  same-origin `/api/v1`, сохраняя cookie/CSRF/Origin boundary;
+- backend по-прежнему проверяет pairing UUID, one-time scan token, expiry, purpose,
+  account, active session и distinct device;
+- `enrollment_request` требует authenticated trusted scanner;
+- anonymous scanner допускается только для `enrollment_offer` и получает отдельную
+  session/device после подтверждения trusted side;
+- два authenticated устройства одного account используют existing-device branch и
+  не выпускают новую session.
 
 ### Scope
 
-- запретить горизонтальный overflow только у message timeline, сохранив vertical
-  scroll и reply gesture;
-- подавить accidental double-tap zoom оболочки через `touch-action: manipulation`;
-- в standalone/installed PWA динамически применить `maximum-scale=1` и
-  `user-scalable=no`, оставив обычную browser-вкладку масштабируемой;
-- сохранить custom pinch/pan/double-click/buttons для фотографий 100%–500%;
-- не изменять video controls, playsinline и system fullscreen;
-- добавить CSS/config/component regressions и выполнить frontend checks.
+- передать exact `ALLOWED_ORIGINS` в Nuxt public runtime config production frontend;
+- безопасно разобрать/нормализовать allowlist с fail-closed fallback на current
+  origin;
+- расширить QR decoder/service до exact trusted-origin set;
+- добавить component regressions для трёх phone-scans-computer сценариев;
+- сохранить arbitrary-origin rejection и candidate proof secrecy;
+- обновить архитектуру/bug/backlog и выполнить frontend/full repository checks.
 
 ### Exclusions
 
-- изменение gesture thresholds или направления reply swipe;
-- переписывание media viewer, video player или attachment crypto/storage;
-- запрет browser zoom для обычной неустановленной web-вкладки;
-- изменение backend/API/MLS/session behavior.
+- cross-origin cookies, CORS requests или перенос IndexedDB/MLS state между origins;
+- изменение backend pairing state machine, API schema, migration или TTL;
+- QR, созданные сторонними/self-hosted deployments вне exact allowlist;
+- автоматическое подтверждение без сверки authentication code.
 
 ### Definition of Done
 
-- reply swipe не создаёт горизонтальную scroll-area;
-- установленная PWA не масштабирует app shell pinch/double-tap жестом;
-- обычная browser-вкладка сохраняет доступный viewport zoom;
-- фото продолжают увеличиваться custom pinch и кнопками до 5×;
-- видео продолжает открываться с native controls без app-level zoom UI;
-- lint, typecheck, relevant tests и production build проходят.
+- logged-in phone на origin A принимает login QR неавторизованного компьютера с
+  trusted origin B и подтверждает вход компьютера;
+- logged-out phone принимает offer QR авторизованного компьютера и после approval
+  получает отдельную session/device;
+- logged-in phone принимает тот же offer type и запускает existing-device
+  MLS/history union без новой session;
+- arbitrary origin отклоняется до backend request;
+- browser cookies/storage остаются origin-scoped;
+- lint, typecheck, tests, production build и Compose config проходят.
 
 ### Результат локальной проверки
 
-- `.message-timeline` явно использует `overflow-x: hidden` вместе с сохранённым
-  `overflow-y: auto`;
-- app root подавляет accidental double-tap zoom, а client plugin блокирует viewport
-  pinch только при `display-mode: standalone` или iOS `navigator.standalone`;
-- обычный Nuxt viewport не содержит `user-scalable=no`/`maximum-scale=1`;
-- component regression подтверждает custom two-finger photo zoom с 100% до 200%,
-  bounded controls и отсутствие app zoom controls у video;
-- frontend: `349 passed`, ESLint, Nuxt typecheck и production build зелёные.
-
-### Production rollout
-
-- commit `ac92a32` развёрнут workflow `32315884198`; отдельный CI workflow
-  `32315884207` также завершился успешно;
-- production использует immutable images
-  `sha-ac92a32ed571c20d3b31f7a34cfc0ab39bd7ecc4`;
-- `chat.yoowee.ru` и `chat.yoowee.com.de` вернули HTTP `200` для frontend и
-  `{"status":"ok"}`/HTTP `200` для `/api/v1/health`;
-- system Nginx и соседние сервисы не изменялись; rollout использовал штатный
-  isolated `yv-chat` workflow.
+- production frontend получает exact `ALLOWED_ORIGINS` через
+  `NUXT_PUBLIC_DEVICE_PAIRING_ORIGINS`; собранный Nitro runtime реально выдал оба
+  production origin в public payload;
+- parser принимает только exact HTTP(S) origins, удаляет duplicates и fail-closed
+  возвращает current origin при malformed/missing/current-origin-absent config;
+- service regression проводит `enrollment_request`, anonymous `enrollment_offer` и
+  authenticated existing-device `enrollment_offer` между двумя trusted origins и
+  отклоняет arbitrary origin;
+- component regressions подтверждают approval входа компьютера авторизованным
+  телефоном, выдачу отдельной session неавторизованному телефону и history union
+  двух уже авторизованных устройств;
+- frontend: `352 passed`, ESLint, Nuxt typecheck и production build зелёные;
+- `make compose-check deploy-check` проходит для development/integrated/production
+  Compose и deployment scripts.

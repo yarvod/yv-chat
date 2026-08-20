@@ -245,6 +245,83 @@ describe('device pairing settings flow', () => {
     expect(wrapper.text()).toContain('локальная история объединяется')
   })
 
+  it('lets an authenticated phone approve an unauthenticated computer request', async () => {
+    const user = {
+      userId: 'alice-user',
+      deviceId: 'phone-device',
+      username: 'alice',
+      displayName: 'Alice',
+      role: 'user',
+      deviceDisplayName: 'iPhone · Телефон',
+    }
+    const states = new Map<string, ReturnType<typeof ref>>()
+    vi.stubGlobal('useState', (key: string, factory: () => unknown) => {
+      let state = states.get(key)
+      if (!state) {
+        state = ref(factory())
+        states.set(key, state)
+      }
+      return state
+    })
+    const pending = {
+      pairingId: 'pairing-request',
+      protocolVersion: 1,
+      purpose: 'enrollment_request',
+      status: 'confirmation_pending',
+      candidateDeviceName: 'Chrome · Windows · Компьютер',
+      trustedDeviceName: 'iPhone',
+      accountDisplayName: 'Alice',
+      authenticationCode: '123456',
+      expiresAt: '2099-08-13T18:10:00Z',
+      authorizedDeviceId: null,
+      trustedDeviceId: 'phone-device',
+      candidateDeviceId: null,
+    } as const
+    const scan = vi.fn().mockResolvedValue(pending)
+    const approve = vi.fn().mockResolvedValue({ ...pending, status: 'approved' as const })
+    vi.stubGlobal('useNuxtApp', () => ({
+      $frontend: {
+        deviceInfo: { current: () => ({ deviceClass: 'mobile' }) },
+        devicePairing: {
+          scan,
+          approve,
+          trustedStatus: vi.fn(),
+          cancelTrusted: vi.fn(),
+        },
+        deviceHistorySync: {
+          current: vi.fn().mockReturnValue([]),
+          subscribe: vi.fn().mockReturnValue(() => undefined),
+        },
+      },
+    }))
+    states.set('auth-session', ref({ phase: 'authenticated', user, message: null }))
+    states.set('auth-initialized', ref(true))
+    const wrapper = mount(DevicePairingCard, {
+      global: {
+        stubs: {
+          QrcodeVue: { template: '<div />' },
+          DeviceQrScanner: {
+            emits: ['decoded', 'cancel'],
+            template: '<button class="decode" @click="$emit(\'decoded\', \'cross-origin-request\')">decode</button>',
+          },
+        },
+      },
+    })
+
+    await wrapper.get('button').trigger('click')
+    await wrapper.get('.decode').trigger('click')
+    await flushPromises()
+    expect(scan).toHaveBeenCalledWith('cross-origin-request', true)
+    expect(wrapper.text()).toContain('Подтвердить компьютер')
+    expect(wrapper.text()).toContain('123456')
+
+    const confirm = wrapper.findAll('button').find(button => button.text() === 'Подтвердить компьютер')
+    await confirm?.trigger('click')
+    await flushPromises()
+    expect(approve).toHaveBeenCalledWith('pairing-request')
+    wrapper.unmount()
+  })
+
   it('auto-selects existing-device sync and starts history union after computer approval', async () => {
     vi.useFakeTimers()
     const user = {

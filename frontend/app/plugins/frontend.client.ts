@@ -66,6 +66,7 @@ import { BrowserClock } from '../infrastructure/browser/clock'
 import { BrowserClientIdGenerator } from '../infrastructure/browser/client-id-generator'
 import { BrowserDeviceInfo } from '../infrastructure/browser/device-info'
 import { BrowserDevicePairingSecretStore } from '../infrastructure/browser/device-pairing-secrets'
+import { parseTrustedDevicePairingOrigins } from '../infrastructure/browser/device-pairing-origins'
 import { BrowserHaptics } from '../infrastructure/browser/haptics'
 import { BrowserLocation } from '../infrastructure/browser/browser-location'
 import { BrowserNetworkStatus } from '../infrastructure/browser/browser-network-status'
@@ -106,6 +107,7 @@ import { BrowserVoiceCallService } from '../infrastructure/webrtc/browser-voice-
 import type { VoiceCallHistoryRecorder } from '../infrastructure/webrtc/browser-voice-call-service'
 
 export default defineNuxtPlugin(() => {
+  const runtimeConfig = useRuntimeConfig()
   const apiClient = new ApiClient()
   const authGateway = new HttpAuthGateway(apiClient)
   const adminAccountsGateway = new HttpAdminAccountsGateway(apiClient)
@@ -119,12 +121,17 @@ export default defineNuxtPlugin(() => {
   const deviceKeyPackageGateway = new HttpDeviceKeyPackageGateway(apiClient)
   const conversationCryptoGateway = new HttpConversationCryptoGateway(apiClient)
   const deviceInfo = new BrowserDeviceInfo()
+  const devicePairingOrigins = parseTrustedDevicePairingOrigins(
+    runtimeConfig.public.devicePairingOrigins,
+    window.location.origin,
+  )
   const devicePairing = new DevicePairingService(
     devicePairingGateway,
     new BrowserDevicePairingSecretStore(),
     authGateway,
     deviceInfo,
     window.location.origin,
+    devicePairingOrigins,
   )
   const haptics = new BrowserHaptics()
   const realtimeGateway = new BrowserRealtimeGateway()

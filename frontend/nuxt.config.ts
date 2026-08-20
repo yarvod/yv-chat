@@ -20,6 +20,11 @@ export default defineNuxtConfig({
   devtools: { enabled: false },
   modules: ['@nuxt/eslint', '@vite-pwa/nuxt'],
   css: ['~/assets/main.css'],
+  runtimeConfig: {
+    public: {
+      devicePairingOrigins: '',
+    },
+  },
   app: {
     head: {
       title: 'yv-chat',

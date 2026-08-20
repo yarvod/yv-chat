@@ -4,6 +4,23 @@
 
 ## Active
 
+### BUG-097 — QR pairing ломался между двумя официальными production origins
+
+- Статус: `fixed and locally verified in WP-109`.
+- Severity: `high account access and multi-device usability`.
+- Reproduction: открыть login/pairing QR компьютера на одном из
+  `chat.yoowee.ru`/`chat.yoowee.com.de`, а авторизованным телефоном на втором origin
+  отсканировать его в Настройки → Устройства. Scanner показывает, что QR
+  недействителен/истёк/принадлежит другому аккаунту, не вызывая pairing API.
+- Root cause: client QR decoder требовал literal equality payload origin и текущего
+  `window.location.origin`, хотя оба exact origin обслуживает общий backend store.
+- Исправление: scanner принимает только exact deployment allowlist, полученный из
+  `ALLOWED_ORIGINS`, не меняет same-origin HTTP/cookie boundary и покрывает три
+  pairing outcomes regressions.
+- Проверка: три service/component flow, arbitrary-origin negative path, `352`
+  frontend tests, lint/typecheck/build и Compose/deploy checks прошли; Nitro runtime
+  payload содержит оба exact production origin.
+
 ### BUG-096 — Reply swipe создавал горизонтальный scroll, а standalone PWA случайно zoom-илась
 
 - Статус: `fixed and production deployed in WP-108` (`ac92a32`, workflow

@@ -142,7 +142,8 @@ observable MLS/history union и `WP-084` single-flight/server cancellation ра�
 останавливал relay, но не уже запущенный peer MLS enrollment; `WP-086`
 реализует partial completion, чтобы proof-backed `missing_identity` одного direct не
 блокировал доступные чаты; оба исправления развернуты workflow `31761641522` в image
-`sha-5db642f`**.
+`sha-5db642f`. `WP-109` исправляет unified scanner routing между двумя exact
+production origins без cross-origin cookies/API**.
 `BL-064` и первый deployment-safe slice `BL-025` завершены; pairing реализуется
 итерациями с отдельным security/ADR review до изменения MLS membership semantics.
 Это не UI-задача «нарисовать QR»: `WP-079` не менял MLS roster, `WP-080` добавил
@@ -677,6 +678,8 @@ sender negotiated remote-offer video transceiver до signed answer, а fullscre
   `chat.yoowee.com.de`;
 - exact backend Origin allowlist без wildcard;
 - отдельные origin-scoped browser sessions, PWA storage и E2EE devices;
+- QR pairing между exact aliases использует общий server state, но сохраняет
+  same-origin API/cookies и arbitrary-origin rejection (`WP-109`);
 - scoped Nginx/Certbot rollout без изменения соседних VPS services.
 
 ### BL-074 — Standalone managed registration invitations

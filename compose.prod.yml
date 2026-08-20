@@ -38,7 +38,7 @@ services:
     environment:
       APP_ENV: production
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
-      ALLOWED_ORIGINS: '${ALLOWED_ORIGINS:-["https://chat.yoowee.ru"]}'
+      ALLOWED_ORIGINS: '${ALLOWED_ORIGINS:-["https://chat.yoowee.ru","https://chat.yoowee.com.de"]}'
       TRUSTED_PROXY_CIDRS: '${TRUSTED_PROXY_CIDRS:-["172.30.243.1/32"]}'
       ACTIVATION_TOKEN_TTL_SECONDS: ${ACTIVATION_TOKEN_TTL_SECONDS:-86400}
       PASSWORD_RESET_TOKEN_TTL_SECONDS: ${PASSWORD_RESET_TOKEN_TTL_SECONDS:-3600}
@@ -103,7 +103,7 @@ services:
     environment:
       APP_ENV: production
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
-      ALLOWED_ORIGINS: '${ALLOWED_ORIGINS:-["https://chat.yoowee.ru"]}'
+      ALLOWED_ORIGINS: '${ALLOWED_ORIGINS:-["https://chat.yoowee.ru","https://chat.yoowee.com.de"]}'
       TRUSTED_PROXY_CIDRS: '${TRUSTED_PROXY_CIDRS:-["172.30.243.1/32"]}'
       SYNC_EVENT_RETENTION_SECONDS: ${SYNC_EVENT_RETENTION_SECONDS:-2592000}
       MESSAGE_CIPHERTEXT_RETENTION_SECONDS: ${MESSAGE_CIPHERTEXT_RETENTION_SECONDS:-2592000}
@@ -135,6 +135,7 @@ services:
     environment:
       NITRO_HOST: 0.0.0.0
       NITRO_PORT: 3000
+      NUXT_PUBLIC_DEVICE_PAIRING_ORIGINS: '${ALLOWED_ORIGINS:-["https://chat.yoowee.ru","https://chat.yoowee.com.de"]}'
     ports:
       - 127.0.0.1:${YV_CHAT_FRONTEND_BIND_PORT:-18082}:3000
     networks: [ingress]

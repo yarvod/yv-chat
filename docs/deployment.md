@@ -156,6 +156,12 @@ YV_CHAT_API_BIND_PORT=18081
 YV_CHAT_FRONTEND_BIND_PORT=18082
 ```
 
+Production Compose передаёт exact JSON `ALLOWED_ORIGINS` frontend-контейнеру как
+`NUXT_PUBLIC_DEVICE_PAIRING_ORIGINS`. Это позволяет QR scanner-у принимать pairing
+между двумя официальными chat origins, не создавая cross-origin HTTP/cookie flow.
+Если runtime value отсутствует, malformed или не содержит current origin, frontend
+fail-closed принимает QR только своего текущего origin.
+
 Do not inspect the rest of `.env` during routine deployment. To validate without
 revealing values:
 

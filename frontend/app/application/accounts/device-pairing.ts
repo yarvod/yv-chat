@@ -27,6 +27,7 @@ export class DevicePairingService {
     private readonly authGateway: AuthGateway,
     private readonly deviceInfo: DeviceInfoPort,
     private readonly origin: string,
+    private readonly trustedQrOrigins: readonly string[] = [origin],
   ) {}
 
   async createRequest(): Promise<DisplayedPairing> {
@@ -45,7 +46,7 @@ export class DevicePairingService {
   }
 
   async scan(raw: string, authenticated: boolean): Promise<DevicePairingView> {
-    const qr = decodePairingQr(raw, this.origin)
+    const qr = decodePairingQr(raw, this.trustedQrOrigins)
     if (qr.purpose === 'enrollment_request') {
       if (!authenticated) throw new Error('trusted session required')
       return await this.gateway.scanRequest(qr.pairingId, qr.scanToken)

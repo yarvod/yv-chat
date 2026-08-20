@@ -34,7 +34,7 @@ printf '%s\n' \
     'POSTGRES_USER=yv_chat' \
     "POSTGRES_PASSWORD=$database_password" \
     "DATABASE_URL=postgresql+asyncpg://yv_chat:$database_password@postgres:5432/yv_chat" \
-    'ALLOWED_ORIGINS=["https://chat.yoowee.ru"]' \
+    'ALLOWED_ORIGINS=["https://chat.yoowee.ru","https://chat.yoowee.com.de"]' \
     'TRUSTED_PROXY_CIDRS=["172.30.243.1/32"]' \
     'YV_CHAT_API_BIND_PORT=18081' \
     'YV_CHAT_FRONTEND_BIND_PORT=18082' \

@@ -1783,8 +1783,15 @@ body/time limits и retained public assets), а его реализация и �
 host administrator.
 Cookies с `__Host-`, Service Worker, IndexedDB и E2EE device state не разделяются
 между origins, поэтому вход через второе имя создаёт отдельную browser session/device,
-не копируя local crypto state. Соседние `yoowee.ru`/`s3.yoowee.ru` vhost не
-изменяются. Server-owned chat vhost редактируется вручную с backup, `nginx -t`, reload
+не копируя local crypto state. Это не запрещает явно подтверждённый QR pairing между
+двумя exact production origins: frontend получает тот же `ALLOWED_ORIGINS` как
+non-secret public runtime allowlist и принимает QR alias только из этого списка.
+QR origin не выбирает API host и не переносит cookie: scanner обращается к своему
+same-origin backend, а server остаётся authoritative для one-time token, expiry,
+purpose, account/session/device binding и authentication code. Arbitrary origin,
+wildcard и URL с path/query/credentials отклоняются client-side до запроса.
+Соседние `yoowee.ru`/`s3.yoowee.ru` vhost не изменяются. Server-owned chat vhost
+редактируется вручную с backup, `nginx -t`, reload
 и acceptance обоих upstream; graceful reload проверяется bounded retry, потому что
 старые workers короткое время могут обслуживать прежнюю конфигурацию. Workflow
 использует immutable `sha-<commit>` GHCR tags, выполняет migration новым backend

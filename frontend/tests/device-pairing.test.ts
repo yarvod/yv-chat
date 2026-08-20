@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 import { DevicePairingService } from '../app/application/accounts/device-pairing'
 import type { AuthGateway } from '../app/application/ports/auth-gateway'
@@ -6,6 +8,7 @@ import type { DeviceInfoPort } from '../app/application/ports/device-info'
 import type { DevicePairingGateway } from '../app/application/ports/device-pairing-gateway'
 import type { DevicePairingSecretStore } from '../app/application/ports/device-pairing-secrets'
 import type { CurrentAccount } from '../app/domain/accounts/account'
+import { parseTrustedDevicePairingOrigins } from '../app/infrastructure/browser/device-pairing-origins'
 import {
   decodePairingQr,
   encodePairingQr,
@@ -14,6 +17,7 @@ import {
 } from '../app/domain/accounts/device-pairing'
 
 const origin = 'https://chat.example'
+const aliasOrigin = 'https://chat-alias.example'
 const future = '2099-08-13T10:10:00Z'
 const pairingId = '7f0551de-b774-4a47-9f1f-7bead64062fe'
 const scanToken = 'scan-token-with-at-least-thirty-two-random-bytes'
@@ -124,14 +128,17 @@ const account: CurrentAccount = {
   updatedAt: future,
 }
 
+const defaultAuthGateway: AuthGateway = {
+  current: async () => account,
+  login: async () => account,
+  logout: async () => undefined,
+}
+
 function service(
   gateway = new FakeGateway(),
   secrets = new FakeSecrets(),
-  authGateway: AuthGateway = {
-    current: async () => account,
-    login: async () => account,
-    logout: async () => undefined,
-  },
+  authGateway: AuthGateway = defaultAuthGateway,
+  trustedQrOrigins: readonly string[] = [origin],
 ) {
   const deviceInfo: DeviceInfoPort = {
     current: () => ({
@@ -148,6 +155,7 @@ function service(
       authGateway,
       deviceInfo,
       origin,
+      trustedQrOrigins,
     ),
     gateway,
     secrets,
@@ -155,6 +163,25 @@ function service(
 }
 
 describe('device pairing', () => {
+  it('derives an exact fail-closed QR origin allowlist from deployment config', () => {
+    expect(parseTrustedDevicePairingOrigins(
+      JSON.stringify([origin, aliasOrigin]),
+      origin,
+    )).toEqual([origin, aliasOrigin])
+    expect(parseTrustedDevicePairingOrigins([origin, `${aliasOrigin}/path`], origin)).toEqual([
+      origin,
+    ])
+    expect(parseTrustedDevicePairingOrigins(JSON.stringify([aliasOrigin]), origin)).toEqual([
+      origin,
+    ])
+    expect(parseTrustedDevicePairingOrigins('{broken', origin)).toEqual([origin])
+
+    const config = readFileSync(resolve(process.cwd(), 'nuxt.config.ts'), 'utf8')
+    const compose = readFileSync(resolve(process.cwd(), '../compose.prod.yml'), 'utf8')
+    expect(config).toContain("devicePairingOrigins: ''")
+    expect(compose).toContain("NUXT_PUBLIC_DEVICE_PAIRING_ORIGINS: '${ALLOWED_ORIGINS")
+  })
+
   it('keeps candidate proof out of the QR and rejects another origin', async () => {
     const { pairing, secrets } = service()
     const displayed = await pairing.createRequest()
@@ -166,14 +193,19 @@ describe('device pairing', () => {
     expect(() => decodePairingQr(displayed.qrValue, 'https://evil.example')).toThrow()
   })
 
-  it('enforces scanner roles and binds a new candidate proof for an offer', async () => {
-    const { pairing, gateway, secrets } = service()
-    const requestQr = encodePairingQr(created('enrollment_request'), origin)
+  it('routes all three phone-scans-computer cases across trusted origins', async () => {
+    const { pairing, gateway, secrets } = service(
+      new FakeGateway(),
+      new FakeSecrets(),
+      defaultAuthGateway,
+      [origin, aliasOrigin],
+    )
+    const requestQr = encodePairingQr(created('enrollment_request'), aliasOrigin)
     await expect(pairing.scan(requestQr, false)).rejects.toThrow('trusted session')
     await pairing.scan(requestQr, true)
     expect(gateway.scannedRequest).toEqual([pairingId, scanToken])
 
-    const offerQr = encodePairingQr(created('enrollment_offer'), origin)
+    const offerQr = encodePairingQr(created('enrollment_offer'), aliasOrigin)
     await pairing.scan(offerQr, false)
     expect(gateway.scannedOffer).toEqual([
       pairingId,
@@ -186,6 +218,9 @@ describe('device pairing', () => {
     const existing = await pairing.scan(offerQr, true)
     expect(gateway.scannedExistingOffer).toEqual([pairingId, scanToken])
     expect(existing.candidateDeviceId).toBe('existing-device')
+
+    const untrustedQr = encodePairingQr(created('enrollment_request'), 'https://evil.example')
+    await expect(pairing.scan(untrustedQr, true)).rejects.toThrow('invalid pairing QR')
   })
 
   it('clears candidate proof only after cookie exchange and current-account load', async () => {
