@@ -2,7 +2,7 @@
 
 ## WP-110 — Reaction delight, animated stickers/GIFs and mobile composer polish
 
-Статус: **completed and locally verified**
+Статус: **completed and production deployed**
 Backlog: `BL-077`, `BL-043`; bug `BUG-098`
 
 Цель: сделать частые chat interactions более живыми: расширить
@@ -76,3 +76,6 @@ Backlog: `BL-077`, `BL-043`; bug `BUG-098`
 - focused regressions: `64 passed`; Compose config валиден;
 - in-app browser, viewport `390×844`: `48` reaction buttons, horizontal overflow
   отсутствует (`390/390`), center delta кнопки/SVG «+» равен `0/0`.
+- production rollout workflow `32355715677` и параллельный CI `32355715710`
+  завершились успешно; frontend и `/api/v1/health` вернули HTTP `200` на обоих
+  официальных origins.

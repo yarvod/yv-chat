@@ -631,7 +631,7 @@ sender negotiated remote-offer video transceiver до signed answer, а fullscre
 
 ### BL-077 — Telegram-like message interactions
 
-Статус: **completed and locally verified** (`WP-092`, `WP-093`, `WP-094`, `WP-095`,
+Статус: **completed and production verified** (`WP-092`, `WP-093`, `WP-094`, `WP-095`,
 `WP-096`, `WP-110`).
 
 - swipe right для reply не конфликтует с вертикальным timeline scroll;
@@ -652,7 +652,9 @@ sender negotiated remote-offer video transceiver до signed answer, а fullscre
   bubbles ниже их content height;
 - full CI, Docker health и real-browser reaction/pin/reply acceptance зелёные;
 - `WP-110` добавил reaction/sticker delight и iOS plus geometry: frontend `357`
-  tests, backend `279` tests, lint/typecheck/build и mobile visual QA зелёные.
+  tests, backend `279` tests, lint/typecheck/build и mobile visual QA зелёные;
+  immutable rollout `bc083d9` / workflow `32355715677` прошёл, оба production
+  origin и health endpoint вернули HTTP `200`.
 
 ### BL-065 — Multiple message pins
 

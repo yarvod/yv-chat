@@ -350,6 +350,14 @@ vhost regression restore only its immediate backup. Never use `docker system pru
 
 ## Rollout records
 
+`WP-110` reaction delight, animated GIF/WebP stickers and iOS composer polish
+deployed 2026-08-20 workflow `32355715677` for commit `bc083d9`; parallel CI
+`32355715710` also passed. Repository verification, dependency audit, immutable
+backend/frontend builds, migrations and isolated rollout completed successfully.
+Both `chat.yoowee.ru` and `chat.yoowee.com.de` returned frontend and health HTTP
+`200`. Immutable production tag is
+`sha-bc083d99cbe5d2b6e1ab3311f1f13fbbac84e7a6`.
+
 `WP-109` unified QR routing across trusted production origins deployed 2026-08-20
 workflow `32317318386` for commit `575b1a2`. Full repository CI, dependency audit,
 image builds, migration and rollout checks passed. Both public origins returned

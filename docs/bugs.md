@@ -6,7 +6,8 @@
 
 ### BUG-098 — iOS PWA визуально смещала sidebar «+»
 
-- Статус: `fixed and locally verified in WP-110`.
+- Статус: `fixed and production deployed in WP-110` (`bc083d9`, workflow
+  `32355715677`).
 - Severity: `low visual polish`.
 - Reproduction: открыть список чатов в iPhone standalone PWA; plus SVG в
   circular new-chat button выглядит неровным/смещённым.
