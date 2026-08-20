@@ -350,6 +350,13 @@ vhost regression restore only its immediate backup. Never use `docker system pru
 
 ## Rollout records
 
+`WP-109` unified QR routing across trusted production origins deployed 2026-08-20
+workflow `32317318386` for commit `575b1a2`. Full repository CI, dependency audit,
+image builds, migration and rollout checks passed. Both public origins returned
+frontend HTTP `200` and exposed the same exact runtime pairing allowlist containing
+`https://chat.yoowee.ru` and `https://chat.yoowee.com.de`. Immutable production tag
+is `sha-575b1a24cb0e65f972d0d64067b73354c044af10`.
+
 `WP-108` installed-PWA zoom policy и reply-swipe overflow containment deployed
 2026-08-20 workflow `32315884198` for commit `ac92a32`; отдельный CI workflow
 `32315884207` также прошёл. Оба public origin вернули frontend и health HTTP `200`,

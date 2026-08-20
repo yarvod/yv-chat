@@ -6,7 +6,8 @@
 
 ### BUG-097 — QR pairing ломался между двумя официальными production origins
 
-- Статус: `fixed and locally verified in WP-109`.
+- Статус: `fixed and production deployed in WP-109` (`575b1a2`, workflow
+  `32317318386`).
 - Severity: `high account access and multi-device usability`.
 - Reproduction: открыть login/pairing QR компьютера на одном из
   `chat.yoowee.ru`/`chat.yoowee.com.de`, а авторизованным телефоном на втором origin
@@ -19,7 +20,8 @@
   pairing outcomes regressions.
 - Проверка: три service/component flow, arbitrary-origin negative path, `352`
   frontend tests, lint/typecheck/build и Compose/deploy checks прошли; Nitro runtime
-  payload содержит оба exact production origin.
+  payload содержит оба exact production origin. После rollout оба
+  public origin вернули HTTP `200` и одинаковый exact allowlist.
 
 ### BUG-096 — Reply swipe создавал горизонтальный scroll, а standalone PWA случайно zoom-илась
 

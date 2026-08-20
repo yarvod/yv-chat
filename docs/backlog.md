@@ -143,7 +143,8 @@ observable MLS/history union и `WP-084` single-flight/server cancellation ра�
 реализует partial completion, чтобы proof-backed `missing_identity` одного direct не
 блокировал доступные чаты; оба исправления развернуты workflow `31761641522` в image
 `sha-5db642f`. `WP-109` исправляет unified scanner routing между двумя exact
-production origins без cross-origin cookies/API**.
+production origins без cross-origin cookies/API и развернут workflow
+`32317318386`**.
 `BL-064` и первый deployment-safe slice `BL-025` завершены; pairing реализуется
 итерациями с отдельным security/ADR review до изменения MLS membership semantics.
 Это не UI-задача «нарисовать QR»: `WP-079` не менял MLS roster, `WP-080` добавил

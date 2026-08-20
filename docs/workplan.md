@@ -2,7 +2,7 @@
 
 ## WP-109 — Unified QR routing across trusted production origins
 
-Статус: **implemented and locally verified**
+Статус: **implemented, full-CI verified and production deployed**
 Backlog: `BL-015`, `BL-075`; bug `BUG-097`
 
 Цель: один scanner на телефоне должен принимать QR компьютера во всех трёх
@@ -83,3 +83,7 @@ state, даже если два устройства открыли разные
 - frontend: `352 passed`, ESLint, Nuxt typecheck и production build зелёные;
 - `make compose-check deploy-check` проходит для development/integrated/production
   Compose и deployment scripts.
+- production workflow `32317318386` успешно развернул commit `575b1a2`
+  как immutable tag `sha-575b1a24cb0e65f972d0d64067b73354c044af10`;
+- оба public origin вернули HTTP `200` и одинаковый exact runtime
+  allowlist из `chat.yoowee.ru` и `chat.yoowee.com.de`.
