@@ -6,7 +6,8 @@
 
 ### BUG-101 — Занятое устройство ложно завершало общий входящий звонок
 
-- Статус: `fixed locally in WP-113; production rollout pending`.
+- Статус: `fixed and production deployed in WP-113` (`c581131`, workflow
+  `32417561086`).
 - Severity: `critical multi-device call reliability`.
 - Reproduction: оставить два устройства callee онлайн, при этом одно устройство
   сохраняет другой active call state; позвонить пользователю и принять звонок на

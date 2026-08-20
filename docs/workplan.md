@@ -2,7 +2,8 @@
 
 ## WP-113 — Device-scoped multi-device call terminal semantics
 
-Статус: **completed locally; production rollout pending**
+Статус: **completed and production deployed** (`c581131`, workflow
+`32417561086`)
 Backlog: `BL-034`; bug `BUG-101`
 
 Цель: устранить ложный `busy` и signaling teardown, когда один пользователь принимает
@@ -67,3 +68,13 @@ Backlog: `BL-034`; bug `BUG-101`
 - backend: Ruff check/format, mypy, `282 passed, 12 skipped`;
 - frontend: ESLint, Nuxt typecheck, `360 passed`, production build;
 - `docker compose config --quiet` и `git diff --check` прошли.
+
+### Production rollout
+
+- deployment workflow `32417561086` для `c581131` завершился успешно;
+- API, cleanup и frontend запущены из immutable images
+  `sha-c58113185b8b2b79dd42debbf35ce7d33f0716e0`;
+- PostgreSQL, API и frontend healthy, оба production origin вернули health
+  `200`, свежих API errors после rollout нет;
+- coturn продолжает слушать UDP/TCP `3478` и TLS `5349`; TURN и
+  Nginx configuration не менялись.

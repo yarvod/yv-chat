@@ -371,6 +371,13 @@ is `sha-575b1a24cb0e65f972d0d64067b73354c044af10`.
 immutable production tag — `sha-ac92a32ed571c20d3b31f7a34cfc0ab39bd7ecc4`.
 System Nginx и соседние сервисы не изменялись.
 
+`WP-113` multi-device call busy race fix deployed 2026-08-20 UTC in workflow
+`32417561086` for commit `c581131`. API/cleanup/frontend use immutable tag
+`sha-c58113185b8b2b79dd42debbf35ce7d33f0716e0`; PostgreSQL, API and frontend are
+healthy, and both production origins returned health `200`. coturn listeners on
+UDP/TCP `3478` and TLS `5349` remained available. Nginx and coturn configuration
+were not changed.
+
 `WP-104` MLS-authenticated WebRTC identity и `WP-105` opt-in video calls deployed
 2026-08-19 workflow `32282897389` for commit `8cabf4e`; обычный CI
 `32282897451` также прошёл. Оба public origin вернули health/frontend `200`,
