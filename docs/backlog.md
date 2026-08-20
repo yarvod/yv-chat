@@ -632,11 +632,14 @@ sender negotiated remote-offer video transceiver до signed answer, а fullscre
 ### BL-077 — Telegram-like message interactions
 
 Статус: **completed and locally verified** (`WP-092`, `WP-093`, `WP-094`, `WP-095`,
-`WP-096`).
+`WP-096`, `WP-110`).
 
 - swipe right для reply не конфликтует с вертикальным timeline scroll;
 - long-press/right-click/`Shift+F10` открывают context menu вместо постоянной строки actions;
-- compact quick reactions раскрываются до 16 server-accepted emoji;
+- compact quick reactions раскрываются до 48 server-accepted emoji с
+  reduced-motion-safe animation и semantic haptics;
+- local GIF/WebP можно отправить как frameless animated sticker, сохраняя
+  direct E2EE/group v1 security boundary (`WP-110`);
 - header/context unpin и delete требуют подтверждения;
 - attachment/context surfaces закрываются outside click и Escape;
 - на coarse pointer native selection/callout не конфликтует с long-press, а точный
@@ -647,7 +650,9 @@ sender negotiated remote-offer video transceiver до signed answer, а fullscre
   video-note shell/right-click используют единый capture-backed action path;
 - coarse touch minimum не позволяет column flex layout сжимать long-link/media
   bubbles ниже их content height;
-- full CI, Docker health и real-browser reaction/pin/reply acceptance зелёные.
+- full CI, Docker health и real-browser reaction/pin/reply acceptance зелёные;
+- `WP-110` добавил reaction/sticker delight и iOS plus geometry: frontend `357`
+  tests, backend `279` tests, lint/typecheck/build и mobile visual QA зелёные.
 
 ### BL-065 — Multiple message pins
 

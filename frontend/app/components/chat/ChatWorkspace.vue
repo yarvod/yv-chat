@@ -308,6 +308,7 @@ onBeforeUnmount(() => {
       :read-states="messenger.state.readStates"
       :presence-indicators="presenceIndicators"
       :creating="messenger.state.creating"
+      :haptic="$frontend.haptics.perform.bind($frontend.haptics)"
       @select="selectConversation"
       @direct="createDirect"
       @group="createGroup"
@@ -364,6 +365,7 @@ onBeforeUnmount(() => {
         :save-viewport="messenger.rememberViewport"
         :video-note-recorder="$frontend.videoNoteRecorder"
         :start-call="startCall"
+        :haptic="$frontend.haptics.perform.bind($frontend.haptics)"
         @back="closeConversation"
         @group-details="groupDetailsOpen = true"
       />

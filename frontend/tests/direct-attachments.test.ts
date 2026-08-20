@@ -101,6 +101,34 @@ describe('direct attachment content', () => {
     )).toEqual({ text: 'old', replyToMessageId: null, mentionedUserIds: [], attachments: [] })
   })
 
+  it('keeps sticker presentation inside the protected direct envelope', () => {
+    const encoded = encodeDirectMessageContent({
+      text: '',
+      attachments: [{
+        attachment: {
+          attachmentId: ATTACHMENT_ID,
+          kind: 'image',
+          name: 'party.gif',
+          contentType: 'image/gif',
+          byteSize: 120,
+          presentation: 'sticker',
+        },
+        secret: {
+          clientAttachmentId: CLIENT_ATTACHMENT_ID,
+          keyBase64: btoa('k'.repeat(32)),
+          nonceBase64: btoa('n'.repeat(12)),
+          ciphertextByteSize: 136,
+        },
+      }],
+    })
+
+    expect(decodeDirectMessageContent(encoded, CONVERSATION_ID).attachments[0]).toMatchObject({
+      presentation: 'sticker',
+      contentType: 'image/gif',
+    })
+    expect(encoded).not.toContain('party bytes')
+  })
+
   it('fails closed without exposing protected metadata when the envelope is malformed', () => {
     const malformed = 'yv-chat/direct-content/v1:{"text":"","attachments":[]}'
     expect(() => decodeDirectMessageContent(malformed, CONVERSATION_ID))

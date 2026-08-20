@@ -8,6 +8,7 @@ import type {
   RecordedVideoNote,
   VideoNoteRecorder,
 } from '../../application/ports/video-note-recorder'
+import type { HapticIntent } from '../../application/ports/haptics'
 import {
   attachmentKindFor,
   GROUP_ATTACHMENT_LIMIT,
@@ -25,6 +26,10 @@ import type {
   ParticipantDeliveryState,
 } from '../../domain/messaging/models'
 import { buildTimelineLayout } from '../../presentation/chat/timeline-layout'
+import {
+  ALL_REACTIONS,
+  QUICK_REACTIONS,
+} from '../../presentation/chat/reaction-palette'
 import AppIcon from '../ui/AppIcon.vue'
 import MessageAttachments from './MessageAttachments.vue'
 import MessageText from './MessageText.vue'
@@ -81,6 +86,7 @@ const props = withDefaults(defineProps<{
   saveViewport?: (anchor: ConversationViewportAnchor) => Promise<void>
   videoNoteRecorder?: VideoNoteRecorder
   startCall?: (conversationId: string) => Promise<void>
+  haptic?: (intent: HapticIntent) => void
 }>(), {
   historyHasMore: false,
   historyHasNewer: false,
@@ -109,6 +115,7 @@ const props = withDefaults(defineProps<{
   saveViewport: async () => undefined,
   videoNoteRecorder: undefined,
   startCall: async () => undefined,
+  haptic: () => undefined,
 })
 const emit = defineEmits<{ back: []; groupDetails: [] }>()
 
@@ -126,6 +133,7 @@ const activePinIndex = ref(0)
 const timeline = ref<HTMLElement | null>(null)
 const composerInput = ref<HTMLTextAreaElement | null>(null)
 const mediaInput = ref<HTMLInputElement | null>(null)
+const stickerInput = ref<HTMLInputElement | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
 const attachmentPicker = ref<HTMLElement | null>(null)
 const contextMenuElement = ref<HTMLElement | null>(null)
@@ -133,6 +141,7 @@ interface SelectedAttachment {
   file: File
   kind: 'image' | 'video' | 'file'
   previewUrl: string | null
+  presentation?: 'sticker'
 }
 const selectedAttachments = ref<SelectedAttachment[]>([])
 const attachmentError = ref<string | null>(null)
@@ -141,6 +150,7 @@ const attachmentDragActive = ref(false)
 const showScrollToLatest = ref(false)
 const restorationPending = ref(true)
 const highlightedMessageId = ref<string | null>(null)
+const reactionBurst = ref<{ emoji: string, id: number, x: number, y: number } | null>(null)
 let viewportSaveTimer: ReturnType<typeof setTimeout> | null = null
 let pendingViewportAnchor: ConversationViewportAnchor | null = null
 let highlightTimer: ReturnType<typeof setTimeout> | null = null
@@ -155,6 +165,7 @@ let longPressTimer: ReturnType<typeof setTimeout> | null = null
 let messageActionNoticeTimer: ReturnType<typeof setTimeout> | null = null
 let suppressedMessageClickTimer: ReturnType<typeof setTimeout> | null = null
 let suppressedMessageClickId: string | null = null
+let reactionBurstTimer: ReturnType<typeof setTimeout> | null = null
 interface MessageContextMenuState {
   messageId: string
   x: number
@@ -174,11 +185,6 @@ interface MessageSwipeState {
 const messageContextMenu = ref<MessageContextMenuState | null>(null)
 const messageSwipe = ref<MessageSwipeState | null>(null)
 const MESSAGE_GESTURE_SLOP_PX = 10
-const QUICK_REACTIONS = ['❤️', '👌', '🔥', '😁', '🤯', '💯', '👍'] as const
-const ALL_REACTIONS = [
-  ...QUICK_REACTIONS,
-  '😂', '😮', '😢', '👎', '🎉', '👏', '🤔', '🙏', '🥰',
-] as const
 const activePin = computed(() => props.messagePins[activePinIndex.value] ?? props.messagePins[0])
 const activePinnedMessage = computed(() => props.messages.find(message => (
   message.messageId === activePin.value?.messageId
@@ -305,6 +311,15 @@ function isStandaloneVideoNote(message: TimelineMessage): boolean {
     && attachments[0].presentation === 'video_note'
 }
 
+function isStandaloneSticker(message: TimelineMessage): boolean {
+  const attachments = message.displayAttachments ?? []
+  return message.contentState === 'available'
+    && !message.displayBody?.trim()
+    && attachments.length === 1
+    && attachments[0]?.kind === 'image'
+    && attachments[0].presentation === 'sticker'
+}
+
 function isCallHistory(message: TimelineMessage): boolean {
   return message.contentState === 'available' && message.call !== undefined
 }
@@ -416,9 +431,9 @@ function pinnedPreview(): string {
   if (message.contentState === 'deleted') return 'Сообщение удалено'
   if (message.displayBody?.trim()) return message.displayBody.trim()
   if ((message.displayAttachments?.length ?? 0) > 0) {
-    return message.displayAttachments?.[0]?.presentation === 'video_note'
-      ? 'Видеосообщение'
-      : 'Вложение'
+    if (message.displayAttachments?.[0]?.presentation === 'video_note') return 'Видеосообщение'
+    if (message.displayAttachments?.[0]?.presentation === 'sticker') return 'Стикер'
+    return 'Вложение'
   }
   return `Сообщение #${message.sequence}`
 }
@@ -442,10 +457,33 @@ async function changeReaction(
   messageId: string,
   reaction: string,
   active: boolean,
+  event?: MouseEvent,
 ): Promise<void> {
   if (await props.toggleReaction(messageId, reaction, active)) {
+    props.haptic(active ? 'success' : 'selection')
+    if (active) showReactionBurst(reaction, event)
     messageContextMenu.value = null
   }
+}
+
+function showReactionBurst(emoji: string, event?: MouseEvent): void {
+  if (reactionBurstTimer) clearTimeout(reactionBurstTimer)
+  reactionBurst.value = {
+    emoji,
+    id: Date.now(),
+    x: event?.clientX ?? (typeof window === 'undefined' ? 0 : window.innerWidth / 2),
+    y: event?.clientY ?? (typeof window === 'undefined' ? 0 : window.innerHeight / 2),
+  }
+  reactionBurstTimer = setTimeout(() => {
+    reactionBurst.value = null
+    reactionBurstTimer = null
+  }, 720)
+}
+
+function toggleReactionPalette(): void {
+  if (!messageContextMenu.value) return
+  messageContextMenu.value.expandedReactions = !messageContextMenu.value.expandedReactions
+  props.haptic('selection')
 }
 
 function reactedByActor(messageId: string, reaction: string): boolean {
@@ -517,6 +555,7 @@ function openMessageContext(message: TimelineMessage, clientX: number, clientY: 
     y: Math.max(12, Math.min(clientY, window.innerHeight - menuHeight - 12)),
     expandedReactions: false,
   }
+  props.haptic('selection')
   void nextTick(() => contextMenuElement.value?.focus())
 }
 
@@ -631,7 +670,10 @@ function finishMessagePointer(event: PointerEvent, message: TimelineMessage): vo
   const shouldSuppressClick = swipe.startedOnVideoNote && (swipe.longPressFired || swipe.offset > 8)
   resetMessageSwipe()
   if (shouldSuppressClick) suppressNextVideoNoteClick(message.messageId)
-  if (shouldReply) startReply(message)
+  if (shouldReply) {
+    props.haptic('selection')
+    startReply(message)
+  }
 }
 
 function messageSwipeStyle(messageId: string): Record<string, string> | undefined {
@@ -677,11 +719,12 @@ async function confirmDelete(messageId: string): Promise<void> {
 async function submit(): Promise<void> {
   if (props.sending || (draft.value.trim().length === 0 && selectedAttachments.value.length === 0)) return
   const value = draft.value
-  const attachments = selectedAttachments.value.map(({ file }) => ({
+  const attachments = selectedAttachments.value.map(({ file, presentation }) => ({
     name: attachmentName(file),
     type: file.type,
     size: file.size,
     body: file,
+    ...(presentation ? { presentation } : {}),
   }))
   const interaction = {
     ...(replyingTo.value ? { replyToMessageId: replyingTo.value.messageId } : {}),
@@ -741,7 +784,10 @@ function attachmentName(file: File): string {
   return extension ? `Вставленное изображение.${extension}` : 'Вставленный файл'
 }
 
-function addAttachments(files: readonly File[]): boolean {
+function addAttachments(
+  files: readonly File[],
+  presentation?: 'sticker',
+): boolean {
   attachmentError.value = null
   attachmentMenuOpen.value = false
   if (files.length === 0) return false
@@ -759,6 +805,10 @@ function addAttachments(files: readonly File[]): boolean {
   }
   for (const file of files) {
     const kind = attachmentKindFor(file.type)
+    if (presentation === 'sticker' && !['image/gif', 'image/webp'].includes(file.type.toLowerCase())) {
+      attachmentError.value = 'Стикером можно отправить GIF или WebP.'
+      return false
+    }
     const direct = props.conversation?.conversationType === 'direct'
     const maximum = direct
       ? maximumDirectAttachmentBytes(kind)
@@ -778,17 +828,18 @@ function addAttachments(files: readonly File[]): boolean {
         file,
         kind,
         previewUrl: kind === 'file' ? null : URL.createObjectURL(file),
+        ...(presentation ? { presentation } : {}),
       }
     }),
   ]
   return true
 }
 
-function chooseAttachment(event: Event): void {
+function chooseAttachment(event: Event, presentation?: 'sticker'): void {
   const input = event.target as HTMLInputElement
   const files = Array.from(input.files ?? [])
   input.value = ''
-  addAttachments(files)
+  if (addAttachments(files, presentation)) props.haptic('selection')
 }
 
 function clipboardFiles(event: ClipboardEvent): File[] {
@@ -837,9 +888,15 @@ function handleAttachmentDrop(event: DragEvent): void {
   addAttachments(Array.from(event.dataTransfer?.files ?? []))
 }
 
-function openAttachmentPicker(kind: 'media' | 'file'): void {
+function toggleAttachmentMenu(): void {
+  attachmentMenuOpen.value = !attachmentMenuOpen.value
+  props.haptic('selection')
+}
+
+function openAttachmentPicker(kind: 'media' | 'sticker' | 'file'): void {
   attachmentMenuOpen.value = false
   if (kind === 'media') mediaInput.value?.click()
+  else if (kind === 'sticker') stickerInput.value?.click()
   else fileInput.value?.click()
 }
 
@@ -1145,6 +1202,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', handleDocumentPointerDown, true)
   document.removeEventListener('keydown', handleDocumentKeydown)
   if (messageActionNoticeTimer) clearTimeout(messageActionNoticeTimer)
+  if (reactionBurstTimer) clearTimeout(reactionBurstTimer)
   clearSuppressedMessageClick()
   resetMessageSwipe()
   clearAttachments()
@@ -1335,6 +1393,7 @@ onBeforeUnmount(() => {
             joined: item.joinedToPrevious,
             targeted: item.message.messageId === highlightedMessageId,
             'message-bubble--video-note': isStandaloneVideoNote(item.message),
+            'message-bubble--sticker': isStandaloneSticker(item.message),
             'message-bubble--call': isCallHistory(item.message),
             'message-bubble--swiping': messageSwipe?.messageId === item.message.messageId,
           }"
@@ -1395,7 +1454,7 @@ onBeforeUnmount(() => {
               type="button"
               :class="{ active: summary.reactedByActor }"
               :aria-label="`${summary.reaction}: ${summary.count}`"
-              @click="changeReaction(item.message.messageId, summary.reaction, !summary.reactedByActor)"
+              @click="changeReaction(item.message.messageId, summary.reaction, !summary.reactedByActor, $event)"
             >
               <span>{{ summary.reaction }}</span><small>{{ summary.count }}</small>
             </button>
@@ -1486,6 +1545,7 @@ onBeforeUnmount(() => {
             v-for="(item, index) in selectedAttachments"
             :key="`${attachmentName(item.file)}-${item.file.lastModified}-${index}`"
             class="composer-attachment"
+            :class="{ 'composer-attachment--sticker': item.presentation === 'sticker' }"
           >
             <img
               v-if="item.previewUrl && item.kind === 'image'"
@@ -1546,7 +1606,7 @@ onBeforeUnmount(() => {
           :title="attachmentsAllowed
             ? 'Прикрепить медиа или файл'
             : 'Ожидаем готовности E2EE личного чата'"
-          @click="attachmentMenuOpen = !attachmentMenuOpen"
+          @click="toggleAttachmentMenu"
         >
           <AppIcon name="attachment" />
           <span class="sr-only">Прикрепить медиа или файл</span>
@@ -1561,6 +1621,14 @@ onBeforeUnmount(() => {
           @change="chooseAttachment"
         >
         <input
+          ref="stickerInput"
+          data-picker="sticker"
+          type="file"
+          accept="image/gif,image/webp,.gif,.webp"
+          :disabled="!attachmentsAllowed || sending"
+          @change="chooseAttachment($event, 'sticker')"
+        >
+        <input
           ref="fileInput"
           data-picker="file"
           type="file"
@@ -1573,6 +1641,10 @@ onBeforeUnmount(() => {
             <button type="button" @click="openAttachmentPicker('media')">
               <AppIcon name="media" />
               <span><strong>Фото или видео</strong><small>Открыть системную галерею</small></span>
+            </button>
+            <button type="button" @click="openAttachmentPicker('sticker')">
+              <span class="attachment-picker-menu__emoji" aria-hidden="true">✦</span>
+              <span><strong>Стикер или GIF</strong><small>GIF/WebP с анимацией без рамки</small></span>
             </button>
             <button type="button" @click="openAttachmentPicker('file')">
               <AppIcon name="file" />
@@ -1654,6 +1726,7 @@ onBeforeUnmount(() => {
               contextMessage.messageId,
               reaction,
               !reactedByActor(contextMessage.messageId, reaction),
+              $event,
             )"
           >{{ reaction }}</button>
           <button
@@ -1661,27 +1734,31 @@ onBeforeUnmount(() => {
             type="button"
             :aria-expanded="messageContextMenu.expandedReactions"
             aria-label="Показать больше реакций"
-            @click="messageContextMenu.expandedReactions = !messageContextMenu.expandedReactions"
+            @click="toggleReactionPalette"
           >⌄</button>
         </div>
-        <div
-          v-if="messageContextMenu.expandedReactions"
-          class="context-all-reactions"
-          aria-label="Все реакции"
-        >
-          <button
-            v-for="reaction in ALL_REACTIONS"
-            :key="reaction"
-            type="button"
-            :class="{ active: reactedByActor(contextMessage.messageId, reaction) }"
-            :aria-label="`Реакция ${reaction}`"
-            @click="changeReaction(
-              contextMessage.messageId,
-              reaction,
-              !reactedByActor(contextMessage.messageId, reaction),
-            )"
-          >{{ reaction }}</button>
-        </div>
+        <Transition name="reaction-tray">
+          <div
+            v-if="messageContextMenu.expandedReactions"
+            class="context-all-reactions"
+            aria-label="Все реакции"
+          >
+            <button
+              v-for="(reaction, index) in ALL_REACTIONS"
+              :key="reaction"
+              type="button"
+              :class="{ active: reactedByActor(contextMessage.messageId, reaction) }"
+              :style="{ '--reaction-index': index }"
+              :aria-label="`Реакция ${reaction}`"
+              @click="changeReaction(
+                contextMessage.messageId,
+                reaction,
+                !reactedByActor(contextMessage.messageId, reaction),
+                $event,
+              )"
+            >{{ reaction }}</button>
+          </div>
+        </Transition>
         <div class="context-message-actions">
           <button type="button" role="menuitem" @click="startReply(contextMessage)">
             <span aria-hidden="true">↩</span><strong>Ответить</strong>
@@ -1715,6 +1792,17 @@ onBeforeUnmount(() => {
           </button>
         </div>
     </section>
+  </div>
+
+  <div
+    v-if="reactionBurst"
+    :key="reactionBurst.id"
+    class="reaction-burst"
+    :style="{ left: `${reactionBurst.x}px`, top: `${reactionBurst.y}px` }"
+    aria-hidden="true"
+  >
+    <span>{{ reactionBurst.emoji }}</span>
+    <i v-for="spark in 6" :key="spark" :style="{ '--spark-index': spark }" />
   </div>
 
   <div v-if="unpinCandidateId" class="message-confirm-backdrop" @click.self="unpinCandidateId = null">

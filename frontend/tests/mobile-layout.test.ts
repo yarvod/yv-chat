@@ -133,7 +133,7 @@ describe('mobile application shell', () => {
     )
 
     expect(coarseBlock).toMatch(/\.message-bubble, \.message-bubble \* \{[^}]*-webkit-user-select: none;[^}]*user-select: none;[^}]*-webkit-touch-callout: none;/)
-    expect(coarseBlock).toMatch(/\.message-bubble:not\(\.message-bubble--video-note\) \{[^}]*min-width: 48px;[^}]*min-height: 48px;/)
+    expect(coarseBlock).toMatch(/\.message-bubble:not\(\.message-bubble--video-note, \.message-bubble--sticker\) \{[^}]*min-width: 48px;[^}]*min-height: 48px;/)
     expect(coarseBlock).toMatch(/\.message-bubble img, \.message-bubble video \{[^}]*-webkit-user-drag: none;/)
     expect(css.slice(0, css.indexOf('@media (hover: none) and (pointer: coarse)')))
       .not.toMatch(/\.message-bubble \{[^}]*user-select: none;/)
@@ -143,7 +143,20 @@ describe('mobile application shell', () => {
     const css = readFileSync(resolve(process.cwd(), 'app/assets/main.css'), 'utf8')
 
     expect(css).toMatch(/\.message-bubble \{[^}]*flex-shrink: 0;/)
-    expect(css).toMatch(/@media \(hover: none\) and \(pointer: coarse\)[\s\S]*\.message-bubble:not\(\.message-bubble--video-note\) \{[^}]*min-width: 48px;[^}]*min-height: 48px;/)
+    expect(css).toMatch(/@media \(hover: none\) and \(pointer: coarse\)[\s\S]*\.message-bubble:not\(\.message-bubble--video-note, \.message-bubble--sticker\) \{[^}]*min-width: 48px;[^}]*min-height: 48px;/)
+  })
+
+  it('centers the iOS new-chat plus and keeps delight motion bounded', () => {
+    const css = readFileSync(resolve(process.cwd(), 'app/assets/main.css'), 'utf8')
+    const icon = readFileSync(resolve(process.cwd(), 'app/components/ui/AppIcon.vue'), 'utf8')
+
+    expect(css).toMatch(/\.new-chat-button \{[^}]*min-width: 40px;[^}]*min-height: 40px;[^}]*padding: 0;[^}]*-webkit-appearance: none;/)
+    expect(css).toMatch(/\.new-chat-button \.app-icon \{[^}]*width: 21px;[^}]*height: 21px;/)
+    expect(icon).toContain('M12 4.5v15M4.5 12h15')
+    expect(css).toContain('.reaction-tray-enter-active')
+    expect(css).toContain('.reaction-burst')
+    expect(css).toContain('.message-bubble.message-bubble--sticker')
+    expect(css).toContain('@media (prefers-reduced-motion: reduce)')
   })
 
   it('overlays transient connection state without reserving a shell row', () => {

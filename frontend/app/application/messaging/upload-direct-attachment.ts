@@ -12,6 +12,7 @@ import {
   attachmentKindFor,
   maximumDirectAttachmentBytes,
   normalizeAttachmentContentType,
+  supportsStickerPresentation,
 } from './group-attachment-policy'
 import type { GroupAttachmentSource } from './upload-group-attachment'
 import { safeDisplayName } from './upload-group-attachment'
@@ -44,20 +45,27 @@ export class UploadDirectAttachment {
     const contentType = normalizeAttachmentContentType(source.type)
     const kind = attachmentKindFor(contentType)
     const maximum = maximumDirectAttachmentBytes(kind)
-    const videoNoteMetadataValid = source.presentation === undefined
+    const presentationMetadataValid = source.presentation === undefined
       ? source.durationSeconds === undefined
-      : source.presentation === 'video_note'
-        && kind === 'video'
-        && Number.isInteger(source.durationSeconds)
-        && Number(source.durationSeconds) >= 1
-        && Number(source.durationSeconds) <= 60
+      : (
+          source.presentation === 'video_note'
+            && kind === 'video'
+            && Number.isInteger(source.durationSeconds)
+            && Number(source.durationSeconds) >= 1
+            && Number(source.durationSeconds) <= 60
+        ) || (
+          source.presentation === 'sticker'
+            && kind === 'image'
+            && supportsStickerPresentation(contentType)
+            && source.durationSeconds === undefined
+        )
     if (
       !conversationId
       || source.size <= 0
       || source.size > maximum
       || source.body.size !== source.size
       || (source.presentation === 'video_note' && source.size > VIDEO_NOTE_MAX_BYTES)
-      || !videoNoteMetadataValid
+      || !presentationMetadataValid
     ) throw new TypeError('invalid direct attachment source')
 
     let entry = this.prepared.get(source.body)

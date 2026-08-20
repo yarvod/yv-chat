@@ -175,7 +175,9 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .messenger-shell--call-minimized > .conversation-placeholder { grid-row: 2; }
 .sidebar { position: relative; display: flex; min-height: 0; height: 100%; flex-direction: column; overflow: hidden; border-right: 1px solid var(--border); background: var(--surface-solid); }
 .sidebar-actions { display: flex; min-height: 62px; align-items: center; justify-content: flex-end; padding: 10px 14px 7px; }
-.new-chat-button { display: grid; width: 40px; height: 40px; margin-left: auto; place-items: center; border: 1px solid color-mix(in srgb, var(--primary) 30%, var(--border)); border-radius: 50%; color: var(--primary); background: color-mix(in srgb, var(--primary) 10%, transparent); font-size: 1.08rem; }
+.new-chat-button { display: grid; width: 40px; min-width: 40px; height: 40px; min-height: 40px; margin-left: auto; padding: 0; place-items: center; border: 1px solid color-mix(in srgb, var(--primary) 30%, var(--border)); border-radius: 50%; appearance: none; -webkit-appearance: none; color: var(--primary); background: color-mix(in srgb, var(--primary) 10%, transparent); line-height: 0; transform: translateZ(0); transition: transform .16s ease, background .16s ease, box-shadow .16s ease; }
+.new-chat-button .app-icon { width: 21px; height: 21px; }
+.new-chat-button:active { transform: translateZ(0) scale(.9); }
 .conversation-search { display: grid; grid-template-columns: 22px minmax(0, 1fr) 28px; align-items: center; gap: 7px; min-height: 42px; margin: 10px 12px 4px; padding: 0 8px 0 12px; border: 1px solid transparent; border-radius: 13px; color: var(--muted); background: var(--field); }
 .conversation-search:focus-within { border-color: color-mix(in srgb, var(--primary) 55%, var(--border)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 10%, transparent); }
 .conversation-search input { min-height: 38px; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
@@ -265,6 +267,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .message-bubble.own { align-self: flex-end; border-color: color-mix(in srgb, var(--primary) 28%, var(--border)); border-radius: 17px 5px 17px 17px; background: color-mix(in srgb, var(--primary) 13%, var(--surface-solid)); }
 .message-bubble.own.joined { border-top-right-radius: 12px; }
 .message-bubble.message-bubble--video-note { max-width: min(380px, 92%); padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.message-bubble.message-bubble--sticker { max-width: min(380px, 92%); padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 .message-bubble.message-bubble--call { min-width: min(18rem, 78vw); }
 .call-history { display: flex; align-items: center; gap: .72rem; min-height: 3.1rem; }
 .call-history__icon { display: grid; width: 2.45rem; height: 2.45rem; flex: none; place-items: center; border-radius: 50%; color: var(--primary); background: color-mix(in srgb, var(--primary) 13%, transparent); }
@@ -274,6 +277,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .call-history--missed .call-history__icon { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
 .message-bubble--video-note .message-attachments { margin: 0 0 4px; overflow: visible; border-radius: 0; }
 .message-bubble--video-note .message-meta { padding-inline: 6px; }
+.message-bubble--sticker .message-attachments { margin: 0 0 3px; overflow: visible; border-radius: 0; }
+.message-bubble--sticker .message-meta { padding-inline: 7px; }
 .message-bubble.targeted { animation: message-target 1.8s ease-out both; }
 @keyframes message-target { 0%, 28% { border-color: var(--primary); box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 22%, transparent), 0 10px 30px var(--glow); } 100% { box-shadow: 0 5px 18px rgb(0 0 0 / 6%); } }
 .outbox-message { opacity: .88; }
@@ -295,9 +300,13 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .message-tombstone { color: var(--muted); font-style: italic; }
 .message-unavailable { color: var(--danger); font-style: italic; }
 .message-reactions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
-.message-reactions button { display: inline-flex; min-height: 28px; align-items: center; gap: 4px; padding: 3px 8px; border: 1px solid var(--border); border-radius: 999px; color: var(--text); background: var(--surface-raised); }
+.message-reactions button { display: inline-flex; min-height: 28px; align-items: center; gap: 4px; padding: 3px 8px; border: 1px solid var(--border); border-radius: 999px; color: var(--text); background: var(--surface-raised); transition: transform .15s cubic-bezier(.2,.8,.2,1.4), background .15s ease, border-color .15s ease; animation: reaction-chip-in .24s cubic-bezier(.2,.8,.2,1.3) both; }
+.message-reactions button:active { transform: scale(.88); }
 .message-reactions button.active { border-color: color-mix(in srgb, var(--primary) 55%, var(--border)); background: color-mix(in srgb, var(--primary) 14%, var(--surface-raised)); }
+.message-reactions button.active > span { animation: reaction-pop .32s cubic-bezier(.15,.85,.25,1.5); }
 .message-reactions small { color: var(--muted); font-size: .67rem; }
+@keyframes reaction-chip-in { from { opacity: 0; transform: translateY(4px) scale(.82); } }
+@keyframes reaction-pop { 0%, 100% { transform: scale(1); } 45% { transform: scale(1.35) rotate(-8deg); } }
 .message-context-backdrop { position: fixed; z-index: 120; inset: 0; background: rgb(6 10 18 / 12%); }
 .message-context-menu { position: fixed; display: grid; width: min(380px, calc(100vw - 24px)); gap: 6px; padding: 8px; border: 1px solid color-mix(in srgb, var(--border) 82%, transparent); border-radius: 20px; background: color-mix(in srgb, var(--surface-solid) 96%, transparent); box-shadow: 0 22px 70px rgb(0 0 0 / 28%); backdrop-filter: blur(22px); animation: context-menu-in .16s ease both; }
 .message-context-menu:focus-visible { outline: 1px solid color-mix(in srgb, var(--primary) 38%, transparent); outline-offset: 2px; }
@@ -307,8 +316,18 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .context-quick-reactions button, .context-all-reactions button { display: grid; width: 41px; height: 41px; flex: 0 0 auto; place-items: center; padding: 0; border: 0; border-radius: 50%; color: var(--text); background: transparent; font-size: 1.48rem; transition: background .14s ease, transform .14s ease; }
 .context-quick-reactions button:hover, .context-all-reactions button:hover, .context-quick-reactions button.active, .context-all-reactions button.active { background: color-mix(in srgb, var(--primary) 14%, var(--surface-raised)); transform: scale(1.08); }
 .context-quick-reactions .context-reactions-expand { color: var(--muted); background: var(--surface-hover); font-size: 1.35rem; }
-.context-all-reactions { display: grid; grid-template-columns: repeat(8, minmax(34px, 1fr)); gap: 2px; padding: 6px 3px; border-top: 1px solid var(--border); }
-.context-all-reactions button { width: 100%; height: 38px; font-size: 1.3rem; }
+.context-all-reactions { display: grid; max-height: min(282px, 42dvh); grid-template-columns: repeat(8, minmax(34px, 1fr)); gap: 2px; overflow-y: auto; overscroll-behavior: contain; padding: 6px 3px; border-top: 1px solid var(--border); scrollbar-width: thin; }
+.context-all-reactions button { width: 100%; height: 38px; font-size: 1.3rem; animation: reaction-item-in .2s cubic-bezier(.2,.8,.2,1.35) both; animation-delay: calc(var(--reaction-index) * 7ms); }
+.reaction-tray-enter-active, .reaction-tray-leave-active { overflow: hidden; transform-origin: top center; transition: opacity .2s ease, transform .22s cubic-bezier(.2,.8,.2,1.12), max-height .24s ease; }
+.reaction-tray-enter-from, .reaction-tray-leave-to { max-height: 0; opacity: 0; transform: translateY(-7px) scale(.97); }
+.reaction-tray-enter-to, .reaction-tray-leave-from { max-height: min(282px, 42dvh); }
+@keyframes reaction-item-in { from { opacity: 0; transform: translateY(5px) scale(.7); } }
+.reaction-burst { position: fixed; z-index: 180; top: 50%; left: 50%; display: grid; width: 86px; height: 86px; place-items: center; pointer-events: none; transform: translate(-50%, -50%); }
+.reaction-burst > span { z-index: 1; font-size: 3.3rem; filter: drop-shadow(0 9px 20px rgb(0 0 0 / 24%)); animation: reaction-burst-main .68s cubic-bezier(.15,.9,.25,1.25) both; }
+.reaction-burst > i { --spark-angle: calc(var(--spark-index) * 60deg); position: absolute; width: 9px; height: 9px; border-radius: 50%; background: var(--primary); animation: reaction-burst-spark .58s ease-out both; transform: rotate(var(--spark-angle)) translateY(-12px); }
+.reaction-burst > i:nth-of-type(even) { background: var(--secondary); }
+@keyframes reaction-burst-main { 0% { opacity: 0; transform: scale(.25) rotate(-18deg); } 48% { opacity: 1; transform: scale(1.28) rotate(7deg); } 100% { opacity: 0; transform: scale(.92); } }
+@keyframes reaction-burst-spark { 0% { opacity: 0; transform: rotate(var(--spark-angle)) translateY(-8px) scale(.2); } 35% { opacity: 1; } 100% { opacity: 0; transform: rotate(var(--spark-angle)) translateY(-48px) scale(1); } }
 .context-message-actions { display: grid; padding-top: 4px; border-top: 1px solid var(--border); }
 .context-message-actions > button { display: grid; min-height: 48px; grid-template-columns: 28px minmax(0, 1fr); align-items: center; gap: 11px; padding: 7px 12px; border: 0; border-radius: 12px; color: var(--text); background: transparent; text-align: left; }
 .context-message-actions > button:hover { background: var(--surface-hover); }
@@ -349,6 +368,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .attachment-picker-menu > button { display: grid; grid-template-columns: 42px minmax(0, 1fr); align-items: center; gap: 10px; min-height: 56px; padding: 7px 9px; border: 0; border-radius: 12px; color: var(--text); background: transparent; text-align: left; }
 .attachment-picker-menu > button:hover { background: var(--surface-hover); }
 .attachment-picker-menu .app-icon { width: 24px; height: 24px; color: var(--primary); }
+.attachment-picker-menu__emoji { display: grid; width: 32px; height: 32px; place-items: center; border-radius: 10px; color: var(--primary); background: color-mix(in srgb, var(--primary) 12%, transparent); font-size: 1.25rem; }
 .attachment-picker-menu span { display: grid; gap: 2px; }
 .attachment-picker-menu strong { margin: 0; font-size: .85rem; }
 .attachment-picker-menu small { color: var(--muted); font-size: .7rem; }
@@ -360,6 +380,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .composer-attachments__strip { display: flex; gap: 7px; overflow-x: auto; overscroll-behavior-inline: contain; scrollbar-width: thin; padding-bottom: 2px; }
 .composer-attachment { position: relative; display: grid; min-width: min(230px, 72vw); max-width: 230px; grid-template-columns: 48px minmax(0, 1fr) 34px; align-items: center; gap: 8px; min-height: 58px; padding: 6px 6px 9px; overflow: hidden; border: 1px solid color-mix(in srgb, var(--primary) 25%, var(--border)); border-radius: 14px; background: var(--surface-raised); }
 .composer-attachment > img, .composer-attachment > video { width: 48px; height: 48px; border-radius: 10px; object-fit: cover; background: #090b12; }
+.composer-attachment--sticker { border-style: dashed; background: color-mix(in srgb, var(--primary) 6%, var(--surface-raised)); }
+.composer-attachment--sticker > img { object-fit: contain; background: transparent; }
 .composer-attachment__icon { display: grid; width: 44px; height: 44px; place-items: center; border-radius: 12px; color: var(--primary); background: color-mix(in srgb, var(--primary) 11%, transparent); }
 .composer-attachment__copy { display: grid; min-width: 0; gap: 2px; }
 .composer-attachment__copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -372,8 +394,17 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .message-attachments { display: grid; gap: 3px; margin: -3px -6px 6px; overflow: hidden; border-radius: 12px; }
 .message-attachments--gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .message-photo-shell { display: grid; min-width: 0; overflow: hidden; background: var(--field); }
-.message-photo { display: block; min-width: 0; overflow: hidden; padding: 0; border: 0; border-radius: 12px; background: var(--field); cursor: zoom-in; }
+.message-photo { position: relative; display: block; min-width: 0; overflow: hidden; padding: 0; border: 0; border-radius: 12px; background: var(--field); cursor: zoom-in; }
 .message-photo img { display: block; width: min(420px, 68vw); max-width: 100%; max-height: 58dvh; object-fit: contain; }
+.message-gif-badge, .message-sticker__badge { position: absolute; right: 8px; bottom: 8px; padding: 4px 7px; border: 1px solid rgb(255 255 255 / 24%); border-radius: 999px; color: white; background: rgb(3 5 10 / 62%); box-shadow: 0 4px 14px rgb(0 0 0 / 20%); font-size: .58rem; font-weight: 850; letter-spacing: .08em; backdrop-filter: blur(7px); }
+.message-photo img, .message-sticker img { animation: media-pop-in .32s cubic-bezier(.2,.82,.2,1.18) both; }
+@keyframes media-pop-in { from { opacity: 0; transform: scale(.94); filter: blur(4px); } }
+.message-attachments--sticker { overflow: visible; background: transparent; }
+.message-sticker-shell { display: grid; width: min(280px, 68vw); min-height: min(180px, 44vw); place-items: center; overflow: visible; background: transparent; }
+.message-sticker { position: relative; display: grid; width: 100%; max-height: 320px; place-items: center; overflow: visible; padding: 0; border: 0; background: transparent; cursor: zoom-in; filter: drop-shadow(0 10px 18px rgb(0 0 0 / 14%)); transition: transform .18s cubic-bezier(.2,.8,.2,1.3); }
+.message-sticker:active { transform: scale(.92) rotate(-2deg); }
+.message-sticker img { display: block; width: 100%; max-height: 320px; object-fit: contain; }
+.message-sticker-loading, .message-sticker-unavailable { display: grid; width: min(240px, 62vw); min-height: 180px; place-items: center; align-content: center; gap: 8px; padding: 16px; border-radius: 28px; color: var(--muted); background: color-mix(in srgb, var(--primary) 7%, var(--field)); text-align: center; font-size: .75rem; }
 .message-attachments--gallery .message-photo, .message-attachments--gallery .message-photo-shell { border-radius: 5px; }
 .message-attachments--gallery .message-photo img { width: 100%; height: clamp(120px, 24vw, 230px); object-fit: cover; }
 .message-photo-loading { display: grid; width: min(420px, 68vw); min-height: 170px; place-items: center; background: color-mix(in srgb, var(--primary) 5%, var(--field)); }
@@ -644,7 +675,7 @@ legend { padding: 0 6px; color: var(--muted); font-size: .8rem; }
 
 @media (hover: none) and (pointer: coarse) {
   .message-bubble, .message-bubble * { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
-  .message-bubble:not(.message-bubble--video-note) { min-width: 48px; min-height: 48px; }
+  .message-bubble:not(.message-bubble--video-note, .message-bubble--sticker) { min-width: 48px; min-height: 48px; }
   .message-bubble img, .message-bubble video { -webkit-user-drag: none; }
 }
 

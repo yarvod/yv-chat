@@ -452,11 +452,14 @@ describe('message panel', () => {
       },
     })
     const mediaInput = wrapper.get<HTMLInputElement>('input[data-picker="media"]')
+    const stickerInput = wrapper.get<HTMLInputElement>('input[data-picker="sticker"]')
     const fileInput = wrapper.get<HTMLInputElement>('input[data-picker="file"]')
     expect(mediaInput.attributes('accept')).toBe('image/*,video/*')
+    expect(stickerInput.attributes('accept')).toContain('image/gif')
     expect(fileInput.attributes('accept')).toBeUndefined()
     await wrapper.get('.attach-button').trigger('click')
     expect(wrapper.text()).toContain('Открыть системную галерею')
+    expect(wrapper.text()).toContain('Стикер или GIF')
     expect(wrapper.text()).toContain('Выбрать любой тип')
     document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
     await wrapper.vm.$nextTick()
@@ -501,7 +504,52 @@ describe('message panel', () => {
 
     await wrapper.setProps({ conversation })
     expect(wrapper.get<HTMLInputElement>('input[data-picker="media"]').element.disabled).toBe(true)
+    expect(wrapper.get<HTMLInputElement>('input[data-picker="sticker"]').element.disabled).toBe(true)
     expect(wrapper.get<HTMLInputElement>('input[data-picker="file"]').element.disabled).toBe(true)
+  })
+
+  it('sends a local GIF as sticker presentation and gives semantic feedback', async () => {
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: vi.fn((file: File) => `blob:${file.name}`),
+    })
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() })
+    const sendMessage = vi.fn().mockResolvedValue(true)
+    const haptic = vi.fn()
+    const wrapper = mount(MessagePanel, {
+      props: {
+        conversation: { ...conversation, conversationType: 'group', title: 'Team' },
+        messages: [],
+        actorUserId: 'alice-id',
+        sending: false,
+        protectionSecure: false,
+        protectionLabel: 'Группа без E2EE',
+        sendMessage,
+        haptic,
+        deleteMessage: vi.fn(),
+        deletingMessageId: null,
+        typingActorIds: [],
+        onlineActorIds: [],
+        deliveryStates: [],
+        connectionState: 'connected',
+        setTyping: vi.fn(),
+      },
+    })
+    const input = wrapper.get<HTMLInputElement>('input[data-picker="sticker"]')
+    const sticker = new File(['party'], 'party.gif', { type: 'image/gif' })
+    Object.defineProperty(input.element, 'files', { configurable: true, value: [sticker] })
+    await input.trigger('change')
+
+    expect(wrapper.get('.composer-attachment').classes()).toContain('composer-attachment--sticker')
+    expect(haptic).toHaveBeenCalledWith('selection')
+    await wrapper.get('form').trigger('submit')
+    expect(sendMessage).toHaveBeenCalledWith('', [{
+      name: 'party.gif',
+      type: 'image/gif',
+      size: sticker.size,
+      body: sticker,
+      presentation: 'sticker',
+    }])
   })
 
   it('adds clipboard and drag-drop files in order without intercepting ordinary text paste', async () => {
@@ -1544,6 +1592,7 @@ describe('message panel', () => {
     const searchMessages = vi.fn().mockResolvedValue([message])
     const openMessage = vi.fn().mockResolvedValue(undefined)
     const toggleReaction = vi.fn().mockResolvedValue(true)
+    const haptic = vi.fn()
     const wrapper = mount(MessagePanel, {
       props: {
         conversation,
@@ -1562,6 +1611,7 @@ describe('message panel', () => {
           reactedByActor: true,
         }],
         toggleReaction,
+        haptic,
         deleteMessage: vi.fn(),
         deletingMessageId: null,
         typingActorIds: [],
@@ -1595,12 +1645,16 @@ describe('message panel', () => {
 
     await wrapper.get('.message-reactions button').trigger('click')
     expect(toggleReaction).toHaveBeenCalledWith('message-1', '❤️', false)
+    expect(haptic).toHaveBeenCalledWith('selection')
     await wrapper.get('[data-message-id="message-1"]').trigger('contextmenu', {
       clientX: 120,
       clientY: 140,
     })
     await wrapper.get('.context-reactions-expand').trigger('click')
+    expect(wrapper.findAll('.context-all-reactions button')).toHaveLength(48)
     await wrapper.get('button[aria-label="Реакция 🥰"]').trigger('click')
     expect(toggleReaction).toHaveBeenCalledWith('message-1', '🥰', true)
+    expect(haptic).toHaveBeenCalledWith('success')
+    expect(wrapper.get('.reaction-burst').text()).toContain('🥰')
   })
 })

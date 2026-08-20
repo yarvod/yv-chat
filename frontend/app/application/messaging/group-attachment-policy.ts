@@ -14,6 +14,12 @@ export const PREVIEWABLE_VIDEO_TYPES = new Set([
   'video/mp4', 'video/ogg', 'video/quicktime', 'video/webm', 'video/x-m4v',
 ])
 
+export const STICKER_IMAGE_TYPES = new Set(['image/gif', 'image/webp'])
+
+export function supportsStickerPresentation(contentType: string): boolean {
+  return STICKER_IMAGE_TYPES.has(normalizeAttachmentContentType(contentType))
+}
+
 export function normalizeAttachmentContentType(value: string): string {
   const normalized = value.trim().toLowerCase()
   return normalized || 'application/octet-stream'

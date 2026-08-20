@@ -337,6 +337,8 @@ Semantic haptic intent (`selection`, `success`, `warning`, `error`, `sent`)
 отделён от конкретного механизма. Web adapter может использовать
 `navigator.vibrate` при поддержке и включённой preference, иначе обязан быть
 no-op. Web/PWA не утверждает, что получил прямой доступ к Apple Taptic Engine.
+Частые message interactions могут вызывать тот же semantic port, но не
+обходят preference и не вызывают raw browser API из component.
 
 Invite/reset secret разрешён в URL только после `#`: fragment не отправляется
 серверу. Activation/reset page извлекает его один раз, немедленно вызывает
@@ -1257,6 +1259,12 @@ server-side thumbnail/transcoding отсутствуют. Typed `image` и `vide
 `nosniff`; generic `file` принимает любое bounded MIME/расширение, но всегда
 возвращается как `application/octet-stream` attachment. Это не позволяет HTML, SVG
 или другому active content исполняться как документ внутри application origin.
+Sticker presentation не вводит новый transport/storage flow: клиент принимает только
+bounded `image/gif` или `image/webp`, передаёт их через существующий attachment upload
+и хранит presentation metadata внутри versioned message envelope. Direct v2 metadata
+остаётся под MLS-защитой, group v1 остаётся явно server-readable. Внешний GIF/sticker
+provider отсутствует, поэтому search query, IP и conversation context ему не уходят;
+TGS/Lottie и удалённые sticker packs требуют отдельного формата и security review.
 HTTP gateway считает upload SHA-256 инкрементально по `Blob.stream()` через небольшой
 audited hash adapter. Direct first slice сначала выполняет отдельно описанную bounded
 whole-file WebCrypto operation; group flow не материализует видео вторым buffer.

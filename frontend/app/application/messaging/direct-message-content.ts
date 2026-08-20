@@ -1,7 +1,10 @@
 import type { MessageAttachment } from '../../domain/messaging/models'
 import type { VoiceCallSummary } from '../../domain/calls/voice-call'
 
-import { maximumAttachmentBytes } from './group-attachment-policy'
+import {
+  maximumAttachmentBytes,
+  supportsStickerPresentation,
+} from './group-attachment-policy'
 import { decodeTextMessageContent } from './text-message-content'
 
 const PREFIX = 'yv-chat/direct-content/v1:'
@@ -91,6 +94,11 @@ function validAttachment(value: unknown): value is MessageAttachment {
     && Number(item.byteSize) <= maximumAttachmentBytes(item.kind)
   if (!baseValid) return false
   if (item.presentation === undefined && item.durationSeconds === undefined) return true
+  if (item.presentation === 'sticker') {
+    return item.kind === 'image'
+      && item.durationSeconds === undefined
+      && supportsStickerPresentation(String(item.contentType))
+  }
   return item.presentation === 'video_note'
     && item.kind === 'video'
     && Number.isInteger(item.durationSeconds)
@@ -207,7 +215,9 @@ export function decodeDirectMessageContent(
         name: String(raw.name),
         contentType: String(raw.content_type),
         byteSize: Number(raw.byte_size),
-        ...(raw.presentation === 'video_note' ? { presentation: 'video_note' as const } : {}),
+        ...(raw.presentation === 'video_note' || raw.presentation === 'sticker'
+          ? { presentation: raw.presentation }
+          : {}),
         ...(raw.duration_seconds !== null
           ? { durationSeconds: Number(raw.duration_seconds) }
           : {}),

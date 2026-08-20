@@ -8,6 +8,7 @@ import type {
   DirectoryUser,
 } from '../../domain/messaging/models'
 import type { PresenceIndicator } from '../../application/messaging/presence-indicator-service'
+import type { HapticIntent } from '../../application/ports/haptics'
 import AppIcon from '../ui/AppIcon.vue'
 import NewConversationForm from './NewConversationForm.vue'
 
@@ -19,6 +20,7 @@ const props = defineProps<{
   readStates: readonly ConversationReadState[]
   presenceIndicators: readonly PresenceIndicator[]
   creating: boolean
+  haptic?: (intent: HapticIntent) => void
 }>()
 const emit = defineEmits<{
   select: [conversationId: string]
@@ -84,12 +86,17 @@ function createGroup(title: string, userIds: string[]): void {
   emit('group', title, userIds)
   creatingNew.value = false
 }
+
+function openNewConversation(): void {
+  props.haptic?.('selection')
+  creatingNew.value = true
+}
 </script>
 
 <template>
   <aside class="sidebar">
     <div class="sidebar-actions">
-      <button class="new-chat-button" type="button" aria-label="Новый диалог" @click="creatingNew = true">
+      <button class="new-chat-button" type="button" aria-label="Новый диалог" @click="openNewConversation">
         <AppIcon name="add" />
       </button>
     </div>

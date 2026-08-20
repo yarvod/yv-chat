@@ -52,6 +52,9 @@ const mediaAttachments = computed(() => (
 const activeMedia = computed(() => activeMediaIndex.value === null
   ? null
   : mediaAttachments.value[activeMediaIndex.value] ?? null)
+const standaloneSticker = computed(() => (
+  props.attachments.length === 1 && props.attachments[0]?.presentation === 'sticker'
+))
 
 function stateFor(attachmentId: string): MediaState | undefined {
   return mediaStates.value.get(attachmentId)
@@ -467,11 +470,43 @@ onBeforeUnmount(() => {
   <div
     ref="galleryRoot"
     class="message-attachments"
-    :class="{ 'message-attachments--gallery': mediaAttachments.length > 1 }"
+    :class="{
+      'message-attachments--gallery': mediaAttachments.length > 1,
+      'message-attachments--sticker': standaloneSticker,
+    }"
   >
     <template v-for="attachment in attachments" :key="attachment.attachmentId">
       <div
-        v-if="attachment.kind === 'image'"
+        v-if="attachment.kind === 'image' && attachment.presentation === 'sticker'"
+        class="message-sticker-shell"
+        :data-attachment-id="attachment.attachmentId"
+      >
+        <button
+          v-if="stateFor(attachment.attachmentId)?.phase === 'ready'"
+          class="message-sticker"
+          type="button"
+          :aria-label="`Открыть стикер ${attachment.name}`"
+          @click="openMedia(attachment)"
+        >
+          <img :src="stateFor(attachment.attachmentId)?.url" :alt="attachment.name">
+          <span class="message-sticker__badge">{{ attachment.contentType === 'image/gif' ? 'GIF' : 'СТИКЕР' }}</span>
+        </button>
+        <div
+          v-else-if="stateFor(attachment.attachmentId)?.phase !== 'unavailable'"
+          class="message-sticker-loading"
+          role="status"
+          aria-label="Загружаем стикер"
+        >
+          <span class="loading-orbit" aria-hidden="true" />
+        </div>
+        <div v-else class="attachment-unavailable message-sticker-unavailable" role="status">
+          <span>Стикер недоступен или срок хранения истёк.</span>
+          <button type="button" @click="load(attachment)">Повторить</button>
+        </div>
+      </div>
+
+      <div
+        v-else-if="attachment.kind === 'image'"
         class="message-photo-shell"
         :data-attachment-id="attachment.attachmentId"
       >
@@ -483,6 +518,7 @@ onBeforeUnmount(() => {
           @click="openMedia(attachment)"
         >
           <img :src="stateFor(attachment.attachmentId)?.url" :alt="attachment.name">
+          <span v-if="attachment.contentType === 'image/gif'" class="message-gif-badge">GIF</span>
         </button>
         <div
           v-else-if="stateFor(attachment.attachmentId)?.phase !== 'unavailable'"

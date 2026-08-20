@@ -13,7 +13,13 @@ from messenger.application.messaging.message_reactions import (
 )
 from messenger.application.messaging.retention import MessageRetentionPolicy
 from messenger.application.sync import SyncEventType, SyncPolicy
-from messenger.domain.entities import Conversation, Device, Message, User
+from messenger.domain.entities import (
+    ALLOWED_MESSAGE_REACTIONS,
+    Conversation,
+    Device,
+    Message,
+    User,
+)
 from tests.application.fakes import (
     FakeMessagingUnitOfWorkFactory,
     FixedClock,
@@ -127,9 +133,11 @@ async def test_extended_reaction_palette_uses_the_same_durable_flow() -> None:
     )
 
     result = await use_case.execute(
-        SetMessageReactionCommand(alice.id, conversation.id, message.id, "🤯", True)
+        SetMessageReactionCommand(alice.id, conversation.id, message.id, "🫶", True)
     )
 
-    assert result[0].reaction == "🤯"
+    assert len(ALLOWED_MESSAGE_REACTIONS) == 48
+    assert len(set(ALLOWED_MESSAGE_REACTIONS)) == 48
+    assert result[0].reaction == "🫶"
     assert result[0].count == 1
     assert result[0].reacted_by_actor is True

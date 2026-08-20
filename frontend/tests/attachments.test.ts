@@ -115,6 +115,23 @@ describe('group message attachment content', () => {
       attachments: [{ ...attachment, presentation: 'video_note', durationSeconds: 10 }],
     })).toThrow('invalid group attachment metadata')
   })
+
+  it('round-trips only GIF/WebP sticker presentation', () => {
+    const sticker = {
+      attachmentId: 'sticker-1',
+      kind: 'image' as const,
+      name: 'party.webp',
+      contentType: 'image/webp',
+      byteSize: 2_100,
+      presentation: 'sticker' as const,
+    }
+    const encoded = encodeGroupMessageContent({ text: '', attachments: [sticker] })
+    expect(decodeGroupMessageContent(encoded)).toEqual({ text: '', attachments: [sticker] })
+    expect(() => encodeGroupMessageContent({
+      text: '',
+      attachments: [{ ...sticker, contentType: 'image/png' }],
+    })).toThrow('invalid group attachment metadata')
+  })
 })
 
 describe('group attachment upload use case', () => {
@@ -165,6 +182,14 @@ describe('group attachment upload use case', () => {
       size: video.size,
       body: video,
     })).resolves.toMatchObject({ kind: 'video', contentType: 'video/mp4' })
+    const sticker = new Blob(['sticker'], { type: 'image/gif' })
+    await expect(useCase.execute('group-1', 'group', {
+      name: 'party.gif',
+      type: 'image/gif',
+      size: sticker.size,
+      body: sticker,
+      presentation: 'sticker',
+    })).resolves.toMatchObject({ kind: 'image', presentation: 'sticker' })
     await expect(useCase.execute('group-1', 'group', {
       name: 'video-note.mp4',
       type: 'video/mp4',
@@ -330,6 +355,34 @@ describe('group attachment download use case', () => {
 })
 
 describe('message attachment rendering', () => {
+  it('renders animated stickers frameless with an explicit motion badge', async () => {
+    const sticker = {
+      attachmentId: 'sticker-1',
+      kind: 'image' as const,
+      name: 'party.gif',
+      contentType: 'image/gif',
+      byteSize: 128,
+      presentation: 'sticker' as const,
+    }
+    const wrapper = mount(MessageAttachments, {
+      props: {
+        conversationId: 'conversation-1',
+        expiresAt,
+        attachments: [sticker],
+        loadAttachment: vi.fn().mockResolvedValue(
+          new Blob(['x'.repeat(sticker.byteSize)], { type: sticker.contentType }),
+        ),
+      },
+      global: { stubs: { Teleport: true } },
+    })
+    await flushPromises()
+
+    expect(wrapper.get('.message-attachments').classes()).toContain('message-attachments--sticker')
+    expect(wrapper.get('.message-sticker__badge').text()).toBe('GIF')
+    await wrapper.get('.message-sticker').trigger('click')
+    expect(wrapper.get('[role="dialog"] img').attributes('src')).toBe('blob:test-128')
+  })
+
   it('loads photos through the authenticated gateway and opens an in-app viewer', async () => {
     const second = { ...attachment, attachmentId: 'attachment-2', name: 'second.png' }
     const loadAttachment = vi.fn(async (_conversationId, item) => (

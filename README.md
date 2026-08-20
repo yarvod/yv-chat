@@ -40,6 +40,9 @@ timeline автоматически воспроизводит muted тольк�
 их на pause сразу после выхода за viewport, не накапливая фоновые decoder-ы;
 в group v1 это тот же явно server-readable flow, в direct v2 bytes и metadata E2EE;
 в обоих случаях это attachment, а не WebRTC call.
+Локальные GIF/WebP можно отправлять как frameless animated sticker: отдельный внешний
+каталог не подключён, поэтому поиск не раскрывает переписку третьему провайдеру;
+действующие media-лимиты и различие group v1/direct v2 сохраняются.
 Личные чаты поддерживают аудио- и opt-in видеозвонки 1:1: authenticated WebSocket
 переносит только короткоживущие SDP/ICE signaling frames, а media идёт напрямую
 через WebRTC DTLS-SRTP либо как зашифрованный relay traffic через coturn. FastAPI

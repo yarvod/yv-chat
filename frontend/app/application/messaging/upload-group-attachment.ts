@@ -12,6 +12,7 @@ import {
   attachmentKindFor,
   maximumAttachmentBytes,
   normalizeAttachmentContentType,
+  supportsStickerPresentation,
 } from './group-attachment-policy'
 import { VIDEO_NOTE_MAX_BYTES } from '../ports/video-note-recorder'
 
@@ -20,7 +21,7 @@ export interface GroupAttachmentSource {
   type: string
   size: number
   body: Blob
-  presentation?: 'video_note'
+  presentation?: 'video_note' | 'sticker'
   durationSeconds?: number
 }
 
@@ -50,20 +51,27 @@ export class UploadGroupAttachment {
     const contentType = normalizeAttachmentContentType(source.type)
     const kind: MessageAttachmentKind = attachmentKindFor(contentType)
     const maximum = maximumAttachmentBytes(kind)
-    const videoNoteMetadataValid = source.presentation === undefined
+    const presentationMetadataValid = source.presentation === undefined
       ? source.durationSeconds === undefined
-      : source.presentation === 'video_note'
-        && kind === 'video'
-        && Number.isInteger(source.durationSeconds)
-        && Number(source.durationSeconds) >= 1
-        && Number(source.durationSeconds) <= 60
+      : (
+          source.presentation === 'video_note'
+            && kind === 'video'
+            && Number.isInteger(source.durationSeconds)
+            && Number(source.durationSeconds) >= 1
+            && Number(source.durationSeconds) <= 60
+        ) || (
+          source.presentation === 'sticker'
+            && kind === 'image'
+            && supportsStickerPresentation(contentType)
+            && source.durationSeconds === undefined
+        )
     if (
       !conversationId
       || source.size <= 0
       || source.size > maximum
       || (source.presentation === 'video_note' && source.size > VIDEO_NOTE_MAX_BYTES)
       || source.body.size !== source.size
-      || !videoNoteMetadataValid
+      || !presentationMetadataValid
     ) throw new TypeError('invalid attachment source')
     let clientAttachmentId = this.clientAttachmentIds.get(source.body)
     if (!clientAttachmentId) {

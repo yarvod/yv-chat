@@ -48,7 +48,7 @@ export interface MessageAttachment {
   name: string
   contentType: string
   byteSize: number
-  presentation?: 'video_note'
+  presentation?: 'video_note' | 'sticker'
   durationSeconds?: number
 }
 

@@ -4,6 +4,21 @@
 
 ## Active
 
+### BUG-098 — iOS PWA визуально смещала sidebar «+»
+
+- Статус: `fixed and locally verified in WP-110`.
+- Severity: `low visual polish`.
+- Reproduction: открыть список чатов в iPhone standalone PWA; plus SVG в
+  circular new-chat button выглядит неровным/смещённым.
+- Причина: button не сбрасывал iOS native appearance/padding, а icon не имел
+  явной pixel-aligned geometry внутри fixed square target.
+- Исправление: native appearance/padding сброшены, target зафиксирован как 40×40,
+  SVG — как 21×21 с симметричным path и bounded active animation.
+- Проверка: CSS/component regressions, full frontend checks и in-app browser
+  `390×844`; measured center delta SVG относительно кнопки равен `0/0`, horizontal
+  overflow отсутствует.
+
+
 ### BUG-097 — QR pairing ломался между двумя официальными production origins
 
 - Статус: `fixed and production deployed in WP-109` (`575b1a2`, workflow
