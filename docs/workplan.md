@@ -2,7 +2,7 @@
 
 ## WP-108 — Installed-PWA zoom policy and swipe overflow containment
 
-Статус: **implemented and locally verified**
+Статус: **implemented, full-CI verified and production deployed**
 Backlog: `BL-041A`, `BL-077`; bug `BUG-096`
 
 Цель: исключить случайный viewport zoom установленной mobile PWA и горизонтальную
@@ -57,3 +57,14 @@ scroll-area при swipe-to-reply, сохранив управляемое ув�
 - component regression подтверждает custom two-finger photo zoom с 100% до 200%,
   bounded controls и отсутствие app zoom controls у video;
 - frontend: `349 passed`, ESLint, Nuxt typecheck и production build зелёные.
+
+### Production rollout
+
+- commit `ac92a32` развёрнут workflow `32315884198`; отдельный CI workflow
+  `32315884207` также завершился успешно;
+- production использует immutable images
+  `sha-ac92a32ed571c20d3b31f7a34cfc0ab39bd7ecc4`;
+- `chat.yoowee.ru` и `chat.yoowee.com.de` вернули HTTP `200` для frontend и
+  `{"status":"ok"}`/HTTP `200` для `/api/v1/health`;
+- system Nginx и соседние сервисы не изменялись; rollout использовал штатный
+  isolated `yv-chat` workflow.

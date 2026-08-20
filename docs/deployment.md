@@ -344,6 +344,12 @@ vhost regression restore only its immediate backup. Never use `docker system pru
 
 ## Rollout records
 
+`WP-108` installed-PWA zoom policy и reply-swipe overflow containment deployed
+2026-08-20 workflow `32315884198` for commit `ac92a32`; отдельный CI workflow
+`32315884207` также прошёл. Оба public origin вернули frontend и health HTTP `200`,
+immutable production tag — `sha-ac92a32ed571c20d3b31f7a34cfc0ab39bd7ecc4`.
+System Nginx и соседние сервисы не изменялись.
+
 `WP-104` MLS-authenticated WebRTC identity и `WP-105` opt-in video calls deployed
 2026-08-19 workflow `32282897389` for commit `8cabf4e`; обычный CI
 `32282897451` также прошёл. Оба public origin вернули health/frontend `200`,

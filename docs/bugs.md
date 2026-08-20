@@ -6,7 +6,8 @@
 
 ### BUG-096 — Reply swipe создавал горизонтальный scroll, а standalone PWA случайно zoom-илась
 
-- Статус: `fixed and locally verified in WP-108`.
+- Статус: `fixed and production deployed in WP-108` (`ac92a32`, workflow
+  `32315884198`).
 - Severity: `medium mobile usability`.
 - Reproduction: в установленной PWA сделать swipe-right по собственному сообщению;
   viewport кратковременно расширяется вправо и получает горизонтальную прокрутку.
@@ -17,7 +18,8 @@
   accidental app-shell zoom только в installed mode и сохраняет собственный 1×–5×
   image zoom и стандартные video controls/fullscreen.
 - Проверка: CSS/PWA/component regressions, `349` frontend tests, ESLint, Nuxt
-  typecheck и production build прошли.
+  typecheck и production build прошли; отдельный CI `32315884207` и production
+  rollout зелёные, оба public origin вернули frontend/health HTTP `200`.
 
 ### BUG-095 — Камера callee не доходила caller и вертикальное видео обрезалось
 

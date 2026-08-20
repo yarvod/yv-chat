@@ -811,7 +811,7 @@ safe-area fixes и gesture/presentation polish.
 ### BL-041A — Visual/PWA foundation
 
 Статус: **completed and production-verified** (`WP-041`, `WP-043`, `WP-053`,
-`WP-055`, `WP-059`, `WP-060`; `WP-108` locally verified).
+`WP-055`, `WP-059`, `WP-060`, `WP-108`).
 
 - semantic visual/motion tokens and reduced-motion fallback;
 - desktop split view, mobile master/detail, fixed header/composer и bounded timeline;
