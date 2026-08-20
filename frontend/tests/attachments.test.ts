@@ -20,6 +20,19 @@ const attachment = {
 const expiresAt = '2026-08-13T12:00:00Z'
 const originalIntersectionObserver = globalThis.IntersectionObserver
 
+function dispatchTouch(
+  element: Element,
+  type: 'touchstart' | 'touchmove',
+  touches: readonly { clientX: number, clientY: number }[],
+): void {
+  const event = new Event(type, { bubbles: true, cancelable: true })
+  Object.defineProperties(event, {
+    touches: { value: touches },
+    changedTouches: { value: touches },
+  })
+  element.dispatchEvent(event)
+}
+
 beforeEach(() => {
   Object.defineProperty(URL, 'createObjectURL', {
     configurable: true,
@@ -343,6 +356,19 @@ describe('message attachment rendering', () => {
     expect(wrapper.get('[role="dialog"]').text()).toContain('250%')
     await wrapper.get('button[aria-label="Уменьшить"]').trigger('click')
     expect(wrapper.get('[role="dialog"]').text()).toContain('200%')
+    await wrapper.get('.media-viewer__image').trigger('dblclick')
+    expect(wrapper.get('[role="dialog"]').text()).toContain('100%')
+    const viewerImage = wrapper.get('.media-viewer__image').element
+    dispatchTouch(viewerImage, 'touchstart', [
+      { clientX: 50, clientY: 100 },
+      { clientX: 150, clientY: 100 },
+    ])
+    dispatchTouch(viewerImage, 'touchmove', [
+      { clientX: 0, clientY: 100 },
+      { clientX: 200, clientY: 100 },
+    ])
+    await wrapper.vm.$nextTick()
+    expect(wrapper.get('[role="dialog"]').text()).toContain('200%')
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
     await flushPromises()
     expect(wrapper.get('[role="dialog"]').text()).toContain('2 / 2')
@@ -379,6 +405,11 @@ describe('message attachment rendering', () => {
     })
     await wrapper.get('.message-video__open').trigger('click')
     expect(wrapper.get('[role="dialog"] video').attributes('src')).toBe('blob:test-512')
+    expect(wrapper.get('[role="dialog"] video').attributes()).toMatchObject({
+      controls: '',
+      playsinline: '',
+    })
+    expect(wrapper.find('.media-viewer__zoom').exists()).toBe(false)
     expect(wrapper.get('[role="dialog"]').text()).toContain('1 / 1 · clip.mp4')
     await wrapper.get('.media-viewer__close').trigger('click')
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false)

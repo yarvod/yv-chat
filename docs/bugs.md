@@ -4,6 +4,21 @@
 
 ## Active
 
+### BUG-096 — Reply swipe создавал горизонтальный scroll, а standalone PWA случайно zoom-илась
+
+- Статус: `fixed and locally verified in WP-108`.
+- Severity: `medium mobile usability`.
+- Reproduction: в установленной PWA сделать swipe-right по собственному сообщению;
+  viewport кратковременно расширяется вправо и получает горизонтальную прокрутку.
+  Отдельно pinch/double-tap может масштабировать всю app shell вместо её контента.
+- Root cause: timeline задавал только `overflow-y: auto`, поэтому translated bubble
+  расширял horizontal scroll area; standalone viewport не имел отдельной zoom policy.
+- Исправление: timeline явно скрывает overflow по inline axis, app root подавляет
+  accidental app-shell zoom только в installed mode и сохраняет собственный 1×–5×
+  image zoom и стандартные video controls/fullscreen.
+- Проверка: CSS/PWA/component regressions, `349` frontend tests, ESLint, Nuxt
+  typecheck и production build прошли.
+
 ### BUG-095 — Камера callee не доходила caller и вертикальное видео обрезалось
 
 - Статус: `fixed and production deployed in WP-107; physical two-device acceptance pending`

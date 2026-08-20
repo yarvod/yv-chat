@@ -41,9 +41,17 @@ describe('mobile application shell', () => {
     expect(css).toMatch(/\.product-shell \{[^}]*height: var\(--app-viewport-height\);[^}]*overflow: hidden;/)
     expect(css).toMatch(/\.messenger-shell \{[^}]*height: 100%;[^}]*overflow: hidden;/)
     expect(css).toMatch(/\.message-panel \{[^}]*height: 100%;[^}]*overflow: hidden;/)
-    expect(css).toMatch(/\.message-timeline \{[^}]*overflow-y: auto;/)
+    expect(css).toMatch(/\.message-timeline \{[^}]*overflow-x: hidden;[^}]*overflow-y: auto;/)
     expect(css).toMatch(/\.conversation-list \{[^}]*overflow-y: auto;/)
     expect(css).toContain('.product-shell--conversation .mobile-tabs { display: none; }')
+  })
+
+  it('suppresses app-shell double-tap zoom without taking custom media gestures', () => {
+    const css = readFileSync(resolve(process.cwd(), 'app/assets/main.css'), 'utf8')
+
+    expect(css).toMatch(/\.app-root \{[^}]*touch-action: manipulation;/)
+    expect(css).toMatch(/\.media-viewer__image \{[^}]*touch-action: none;/)
+    expect(css).toMatch(/\.media-viewer > video \{[^}]*max-width: 100%;[^}]*max-height: 100%;/)
   })
 
   it('tracks visual viewport changes so the keyboard cannot displace the PWA shell', () => {

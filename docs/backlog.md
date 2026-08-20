@@ -811,13 +811,15 @@ safe-area fixes и gesture/presentation polish.
 ### BL-041A — Visual/PWA foundation
 
 Статус: **completed and production-verified** (`WP-041`, `WP-043`, `WP-053`,
-`WP-055`, `WP-059`, `WP-060`).
+`WP-055`, `WP-059`, `WP-060`; `WP-108` locally verified).
 
 - semantic visual/motion tokens and reduced-motion fallback;
 - desktop split view, mobile master/detail, fixed header/composer и bounded timeline;
 - compact chat rows, grouped bubbles, day separators, receipts, typing/presence и
   scroll-to-latest behavior;
 - multiline composer, visual viewport/keyboard positioning, safe areas и gesture bar;
+- standalone app-shell zoom policy сохраняет browser accessibility и отдельный
+  bounded photo-viewer pinch zoom; timeline не получает horizontal scroll при reply;
 - explicit manifest, Apple assets, versioned transparent `any`/solid `maskable` icons,
   reproducible SVG→PNG pipeline и Pixel splash/safe-zone regressions;
 - automatic update activation/reload, transient/offline connection overlay;

@@ -64,6 +64,22 @@ describe('PWA install assets', () => {
     expect(config).toContain("'crypto/v3/**/*'")
   })
 
+  it('locks viewport zoom only in installed mode and leaves browser tabs scalable', () => {
+    const config = readFileSync(resolve(process.cwd(), 'nuxt.config.ts'), 'utf8')
+    const viewportPolicy = readFileSync(
+      resolve(process.cwd(), 'app/plugins/installed-pwa-viewport.client.ts'),
+      'utf8',
+    )
+
+    expect(config).not.toContain('user-scalable=no')
+    expect(config).not.toContain('maximum-scale=1')
+    expect(viewportPolicy).toContain("matchMedia('(display-mode: standalone)')")
+    expect(viewportPolicy).toContain('standalone === true')
+    expect(viewportPolicy).toContain('maximum-scale=1, user-scalable=no')
+    expect(viewportPolicy).toContain('displayMode.matches || iosStandalone')
+    expect(viewportPolicy).toContain('? lockedViewport : baseViewport')
+  })
+
   it('downloads updates periodically but requires explicit activation', () => {
     const config = readFileSync(resolve(process.cwd(), 'nuxt.config.ts'), 'utf8')
     const lifecycle = readFileSync(

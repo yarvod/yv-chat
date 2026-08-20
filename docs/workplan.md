@@ -1,81 +1,59 @@
 # Текущий workplan
 
-## WP-107 — Symmetric callee video and orientation-aware fullscreen fit
+## WP-108 — Installed-PWA zoom policy and swipe overflow containment
 
-Статус: **implemented, full-CI verified and production deployed; physical two-device acceptance pending**
-Backlog: `BL-036`, bug `BUG-095`
+Статус: **implemented and locally verified**
+Backlog: `BL-041A`, `BL-077`; bug `BUG-096`
 
-Цель: устранить случай, когда принимающий участник включает камеру и видит local
-preview, но звонящий не получает его video track, а также не обрезать вертикальный
-поток на горизонтальном экране до неудобного крупного crop.
+Цель: исключить случайный viewport zoom установленной mobile PWA и горизонтальную
+scroll-area при swipe-to-reply, сохранив управляемое увеличение фотографий и
+системное воспроизведение видео.
 
 ### Подтверждённая причина
 
-- caller заранее создаёт предложенный bidirectional video transceiver;
-- callee до применения remote offer также создавал собственный transceiver;
-- browser мог сопоставить remote offer с другим transceiver, пока service сохранял
-  sender локально созданного и не участвующего в negotiated media section;
-- `replaceTrack()` успешно включал локальную камеру, но track не доходил caller;
-- fullscreen remote video всегда использовал `object-fit: cover`, поэтому сильно
-  различающиеся media/viewport aspect ratios приводили к чрезмерному crop.
-
-### Security invariants
-
-- incoming SDP применяется только после прежней MLS device-binding verification;
-- callee использует sender именно проверенного remote-offer transceiver и выставляет
-  `sendrecv` до создания и MLS-подписи answer;
-- новый signaling frame, renegotiation protocol или server-trusted camera flag не
-  добавляются;
-- camera capture остаётся explicit и local track освобождается на off/terminal state;
-- orientation определяется только локально из размеров decoded video element.
+- message timeline задавал только `overflow-y: auto`; при translated bubble browser
+  создавал горизонтальную scroll-area;
+- swipe-to-reply сдвигает bubble вправо до 76 px, что особенно заметно для own
+  message, уже выровненного по правому краю;
+- viewport оставался масштабируемым и в standalone PWA, поэтому случайный pinch мог
+  увеличить всю оболочку приложения;
+- media viewer уже имеет отдельный bounded image transform 1×–5×, pinch, double-click
+  и кнопки; видео использует стандартный `video controls`/system fullscreen.
 
 ### Scope
 
-- caller продолжает создавать offer video transceiver заранее;
-- callee после `setRemoteDescription(offer)` связывает camera sender с negotiated
-  remote video transceiver до `createAnswer()`;
-- legacy browser без `getTransceivers()` сохраняет прежний pre-created fallback;
-- remote video использует `contain` при сильном несовпадении aspect ratio и `cover`
-  при близком формате, пересчитывая fit на stream/viewport resize;
-- unit/component regressions, lint, typecheck, frontend test suite и production build.
+- запретить горизонтальный overflow только у message timeline, сохранив vertical
+  scroll и reply gesture;
+- подавить accidental double-tap zoom оболочки через `touch-action: manipulation`;
+- в standalone/installed PWA динамически применить `maximum-scale=1` и
+  `user-scalable=no`, оставив обычную browser-вкладку масштабируемой;
+- сохранить custom pinch/pan/double-click/buttons для фотографий 100%–500%;
+- не изменять video controls, playsinline и system fullscreen;
+- добавить CSS/config/component regressions и выполнить frontend checks.
 
 ### Exclusions
 
-- изменение MLS call binding, backend signaling state machine или coturn;
-- server-side transcoding, forced orientation или фиксированное качество сети;
-- physical caller/callee packet-delivery acceptance на phone + desktop.
+- изменение gesture thresholds или направления reply swipe;
+- переписывание media viewer, video player или attachment crypto/storage;
+- запрет browser zoom для обычной неустановленной web-вкладки;
+- изменение backend/API/MLS/session behavior.
 
 ### Definition of Done
 
-- callee camera track устанавливается в sender transceiver из remote offer;
-- caller path по-прежнему предлагает один `sendrecv` video transceiver;
-- вертикальный remote stream целиком виден в горизонтальном viewport;
-- совпадающий landscape stream продолжает заполнять экран;
-- camera permission/cleanup и MLS tamper regressions остаются зелёными;
-- frontend lint, typecheck, tests и production build проходят.
+- reply swipe не создаёт горизонтальную scroll-area;
+- установленная PWA не масштабирует app shell pinch/double-tap жестом;
+- обычная browser-вкладка сохраняет доступный viewport zoom;
+- фото продолжают увеличиваться custom pinch и кнопками до 5×;
+- видео продолжает открываться с native controls без app-level zoom UI;
+- lint, typecheck, relevant tests и production build проходят.
 
 ### Результат локальной проверки
 
-- `voice-calls.test.ts`: callee не создаёт конкурирующий transceiver, выбирает
-  negotiated remote video transceiver и устанавливает camera track в его sender;
-- `voice-call-ui.test.ts`: portrait-in-landscape включает `contain`, matching
-  landscape возвращает `cover`;
-- in-app browser с настоящим synthetic `MediaStream`: desktop `1280×720` и mobile
-  `390×844` корректно переключают fit для portrait/landscape без console errors;
-- real browser offer/answer lifecycle подтверждает одинаковый video MID, `sendrecv`
-  на обеих сторонах и late callee video track в negotiated sender; browser QA sandbox
-  не поднимает ICE transport, поэтому packet delivery остаётся physical acceptance;
-- frontend: `347 passed`, ESLint, Nuxt typecheck и production build зелёные.
-
-### Production rollout
-
-- commit `ec96762` развёрнут workflow `32313296867`; отдельный CI workflow
-  `32313296698` также завершился успешно;
-- production frontend/API используют immutable images
-  `sha-ec96762d8062b247a470e03f39b1a6470d0c48ce` и healthy;
-- внутренний и публичный `/api/v1/health` отвечают `{"status":"ok"}`, оба chat
-  origin отвечают `200`;
-- system Nginx остался manual-only, active, `nginx -t` успешен; rollout не менял
-  `/etc/nginx`;
-- остаётся физически проверить включение камеры callee в обе стороны и portrait ↔
-  landscape fit на phone + desktop.
+- `.message-timeline` явно использует `overflow-x: hidden` вместе с сохранённым
+  `overflow-y: auto`;
+- app root подавляет accidental double-tap zoom, а client plugin блокирует viewport
+  pinch только при `display-mode: standalone` или iOS `navigator.standalone`;
+- обычный Nuxt viewport не содержит `user-scalable=no`/`maximum-scale=1`;
+- component regression подтверждает custom two-finger photo zoom с 100% до 200%,
+  bounded controls и отсутствие app zoom controls у video;
+- frontend: `349 passed`, ESLint, Nuxt typecheck и production build зелёные.
