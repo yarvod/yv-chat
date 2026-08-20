@@ -228,6 +228,7 @@ describe('device pairing settings flow', () => {
       },
     })
 
+    expect(wrapper.text()).toContain('Сканировать QR другого устройства')
     await wrapper.get('button').trigger('click')
     await flushPromises()
     await vi.advanceTimersByTimeAsync(1_400)
@@ -322,7 +323,7 @@ describe('device pairing settings flow', () => {
     wrapper.unmount()
   })
 
-  it('auto-selects existing-device sync and starts history union after computer approval', async () => {
+  it('prepares scanner MLS state before existing-device history union', async () => {
     vi.useFakeTimers()
     const user = {
       userId: 'alice-user',
@@ -411,7 +412,7 @@ describe('device pairing settings flow', () => {
       targetDeviceId: 'mac-device',
       pairingId: 'pairing-id',
     }))
-    expect(queue).toHaveBeenCalledWith(expect.objectContaining({ prepareTarget: false }))
+    expect(queue).toHaveBeenCalledWith(expect.objectContaining({ prepareTarget: true }))
     expect(wrapper.text()).not.toContain('завершаем вход')
   })
 })

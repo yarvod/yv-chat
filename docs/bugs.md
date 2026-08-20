@@ -4,6 +4,28 @@
 
 ## Active
 
+### BUG-102 — Повторный QR history sync начинался без MLS barrier на scanner side
+
+- Статус: `fixed locally in WP-114; production rollout pending`.
+- Severity: `critical multi-device history reliability`.
+- Reproduction: связать уже авторизованные Chrome/Android и Firefox/macOS,
+  прервать частичный history relay, затем повторить QR в обратной роли либо на
+  другом разрешённом origin. UI импортирует часть записей/чатов, после чего
+  показывает «Эта попытка больше не может продолжаться»; новая попытка снова
+  останавливается.
+- Production evidence: Nginx вернул `200` всем исследованным pairing upload/list/ACK
+  requests. Первая попытка сохранила `24` chunks и ACK-нула `13`, обратная — `26`
+  и ACK-нула `2`; оставшиеся opaque MLS chunks не были подтверждены клиентом.
+- Root cause: exact generation barrier из `BUG-099` выполнялся только
+  approving/display side. Scanner side — и authenticated existing-device, и новый
+  passwordless candidate — создавал job с `prepareTarget: false`, поэтому server
+  READY roster ошибочно считался достаточным для начала relay при stale/missing
+  local conversation checkpoint.
+- Expected fix: обе стороны pairing обязаны reconcile-ить local MLS state к exact
+  current server generation до protect/unprotect и transfer; desktop settings не
+  скрывают scanner flow, необходимый для browser-to-browser union; local Compose
+  передаёт один exact origin allow-list одновременно API и frontend runtime.
+
 ### BUG-101 — Занятое устройство ложно завершало общий входящий звонок
 
 - Статус: `fixed and production deployed in WP-113` (`c581131`, workflow

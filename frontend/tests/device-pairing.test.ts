@@ -177,8 +177,10 @@ describe('device pairing', () => {
     expect(parseTrustedDevicePairingOrigins('{broken', origin)).toEqual([origin])
 
     const config = readFileSync(resolve(process.cwd(), 'nuxt.config.ts'), 'utf8')
+    const localCompose = readFileSync(resolve(process.cwd(), '../compose.yml'), 'utf8')
     const compose = readFileSync(resolve(process.cwd(), '../compose.prod.yml'), 'utf8')
     expect(config).toContain("devicePairingOrigins: ''")
+    expect(localCompose).toContain("NUXT_PUBLIC_DEVICE_PAIRING_ORIGINS: '${ALLOWED_ORIGINS")
     expect(compose).toContain("NUXT_PUBLIC_DEVICE_PAIRING_ORIGINS: '${ALLOWED_ORIGINS")
   })
 

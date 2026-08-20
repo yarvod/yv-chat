@@ -65,7 +65,10 @@ async function authorize(pairingId: string): Promise<void> {
         pairingId,
         targetDeviceId: trustedDeviceId,
         expiresAt: new Date(Date.parse(authorized.pairing.expiresAt) + 86_400_000).toISOString(),
-        prepareTarget: false,
+        // The newly authorized candidate must consume its targeted Welcome and
+        // align every local group with the exact server generation before relay.
+        // The trusted approver performs the same barrier from the other side.
+        prepareTarget: true,
         peerCompletedConversationIds: [],
       })
     }

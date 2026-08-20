@@ -1,80 +1,83 @@
 # Текущий workplan
 
-## WP-113 — Device-scoped multi-device call terminal semantics
+## WP-114 — Symmetric MLS readiness barrier for retried QR history sync
 
-Статус: **completed and production deployed** (`c581131`, workflow
-`32417561086`)
-Backlog: `BL-034`; bug `BUG-101`
+Статус: **completed locally; production rollout pending**
+Backlog: `BL-015`; bug `BUG-102`
 
-Цель: устранить ложный `busy` и signaling teardown, когда один пользователь принимает
-входящий звонок на одном из нескольких одновременно онлайн-устройств.
+Цель: устранить частичный и невозобновляемый history relay между уже
+авторизованными устройствами, особенно после прерванной и повторно запущенной
+QR-попытки на одном или разных разрешённых origins.
 
 ### Подтверждённое состояние
 
-- один `call_offer` fan-out-ится всем online devices callee;
-- busy frontend device отправлял общий `call_rejected(reason=busy)` для чужого
-  `call_id`, хотя другое устройство того же пользователя могло принять звонок;
-- coordinator удалял весь call по первому rejection до выбора `callee_device_id`;
-- поздний answer другого device становился `CallStateConflictError`, после чего
-  WebSocket transport закрывался кодом 4403;
-- production API/coturn оставались healthy, поэтому ложный `busy` возникал до media
-  connectivity и не являлся TURN outcome.
+- production Nginx принимает pairing envelopes: исследованные upload/list/ACK
+  запросы завершались `200`, поэтому прежний `16k` ingress defect не повторился;
+- одна Firefox/macOS ↔ Chrome/Android попытка сохранила `24` opaque chunks, но
+  ACK получила только `13`; обратная повторная попытка сохранила `26`, но ACK
+  получила только `2`;
+- после частичного импорта следующий conversation-specific MLS chunk остаётся
+  unacked, client показывает generic unexpected failure;
+- approving/display side выполняет exact local/server MLS generation barrier,
+  а scanner side — как уже авторизованное устройство, так и новый passwordless
+  candidate — создаёт history job с `prepareTarget: false` и начинает relay,
+  полагаясь только на server READY projection;
+- повторный QR меняет relay authorization, но не обязан сам по себе выравнивать
+  local MLS checkpoint scanner-а во всех direct.
 
 ### Scope
 
-- сделать автоматический busy строго device-local и совместимым со старыми PWA;
-- сохранить first-answer-wins binding без возможности заменить выбранный endpoint;
-- вернуть losing device terminal `answered_elsewhere` без signaling conflict;
-- fan-out explicit decline sibling devices, чтобы их ringing UI не оставался stale;
-- добавить backend и frontend regression tests.
+- запускать exact current-generation reconciliation перед relay на обеих сторонах
+  независимо от scanner/display роли и от того, был scanner уже авторизован либо
+  получил новую passwordless session;
+- сохранить new-device passwordless enrollment semantics без копирования signer,
+  provider state или archive key;
+- разрешить desktop-сессии использовать существующий scanner flow, чтобы два
+  изолированных browser origin могли проходить тот же протокол без подмены API;
+- передавать тот же fail-closed `ALLOWED_ORIGINS` в frontend и API локального
+  Compose, как уже делается в production Compose;
+- покрыть scanner-side job regression и interrupted/retried history lifecycle;
+- повторить local browser acceptance на изолированных origins и проверить
+  production traces после rollout отдельно.
 
 ### Security и protocol invariants
 
-- actor, owned active device, direct membership и v2 authenticated SDP validation
-  остаются обязательными;
-- server не принимает SDP/identity binding проигравшего device как новый endpoint;
-- неизвестные и invalid-order call transitions по-прежнему fail-closed;
-- SDP, ICE, media и call identity material не добавляются в persistence/logging;
-- WebRTC media остаётся DTLS-SRTP direct/TURN и не проходит через FastAPI.
+- server READY roster без exact local generation checkpoint не разрешает history
+  protect/unprotect;
+- relay остаётся MLS `PrivateMessage`; server не получает plaintext, archive key,
+  signer или epoch secret;
+- malformed/corrupt MLS payload остаётся fail-closed без synthetic fallback;
+- новый QR отменяет stale relay, но не удаляет уже импортированный encrypted archive;
+- роли scanner/display не определяют направление transfer и не создают permanent
+  primary device.
 
 ### Exclusions
 
-- durable call history или server-side media;
-- group calls и native incoming-call integration;
-- изменение TURN topology, credentials или Nginx;
-- исправление отдельной path-specific packet loss между Wi-Fi ISP и VPS.
+- перенос signer/provider/archive storage key между устройствами;
+- изменение MLS protocol version или cryptographic primitives;
+- увеличение server retention/chunk limits;
+- изменение login/password/session policy.
 
 ### Definition of Done
 
-- busy одного callee device не завершает shared ringing call;
-- другое device может после busy успешно стать authoritative callee endpoint;
-- losing answer получает `answered_elsewhere` без `CallStateConflictError`;
-- explicit decline закрывает ringing state на caller и sibling callee devices;
-- targeted и full backend/frontend checks проходят;
+- scanner flow ставит MLS preparation barrier до первого history chunk как для
+  existing-device union, так и после новой passwordless authorization;
+- display и scanner подтверждают exact current generation каждого доступного direct;
+- частично выполненная попытка может быть отменена и новая QR-попытка завершается
+  без stale local epoch;
+- targeted frontend/OpenMLS regressions, full frontend checks и relevant backend
+  relay tests проходят;
+- local two-origin browser acceptance не показывает unexpected sync failure;
 - diff, docs и focused commit проверены.
-
-### Реализация
-
-- frontend игнорирует новый offer при локальном busy state без global rejection;
-- coordinator игнорирует legacy `reason=busy` от callee на любой стадии call binding;
-- late answer другого device возвращает ему targeted `call_ended/answered_elsewhere`;
-- explicit pre-answer decline создаёт дополнительный terminal event всем sibling
-  callee devices кроме отклонившего.
 
 ### Проверка
 
-- targeted backend application/realtime call paths: `17 passed`;
-- frontend `tests/voice-calls.test.ts`: `17 passed`;
-- backend: Ruff check/format, mypy, `282 passed, 12 skipped`;
-- frontend: ESLint, Nuxt typecheck, `360 passed`, production build;
-- `docker compose config --quiet` и `git diff --check` прошли.
-
-### Production rollout
-
-- deployment workflow `32417561086` для `c581131` завершился успешно;
-- API, cleanup и frontend запущены из immutable images
-  `sha-c58113185b8b2b79dd42debbf35ce7d33f0716e0`;
-- PostgreSQL, API и frontend healthy, оба production origin вернули health
-  `200`, свежих API errors после rollout нет;
-- coturn продолжает слушать UDP/TCP `3478` и TLS `5349`; TURN и
-  Nginx configuration не менялись.
+- production `ru1`: investigated pairing upload/list/ACK requests returned `200`;
+  opaque relay state confirmed partial ACK rather than ingress failure;
+- local existing-device union: `localhost:8080` ↔ `127.0.0.1:8080` completed on
+  both sides, synchronized `4/5` available chats and skipped the one expected
+  unavailable-participant chat;
+- local passwordless enrollment: fresh `wp114.localhost:8080` received a separate
+  session/MLS leaf and opened the synchronized local history;
+- frontend lint, typecheck, production build and all `360` tests pass;
+- relevant backend relay/pairing tests: `6 passed`; Compose config validates.

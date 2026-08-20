@@ -1130,11 +1130,13 @@ restart API или потерянный WebSocket не оставляют previo
 cache. Во время QR linking approving leaf дополнительно запускает bounded background
 pass по всем direct и инвалидирует cache. Conversation считается готовым к history
 relay только когда server current generation имеет `status=ready`, содержит exact
-candidate device, а approving leaf локально успешно reconciled к тому же exact
-generation ID/number. Server roster без этого local checkpoint недостаточен: другой
-active coordinator мог уже finalized следующий Commit, пока approving leaf всё ещё
-шифрует старым epoch. Перед каждым таким Commit используется тот же retention drain,
-что и chat workspace.
+candidate device, а каждый участвующий local leaf — approving/display,
+authenticated scanner или новый passwordless candidate — успешно reconciled к тому
+же exact generation ID/number.
+Server roster без local checkpoint обеих relay sides недостаточен: другой active
+coordinator мог уже finalized следующий Commit, пока одна сторона всё ещё шифрует
+или расшифровывает старым epoch. Перед каждым таким Commit используется тот же
+retention drain, что и chat workspace.
 Authenticated app-layout выполняет безопасный all-direct foreground pass даже на
 Settings, поэтому открытие конкретного чата не является trigger correctness.
 

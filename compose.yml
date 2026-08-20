@@ -76,6 +76,7 @@ services:
     environment:
       NITRO_HOST: 0.0.0.0
       NITRO_PORT: 3000
+      NUXT_PUBLIC_DEVICE_PAIRING_ORIGINS: '${ALLOWED_ORIGINS:-["http://localhost:8080"]}'
     healthcheck:
       test:
         - CMD

@@ -72,7 +72,10 @@ async function pollExistingCandidate(pairingId: string): Promise<void> {
       view.value = null
       activePairingId = null
       stopPolling()
-      startHistorySync(linked, false)
+      // Existing devices are symmetric relay peers. The scanner must reconcile
+      // its own local MLS checkpoint just like the approving/display side before
+      // either side protects or consumes history chunks.
+      startHistorySync(linked, true)
       return
     }
     if (!['cancelled', 'expired'].includes(view.value.status)) {
@@ -316,7 +319,9 @@ onMounted(() => {
     </section>
     <div v-if="!displayed && !view && !scanning" class="settings-inline-actions">
       <button v-if="!isPhone" class="button button--primary button--compact" type="button" :disabled="busy" @click="createOffer">Показать QR</button>
-      <button v-if="isPhone" class="button button--secondary button--compact" type="button" :disabled="busy" @click="scanning = true">Сканировать QR компьютера</button>
+      <button class="button button--secondary button--compact" type="button" :disabled="busy" @click="scanning = true">
+        {{ isPhone ? 'Сканировать QR компьютера' : 'Сканировать QR другого устройства' }}
+      </button>
     </div>
     <DeviceQrScanner v-else-if="scanning" @decoded="scanned" @cancel="scanning = false" />
     <section v-else-if="displayed" class="pairing-workspace">
