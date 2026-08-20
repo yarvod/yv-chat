@@ -1,72 +1,53 @@
 # Текущий workplan
 
-## WP-111 — MLS generation barrier before QR history relay
+## WP-112 — Dismissible completed history-sync banner
 
 Статус: **completed locally; production rollout pending**
-Backlog: `BL-015`; bug `BUG-099`
+Backlog: `BL-015`; bug `BUG-100`
 
-Цель: устранить воспроизводимую гонку при подключении третьего и последующих
-устройств, когда QR-auth завершается, но history relay шифруется stale MLS epoch и
-новое устройство не может подтвердить chunks.
+Цель: позволить пользователю явно убрать глобальную плашку после успешной
+синхронизации устройств, не отменяя pairing и не затрагивая перенесённую историю.
 
 ### Подтверждённое состояние
 
-- разные official origins не являются причиной: pairing и relay используют общий
-  server state при раздельных cookie/IndexedDB boundaries;
-- при одном trusted leaf локальный browser flow переносит историю полностью;
-- при ранее подключённом активном leaf другой device может стать coordinator новой
-  generation;
-- enrollment считал conversation готовым по server roster, не проверяя, что
-  approving leaf локально применил именно эту generation;
-- stale approving leaf затем создавал MLS application messages старым epoch, target
-  fail-closed отклонял их и не отправлял ACK.
-
-### Security invariants
-
-- relay остаётся обычным MLS PrivateMessage; server не получает plaintext или keys;
-- stale/mismatched generation не получает fallback и не ослабляет authentication;
-- transfer начинается только после exact generation ID/number agreement между
-  authoritative server state и локально reconciled approving leaf;
-- retry остаётся bounded, resumable и cancellable.
+- глобальный `DeviceHistorySyncBanner` выбирает последний terminal progress и поэтому
+  завершённая плашка остаётся сверху без ограничения времени;
+- application service уже имеет безопасный `dismiss(pairingId)`, удаляющий только
+  локальный job/status;
+- Settings использует этот контракт для terminal failed/cancelled attempts, но
+  success banner не предоставлял действие пользователю.
 
 ### Scope
 
-- хранить подтверждённую local/server generation по каждому direct во время
-  enrollment;
-- повторно reconcile-ить approving leaf при stale или изменившейся generation;
-- не начинать archive relay до exact generation match;
-- regression на server READY target roster при stale local READY;
-- production-like browser acceptance с несколькими независимыми origins/devices.
+- отдельный доступный крестик только у completed banner;
+- `dismiss` completed status без вызова server cancellation;
+- сохранить переход «Подробнее» в Settings;
+- mobile-safe geometry, focus/hover states и bounded ellipsis;
+- component regression и full frontend checks.
 
-### Exclusions
+### Security и data invariants
 
-- изменение QR state machine, cookies, origin allowlist или relay API;
-- передача/копирование MLS signer, provider snapshot или archive key;
-- восстановление уже созданных stale ciphertext chunks без новой pairing session;
-- group MLS и attachment/media transfer.
+- dismiss не вызывает relay cancel, revoke, logout или удаление archive;
+- pairing/session/MLS state и синхронизированные сообщения не меняются;
+- active transfer остаётся недоступен для случайного закрытия этим крестиком.
 
 ### Definition of Done
 
-- stale approving leaf не объявляет target enrollment готовым;
-- следующий retry применяет current generation и только затем запускает relay;
-- third/fourth-device browser flow переносит доступные чаты без crypto errors;
-- focused и full frontend tests, lint, typecheck и production build проходят.
+- completed/partially completed banner показывает крестик;
+- нажатие сразу убирает banner и вызывает только `dismiss(pairingId)`;
+- ссылка «Подробнее» остаётся отдельной валидной interactive областью;
+- active progress не получает success-dismiss control;
+- tests, lint, typecheck и production build проходят.
 
 ### Выполнено
 
-- `EnrollLinkedDevice` теперь всегда сверяет результат локального reconcile с exact
-  server generation ID/number, содержащей target leaf;
-- совпадение кэшируется только на время enrollment и инвалидируется, если server
-  generation меняется;
-- добавлена regression stale-local/current-server generation race;
-- browser skill воспроизвёл defect на третьем устройстве и подтвердил fix на
-  четвёртом при трёх уже активных devices: 4/5 доступных direct и 9 records
-  синхронизированы, один proof-backed `missing_identity` ожидаемо skipped.
+- link-container заменён на status-region с отдельными link и button;
+- completed banner получил 26×26 dismiss control с accessible label и focus ring;
+- длинный текст ограничен ellipsis и не вытесняет крестик на mobile;
+- regression подтверждает локальное скрытие без вызова `cancel`.
 
 ### Проверка
 
-- focused `linked-device-enrollment`: `6 passed`;
-- production-like in-app browser: отдельные cookie/IndexedDB origins, exact QR code
-  confirmation, multiple active leaves, zero console warning/error после fix;
-- frontend: ESLint, Nuxt typecheck, `358 passed`, production build;
-- Compose config и `git diff --check` валидны.
+- focused `device-history-sync-banner`: `1 passed`;
+- frontend: ESLint, Nuxt typecheck, `359 passed`, production build;
+- `git diff --check` валиден.

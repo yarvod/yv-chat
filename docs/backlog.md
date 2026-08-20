@@ -146,7 +146,9 @@ observable MLS/history union и `WP-084` single-flight/server cancellation ра�
 production origins без cross-origin cookies/API и развернут workflow
 `32317318386`. `WP-111` добавляет обязательный exact local/server MLS generation
 barrier перед history relay и устраняет stale-epoch race при третьем и последующих
-active devices; исправление локально проверено, production rollout pending**.
+active devices. `WP-112` добавляет безопасный user-dismissible completed banner без
+cancel/revoke/data deletion; оба исправления локально проверены, production rollout
+pending**.
 `BL-064` и первый deployment-safe slice `BL-025` завершены; pairing реализуется
 итерациями с отдельным security/ADR review до изменения MLS membership semantics.
 Это не UI-задача «нарисовать QR»: `WP-079` не менял MLS roster, `WP-080` добавил

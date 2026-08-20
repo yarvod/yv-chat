@@ -45,6 +45,13 @@ const label = computed(() => {
   return `Перенос истории: +${progress.importedRecords} получено`
 })
 
+function dismissCompleted(): void {
+  const progress = current.value
+  if (!progress?.complete) return
+  $frontend.deviceHistorySync.dismiss(progress.pairingId)
+  refresh()
+}
+
 onMounted(() => {
   refresh()
   unsubscribe = $frontend.deviceHistorySync.subscribe(refresh)
@@ -57,16 +64,28 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <NuxtLink
+  <aside
     v-if="current && label"
     class="device-history-sync-banner"
     :class="{ 'device-history-sync-banner--complete': current.complete }"
-    to="/settings"
     role="status"
     aria-live="polite"
   >
     <i aria-hidden="true" />
-    <span>{{ label }}</span>
-    <small>Подробнее</small>
-  </NuxtLink>
+    <NuxtLink class="device-history-sync-banner__details" to="/settings">
+      <span>{{ label }}</span>
+      <small>Подробнее</small>
+    </NuxtLink>
+    <button
+      v-if="current.complete"
+      class="device-history-sync-banner__dismiss"
+      type="button"
+      aria-label="Убрать уведомление о синхронизации"
+      @click="dismissCompleted"
+    >
+      <svg aria-hidden="true" viewBox="0 0 16 16">
+        <path d="M4 4l8 8M12 4l-8 8" />
+      </svg>
+    </button>
+  </aside>
 </template>

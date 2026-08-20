@@ -4,6 +4,22 @@
 
 ## Active
 
+### BUG-100 — Завершённую плашку синхронизации нельзя было убрать
+
+- Статус: `fixed locally in WP-112; production rollout pending`.
+- Severity: `medium persistent UI obstruction`.
+- Reproduction: успешно синхронизировать два уже авторизованных устройства; global
+  banner «История устройств синхронизирована» остаётся поверх приложения бессрочно,
+  а отдельного dismiss control нет.
+- Root cause: banner всегда выбирал последний terminal progress и целиком был ссылкой
+  в Settings; существующий безопасный `deviceHistorySync.dismiss()` для completed
+  status из banner не вызывался.
+- Исправление: completed banner получил отдельный accessible крестик; он удаляет
+  только локальный status/job, не вызывает server cancel и не затрагивает pairing,
+  MLS state или перенесённую историю.
+- Проверка: component regression подтверждает вызов `dismiss(pairingId)`, отсутствие
+  `cancel` и немедленное исчезновение banner.
+
 ### BUG-099 — QR history relay шифровался stale MLS generation при нескольких устройствах
 
 - Статус: `fixed locally in WP-111; production rollout pending`.
