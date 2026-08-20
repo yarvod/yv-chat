@@ -23,7 +23,9 @@ export interface LinkedDeviceEnrollmentProgress {
 type EpochDrainer = (ownerUserId: string, conversationId: string) => Promise<void>
 type ProgressListener = (progress: LinkedDeviceEnrollmentProgress) => void
 type ActivityGuard = () => Promise<void>
-type TargetState = 'ready' | 'pending' | 'skipped'
+type TargetState =
+  | { readonly state: 'ready', readonly generationId: string, readonly generationNumber: number }
+  | { readonly state: 'pending' | 'skipped' }
 
 const SKIPPABLE_BLOCK_REASONS = new Set(['missing_identity', 'protocol_failure'])
 
@@ -106,6 +108,7 @@ export class EnrollLinkedDevice {
     )
     onProgress(progress)
     if (progress.complete) return progress
+    const alignedGenerations = new Map<string, string>()
 
     for (let attempt = 0; attempt < this.maxAttempts; attempt += 1) {
       if (generation !== this.cancelledGeneration) return progress
@@ -116,14 +119,19 @@ export class EnrollLinkedDevice {
         await ensureActive()
         const conversationId = conversation.conversationId
         const before = await this.targetState(conversationId, targetDeviceId)
-        if (before === 'ready') continue
-        if (before === 'skipped') {
+        if (before.state === 'skipped') {
+          alignedGenerations.delete(conversationId)
           skipped.push(conversationId)
           continue
         }
+        if (
+          before.state === 'ready'
+          && alignedGenerations.get(conversationId) === before.generationId
+        ) continue
         this.cryptoSession.invalidateConversation(conversationId)
+        let reconciled: ReconcileConversationCryptoResult | null = null
         try {
-          await this.cryptoSession.reconcileConversation(conversationId)
+          reconciled = await this.cryptoSession.reconcileConversation(conversationId)
         } catch {
           // The target may still be publishing its immutable identity/KeyPackage,
           // or this leaf may need a later durable retry. Verification below is
@@ -131,8 +139,20 @@ export class EnrollLinkedDevice {
         }
         await ensureActive()
         const after = await this.targetState(conversationId, targetDeviceId)
-        if (after === 'skipped') skipped.push(conversationId)
-        else if (after !== 'ready') pending.push(conversationId)
+        if (after.state === 'skipped') {
+          alignedGenerations.delete(conversationId)
+          skipped.push(conversationId)
+        } else if (
+          after.state !== 'ready'
+          || reconciled?.status !== 'ready'
+          || reconciled.generationId !== after.generationId
+          || reconciled.generationNumber !== after.generationNumber
+        ) {
+          alignedGenerations.delete(conversationId)
+          pending.push(conversationId)
+        } else {
+          alignedGenerations.set(conversationId, after.generationId)
+        }
       }
       progress = this.progress(targetDeviceId, conversations.length, pending, skipped)
       onProgress(progress)
@@ -158,15 +178,19 @@ export class EnrollLinkedDevice {
       if (
         generation?.status === 'ready'
         && generation.requiredDevices.some(device => device.deviceId === targetDeviceId)
-      ) return 'ready'
+      ) return {
+        state: 'ready',
+        generationId: generation.generationId,
+        generationNumber: generation.generationNumber,
+      }
       if (
         generation?.status === 'blocked'
         && generation.blockReason !== null
         && SKIPPABLE_BLOCK_REASONS.has(generation.blockReason)
-      ) return 'skipped'
-      return 'pending'
+      ) return { state: 'skipped' }
+      return { state: 'pending' }
     } catch {
-      return 'pending'
+      return { state: 'pending' }
     }
   }
 

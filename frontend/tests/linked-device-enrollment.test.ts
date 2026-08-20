@@ -155,11 +155,55 @@ describe('linked device MLS enrollment', () => {
     expect(result.pendingConversationIds).toEqual(directIds)
   })
 
+  it('waits until the trusted leaf has applied the same generation as the target', async () => {
+    let attempts = 0
+    const session: LinkedDeviceEnrollmentSession = {
+      setBeforeEpochAdvance: vi.fn(),
+      invalidateConversation: vi.fn(),
+      reconcileConversation: vi.fn(async (conversationId) => {
+        attempts += 1
+        return {
+          status: 'ready',
+          generationId: attempts === 1 ? 'stale-generation' : `generation-${conversationId}`,
+          generationNumber: attempts === 1 ? 1 : 2,
+          blockReason: null,
+          epoch: attempts === 1 ? 1 : 2,
+        }
+      }),
+    }
+    const cryptoServer = {
+      getCurrent: vi.fn(async (conversationId: string) => readyGeneration(conversationId, true)),
+    } as unknown as ConversationCryptoGateway
+    const enrollment = new EnrollLinkedDevice(
+      {
+        listConversations: vi.fn().mockResolvedValue([conversation('direct-a', 'direct')]),
+      } as unknown as MessagingGateway,
+      cryptoServer,
+      session,
+      scheduler,
+      async () => undefined,
+      1,
+      2,
+    )
+
+    const result = await enrollment.enroll('alice', targetDeviceId)
+
+    expect(result.complete).toBe(true)
+    expect(session.invalidateConversation).toHaveBeenCalledTimes(2)
+    expect(session.reconcileConversation).toHaveBeenCalledTimes(2)
+  })
+
   it('finishes with an explicit skip when a participant has no MLS-capable device', async () => {
     const session: LinkedDeviceEnrollmentSession = {
       setBeforeEpochAdvance: vi.fn(),
       invalidateConversation: vi.fn(),
-      reconcileConversation: vi.fn(),
+      reconcileConversation: vi.fn(async (conversationId) => ({
+        status: 'ready',
+        generationId: `generation-${conversationId}`,
+        generationNumber: 2,
+        blockReason: null,
+        epoch: 2,
+      })),
     }
     const cryptoServer = {
       getCurrent: vi.fn(async (conversationId: string) => (
@@ -193,6 +237,7 @@ describe('linked device MLS enrollment', () => {
       pendingConversationIds: [],
       skippedConversationIds: ['direct-b'],
     })
+    expect(session.reconcileConversation).toHaveBeenCalledWith('direct-a')
     expect(session.reconcileConversation).not.toHaveBeenCalledWith('direct-b')
   })
 

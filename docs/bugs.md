@@ -4,6 +4,25 @@
 
 ## Active
 
+### BUG-099 — QR history relay шифровался stale MLS generation при нескольких устройствах
+
+- Статус: `fixed locally in WP-111; production rollout pending`.
+- Severity: `critical multi-device history reliability`.
+- Reproduction: оставить ранее связанное устройство активным, затем trusted
+  телефоном подключить ещё один компьютер по QR. Passwordless session и MLS roster
+  создаются, обе стороны загружают relay chunks, но новый компьютер отклоняет часть
+  входящих MLS messages, не ACK-ает их и показывает automatic retry.
+- Root cause: `EnrollLinkedDevice` принимал server `READY` roster с target leaf за
+  достаточное доказательство готовности, даже когда approving leaf локально ещё не
+  применил ту же generation после Commit другого coordinator.
+- Исправление: перед history relay approving leaf обязан успешно reconcile-ить exact
+  current generation ID/number; stale или изменившаяся generation остаётся pending и
+  повторяется без insecure fallback.
+- Проверка: regression моделирует stale local generation при current server roster;
+  browser reproduction с независимыми origins ломается до фикса и завершается после
+  него при нескольких active leaves, перенося 9 records в 4 доступных direct без
+  console errors; один `missing_identity` direct ожидаемо skipped.
+
 ### BUG-098 — iOS PWA визуально смещала sidebar «+»
 
 - Статус: `fixed and production deployed in WP-110` (`bc083d9`, workflow
