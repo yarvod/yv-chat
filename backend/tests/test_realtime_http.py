@@ -507,3 +507,92 @@ def test_direct_call_signaling_is_authorized_and_device_routed() -> None:
                 }
             )
             assert receive_type(bob_socket, "call_ended")["reason"] == "hangup"
+
+
+def test_busy_callee_device_does_not_block_another_device_answer() -> None:
+    application, state, clock = build_test_application()
+    alice = next(user for user in state.users.values() if user.username == "alice")
+    bob = User.create(username="bob", display_name="Bob", now=clock.instant)
+    state.users[bob.id] = bob
+    state.password_hashes[bob.id] = "$argon2id$fake-hash"
+    conversation = Conversation.create_direct(
+        created_by=alice.id,
+        other_user_id=bob.id,
+        now=clock.instant,
+    )
+    state.conversations[conversation.id] = conversation
+    call_id = uuid4()
+
+    with (
+        TestClient(application, base_url="https://test") as alice_client,
+        TestClient(application, base_url="https://test") as bob_phone_client,
+        TestClient(application, base_url="https://test") as bob_tablet_client,
+    ):
+        login_as(alice_client, "alice")
+        login_as(bob_phone_client, "bob")
+        login_as(bob_tablet_client, "bob")
+        with (
+            alice_client.websocket_connect(
+                "/api/v1/realtime",
+                headers=authenticated_headers(alice_client),
+            ) as alice_socket,
+            bob_phone_client.websocket_connect(
+                "/api/v1/realtime",
+                headers=authenticated_headers(bob_phone_client),
+            ) as bob_phone_socket,
+            bob_tablet_client.websocket_connect(
+                "/api/v1/realtime",
+                headers=authenticated_headers(bob_tablet_client),
+            ) as bob_tablet_socket,
+        ):
+            assert alice_socket.receive_json() == {"type": "hello"}
+            assert bob_phone_socket.receive_json() == {"type": "hello"}
+            assert bob_tablet_socket.receive_json() == {"type": "hello"}
+            alice_socket.send_json(
+                {
+                    "type": "call_offer",
+                    "version": 2,
+                    "conversation_id": str(conversation.id),
+                    "call_id": str(call_id),
+                    "sdp": "v=0\r\n",
+                    "identity_signature": "a" * 128,
+                }
+            )
+            receive_type(bob_phone_socket, "call_offer")
+            receive_type(bob_tablet_socket, "call_offer")
+
+            bob_phone_socket.send_json(
+                {
+                    "type": "call_rejected",
+                    "version": 2,
+                    "conversation_id": str(conversation.id),
+                    "call_id": str(call_id),
+                    "reason": "busy",
+                }
+            )
+            bob_tablet_socket.send_json(
+                {
+                    "type": "call_answer",
+                    "version": 2,
+                    "conversation_id": str(conversation.id),
+                    "call_id": str(call_id),
+                    "sdp": "v=0\r\na=tablet-answer",
+                    "identity_signature": "b" * 128,
+                }
+            )
+
+            answer = receive_type(alice_socket, "call_answer")
+            assert answer["sdp"] == "v=0\r\na=tablet-answer"
+            answered_elsewhere = receive_type(bob_phone_socket, "call_ended")
+            assert answered_elsewhere["reason"] == "answered_elsewhere"
+
+            alice_socket.send_json(
+                {
+                    "type": "call_ended",
+                    "version": 2,
+                    "conversation_id": str(conversation.id),
+                    "call_id": str(call_id),
+                    "reason": "hangup",
+                }
+            )
+            assert receive_type(bob_tablet_socket, "call_ended")["reason"] == "hangup"

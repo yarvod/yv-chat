@@ -241,6 +241,34 @@ describe('browser voice calls', () => {
     expect(signals.at(-1)).toMatchObject({ type: 'call_answer', sdp: 'answer-sdp' })
   })
 
+  it('does not reject a shared incoming call when only this device is busy', async () => {
+    const service = new BrowserVoiceCallService(
+      signaling, config, fakeIdentity(), BOB_USER, BOB_DEVICE,
+    )
+    let latest = null
+    service.subscribe(state => { latest = state })
+    await service.start(CONVERSATION, ALICE_USER)
+    expect(latest).toMatchObject({ phase: 'outgoing' })
+
+    await service.apply({
+      type: 'call_offer',
+      version: 2,
+      eventId: 'second-call-event',
+      conversationId: '4a9a3ee6-075f-481a-9458-b805b6775a77',
+      callId: '899c894a-2cf3-45f8-8619-c24a0bef9e6a',
+      actorUserId: ALICE_USER,
+      actorDeviceId: ALICE_DEVICE,
+      sdp: 'second-offer-sdp',
+      candidate: null,
+      reason: null,
+      identitySignature: '07'.repeat(64),
+    })
+
+    expect(signals.map(signal => signal.type)).toEqual(['call_offer'])
+    expect(latest).toMatchObject({ phase: 'outgoing' })
+    service.reset()
+  })
+
   it('binds callee camera to the video transceiver created by the remote offer', async () => {
     const camera = new FakeStream([new FakeTrack('video')])
     const getUserMedia = vi.fn(async (constraints: MediaStreamConstraints) => (

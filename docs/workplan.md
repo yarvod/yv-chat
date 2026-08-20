@@ -1,53 +1,69 @@
 # Текущий workplan
 
-## WP-112 — Dismissible completed history-sync banner
+## WP-113 — Device-scoped multi-device call terminal semantics
 
 Статус: **completed locally; production rollout pending**
-Backlog: `BL-015`; bug `BUG-100`
+Backlog: `BL-034`; bug `BUG-101`
 
-Цель: позволить пользователю явно убрать глобальную плашку после успешной
-синхронизации устройств, не отменяя pairing и не затрагивая перенесённую историю.
+Цель: устранить ложный `busy` и signaling teardown, когда один пользователь принимает
+входящий звонок на одном из нескольких одновременно онлайн-устройств.
 
 ### Подтверждённое состояние
 
-- глобальный `DeviceHistorySyncBanner` выбирает последний terminal progress и поэтому
-  завершённая плашка остаётся сверху без ограничения времени;
-- application service уже имеет безопасный `dismiss(pairingId)`, удаляющий только
-  локальный job/status;
-- Settings использует этот контракт для terminal failed/cancelled attempts, но
-  success banner не предоставлял действие пользователю.
+- один `call_offer` fan-out-ится всем online devices callee;
+- busy frontend device отправлял общий `call_rejected(reason=busy)` для чужого
+  `call_id`, хотя другое устройство того же пользователя могло принять звонок;
+- coordinator удалял весь call по первому rejection до выбора `callee_device_id`;
+- поздний answer другого device становился `CallStateConflictError`, после чего
+  WebSocket transport закрывался кодом 4403;
+- production API/coturn оставались healthy, поэтому ложный `busy` возникал до media
+  connectivity и не являлся TURN outcome.
 
 ### Scope
 
-- отдельный доступный крестик только у completed banner;
-- `dismiss` completed status без вызова server cancellation;
-- сохранить переход «Подробнее» в Settings;
-- mobile-safe geometry, focus/hover states и bounded ellipsis;
-- component regression и full frontend checks.
+- сделать автоматический busy строго device-local и совместимым со старыми PWA;
+- сохранить first-answer-wins binding без возможности заменить выбранный endpoint;
+- вернуть losing device terminal `answered_elsewhere` без signaling conflict;
+- fan-out explicit decline sibling devices, чтобы их ringing UI не оставался stale;
+- добавить backend и frontend regression tests.
 
-### Security и data invariants
+### Security и protocol invariants
 
-- dismiss не вызывает relay cancel, revoke, logout или удаление archive;
-- pairing/session/MLS state и синхронизированные сообщения не меняются;
-- active transfer остаётся недоступен для случайного закрытия этим крестиком.
+- actor, owned active device, direct membership и v2 authenticated SDP validation
+  остаются обязательными;
+- server не принимает SDP/identity binding проигравшего device как новый endpoint;
+- неизвестные и invalid-order call transitions по-прежнему fail-closed;
+- SDP, ICE, media и call identity material не добавляются в persistence/logging;
+- WebRTC media остаётся DTLS-SRTP direct/TURN и не проходит через FastAPI.
+
+### Exclusions
+
+- durable call history или server-side media;
+- group calls и native incoming-call integration;
+- изменение TURN topology, credentials или Nginx;
+- исправление отдельной path-specific packet loss между Wi-Fi ISP и VPS.
 
 ### Definition of Done
 
-- completed/partially completed banner показывает крестик;
-- нажатие сразу убирает banner и вызывает только `dismiss(pairingId)`;
-- ссылка «Подробнее» остаётся отдельной валидной interactive областью;
-- active progress не получает success-dismiss control;
-- tests, lint, typecheck и production build проходят.
+- busy одного callee device не завершает shared ringing call;
+- другое device может после busy успешно стать authoritative callee endpoint;
+- losing answer получает `answered_elsewhere` без `CallStateConflictError`;
+- explicit decline закрывает ringing state на caller и sibling callee devices;
+- targeted и full backend/frontend checks проходят;
+- diff, docs и focused commit проверены.
 
-### Выполнено
+### Реализация
 
-- link-container заменён на status-region с отдельными link и button;
-- completed banner получил 26×26 dismiss control с accessible label и focus ring;
-- длинный текст ограничен ellipsis и не вытесняет крестик на mobile;
-- regression подтверждает локальное скрытие без вызова `cancel`.
+- frontend игнорирует новый offer при локальном busy state без global rejection;
+- coordinator игнорирует legacy `reason=busy` от callee на любой стадии call binding;
+- late answer другого device возвращает ему targeted `call_ended/answered_elsewhere`;
+- explicit pre-answer decline создаёт дополнительный terminal event всем sibling
+  callee devices кроме отклонившего.
 
 ### Проверка
 
-- focused `device-history-sync-banner`: `1 passed`;
-- frontend: ESLint, Nuxt typecheck, `359 passed`, production build;
-- `git diff --check` валиден.
+- targeted backend application/realtime call paths: `17 passed`;
+- frontend `tests/voice-calls.test.ts`: `17 passed`;
+- backend: Ruff check/format, mypy, `282 passed, 12 skipped`;
+- frontend: ESLint, Nuxt typecheck, `360 passed`, production build;
+- `docker compose config --quiet` и `git diff --check` прошли.

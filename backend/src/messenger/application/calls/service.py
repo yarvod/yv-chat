@@ -293,8 +293,19 @@ class VoiceCallCoordinator:
             or command.identity_signature is None
         ):
             raise CallStateConflictError("only callee can answer with authenticated SDP")
-        if call.callee_device_id not in {None, command.actor_device_id}:
-            raise CallStateConflictError("call was answered on another device")
+        if call.callee_device_id is not None and call.callee_device_id != command.actor_device_id:
+            selected_device_id = call.callee_device_id
+            return (
+                self._notification(
+                    user_id=call.callee_user_id,
+                    signal_type=CallSignalType.ENDED,
+                    call=call,
+                    actor_user_id=call.callee_user_id,
+                    actor_device_id=selected_device_id,
+                    target_device_id=command.actor_device_id,
+                    reason="answered_elsewhere",
+                ),
+            )
         updated = replace(
             call,
             callee_device_id=command.actor_device_id,
@@ -373,12 +384,14 @@ class VoiceCallCoordinator:
             target_user_id = call.callee_user_id
             target_device_id = call.callee_device_id
         else:
+            if signal_type is CallSignalType.REJECTED and command.reason == "busy":
+                return ()
             if call.callee_device_id not in {None, command.actor_device_id}:
                 raise CallStateConflictError("callee device mismatch")
             target_user_id = call.caller_user_id
             target_device_id = call.caller_device_id
         self._remove(call)
-        return (
+        notifications = [
             self._notification(
                 user_id=target_user_id,
                 signal_type=signal_type,
@@ -389,7 +402,20 @@ class VoiceCallCoordinator:
                 reason=command.reason
                 or ("rejected" if signal_type is CallSignalType.REJECTED else "ended"),
             ),
-        )
+        ]
+        if command.actor_user_id == call.callee_user_id and call.callee_device_id is None:
+            notifications.append(
+                self._notification(
+                    user_id=call.callee_user_id,
+                    signal_type=CallSignalType.ENDED,
+                    call=call,
+                    actor_user_id=command.actor_user_id,
+                    actor_device_id=command.actor_device_id,
+                    excluded_device_id=command.actor_device_id,
+                    reason="declined_elsewhere",
+                )
+            )
+        return tuple(notifications)
 
     def _notification(
         self,

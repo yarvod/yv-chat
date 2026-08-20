@@ -1626,6 +1626,13 @@ frame заново проверяет active account, owned non-revoked device, 
 `direct` conversation type. Первый ответивший callee device становится единственным
 media endpoint; остальные устройства получают `answered_elsewhere`.
 
+`WP-113` уточняет multi-device terminal semantics. Busy является локальным состоянием
+конкретного device и не может завершить общий ringing call до выбора callee endpoint;
+legacy `call_rejected(reason=busy)` игнорируется coordinator-ом. Явный decline остаётся
+user-level действием, но sibling devices получают terminal notification и очищают
+ringing UI. Answer проигравшего device после first-answer race получает device-targeted
+`answered_elsewhere`, а не state conflict с закрытием всего WebSocket transport.
+
 Browser создаёт `RTCPeerConnection`, запрашивает только microphone с echo
 cancellation/noise suppression/auto gain и добавляет только audio tracks. WebRTC
 шифрует media стандартным DTLS-SRTP. При прямом пути audio идёт peer-to-peer; при

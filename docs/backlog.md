@@ -555,6 +555,11 @@ focus/navigation для frozen/discarded mobile PWA tasks.
 
 Статус: **implemented and locally verified** (`WP-100`).
 
+`WP-113` устраняет найденную production multi-device race: локальный busy одного
+device больше не завершает общий ringing call, первый answer остаётся authoritative,
+а losing device получает `answered_elsewhere` без закрытия WebSocket. Исправление
+локально реализовано; production rollout pending.
+
 - `call_offer`, `call_answer`, `ice_candidate`, `call_rejected`, `call_ended`;
 - authenticated conversation participants и timeout/reconnect/failure state;
 - push `incoming_call` только как wake-up hint без SDP/keys preview;

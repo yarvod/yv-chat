@@ -392,13 +392,8 @@ export class BrowserVoiceCallService {
         && this.state.phase !== 'error'
         && this.state.callId !== frame.callId
       ) {
-        this.send({
-          type: 'call_rejected',
-          version: 2,
-          conversation_id: frame.conversationId,
-          call_id: frame.callId,
-          reason: 'busy',
-        })
+        // Busy is local to this device. Rejecting here would terminate the shared
+        // user-level call before another online device has a chance to answer.
         return
       }
       if (!frame.sdp || !frame.identitySignature) return

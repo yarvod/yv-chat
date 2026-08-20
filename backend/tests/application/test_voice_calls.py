@@ -221,8 +221,10 @@ async def test_outsider_and_group_calls_are_rejected() -> None:
         )
 
 
-async def test_first_answer_device_wins_and_later_device_cannot_replace_its_binding() -> None:
-    coordinator, _, _, alice, alice_device, bob, bob_device, _, state, conversation = fixture()
+async def test_first_answer_device_wins_and_later_device_is_ended_without_conflict() -> None:
+    coordinator, realtime, _, alice, alice_device, bob, bob_device, _, state, conversation = (
+        fixture()
+    )
     bob_tablet = Device.create(user_id=bob.id, name="Bob tablet", now=NOW)
     state.devices[bob_tablet.id] = bob_tablet
     call_id = uuid4()
@@ -248,16 +250,125 @@ async def test_first_answer_device_wins_and_later_device_cannot_replace_its_bind
             identity_signature=ANSWER_SIGNATURE,
         )
     )
+    realtime.notifications.clear()
 
-    with pytest.raises(CallStateConflictError, match="answered on another device"):
-        await coordinator.execute(
-            CallSignalCommand(
-                CallSignalType.ANSWER,
-                bob.id,
-                bob_tablet.id,
-                conversation.id,
-                call_id,
-                sdp="tablet-answer",
-                identity_signature="c" * 128,
-            )
+    await coordinator.execute(
+        CallSignalCommand(
+            CallSignalType.ANSWER,
+            bob.id,
+            bob_tablet.id,
+            conversation.id,
+            call_id,
+            sdp="tablet-answer",
+            identity_signature="c" * 128,
         )
+    )
+
+    assert len(realtime.notifications) == 1
+    answered_elsewhere = realtime.notifications[0]
+    assert answered_elsewhere.signal_type is CallSignalType.ENDED
+    assert answered_elsewhere.target_device_id == bob_tablet.id
+    assert answered_elsewhere.reason == "answered_elsewhere"
+
+    realtime.notifications.clear()
+    await coordinator.execute(
+        CallSignalCommand(
+            CallSignalType.REJECTED,
+            bob.id,
+            bob_tablet.id,
+            conversation.id,
+            call_id,
+            reason="busy",
+        )
+    )
+    assert realtime.notifications == []
+
+
+async def test_busy_device_does_not_end_ringing_call_for_another_device() -> None:
+    coordinator, realtime, _, alice, alice_device, bob, bob_device, _, state, conversation = (
+        fixture()
+    )
+    bob_tablet = Device.create(user_id=bob.id, name="Bob tablet", now=NOW)
+    state.devices[bob_tablet.id] = bob_tablet
+    call_id = uuid4()
+    await coordinator.execute(
+        CallSignalCommand(
+            CallSignalType.OFFER,
+            alice.id,
+            alice_device.id,
+            conversation.id,
+            call_id,
+            sdp="offer-sdp",
+            identity_signature=OFFER_SIGNATURE,
+        )
+    )
+    realtime.notifications.clear()
+
+    await coordinator.execute(
+        CallSignalCommand(
+            CallSignalType.REJECTED,
+            bob.id,
+            bob_device.id,
+            conversation.id,
+            call_id,
+            reason="busy",
+        )
+    )
+
+    assert realtime.notifications == []
+    snapshot = await coordinator.snapshot(user_id=bob.id, device_id=bob_tablet.id)
+    assert [item.signal_type for item in snapshot] == [CallSignalType.OFFER]
+
+    await coordinator.execute(
+        CallSignalCommand(
+            CallSignalType.ANSWER,
+            bob.id,
+            bob_tablet.id,
+            conversation.id,
+            call_id,
+            sdp="tablet-answer",
+            identity_signature=ANSWER_SIGNATURE,
+        )
+    )
+    assert realtime.notifications[0].signal_type is CallSignalType.ANSWER
+    assert realtime.notifications[0].target_device_id == alice_device.id
+
+
+async def test_explicit_decline_stops_ringing_on_other_callee_devices() -> None:
+    coordinator, realtime, _, alice, alice_device, bob, bob_device, _, state, conversation = (
+        fixture()
+    )
+    bob_tablet = Device.create(user_id=bob.id, name="Bob tablet", now=NOW)
+    state.devices[bob_tablet.id] = bob_tablet
+    call_id = uuid4()
+    await coordinator.execute(
+        CallSignalCommand(
+            CallSignalType.OFFER,
+            alice.id,
+            alice_device.id,
+            conversation.id,
+            call_id,
+            sdp="offer-sdp",
+            identity_signature=OFFER_SIGNATURE,
+        )
+    )
+    realtime.notifications.clear()
+
+    await coordinator.execute(
+        CallSignalCommand(
+            CallSignalType.REJECTED,
+            bob.id,
+            bob_device.id,
+            conversation.id,
+            call_id,
+            reason="declined",
+        )
+    )
+
+    rejected, declined_elsewhere = realtime.notifications
+    assert rejected.user_id == alice.id
+    assert rejected.target_device_id == alice_device.id
+    assert declined_elsewhere.user_id == bob.id
+    assert declined_elsewhere.excluded_device_id == bob_device.id
+    assert declined_elsewhere.reason == "declined_elsewhere"
+    assert await coordinator.snapshot(user_id=bob.id, device_id=bob_tablet.id) == ()

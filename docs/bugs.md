@@ -4,6 +4,27 @@
 
 ## Active
 
+### BUG-101 — Занятое устройство ложно завершало общий входящий звонок
+
+- Статус: `fixed locally in WP-113; production rollout pending`.
+- Severity: `critical multi-device call reliability`.
+- Reproduction: оставить два устройства callee онлайн, при этом одно устройство
+  сохраняет другой active call state; позвонить пользователю и принять звонок на
+  свободном устройстве. Caller получает «Собеседник занят», а принимающее устройство
+  остаётся в «Соединяем…» и затем сбрасывает звонок.
+- Root cause: busy client автоматически отправлял общий `call_rejected`; coordinator
+  удалял user-level call по rejection одного ещё не выбранного device. Последующий
+  answer другого device получал state conflict, а WebSocket transport закрывался
+  fail-closed вместо device-scoped terminal outcome.
+- Исправление: локальный busy больше не отправляет общий reject; backend игнорирует
+  legacy busy frames, сохраняет звонок для остальных devices, возвращает проигравшему
+  answer `answered_elsewhere` и сообщает sibling devices об explicit decline.
+- Проверка: backend regressions покрывают busy-before-answer, losing-answer и
+  decline fan-out; frontend regression запрещает `call_rejected` из локально занятого
+  device; transport regression проводит offer/busy/answer через три реальные test
+  WebSocket session без 4403. Backend `282 passed`, frontend `360 passed`, static
+  checks и production build зелёные.
+
 ### BUG-100 — Завершённую плашку синхронизации нельзя было убрать
 
 - Статус: `fixed locally in WP-112; production rollout pending`.
