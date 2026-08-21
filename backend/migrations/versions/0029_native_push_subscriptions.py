@@ -77,9 +77,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.execute("DELETE FROM push_subscriptions WHERE provider != 'web'")
-    op.drop_constraint(
-        "uq_push_subscriptions_native_token", "push_subscriptions", type_="unique"
-    )
+    op.drop_constraint("uq_push_subscriptions_native_token", "push_subscriptions", type_="unique")
     op.drop_constraint(
         op.f("ck_push_subscriptions_provider_material"), "push_subscriptions", type_="check"
     )
@@ -90,7 +88,11 @@ def downgrade() -> None:
         op.f("ck_push_subscriptions_native_token_length"), "push_subscriptions", type_="check"
     )
     for name in ("endpoint_length", "p256dh_length", "auth_length"):
-        op.drop_constraint(op.f(f"ck_push_subscriptions_{name}"), "push_subscriptions", type_="check")
+        op.drop_constraint(
+            op.f(f"ck_push_subscriptions_{name}"),
+            "push_subscriptions",
+            type_="check",
+        )
     op.create_check_constraint(
         op.f("ck_push_subscriptions_endpoint_length"),
         "push_subscriptions",

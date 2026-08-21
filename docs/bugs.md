@@ -4,6 +4,22 @@
 
 ## Active
 
+### BUG-104 — Native push migration не проходила backend lint gate
+
+- Статус: `fixed locally; production retry pending`.
+- Severity: `low code quality, high deployment impact`.
+- Reproduction: отправить native push/Capacitor release на `main`; CI run
+  `32535085178` проходит fresh migration, затем backend Ruff останавливается на
+  `E501` в downgrade constraint cleanup.
+- Expected: repository lint/format gate проходит до production verification.
+- Actual: одна строка migration имела длину `102 > 100`, поэтому CI и deploy gate
+  не позволили изменить production.
+- Root cause: migration была функционально проверена, но итоговый backend
+  Ruff lint/format не был повторён после последнего изменения строки downgrade.
+- Исправление: constraint cleanup отформатирован canonical Ruff layout.
+- Проверка: Ruff lint/format, mypy и полный backend suite зелёные (`292 passed`,
+  `12 skipped`); production workflow должен быть повторён на hotfix commit.
+
 ### BUG-103 — Возврат из Settings повторно загружал список чатов
 
 - Статус: `fixed locally in WP-115`.
