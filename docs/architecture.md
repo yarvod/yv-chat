@@ -350,10 +350,10 @@ origin и relative same-origin transport. Backend разрешает тольк�
 browser/native origins; wildcard, bearer в URL и WebSocket query token запрещены.
 
 Native haptics/system bars/keyboard/app lifecycle реализуются маленькими adapters.
-APNs/FCM transport и CallKit/Android Telecom являются отдельными infrastructure
-capabilities: их нельзя считать готовыми из-за наличия shell или подменять
-server-readable call metadata. До отдельного rollout browser Web Push и WebRTC
-остаются canonical working implementations.
+APNs/FCM transport использует provider-specific device destinations и generic opaque
+routing payload, не подменяя sync или E2EE. CallKit/PushKit VoIP и Android Telecom
+остаются отдельной capability: обычный incoming-call notification не считается
+полноценным системным звонковым surface и не разрешает server-readable call metadata.
 
 Native WebView storage является отдельным origin-scoped device store. MLS provider
 state, conversation crypto checkpoints, archive/outbox/snapshot keys и encrypted
@@ -1607,18 +1607,24 @@ Workbox по-прежнему кэширует только executable app shell
 
 WebSocket обслуживает foreground realtime и передаёт только wake-up hints. Web Push будит background Service Worker. Sync восстанавливает correctness. Current implementation сохраняет редкий HTTP fallback poll, поэтому недоступный WebSocket ухудшает latency, но не correctness.
 
-Push subscription принадлежит device/install, не User целиком. VAPID private key — production secret. Payload содержит только opaque routing hint (`event_id`, `conversation_id`, `message_id`, `sync_required`), никогда plaintext preview. Permanent invalid subscriptions отключаются; push failure не откатывает committed message.
+Push subscription принадлежит device/install, не User целиком. Provider явно равен
+`web`, `apns` или `fcm`; один exact device имеет один текущий destination. VAPID,
+APNs signing key и FCM service-account key — production secrets. Payload содержит
+только opaque routing hint (`event_id`, `conversation_id`, `message_id`/`call_id`,
+`sync_required`), никогда plaintext preview. Permanent invalid subscriptions
+отключаются; push failure не откатывает committed message.
 
 Foreground/background policy и stable event IDs предотвращают двойные notifications/unread increments.
 
-`WP-061` реализует этот boundary через `push_subscriptions`: строка принадлежит exact
+`WP-061`/`WP-117` реализуют этот boundary через `push_subscriptions`: строка принадлежит exact
 `device_id + user_id`, удаляется каскадно при revoke/logout и никогда не возвращает
-endpoint или browser keys в status API. Current-device API предоставляет public VAPID
+endpoint, native token или browser keys в status API. Current-device API предоставляет public VAPID
 configuration и authenticated `GET/PUT/DELETE /api/v1/push/subscription`; state-changing
-operations сохраняют обычные cookie/CSRF проверки. Infrastructure `WebPushNotifier`
-получает только typed delivery configuration из composition root, ограничивает четыре
-одновременных blocking provider calls через thread adapter и удаляет subscription только
-после permanent HTTP `404/410`.
+operations сохраняют обычные cookie/CSRF проверки. Provider-aware migration переводит
+existing rows в `web` без изменения endpoint/keys. Infrastructure notifier получает
+только typed delivery configuration из composition root, ограничивает четыре
+одновременных calls, использует bounded HTTP timeout и удаляет subscription только
+после provider-specific permanent-invalid ответа.
 
 Message use case сначала commit-ит message/sync state, затем best-effort отправляет push
 только другим participant users. Service Worker валидирует versioned opaque payload,

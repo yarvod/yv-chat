@@ -10,7 +10,7 @@ export default defineNuxtPlugin(() => {
       path: '/chat',
       query: {
         conversation: target.conversationId,
-        message: target.messageId,
+        ...(target.messageId ? { message: target.messageId } : {}),
       },
     })
   }

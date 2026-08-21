@@ -9,13 +9,15 @@ from typing import Protocol, Self
 from uuid import UUID
 
 from messenger.application.ports.identity import DeviceRepository
-from messenger.domain.entities import PushSubscription
+from messenger.domain.entities import PushProvider, PushSubscription
 
 
 class PushSubscriptionRepository(Protocol):
     async def get_by_device(self, device_id: UUID) -> PushSubscription | None: ...
 
-    async def get_by_endpoint(self, endpoint: str) -> PushSubscription | None: ...
+    async def get_by_destination(
+        self, provider: PushProvider, destination: str
+    ) -> PushSubscription | None: ...
 
     async def list_for_users(self, user_ids: set[UUID]) -> list[PushSubscription]: ...
 
@@ -80,6 +82,14 @@ class PushDeliveryConfiguration:
     contact: str | None
     ttl_seconds: int
     timeout_seconds: float
+    apns_key_id: str | None = None
+    apns_team_id: str | None = None
+    apns_bundle_id: str | None = None
+    apns_private_key: str | None = None
+    apns_use_sandbox: bool = False
+    fcm_project_id: str | None = None
+    fcm_client_email: str | None = None
+    fcm_private_key: str | None = None
 
     def require_private_key(self) -> str:
         if not self.enabled or self.private_key is None:
@@ -90,3 +100,10 @@ class PushDeliveryConfiguration:
         if not self.enabled or self.contact is None:
             raise RuntimeError("Web Push is disabled")
         return self.contact
+
+    def provider_enabled(self, provider: PushProvider) -> bool:
+        if provider is PushProvider.WEB:
+            return self.enabled
+        if provider is PushProvider.APNS:
+            return self.apns_private_key is not None
+        return self.fcm_private_key is not None

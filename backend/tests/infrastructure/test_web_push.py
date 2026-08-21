@@ -7,6 +7,7 @@ from types import SimpleNamespace, TracebackType
 from typing import Any, cast
 from uuid import UUID, uuid4
 
+import httpx
 import pytest
 from pywebpush import WebPushException  # type: ignore[import-untyped]
 
@@ -15,7 +16,7 @@ from messenger.application.ports.push import (
     PushNotification,
     PushUnitOfWorkFactory,
 )
-from messenger.domain.entities import PushSubscription
+from messenger.domain.entities import PushProvider, PushSubscription
 from messenger.infrastructure.push.web_push import WebPushNotifier
 
 NOW = datetime(2026, 8, 12, 12, 0, tzinfo=UTC)
@@ -74,6 +75,13 @@ def configuration() -> PushDeliveryConfiguration:
         contact="mailto:admin@example.test",
         ttl_seconds=300,
         timeout_seconds=5,
+        apns_key_id="ABCDEFGHIJ",
+        apns_team_id="KLMNOPQRST",
+        apns_bundle_id="ru.yoowee.chat",
+        apns_private_key="unused-in-transport-test",
+        fcm_project_id="yv-chat-test",
+        fcm_client_email="push@example.test",
+        fcm_private_key="unused-in-transport-test",
     )
 
 
@@ -118,6 +126,7 @@ async def test_adapter_sends_only_opaque_routing_payload(
     assert "plaintext" not in serialized
     assert "sender" not in serialized
     assert "ciphertext" not in serialized
+    assert subscription.endpoint is not None
     assert subscription.endpoint not in serialized
     assert repository.deleted == set()
 
@@ -152,3 +161,110 @@ async def test_adapter_deletes_only_permanently_gone_subscription(
 
     assert repository.deleted == {subscription.id}
     assert factory.units[-1].committed is True
+
+
+class RecordingClient:
+    def __init__(self, responses: list[httpx.Response]) -> None:
+        self.responses = responses
+        self.requests: list[dict[str, Any]] = []
+
+    async def post(self, url: str, **kwargs: Any) -> httpx.Response:
+        self.requests.append({"url": url, **kwargs})
+        return self.responses.pop(0)
+
+
+async def test_native_adapters_send_generic_opaque_payloads(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user_id = uuid4()
+    notification = PushNotification(user_id, uuid4(), uuid4(), uuid4())
+    apns = PushSubscription.create_native(
+        user_id=user_id,
+        device_id=uuid4(),
+        provider=PushProvider.APNS,
+        token="a" * 64,
+        now=NOW,
+    )
+    fcm = PushSubscription.create_native(
+        user_id=user_id,
+        device_id=uuid4(),
+        provider=PushProvider.FCM,
+        token="fcm:" + "t" * 64,
+        now=NOW,
+    )
+    notifier = WebPushNotifier(
+        unit_of_work=cast(PushUnitOfWorkFactory, PushFactory(SubscriptionRepository([]))),
+        configuration=configuration(),
+    )
+
+    async def authorization() -> str:
+        return "provider-token"
+
+    monkeypatch.setattr(notifier, "_apns_authorization", authorization)
+    monkeypatch.setattr(notifier, "_fcm_authorization", lambda client: authorization())
+    client = RecordingClient(
+        [
+            httpx.Response(200, request=httpx.Request("POST", "https://api.push.apple.com")),
+            httpx.Response(200, request=httpx.Request("POST", "https://fcm.googleapis.com")),
+        ]
+    )
+
+    assert await notifier._deliver_apns(cast(httpx.AsyncClient, client), apns, notification) is None
+    assert await notifier._deliver_fcm(cast(httpx.AsyncClient, client), fcm, notification) is None
+
+    apns_payload = client.requests[0]["json"]
+    fcm_payload = client.requests[1]["json"]["message"]
+    serialized = json.dumps(
+        [
+            apns_payload,
+            {key: value for key, value in fcm_payload.items() if key != "token"},
+        ]
+    )
+    assert apns_payload["aps"]["alert"] == {
+        "title": "Новое сообщение",
+        "body": "Откройте yv-chat, чтобы прочитать.",
+    }
+    assert fcm_payload["notification"]["title"] == "Новое сообщение"
+    assert fcm_payload["data"]["conversation_id"] == str(notification.conversation_id)
+    assert "sender" not in serialized
+    assert "plaintext" not in serialized
+    assert apns.native_token is not None
+    assert fcm.native_token is not None
+    assert apns.native_token not in serialized
+    assert fcm.native_token not in serialized
+
+
+async def test_native_adapter_marks_only_explicitly_invalid_tokens(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user_id = uuid4()
+    subscription = PushSubscription.create_native(
+        user_id=user_id,
+        device_id=uuid4(),
+        provider=PushProvider.FCM,
+        token="fcm:" + "g" * 64,
+        now=NOW,
+    )
+    notifier = WebPushNotifier(
+        unit_of_work=cast(PushUnitOfWorkFactory, PushFactory(SubscriptionRepository([]))),
+        configuration=configuration(),
+    )
+
+    async def authorization(client: httpx.AsyncClient) -> str:
+        del client
+        return "provider-token"
+
+    monkeypatch.setattr(notifier, "_fcm_authorization", authorization)
+    response = httpx.Response(
+        404,
+        json={"error": {"details": [{"errorCode": "UNREGISTERED"}]}},
+        request=httpx.Request("POST", "https://fcm.googleapis.com"),
+    )
+    client = RecordingClient([response])
+
+    result = await notifier._deliver_fcm(
+        cast(httpx.AsyncClient, client),
+        subscription,
+        PushNotification(user_id, uuid4(), uuid4(), uuid4()),
+    )
+    assert result == subscription.id

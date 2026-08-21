@@ -12,12 +12,15 @@ import type {
 } from '../app/domain/notifications/push'
 
 const SUBSCRIPTION: BrowserPushSubscriptionData = {
+  provider: 'web',
   endpoint: 'https://push.example.test/token',
   p256dh: 'public-key',
   auth: 'auth-secret',
 }
 
 class FakeBrowserPush implements BrowserPush {
+  readonly provider = 'web' as const
+  readonly refreshRegistrationOnInspect = false
   supported = true
   currentPermission: PushPermissionState = 'default'
   subscription: BrowserPushSubscriptionData | null = null
@@ -25,7 +28,7 @@ class FakeBrowserPush implements BrowserPush {
   dismissed = false
 
   isSupported(): boolean { return this.supported }
-  permission(): PushPermissionState { return this.currentPermission }
+  async permission(): Promise<PushPermissionState> { return this.currentPermission }
   async requestPermission(): Promise<PushPermissionState> { return this.currentPermission }
   async currentSubscription(): Promise<BrowserPushSubscriptionData | null> {
     return this.subscription
@@ -43,17 +46,22 @@ class FakeBrowserPush implements BrowserPush {
 
   promptDismissed(): boolean { return this.dismissed }
   dismissPrompt(): void { this.dismissed = true }
+  async start(): Promise<() => Promise<void>> { return async () => undefined }
 }
 
 class FakeRegistration implements PushRegistrationGateway {
-  config: PushConfiguration = { enabled: true, applicationServerKey: 'application-key' }
+  config: PushConfiguration = {
+    enabled: true,
+    applicationServerKey: 'application-key',
+    providers: ['web'],
+  }
   registered = false
   failRegister = false
   registrations: BrowserPushSubscriptionData[] = []
   removals = 0
 
   async configuration(): Promise<PushConfiguration> { return this.config }
-  async isRegistered(): Promise<boolean> { return this.registered }
+  async registeredProvider(): Promise<'web' | null> { return this.registered ? 'web' : null }
   async register(subscription: BrowserPushSubscriptionData): Promise<void> {
     if (this.failRegister) throw new Error('network')
     this.registrations.push(subscription)

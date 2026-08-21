@@ -1,12 +1,15 @@
 """Typed application configuration."""
 
-from base64 import urlsafe_b64decode
+from base64 import b64decode, urlsafe_b64decode
+from binascii import Error as Base64Error
 from datetime import timedelta
 from enum import StrEnum
 from ipaddress import ip_network
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -91,10 +94,30 @@ class AppSettings(BaseSettings):
     vapid_public_key: str | None = None
     vapid_private_key: SecretStr | None = None
     vapid_contact: str | None = None
+    apns_key_id: str | None = Field(default=None, pattern=r"^[A-Z0-9]{10}$")
+    apns_team_id: str | None = Field(default=None, pattern=r"^[A-Z0-9]{10}$")
+    apns_bundle_id: str | None = Field(default=None, min_length=3, max_length=255)
+    apns_private_key_b64: SecretStr | None = None
+    apns_use_sandbox: bool = False
+    fcm_project_id: str | None = Field(default=None, min_length=1, max_length=255)
+    fcm_client_email: str | None = Field(default=None, min_length=3, max_length=320)
+    fcm_private_key_b64: SecretStr | None = None
     push_ttl_seconds: int = Field(default=300, ge=0, le=86_400)
     push_timeout_seconds: float = Field(default=5.0, gt=0, le=30)
 
-    @field_validator("vapid_public_key", "vapid_private_key", "vapid_contact", mode="before")
+    @field_validator(
+        "vapid_public_key",
+        "vapid_private_key",
+        "vapid_contact",
+        "apns_key_id",
+        "apns_team_id",
+        "apns_bundle_id",
+        "apns_private_key_b64",
+        "fcm_project_id",
+        "fcm_client_email",
+        "fcm_private_key_b64",
+        mode="before",
+    )
     @classmethod
     def normalize_optional_vapid_value(cls, value: object) -> object:
         return None if value == "" else value
@@ -206,6 +229,37 @@ class AppSettings(BaseSettings):
             contact = self.vapid_contact or ""
             if not (contact.startswith("mailto:") or contact.startswith("https://")):
                 raise ValueError("VAPID contact must use mailto: or https://")
+        apns_values = (
+            self.apns_key_id,
+            self.apns_team_id,
+            self.apns_bundle_id,
+            self.apns_private_key_b64,
+        )
+        if any(value is not None for value in apns_values) and not all(
+            value is not None for value in apns_values
+        ):
+            raise ValueError(
+                "APNs key ID, team ID, bundle ID and private key are required together"
+            )
+        if self.apns_private_key_b64 is not None:
+            key = self._decode_secret(self.apns_private_key_b64, "APNs private key")
+            loaded = self._load_private_key(key, "APNs private key")
+            if not isinstance(loaded, ec.EllipticCurvePrivateKey) or not isinstance(
+                loaded.curve, ec.SECP256R1
+            ):
+                raise ValueError("APNs private key must be a P-256 private key")
+        fcm_values = (self.fcm_project_id, self.fcm_client_email, self.fcm_private_key_b64)
+        if any(value is not None for value in fcm_values) and not all(
+            value is not None for value in fcm_values
+        ):
+            raise ValueError("FCM project ID, client email and private key are required together")
+        if self.fcm_client_email is not None and "@" not in self.fcm_client_email:
+            raise ValueError("FCM client email is invalid")
+        if self.fcm_private_key_b64 is not None:
+            key = self._decode_secret(self.fcm_private_key_b64, "FCM private key")
+            loaded = self._load_private_key(key, "FCM private key")
+            if not isinstance(loaded, rsa.RSAPrivateKey):
+                raise ValueError("FCM private key must be an RSA private key")
         if bool(self.call_turn_urls) != (self.call_turn_shared_secret is not None):
             raise ValueError("TURN URLs and shared secret must be configured together")
         return self
@@ -213,6 +267,40 @@ class AppSettings(BaseSettings):
     @property
     def push_enabled(self) -> bool:
         return self.vapid_public_key is not None
+
+    @property
+    def apns_enabled(self) -> bool:
+        return self.apns_private_key_b64 is not None
+
+    @property
+    def fcm_enabled(self) -> bool:
+        return self.fcm_private_key_b64 is not None
+
+    @staticmethod
+    def _decode_secret(setting: SecretStr, name: str) -> str:
+        try:
+            return b64decode(setting.get_secret_value(), validate=True).decode("utf-8")
+        except (Base64Error, UnicodeDecodeError) as error:
+            raise ValueError(f"{name} must use base64-encoded UTF-8") from error
+
+    @staticmethod
+    def _load_private_key(value: str, name: str) -> object:
+        try:
+            return serialization.load_pem_private_key(value.encode("utf-8"), password=None)
+        except (TypeError, ValueError) as error:
+            raise ValueError(f"{name} must contain a valid unencrypted PKCS8 PEM") from error
+
+    @property
+    def apns_private_key_value(self) -> str:
+        if self.apns_private_key_b64 is None:
+            raise RuntimeError("APNs is disabled")
+        return self._decode_secret(self.apns_private_key_b64, "APNs private key")
+
+    @property
+    def fcm_private_key_value(self) -> str:
+        if self.fcm_private_key_b64 is None:
+            raise RuntimeError("FCM is disabled")
+        return self._decode_secret(self.fcm_private_key_b64, "FCM private key")
 
     @property
     def vapid_private_key_value(self) -> str:

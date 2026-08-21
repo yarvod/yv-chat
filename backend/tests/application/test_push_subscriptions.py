@@ -25,7 +25,7 @@ from messenger.application.push.manage_subscription import (
     RemovePushSubscription,
     RemovePushSubscriptionCommand,
 )
-from messenger.domain.entities import Device, PushSubscription
+from messenger.domain.entities import Device, PushProvider, PushSubscription
 from tests.application.fakes import FixedClock
 
 NOW = datetime(2026, 8, 12, 12, 0, tzinfo=UTC)
@@ -83,9 +83,15 @@ class FakeSubscriptions:
             None,
         )
 
-    async def get_by_endpoint(self, endpoint: str) -> PushSubscription | None:
+    async def get_by_destination(
+        self, provider: PushProvider, destination: str
+    ) -> PushSubscription | None:
         return next(
-            (item for item in self._state.subscriptions.values() if item.endpoint == endpoint),
+            (
+                item
+                for item in self._state.subscriptions.values()
+                if item.provider is provider and item.destination == destination
+            ),
             None,
         )
 
@@ -242,3 +248,40 @@ async def test_registration_rejects_foreign_revoked_and_reused_endpoint() -> Non
     )
     assert len(state.subscriptions) == 1
     assert next(iter(state.subscriptions.values())).device_id == alice.id
+
+
+async def test_native_registration_rotates_provider_token_on_the_same_device() -> None:
+    user_id = uuid4()
+    device = Device.create(user_id=user_id, name="Phone", now=NOW)
+    state = PushState(devices={device.id: device})
+    factory = FakePushUnitOfWorkFactory(state)
+
+    await RegisterPushSubscription(unit_of_work=factory, clock=FixedClock(NOW)).execute(
+        RegisterPushSubscriptionCommand(
+            user_id=user_id,
+            device_id=device.id,
+            provider=PushProvider.APNS,
+            token="a" * 64,
+        )
+    )
+    first = next(iter(state.subscriptions.values()))
+    status = await GetCurrentPushSubscription(unit_of_work=factory).execute(
+        CurrentPushSubscriptionQuery(user_id, device.id)
+    )
+    assert status.provider is PushProvider.APNS
+
+    await RegisterPushSubscription(
+        unit_of_work=factory,
+        clock=FixedClock(NOW + timedelta(minutes=1)),
+    ).execute(
+        RegisterPushSubscriptionCommand(
+            user_id=user_id,
+            device_id=device.id,
+            provider=PushProvider.FCM,
+            token="fcm:" + "n" * 64,
+        )
+    )
+    refreshed = next(iter(state.subscriptions.values()))
+    assert refreshed.id == first.id
+    assert refreshed.provider is PushProvider.FCM
+    assert refreshed.endpoint is None

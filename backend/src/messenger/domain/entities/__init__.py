@@ -35,7 +35,7 @@ from messenger.domain.entities.message_reaction import (
     MessageReaction,
 )
 from messenger.domain.entities.password_reset_token import PasswordResetToken
-from messenger.domain.entities.push_subscription import PushSubscription
+from messenger.domain.entities.push_subscription import PushProvider, PushSubscription
 from messenger.domain.entities.registration_invitation import RegistrationInvitation
 from messenger.domain.entities.security_event import SecurityEvent, SecurityEventType
 from messenger.domain.entities.session import Session
@@ -63,6 +63,7 @@ __all__ = [
     "ALLOWED_MESSAGE_REACTIONS",
     "PasswordResetToken",
     "PushSubscription",
+    "PushProvider",
     "RegistrationInvitation",
     "Device",
     "DevicePairing",

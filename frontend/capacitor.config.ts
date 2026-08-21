@@ -12,6 +12,8 @@ const config: CapacitorConfig = {
     CapacitorCookies: { enabled: true },
     CapacitorHttp: { enabled: true },
     Keyboard: { resize: 'native', resizeOnFullScreen: true },
+    // Foreground delivery is rendered by the active app/WebSocket just like the PWA.
+    PushNotifications: { presentationOptions: [] },
     StatusBar: { overlaysWebView: true },
   },
   ios: {

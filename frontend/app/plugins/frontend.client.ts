@@ -71,6 +71,7 @@ import { BrowserDevicePairingSecretStore } from '../infrastructure/browser/devic
 import { parseTrustedDevicePairingOrigins } from '../infrastructure/browser/device-pairing-origins'
 import { BrowserHaptics } from '../infrastructure/browser/haptics'
 import { CapacitorHaptics } from '../infrastructure/capacitor/capacitor-haptics'
+import { CapacitorPushAdapter } from '../infrastructure/capacitor/capacitor-push'
 import { capacitorCsrfToken } from '../infrastructure/capacitor/capacitor-csrf'
 import { BrowserLocation } from '../infrastructure/browser/browser-location'
 import { BrowserNetworkStatus } from '../infrastructure/browser/browser-network-status'
@@ -110,7 +111,7 @@ import { HttpCallConfigGateway } from '../infrastructure/http/call-config-gatewa
 import { BrowserVoiceCallService } from '../infrastructure/webrtc/browser-voice-call-service'
 import type { VoiceCallHistoryRecorder } from '../infrastructure/webrtc/browser-voice-call-service'
 
-export default defineNuxtPlugin(() => {
+export default defineNuxtPlugin(nuxtApp => {
   const runtimeConfig = useRuntimeConfig()
   const apiOrigin = runtimeConfig.public.apiOrigin
   const native = Capacitor.isNativePlatform()
@@ -153,6 +154,21 @@ export default defineNuxtPlugin(() => {
   const networkStatus = new BrowserNetworkStatus()
   const serverHealthGateway = new HttpServerHealthGateway(apiClient)
   const pushRegistrationGateway = new HttpPushRegistrationGateway(apiClient)
+  const pushAdapter = native
+    ? new CapacitorPushAdapter(Capacitor.getPlatform() === 'ios' ? 'apns' : 'fcm')
+    : new BrowserPushAdapter()
+  const stopPush = pushAdapter.start(target => {
+    void navigateTo({
+      path: '/chat',
+      query: {
+        conversation: target.conversationId,
+        ...(target.messageId ? { message: target.messageId } : {}),
+      },
+    })
+  }).catch(() => async () => undefined)
+  nuxtApp.vueApp.onUnmount(() => {
+    void stopPush.then(stop => stop())
+  })
   const callConfigGateway = new HttpCallConfigGateway(apiClient)
   const themePreference = themePreferences.load()
   const messageArchive = new IndexedDbMessageArchive()
@@ -340,7 +356,7 @@ export default defineNuxtPlugin(() => {
           scheduler,
         ),
         pushNotifications: new PushNotificationManager(
-          new BrowserPushAdapter(),
+          pushAdapter,
           pushRegistrationGateway,
         ),
         videoNoteRecorder: new BrowserVideoNoteRecorder(),

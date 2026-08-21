@@ -147,6 +147,14 @@ provider timeout. Compose requires all three identity values before API rollout.
 print or copy the private value; rotating it invalidates existing browser subscriptions,
 so rotation requires users to enable notifications again on each device.
 
+Native push включается независимо для каждого provider. APNs требует server-only key
+ID, team ID, bundle ID и base64 полного `.p8` PEM; FCM требует project ID,
+service-account email и base64 private-key PEM. Эти значения добавляются в mode-0600
+`.env` вручную и никогда не генерируются/печатаются deploy workflow. Неполный комплект
+fail-fast отклоняется settings validation; пустой комплект оставляет provider disabled,
+не влияя на Web Push. Полный setup и physical rollout gate описаны в
+[native.md](native.md).
+
 Relevant non-secret ingress values are:
 
 ```text

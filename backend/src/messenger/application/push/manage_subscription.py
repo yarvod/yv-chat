@@ -1,4 +1,4 @@
-"""Register, inspect and remove the current device Web Push subscription."""
+"""Register, inspect and remove the current device push destination."""
 
 from dataclasses import dataclass
 from uuid import UUID
@@ -9,7 +9,8 @@ from messenger.application.errors import (
 )
 from messenger.application.ports.clock import Clock
 from messenger.application.ports.push import PushUnitOfWork, PushUnitOfWorkFactory
-from messenger.domain.entities import PushSubscription
+from messenger.domain.entities import PushProvider, PushSubscription
+from messenger.domain.exceptions import DomainValidationError
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,15 +22,25 @@ class CurrentPushSubscriptionQuery:
 @dataclass(frozen=True, slots=True)
 class CurrentPushSubscriptionResult:
     registered: bool
+    provider: PushProvider | None
 
 
 @dataclass(frozen=True, slots=True)
 class RegisterPushSubscriptionCommand:
     user_id: UUID
     device_id: UUID
-    endpoint: str
-    p256dh: str
-    auth: str
+    provider: PushProvider = PushProvider.WEB
+    endpoint: str | None = None
+    p256dh: str | None = None
+    auth: str | None = None
+    token: str | None = None
+
+    @property
+    def destination(self) -> str:
+        destination = self.endpoint if self.provider is PushProvider.WEB else self.token
+        if destination is None:
+            raise DomainValidationError("push destination is incomplete")
+        return destination
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,7 +72,10 @@ class GetCurrentPushSubscription:
                 device_id=query.device_id,
             )
             subscription = await unit_of_work.subscriptions.get_by_device(query.device_id)
-        return CurrentPushSubscriptionResult(registered=subscription is not None)
+        return CurrentPushSubscriptionResult(
+            registered=subscription is not None,
+            provider=subscription.provider if subscription is not None else None,
+        )
 
 
 class RegisterPushSubscription:
@@ -77,30 +91,55 @@ class RegisterPushSubscription:
                 user_id=command.user_id,
                 device_id=command.device_id,
             )
-            endpoint_owner = await unit_of_work.subscriptions.get_by_endpoint(command.endpoint)
-            if endpoint_owner is not None and endpoint_owner.device_id != command.device_id:
-                owner_device = await unit_of_work.devices.get_by_id(endpoint_owner.device_id)
-                if owner_device is not None and owner_device.revoked_at is None:
-                    raise PushSubscriptionConflictError("push endpoint belongs to another device")
-                await unit_of_work.subscriptions.delete_by_ids({endpoint_owner.id})
-            current = await unit_of_work.subscriptions.get_by_device(command.device_id)
-            subscription = (
-                PushSubscription.create(
-                    user_id=command.user_id,
-                    device_id=command.device_id,
-                    endpoint=command.endpoint,
-                    p256dh=command.p256dh,
-                    auth=command.auth,
-                    now=now,
-                )
-                if current is None
-                else current.refresh(
-                    endpoint=command.endpoint,
-                    p256dh=command.p256dh,
-                    auth=command.auth,
-                    now=now,
-                )
+            destination_owner = await unit_of_work.subscriptions.get_by_destination(
+                command.provider, command.destination
             )
+            if destination_owner is not None and destination_owner.device_id != command.device_id:
+                owner_device = await unit_of_work.devices.get_by_id(destination_owner.device_id)
+                if owner_device is not None and owner_device.revoked_at is None:
+                    raise PushSubscriptionConflictError(
+                        "push destination belongs to another device"
+                    )
+                await unit_of_work.subscriptions.delete_by_ids({destination_owner.id})
+            current = await unit_of_work.subscriptions.get_by_device(command.device_id)
+            if command.provider is PushProvider.WEB:
+                if command.endpoint is None or command.p256dh is None or command.auth is None:
+                    raise DomainValidationError("web push material is incomplete")
+                subscription = (
+                    PushSubscription.create_web(
+                        user_id=command.user_id,
+                        device_id=command.device_id,
+                        endpoint=command.endpoint,
+                        p256dh=command.p256dh,
+                        auth=command.auth,
+                        now=now,
+                    )
+                    if current is None
+                    else current.refresh_web(
+                        endpoint=command.endpoint,
+                        p256dh=command.p256dh,
+                        auth=command.auth,
+                        now=now,
+                    )
+                )
+            else:
+                if command.token is None:
+                    raise DomainValidationError("native push token is incomplete")
+                subscription = (
+                    PushSubscription.create_native(
+                        user_id=command.user_id,
+                        device_id=command.device_id,
+                        provider=command.provider,
+                        token=command.token,
+                        now=now,
+                    )
+                    if current is None
+                    else current.refresh_native(
+                        provider=command.provider,
+                        token=command.token,
+                        now=now,
+                    )
+                )
             await unit_of_work.subscriptions.upsert(subscription)
             await unit_of_work.commit()
 

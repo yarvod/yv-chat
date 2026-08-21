@@ -6,7 +6,7 @@ from uuid import uuid4
 
 import pytest
 
-from messenger.domain.entities import PushSubscription
+from messenger.domain.entities import PushProvider, PushSubscription
 from messenger.domain.exceptions import DomainValidationError
 
 NOW = datetime(2026, 8, 12, 12, 0, tzinfo=UTC)
@@ -58,5 +58,44 @@ def test_subscription_rejects_untrusted_or_malformed_material(
             endpoint=endpoint,
             p256dh=p256dh,
             auth=auth,
+            now=NOW,
+        )
+
+
+def test_native_subscription_accepts_provider_specific_tokens() -> None:
+    apns = PushSubscription.create_native(
+        user_id=uuid4(),
+        device_id=uuid4(),
+        provider=PushProvider.APNS,
+        token="a" * 64,
+        now=NOW,
+    )
+    refreshed = apns.refresh_native(
+        provider=PushProvider.FCM,
+        token="fcm:" + "t" * 64,
+        now=NOW + timedelta(minutes=1),
+    )
+
+    assert apns.destination == "a" * 64
+    assert refreshed.provider is PushProvider.FCM
+    assert refreshed.endpoint is None
+    assert refreshed.destination == "fcm:" + "t" * 64
+
+
+@pytest.mark.parametrize(
+    ("provider", "token"),
+    [
+        (PushProvider.APNS, "not-hex"),
+        (PushProvider.FCM, "short"),
+        (PushProvider.FCM, "x" * 32 + " token"),
+    ],
+)
+def test_native_subscription_rejects_malformed_tokens(provider: PushProvider, token: str) -> None:
+    with pytest.raises(DomainValidationError):
+        PushSubscription.create_native(
+            user_id=uuid4(),
+            device_id=uuid4(),
+            provider=provider,
+            token=token,
             now=NOW,
         )

@@ -66,9 +66,35 @@ Domain и принадлежат реальному API host; JS не получ
   actions; capture не запускается автоматически;
 - Android application backup и cleartext traffic отключены.
 
-APNs/FCM delivery, CallKit и Android Telecom не считаются реализованными самим
-наличием shell. Они требуют отдельных provider credentials, server dispatcher,
-permission/failure tests и physical-device acceptance.
+Native notification adapter получает свежий APNs/FCM token у OS при каждом launch/
+inspection и не кэширует его в localStorage. Backend хранит provider token только у
+exact authenticated `device_id`; status API token не возвращает. Notification tap
+принимает только versioned UUID routing hints и запускает обычный authenticated sync.
+Lock-screen текст всегда generic и не содержит sender/message/attachment/SDP.
+
+### Provider setup
+
+Для iOS включается Push Notifications capability для App ID `ru.yoowee.chat` и
+подходящий provisioning profile. Committed `App.entitlements` содержит development
+environment; distribution signing/profile должен сформировать production entitlement.
+На backend одним комплектом задаются `APNS_KEY_ID`, `APNS_TEAM_ID`,
+`APNS_BUNDLE_ID`, base64 полного `.p8` PKCS8 PEM в `APNS_PRIVATE_KEY_B64` и только
+для sandbox build — `APNS_USE_SANDBOX=true`.
+
+Для Android файл конкретного Firebase project помещается локально в
+`frontend/android/app/google-services.json`; он игнорируется Git. Backend получает
+`FCM_PROJECT_ID`, service-account email в `FCM_CLIENT_EMAIL` и base64 полного PKCS8
+PEM в `FCM_PRIVATE_KEY_B64`. APNs/FCM keys остаются server-only secrets; в native
+bundle попадают только platform-generated installation tokens.
+
+APNs использует token-auth HTTP/2, Android — FCM HTTP v1 OAuth2. Оба transport
+имеют bounded timeout, удаляют destination только по explicit permanent-invalid
+ответу provider и не откатывают уже committed message/call event. Browser Web Push
+сохраняет прежние VAPID endpoint/keys и Service Worker без native зависимости.
+
+CallKit/PushKit VoIP и Android Telecom full-screen incoming-call UI ещё не входят в
+этот notification slice: обычный generic incoming-call push уже маршрутизируется,
+но полноценный системный call surface выполняется отдельным workplan.
 
 ## Local platform prerequisites
 
@@ -88,3 +114,9 @@ npm run cap:open:ios
 reconnect, IndexedDB reload, MLS send/decrypt, OPFS fallback, upload/download,
 logout, app update preserving data, clear-data recovery, keyboard/safe areas,
 haptics, camera/microphone permission denial и call cleanup.
+
+Для native push дополнительно обязательны реальные sandbox/production device tests:
+permission allow/deny, token rotation/reinstall, foreground/background/terminated
+delivery, tap routing, revoked session, invalid-token cleanup и отсутствие plaintext
+в APNs/FCM provider console. Без provider credentials и physical devices эти пункты
+не считаются подтверждёнными локальными mocks.

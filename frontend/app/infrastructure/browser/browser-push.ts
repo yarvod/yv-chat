@@ -1,4 +1,4 @@
-import type { BrowserPush } from '../../application/ports/browser-push'
+import type { PushNotificationAdapter } from '../../application/ports/browser-push'
 import type {
   BrowserPushSubscriptionData,
   PushPermissionState,
@@ -29,13 +29,17 @@ function serialize(subscription: PushSubscription): BrowserPushSubscriptionData 
   const auth = subscription.getKey('auth')
   if (!p256dh || !auth) throw new Error('push subscription keys are unavailable')
   return {
+    provider: 'web',
     endpoint: subscription.endpoint,
     p256dh: base64Url(new Uint8Array(p256dh)),
     auth: base64Url(new Uint8Array(auth)),
   }
 }
 
-export class BrowserPushAdapter implements BrowserPush {
+export class BrowserPushAdapter implements PushNotificationAdapter {
+  readonly provider = 'web' as const
+  readonly refreshRegistrationOnInspect = false
+
   isSupported(): boolean {
     return typeof window !== 'undefined'
       && 'Notification' in window
@@ -43,7 +47,7 @@ export class BrowserPushAdapter implements BrowserPush {
       && 'PushManager' in window
   }
 
-  permission(): PushPermissionState {
+  async permission(): Promise<PushPermissionState> {
     return this.isSupported() ? Notification.permission : 'default'
   }
 
@@ -59,8 +63,9 @@ export class BrowserPushAdapter implements BrowserPush {
     return subscription ? serialize(subscription) : null
   }
 
-  async subscribe(applicationServerKey: string): Promise<BrowserPushSubscriptionData> {
+  async subscribe(applicationServerKey: string | null): Promise<BrowserPushSubscriptionData> {
     if (!this.isSupported()) throw new Error('Web Push is unsupported')
+    if (!applicationServerKey) throw new Error('VAPID public key is unavailable')
     const registration = await navigator.serviceWorker.ready
     const subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
@@ -82,5 +87,9 @@ export class BrowserPushAdapter implements BrowserPush {
 
   dismissPrompt(): void {
     localStorage.setItem('yv-push-prompt-dismissed-v1', '1')
+  }
+
+  async start(): Promise<() => Promise<void>> {
+    return async () => undefined
   }
 }

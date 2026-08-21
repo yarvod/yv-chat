@@ -51,5 +51,6 @@ describe('conversation route state', () => {
     expect(nativeNavigationTarget(`https://chat/${conversationId}?message=${messageId}`))
       .toBeNull()
     expect(nativeNavigationTarget(`yvchat://chat/${conversationId}?message=bad`)).toBeNull()
+    expect(nativeNavigationTarget(`yvchat://chat/${conversationId}`)).toEqual({ conversationId })
   })
 })

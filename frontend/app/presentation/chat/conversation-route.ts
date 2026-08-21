@@ -1,3 +1,5 @@
+import type { PushNavigationTarget } from '../../domain/notifications/push'
+
 export function selectedConversationId(queryValue: unknown): string | null {
   return typeof queryValue === 'string' && queryValue.length > 0 ? queryValue : null
 }
@@ -8,10 +10,7 @@ export function selectedMessageId(queryValue: unknown): string | null {
 
 const notificationUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
 
-export interface NotificationNavigationTarget {
-  conversationId: string
-  messageId: string
-}
+export type NotificationNavigationTarget = PushNavigationTarget
 
 export function nativeNavigationTarget(value: string): NotificationNavigationTarget | null {
   let url: URL
@@ -27,11 +26,10 @@ export function nativeNavigationTarget(value: string): NotificationNavigationTar
     url.protocol !== 'yvchat:'
     || path.length !== 1
     || !conversationId
-    || !messageId
     || !notificationUuid.test(conversationId)
-    || !notificationUuid.test(messageId)
+    || (messageId !== null && !notificationUuid.test(messageId))
   ) return null
-  return { conversationId, messageId }
+  return { conversationId, ...(messageId ? { messageId } : {}) }
 }
 
 export function notificationNavigationTarget(value: unknown): NotificationNavigationTarget | null {
@@ -40,12 +38,12 @@ export function notificationNavigationTarget(value: unknown): NotificationNaviga
   if (
     candidate.type !== 'yv-notification-navigation'
     || typeof candidate.conversationId !== 'string'
-    || typeof candidate.messageId !== 'string'
     || !notificationUuid.test(candidate.conversationId)
-    || !notificationUuid.test(candidate.messageId)
+    || (candidate.messageId !== undefined
+      && (typeof candidate.messageId !== 'string' || !notificationUuid.test(candidate.messageId)))
   ) return null
   return {
     conversationId: candidate.conversationId,
-    messageId: candidate.messageId,
+    ...(typeof candidate.messageId === 'string' ? { messageId: candidate.messageId } : {}),
   }
 }

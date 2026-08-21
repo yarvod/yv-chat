@@ -78,10 +78,12 @@ identity и MLS keys не удаляются. `http/https` ссылки в те�
 лимит. Полностью отключать admission/quota нельзя: deployment рассчитан на небольшой
 диск; значения меняются через `MEDIA_*` environment settings в допустимых пределах.
 
-Web Push включается отдельно на каждом устройстве после явного действия пользователя.
-Системное уведомление содержит только generic wake-up text, а push payload — opaque
-event/conversation/message IDs; имя отправителя и текст сообщения push provider-у не
-передаются. На iPhone/iPad уведомления доступны только установленной Home Screen PWA.
+Push включается отдельно на каждом устройстве после явного действия пользователя:
+Web/PWA сохраняют VAPID + Service Worker, Capacitor iOS/Android используют отдельные
+APNs/FCM device tokens. Системное уведомление содержит только generic wake-up text, а
+payload — opaque event/conversation/message-or-call IDs; имя отправителя и текст
+сообщения push provider-у не передаются. В Safari уведомления доступны установленной
+Home Screen PWA; native setup и rollout gate описаны в `docs/native.md`.
 
 Runtime v7 восстанавливает утраченный conversation control-checkpoint по exact
 совпадению public local MLS epoch/roster с server generation без logout/login.

@@ -1,68 +1,72 @@
 # Текущий workplan
 
-## WP-116 — Capacitor native shell and capability boundary
+## WP-117 — Native APNs/FCM notifications
 
-Статус: **completed locally; physical platform acceptance pending**
+Статус: **completed locally; physical provider acceptance pending**
 Backlog: `BL-079`
 
-Цель: добавить воспроизводимые iOS/Android проекты поверх того же Nuxt UI и
-подключить первые нативные capabilities, не меняя web/PWA runtime.
+Цель: подключить нативные push-уведомления для Capacitor iOS/Android как отдельные
+device-bound transports, сохранив существующий Web Push и неизменный web/PWA runtime.
 
 ### Scope
 
-- Capacitor 8 config и committed iOS/Android shell projects;
-- отдельный native build/sync workflow, использующий локальный Nuxt bundle, а не
-  production `server.url`;
-- configurable remote API/realtime origin только для native bundle; web/PWA по
-  умолчанию сохраняют относительный same-origin transport;
-- exact native WebView origins в CORS/Origin/CSRF boundary без wildcard;
-- native cookie/HTTP bridge для существующей opaque `HttpOnly` session и публичного
-  double-submit CSRF cookie без JavaScript bearer tokens;
-- native system bars, keyboard behavior, app foreground/deep-link lifecycle и
-  semantic Capacitor haptics;
-- capability-aware Settings copy и platform regression tests;
-- documentation/runbook для prerequisites, generated secrets exclusion и build.
+- явный provider-aware subscription contract: `web`, `apns`, `fcm`;
+- additive Alembic migration существующих Web Push строк без потери endpoint/keys;
+- Capacitor adapter для permission, token registration/rotation, unregister и
+  безопасной навигации по opaque routing hints;
+- APNs HTTP/2 token-auth и FCM HTTP v1 provider adapters с bounded timeout;
+- generic lock-screen copy без имени отправителя, plaintext сообщения, SDP или key
+  material;
+- удаление permanently invalid provider tokens и отсутствие rollback уже
+  committed message/call event;
+- platform capability/config runbook без committed signing/provider secrets;
+- regression tests для web compatibility, native token lifecycle, API validation,
+  persistence и provider payloads.
 
 ### Security и architecture invariants
 
-- native wrapper использует тот же revocable device-bound opaque session; bearer
-  credential не попадает в localStorage, IndexedDB, URL или WebSocket query;
-- API и WebSocket принимают только explicit configured origins, wildcard запрещён;
-- `server.url` не используется в production native build;
-- direct message/call E2EE, media path и server cursor semantics не меняются;
-- Capacitor APIs находятся за ports/adapters; Vue components не вызывают native SDK;
-- web/PWA adapters и service-worker Web Push продолжают работать без Capacitor.
+- push token принадлежит exact authenticated device/session; guessed device/user id
+  клиент не передаёт;
+- `HttpOnly` session cookie и double-submit CSRF остаются единственной HTTP auth
+  границей; push token не становится bearer credential;
+- payload содержит только version/event/conversation/message-or-call IDs и
+  `sync_required`; приложение после открытия выполняет обычный authenticated sync;
+- APNs/FCM credentials читаются только как backend secrets и не входят в frontend
+  bundle, image или repository;
+- native token не кэшируется в localStorage; актуальный token запрашивается у OS на
+  launch/inspection и идемпотентно upsert-ится;
+- браузерный Service Worker, VAPID subscription и web UI не зависят от Capacitor.
 
 ### Exclusions
 
-- APNs/FCM server delivery и native incoming-call system surfaces — отдельные
-  последующие workplans, потому что требуют provider credentials, persistence и
-  CallKit/Android Telecom threat/permission review;
-- store signing, provisioning profiles, App Store/Play Console publication;
-- перенос crypto keys между browser PWA и native installation;
-- изменение WebRTC signaling/media protocol.
+- CallKit/PushKit VoIP pushes и Android Telecom full-screen incoming-call UI;
+- store signing/provisioning и создание Apple/Firebase projects/credentials;
+- plaintext notification previews;
+- изменение WebRTC signaling/media или MLS protocol.
 
 ### Definition of Done
 
-- web/PWA checks остаются зелёными с пустым native API origin;
-- Capacitor config не содержит remote `server.url`, secrets или wildcard navigation;
-- Android/iOS shells синхронизируются из production Nuxt bundle;
-- semantic haptics используют native engine только в Capacitor и browser fallback в web;
-- exact origin, API URL и realtime URL regressions покрыты tests;
-- platform builds запущены там, где local SDK доступен, а отсутствующие SDK явно
-  отмечены, не выдаются за проверенные.
+- pre-existing `push_subscriptions` мигрируют в provider `web` без изменения
+  endpoint/key material;
+- API принимает только provider-specific valid shapes и не раскрывает tokens;
+- native adapter регистрирует текущий APNs/FCM token после permission и обрабатывает
+  validated notification taps; web adapter остаётся прежним;
+- server отправляет privacy-safe APNs/FCM/Web Push payload и удаляет только явно
+  permanently invalid destinations;
+- frontend/backend checks и fresh migration head зелёные; physical delivery явно
+  остаётся rollout gate до появления real provider credentials/devices.
 
 ### Проверка
 
-- Capacitor CLI sync успешно создал/обновил оба platform project и нашёл пять
-  official plugins;
-- native static generate с exact HTTPS API origin проходит, Service Worker в нём
-  отсутствует; обычный web production build по-прежнему генерирует PWA SW;
-- frontend: `369 passed`, ESLint, Nuxt typecheck и production web build зелёные;
-- backend: Ruff check/format, mypy и `283 passed, 12 skipped` зелёные;
-- npm audit после pin Capacitor CLI `8.4.2`: `0 vulnerabilities`;
-- Android compile не запускался: Android SDK/`ANDROID_HOME` отсутствуют;
-- iOS compile не запускался: установлен только Xcode Command Line Tools, полный
-  Xcode недоступен;
-- cookie/IndexedDB/OPFS/WebSocket physical acceptance остаётся обязательным rollout
-  gate и не считается подтверждённым статическими tests.
+- frontend: `372 passed`, ESLint, Nuxt typecheck, production web/PWA build зелёные;
+- native static generate и Capacitor sync для iOS/Android зелёные, Service Worker
+  остаётся только в web build;
+- backend: Ruff check/format, strict mypy и `292 passed, 12 skipped` зелёные;
+- fresh PostgreSQL успешно прошёл `alembic upgrade head` до `0029_native_push`;
+- отдельный PostgreSQL upgrade `0028 -> 0029` сохранил существующие endpoint/p256dh/
+  auth byte-for-byte и добавил `provider=web`, `native_token=NULL`;
+- dev/production Compose config зелёный, provider secrets остаются optional atomic
+  groups и не попали в repository;
+- physical APNs/FCM delivery не запускался: в workspace нет Apple/Firebase provider
+  credentials, provisioning и physical devices. Это обязательный rollout gate, а
+  не подтверждённый результат mocks.

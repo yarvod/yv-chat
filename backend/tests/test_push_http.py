@@ -32,6 +32,7 @@ async def test_push_config_exposes_only_public_application_server_key() -> None:
     assert response.json() == {
         "enabled": True,
         "application_server_key": PUBLIC_KEY,
+        "providers": ["web"],
     }
     assert PRIVATE_KEY not in response.text
     await application.state.dishka_container.close()

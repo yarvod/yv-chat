@@ -1,15 +1,22 @@
 import type {
-  BrowserPushSubscriptionData,
+  PushNavigationTarget,
   PushPermissionState,
+  PushProvider,
+  PushSubscriptionData,
 } from '../../domain/notifications/push'
 
-export interface BrowserPush {
+export interface PushNotificationAdapter {
+  readonly provider: PushProvider
+  readonly refreshRegistrationOnInspect: boolean
   isSupported(): boolean
-  permission(): PushPermissionState
+  permission(): Promise<PushPermissionState>
   requestPermission(): Promise<PushPermissionState>
-  currentSubscription(): Promise<BrowserPushSubscriptionData | null>
-  subscribe(applicationServerKey: string): Promise<BrowserPushSubscriptionData>
+  currentSubscription(): Promise<PushSubscriptionData | null>
+  subscribe(applicationServerKey: string | null): Promise<PushSubscriptionData>
   unsubscribe(): Promise<void>
   promptDismissed(): boolean
   dismissPrompt(): void
+  start(onNavigate: (target: PushNavigationTarget) => void): Promise<() => Promise<void>>
 }
+
+export type BrowserPush = PushNotificationAdapter

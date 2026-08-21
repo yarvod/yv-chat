@@ -11,7 +11,10 @@ export default defineNuxtPlugin(nuxtApp => {
     if (!target) return
     void navigateTo({
       path: '/chat',
-      query: { conversation: target.conversationId, message: target.messageId },
+      query: {
+        conversation: target.conversationId,
+        ...(target.messageId ? { message: target.messageId } : {}),
+      },
     })
   }
 

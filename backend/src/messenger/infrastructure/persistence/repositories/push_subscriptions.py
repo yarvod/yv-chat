@@ -7,7 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from messenger.application.errors import PushSubscriptionConflictError
-from messenger.domain.entities import PushSubscription
+from messenger.domain.entities import PushProvider, PushSubscription
 from messenger.infrastructure.persistence.models import DeviceModel, PushSubscriptionModel
 
 
@@ -16,9 +16,11 @@ def _map(model: PushSubscriptionModel) -> PushSubscription:
         id=model.id,
         user_id=model.user_id,
         device_id=model.device_id,
+        provider=PushProvider(model.provider),
         endpoint=model.endpoint,
         p256dh=model.p256dh,
         auth=model.auth,
+        native_token=model.native_token,
         created_at=model.created_at,
         updated_at=model.updated_at,
     )
@@ -34,9 +36,19 @@ class SqlAlchemyPushSubscriptionRepository:
         )
         return _map(model) if model is not None else None
 
-    async def get_by_endpoint(self, endpoint: str) -> PushSubscription | None:
+    async def get_by_destination(
+        self, provider: PushProvider, destination: str
+    ) -> PushSubscription | None:
+        destination_column = (
+            PushSubscriptionModel.endpoint
+            if provider is PushProvider.WEB
+            else PushSubscriptionModel.native_token
+        )
         model = await self._session.scalar(
-            select(PushSubscriptionModel).where(PushSubscriptionModel.endpoint == endpoint)
+            select(PushSubscriptionModel).where(
+                PushSubscriptionModel.provider == provider.value,
+                destination_column == destination,
+            )
         )
         return _map(model) if model is not None else None
 
@@ -64,17 +76,21 @@ class SqlAlchemyPushSubscriptionRepository:
                     id=subscription.id,
                     user_id=subscription.user_id,
                     device_id=subscription.device_id,
+                    provider=subscription.provider.value,
                     endpoint=subscription.endpoint,
                     p256dh=subscription.p256dh,
                     auth=subscription.auth,
+                    native_token=subscription.native_token,
                     created_at=subscription.created_at,
                     updated_at=subscription.updated_at,
                 )
             )
         else:
+            model.provider = subscription.provider.value
             model.endpoint = subscription.endpoint
             model.p256dh = subscription.p256dh
             model.auth = subscription.auth
+            model.native_token = subscription.native_token
             model.updated_at = subscription.updated_at
         try:
             await self._session.flush()

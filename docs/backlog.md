@@ -54,16 +54,17 @@ storage или attachment security.
 
 ### BL-079 — Capacitor native clients
 
-Статус: **platform foundation completed locally; native push/call slices pending**
-(`WP-116`).
+Статус: **platform foundation and native push completed locally; call slice pending,
+physical platform/provider acceptance required** (`WP-116`, `WP-117`).
 
 Результат: iOS/Android используют тот же Nuxt UI и application layer через
 Capacitor, но platform APIs остаются адаптерами, а web/PWA не получают native-only
 side effects. Первый slice добавляет reproducible shells, explicit remote API
 transport с opaque cookie session, system UI/keyboard/deep links и native semantic
-haptics. APNs/FCM delivery и CallKit/Android Telecom surfaces выполняются следующими
-focused workplans после provider/permission/security design; существующий browser
-Web Push и WebRTC остаются рабочими на каждом этапе.
+haptics. Второй добавляет provider-aware Web/APNs/FCM subscriptions, native token
+lifecycle и privacy-safe server delivery без изменения browser VAPID. CallKit/
+PushKit VoIP и Android Telecom surfaces выполняются следующим focused workplan;
+существующий browser Web Push и WebRTC остаются рабочими на каждом этапе.
 
 ### BL-041 — Visual system, accessibility и PWA polish
 
