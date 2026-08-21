@@ -641,6 +641,16 @@ sender negotiated remote-offer video transceiver до signed answer, а fullscre
 
 ## Completed
 
+### BL-FIX-055 — Keep-alive chat workspace across application tabs
+
+Статус: **completed locally** (`WP-115`).
+
+Переход Chats → Settings → Chats сохраняет единственный bounded chat route instance
+в RAM, поэтому уже загруженные conversations, timeline state, realtime и call owner
+не пересоздаются и initial spinner не появляется. Reload/logout по-прежнему очищают
+RAM, а encrypted IndexedDB snapshot остаётся recovery path для настоящего restart.
+Frontend `361` tests, lint, typecheck и production build проходят.
+
 ### BL-077 — Telegram-like message interactions
 
 Статус: **completed and production verified** (`WP-092`, `WP-093`, `WP-094`, `WP-095`,

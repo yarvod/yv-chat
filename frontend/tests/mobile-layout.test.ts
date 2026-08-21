@@ -4,6 +4,14 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 describe('mobile application shell', () => {
+  it('keeps the loaded chat workspace alive across app-tab navigation', () => {
+    const page = readFileSync(resolve(process.cwd(), 'app/pages/chat.vue'), 'utf8')
+    const app = readFileSync(resolve(process.cwd(), 'app/app.vue'), 'utf8')
+
+    expect(app).toContain('<NuxtPage />')
+    expect(page).toMatch(/definePageMeta\(\{[^}]*layout: 'app'[^}]*middleware: 'auth'[^}]*keepalive: true/)
+  })
+
   it('positions restored history instantly before revealing the timeline', () => {
     const css = readFileSync(resolve(process.cwd(), 'app/assets/main.css'), 'utf8')
     expect(css).not.toMatch(/\.message-timeline \{[^}]*scroll-behavior:\s*smooth/)

@@ -4,6 +4,20 @@
 
 ## Active
 
+### BUG-103 — Возврат из Settings повторно загружал список чатов
+
+- Статус: `fixed locally in WP-115`.
+- Severity: `medium navigation UX and call continuity`.
+- Reproduction: открыть Chats, дождаться списка, перейти в Settings через app tab и
+  вернуться в Chats. Вместо существующего reactive списка появляется spinner
+  «Загружаем диалоги…», затем новый экземпляр workspace повторяет bootstrap.
+- Root cause: `/chat` route component не находился в keep-alive cache; unmount
+  вызывал `messenger.dispose()`, останавливал realtime/call owner, а следующий mount
+  создавал `useMessenger` с начальной фазой `loading`. Encrypted IndexedDB snapshot
+  был только асинхронным restart recovery и не сохранял живой RAM state.
+- Expected fix: кэшировать только chat route instance между внутренними app tabs;
+  settings и остальные страницы не должны попадать в глобальный component cache.
+
 ### BUG-102 — Повторный QR history sync начинался без MLS barrier на scanner side
 
 - Статус: `fixed locally in WP-114; production rollout pending`.

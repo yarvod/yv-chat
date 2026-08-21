@@ -2,7 +2,7 @@
 import ChatWorkspace from '../components/chat/ChatWorkspace.vue'
 import { useAuth } from '../presentation/composables/useAuth'
 
-definePageMeta({ layout: 'app', middleware: 'auth' })
+definePageMeta({ layout: 'app', middleware: 'auth', keepalive: true })
 const auth = useAuth()
 
 async function sessionExpired(): Promise<void> {
