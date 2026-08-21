@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  nativeNavigationTarget,
   notificationNavigationTarget,
   selectedConversationId,
   selectedMessageId,
@@ -38,5 +39,17 @@ describe('conversation route state', () => {
       conversationId,
       messageId,
     })).toBeNull()
+  })
+
+  it('accepts only the bounded native deep-link route', () => {
+    const conversationId = 'd2e0a3c9-3dcc-4737-a7c9-1fbffd28c84e'
+    const messageId = '7befbd28-1b77-48ee-8b6c-6f279fc1b92e'
+
+    expect(nativeNavigationTarget(
+      `yvchat://chat/${conversationId}?message=${messageId}`,
+    )).toEqual({ conversationId, messageId })
+    expect(nativeNavigationTarget(`https://chat/${conversationId}?message=${messageId}`))
+      .toBeNull()
+    expect(nativeNavigationTarget(`yvchat://chat/${conversationId}?message=bad`)).toBeNull()
   })
 })

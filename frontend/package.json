@@ -8,14 +8,28 @@
   },
   "scripts": {
     "build": "nuxt build",
+    "build:native": "node scripts/build-native.mjs",
+    "cap:sync": "cap sync",
+    "cap:open:android": "cap open android",
+    "cap:open:ios": "cap open ios",
     "dev": "nuxt dev",
     "generate:pwa-icons": "node scripts/generate-pwa-icons.mjs",
+    "generate:native-assets": "node scripts/generate-native-assets.mjs",
+    "generate": "nuxt generate",
     "lint": "eslint .",
     "postinstall": "nuxt prepare",
     "test": "vitest run",
     "typecheck": "nuxt typecheck"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/app": "^8.1.1",
+    "@capacitor/core": "^8.5.0",
+    "@capacitor/haptics": "^8.0.2",
+    "@capacitor/ios": "^8.5.0",
+    "@capacitor/keyboard": "^8.0.5",
+    "@capacitor/push-notifications": "^8.1.2",
+    "@capacitor/status-bar": "^8.0.3",
     "@noble/hashes": "^2.3.0",
     "@vite-pwa/nuxt": "^1.0.4",
     "nuxt": "^4.1.0",
@@ -24,6 +38,7 @@
     "vue": "^3.5.18"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.4.2",
     "@nuxt/eslint": "^1.9.0",
     "@vitejs/plugin-vue": "^6.0.1",
     "@vue/test-utils": "^2.4.6",

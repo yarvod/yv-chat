@@ -120,6 +120,7 @@ launcher icon уже установленную Android PWA может потр�
 Полные инженерные и security-инварианты закреплены в [AGENTS.md](AGENTS.md).
 
 Production topology, GHCR workflow и безопасный runbook находятся в [docs/deployment.md](docs/deployment.md).
+Capacitor storage/auth boundary и platform build workflow — в [docs/native.md](docs/native.md).
 
 ## Локальный запуск
 

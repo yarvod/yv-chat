@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">yv-chat</string>
+    <string name="title_activity_main">yv-chat</string>
+    <string name="package_name">ru.yoowee.chat</string>
+    <string name="custom_url_scheme">ru.yoowee.chat</string>
+</resources>

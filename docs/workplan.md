@@ -1,59 +1,68 @@
 # Текущий workplan
 
-## WP-115 — Keep-alive chat workspace across application tabs
+## WP-116 — Capacitor native shell and capability boundary
 
-Статус: **completed locally**
-Backlog: `BL-FIX-055`; bug `BUG-103`
+Статус: **completed locally; physical platform acceptance pending**
+Backlog: `BL-079`
 
-Цель: при переходе из чатов в настройки и обратно немедленно показывать уже
-загруженный локальный список без нового bootstrap и loading spinner.
-
-### Подтверждённая причина
-
-- `/chat` и `/settings` используют общий app layout, но route component `/chat`
-  размонтируется при каждом переходе;
-- `ChatWorkspace` создаёт новый `useMessenger`, начальная фаза которого — `loading`;
-- encrypted IndexedDB snapshot загружается cache-first, однако это асинхронная
-  recovery path, а не сохранение уже существующего reactive state в RAM;
-- unmount также останавливает realtime и уничтожает текущий browser call owner.
+Цель: добавить воспроизводимые iOS/Android проекты поверх того же Nuxt UI и
+подключить первые нативные capabilities, не меняя web/PWA runtime.
 
 ### Scope
 
-- сохранить единственный `/chat` route instance в bounded Vue/Nuxt keep-alive cache;
-- повторный вход в чаты не должен повторно запускать `messenger.load()` или показывать
-  initial spinner;
-- сохранить текущий conversation state, realtime owner и активный звонок при
-  переходе в Settings;
-- оставить первый запуск, reload, logout/session-expiry и encrypted IndexedDB
-  recovery без изменений;
-- добавить regression test для route lifecycle contract.
+- Capacitor 8 config и committed iOS/Android shell projects;
+- отдельный native build/sync workflow, использующий локальный Nuxt bundle, а не
+  production `server.url`;
+- configurable remote API/realtime origin только для native bundle; web/PWA по
+  умолчанию сохраняют относительный same-origin transport;
+- exact native WebView origins в CORS/Origin/CSRF boundary без wildcard;
+- native cookie/HTTP bridge для существующей opaque `HttpOnly` session и публичного
+  double-submit CSRF cookie без JavaScript bearer tokens;
+- native system bars, keyboard behavior, app foreground/deep-link lifecycle и
+  semantic Capacitor haptics;
+- capability-aware Settings copy и platform regression tests;
+- documentation/runbook для prerequisites, generated secrets exclusion и build.
 
-### Invariants
+### Security и architecture invariants
 
-- server cursor sync остаётся authoritative, realtime не становится единственным
-  источником данных;
-- cache содержит только один chat route instance и не создаёт второй call/media owner;
-- plaintext message content не добавляется в persistent storage или logs;
-- logout/full reload по-прежнему уничтожает in-memory state;
-- web и installed PWA используют одинаковый Nuxt lifecycle.
+- native wrapper использует тот же revocable device-bound opaque session; bearer
+  credential не попадает в localStorage, IndexedDB, URL или WebSocket query;
+- API и WebSocket принимают только explicit configured origins, wildcard запрещён;
+- `server.url` не используется в production native build;
+- direct message/call E2EE, media path и server cursor semantics не меняются;
+- Capacitor APIs находятся за ports/adapters; Vue components не вызывают native SDK;
+- web/PWA adapters и service-worker Web Push продолжают работать без Capacitor.
 
 ### Exclusions
 
-- Capacitor/native wrapper, push transport и native call UI — следующий отдельный
-  workplan/commit после завершения этого fix;
-- изменение API, persistence schema, E2EE или server retention;
-- глобальный keep-alive всех страниц приложения.
+- APNs/FCM server delivery и native incoming-call system surfaces — отдельные
+  последующие workplans, потому что требуют provider credentials, persistence и
+  CallKit/Android Telecom threat/permission review;
+- store signing, provisioning profiles, App Store/Play Console publication;
+- перенос crypto keys между browser PWA и native installation;
+- изменение WebRTC signaling/media protocol.
 
 ### Definition of Done
 
-- `/chat` объявляет scoped keep-alive route contract;
-- Settings → Chats возвращает существующий `ChatWorkspace` без повторного mount/load;
-- frontend regression, lint, typecheck, tests и production build проходят;
-- docs/diff/secret review выполнены, fix сохранён отдельным commit.
+- web/PWA checks остаются зелёными с пустым native API origin;
+- Capacitor config не содержит remote `server.url`, secrets или wildcard navigation;
+- Android/iOS shells синхронизируются из production Nuxt bundle;
+- semantic haptics используют native engine только в Capacitor и browser fallback в web;
+- exact origin, API URL и realtime URL regressions покрыты tests;
+- platform builds запущены там, где local SDK доступен, а отсутствующие SDK явно
+  отмечены, не выдаются за проверенные.
 
 ### Проверка
 
-- targeted mobile-layout regression: `16 passed`;
-- полный frontend Vitest: `361 passed`;
-- ESLint, Nuxt typecheck и production build: успешно;
-- persistence, API, E2EE и service-worker configuration не изменялись.
+- Capacitor CLI sync успешно создал/обновил оба platform project и нашёл пять
+  official plugins;
+- native static generate с exact HTTPS API origin проходит, Service Worker в нём
+  отсутствует; обычный web production build по-прежнему генерирует PWA SW;
+- frontend: `369 passed`, ESLint, Nuxt typecheck и production web build зелёные;
+- backend: Ruff check/format, mypy и `283 passed, 12 skipped` зелёные;
+- npm audit после pin Capacitor CLI `8.4.2`: `0 vulnerabilities`;
+- Android compile не запускался: Android SDK/`ANDROID_HOME` отсутствуют;
+- iOS compile не запускался: установлен только Xcode Command Line Tools, полный
+  Xcode недоступен;
+- cookie/IndexedDB/OPFS/WebSocket physical acceptance остаётся обязательным rollout
+  gate и не считается подтверждённым статическими tests.

@@ -137,15 +137,16 @@ class AppSettings(BaseSettings):
         for origin in origins:
             parsed = urlsplit(origin)
             if (
-                parsed.scheme not in {"http", "https"}
+                parsed.scheme not in {"http", "https", "capacitor"}
                 or not parsed.netloc
                 or parsed.path not in {"", "/"}
                 or parsed.query
                 or parsed.fragment
                 or parsed.username
                 or parsed.password
+                or "*" in parsed.netloc
             ):
-                raise ValueError("allowed origins must be exact HTTP(S) origins")
+                raise ValueError("allowed origins must be exact HTTP(S) or Capacitor origins")
             normalized.append(f"{parsed.scheme}://{parsed.netloc}")
         if len(set(normalized)) != len(normalized) or "*" in normalized:
             raise ValueError("allowed origins must be unique and cannot contain wildcard")
@@ -159,9 +160,9 @@ class AppSettings(BaseSettings):
     @model_validator(mode="after")
     def require_https_origins_in_production(self) -> "AppSettings":
         if self.app_env is AppEnvironment.PRODUCTION and any(
-            not origin.startswith("https://") for origin in self.allowed_origins
+            not origin.startswith(("https://", "capacitor://")) for origin in self.allowed_origins
         ):
-            raise ValueError("production allowed origins must use HTTPS")
+            raise ValueError("production allowed origins must use HTTPS or Capacitor")
         if self.message_tombstone_retention_seconds <= max(
             self.message_ciphertext_retention_seconds,
             self.sync_event_retention_seconds,

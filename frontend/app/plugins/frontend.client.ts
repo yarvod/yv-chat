@@ -1,3 +1,5 @@
+import { Capacitor } from '@capacitor/core'
+
 import { ActivateAccount } from '../application/accounts/activate-account'
 import { ChangePassword } from '../application/accounts/change-password'
 import { BuildInvitationLink, ConsumeActivationFragment } from '../application/accounts/invitation-links'
@@ -68,6 +70,8 @@ import { BrowserDeviceInfo } from '../infrastructure/browser/device-info'
 import { BrowserDevicePairingSecretStore } from '../infrastructure/browser/device-pairing-secrets'
 import { parseTrustedDevicePairingOrigins } from '../infrastructure/browser/device-pairing-origins'
 import { BrowserHaptics } from '../infrastructure/browser/haptics'
+import { CapacitorHaptics } from '../infrastructure/capacitor/capacitor-haptics'
+import { capacitorCsrfToken } from '../infrastructure/capacitor/capacitor-csrf'
 import { BrowserLocation } from '../infrastructure/browser/browser-location'
 import { BrowserNetworkStatus } from '../infrastructure/browser/browser-network-status'
 import { BrowserPageVisibility } from '../infrastructure/browser/page-visibility'
@@ -108,7 +112,12 @@ import type { VoiceCallHistoryRecorder } from '../infrastructure/webrtc/browser-
 
 export default defineNuxtPlugin(() => {
   const runtimeConfig = useRuntimeConfig()
-  const apiClient = new ApiClient()
+  const apiOrigin = runtimeConfig.public.apiOrigin
+  const native = Capacitor.isNativePlatform()
+  const apiClient = new ApiClient(
+    apiOrigin,
+    native ? () => capacitorCsrfToken(apiOrigin) : undefined,
+  )
   const authGateway = new HttpAuthGateway(apiClient)
   const adminAccountsGateway = new HttpAdminAccountsGateway(apiClient)
   const accountSecurityGateway = new HttpAccountSecurityGateway(apiClient)
@@ -133,8 +142,8 @@ export default defineNuxtPlugin(() => {
     window.location.origin,
     devicePairingOrigins,
   )
-  const haptics = new BrowserHaptics()
-  const realtimeGateway = new BrowserRealtimeGateway()
+  const haptics = native ? new CapacitorHaptics() : new BrowserHaptics()
+  const realtimeGateway = new BrowserRealtimeGateway(apiOrigin)
   const scheduler = new BrowserScheduler()
   const clock = new BrowserClock()
   const clientIdGenerator = new BrowserClientIdGenerator()
@@ -230,6 +239,7 @@ export default defineNuxtPlugin(() => {
   return {
     provide: {
       frontend: {
+        platform: { native },
         messagingGateway,
         uploadGroupAttachment: new UploadGroupAttachment(attachmentGateway, clientIdGenerator),
         uploadDirectAttachment: new UploadDirectAttachment(

@@ -9,8 +9,10 @@ const UNAUTHORIZED_CLOSE = 4401
 const INVALID_PAYLOAD_CLOSE = 4400
 
 export class BrowserRealtimeGateway implements RealtimeGateway {
+  constructor(private readonly apiOrigin = '') {}
+
   connect(callbacks: RealtimeCallbacks): RealtimeConnection {
-    const url = new URL('/api/v1/realtime', window.location.href)
+    const url = new URL('/api/v1/realtime', this.apiOrigin || window.location.href)
     url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
     const socket = new WebSocket(url)
     let explicitlyClosed = false

@@ -14,15 +14,19 @@ const appleLaunchScreens = [
   { href: '/splash/launch-2064x2752.png', width: 1032, height: 1376, ratio: 2 },
 ] as const
 
+const nativeBuild = process.env.NUXT_PUBLIC_NATIVE_BUILD === 'true'
+
 export default defineNuxtConfig({
   compatibilityDate: '2026-08-11',
   ssr: false,
   devtools: { enabled: false },
-  modules: ['@nuxt/eslint', '@vite-pwa/nuxt'],
+  modules: ['@nuxt/eslint', ...(nativeBuild ? [] : ['@vite-pwa/nuxt'])],
   css: ['~/assets/main.css'],
   runtimeConfig: {
     public: {
       devicePairingOrigins: '',
+      apiOrigin: '',
+      nativeBuild: false,
     },
   },
   app: {

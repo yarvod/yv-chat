@@ -71,7 +71,7 @@ async function logoutCurrentDevice(): Promise<void> {
         </div>
       </article>
       <article class="settings-card">
-        <div class="settings-card__heading"><span class="settings-icon">⌁</span><div><h2>Тактильный отклик</h2><p>Работает только там, где браузер поддерживает vibration/haptics.</p></div></div>
+        <div class="settings-card__heading"><span class="settings-icon">⌁</span><div><h2>Тактильный отклик</h2><p>{{ $frontend.platform.native ? 'Использует системный haptics engine устройства.' : 'Работает только там, где браузер поддерживает vibration/haptics.' }}</p></div></div>
         <label class="switch-row"><span>{{ preferences.hapticsEnabled.value ? 'Включён' : 'Выключен' }}</span><input type="checkbox" :checked="preferences.hapticsEnabled.value" @change="preferences.setHaptics(($event.target as HTMLInputElement).checked)"><i /></label>
       </article>
       <article class="settings-card settings-card--wide">

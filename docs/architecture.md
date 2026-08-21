@@ -340,6 +340,30 @@ no-op. Web/PWA не утверждает, что получил прямой д�
 Частые message interactions могут вызывать тот же semantic port, но не
 обходят preference и не вызывают raw browser API из component.
 
+Capacitor wrapper сохраняет тот же Nuxt application/presentation код и выбирает
+platform adapters только в composition root. Production native shell всегда грузит
+локальный versioned web bundle; Capacitor `server.url` не является deployment
+механизмом. Native bundle обращается к explicit HTTPS API origin через native
+HTTP/cookie bridge, сохраняя revocable opaque `HttpOnly` session и double-submit
+CSRF, а realtime использует тот же remote WSS endpoint. Web/PWA оставляют пустой API
+origin и relative same-origin transport. Backend разрешает только exact configured
+browser/native origins; wildcard, bearer в URL и WebSocket query token запрещены.
+
+Native haptics/system bars/keyboard/app lifecycle реализуются маленькими adapters.
+APNs/FCM transport и CallKit/Android Telecom являются отдельными infrastructure
+capabilities: их нельзя считать готовыми из-за наличия shell или подменять
+server-readable call metadata. До отдельного rollout browser Web Push и WebRTC
+остаются canonical working implementations.
+
+Native WebView storage является отдельным origin-scoped device store. MLS provider
+state, conversation crypto checkpoints, archive/outbox/snapshot keys и encrypted
+records остаются в IndexedDB с non-extractable WebCrypto keys внутри application
+sandbox; PWA storage с ними не объединяется. OPFS используется capability-first,
+а existing encrypted bounded IndexedDB blob store остаётся fallback. Android cloud
+backup выключен, чтобы OS restore не разрывал lifecycle ciphertext и origin keys.
+Uninstall/clear-data считается потерей локального device state и восстанавливается
+trusted-device protocol, а не скрытым копированием signer/provider/wrapping keys.
+
 Invite/reset secret разрешён в URL только после `#`: fragment не отправляется
 серверу. Activation/reset page извлекает его один раз, немедленно вызывает
 `history.replaceState` для очистки address bar и хранит значение только в памяти

@@ -12,25 +12,37 @@ export interface ApiRequest {
   body?: unknown
 }
 
+export type CsrfTokenReader = () => string | null | Promise<string | null>
+
 function csrfToken(): string | null {
   const prefix = '__Host-yv_csrf='
   const item = document.cookie.split(';').map(value => value.trim()).find(value => value.startsWith(prefix))
   return item ? decodeURIComponent(item.slice(prefix.length)) : null
 }
 
+export function resolveApiUrl(path: string, apiOrigin: string): string {
+  if (!path.startsWith('/')) throw new TypeError('API path must be absolute')
+  return apiOrigin ? new URL(path, apiOrigin).toString() : path
+}
+
 export class ApiClient {
+  constructor(
+    private readonly apiOrigin = '',
+    private readonly readCsrfToken: CsrfTokenReader = csrfToken,
+  ) {}
+
   async request(path: string, request: ApiRequest = {}): Promise<unknown> {
     const method = request.method ?? 'GET'
     const headers = new Headers({ Accept: 'application/json' })
     if (request.body !== undefined) headers.set('Content-Type', 'application/json')
     if (method !== 'GET') {
-      const token = csrfToken()
+      const token = await this.readCsrfToken()
       if (token) headers.set('X-CSRF-Token', token)
     }
 
     let response: Response
     try {
-      response = await fetch(path, {
+      response = await fetch(resolveApiUrl(path, this.apiOrigin), {
         method,
         headers,
         credentials: 'include',
@@ -59,7 +71,7 @@ export class ApiClient {
       Accept: 'application/json',
       'Content-Type': 'application/octet-stream',
     })
-    const token = csrfToken()
+    const token = await this.readCsrfToken()
     if (token) headers.set('X-CSRF-Token', token)
     return await new Promise<unknown>((resolve, reject) => {
       const request = new XMLHttpRequest()
@@ -71,7 +83,7 @@ export class ApiClient {
         reject(new ApplicationError(null, 'network', 'network unavailable'))
       }
 
-      request.open('PUT', path)
+      request.open('PUT', resolveApiUrl(path, this.apiOrigin))
       request.withCredentials = true
       for (const [name, value] of headers.entries()) request.setRequestHeader(name, value)
       request.upload.onprogress = event => {
@@ -114,7 +126,7 @@ export class ApiClient {
   async download(path: string): Promise<Blob> {
     let response: Response
     try {
-      response = await fetch(path, {
+      response = await fetch(resolveApiUrl(path, this.apiOrigin), {
         method: 'GET',
         headers: new Headers({ Accept: 'application/octet-stream,image/*,video/*' }),
         credentials: 'include',

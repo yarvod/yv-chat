@@ -1,7 +1,9 @@
 """Health endpoint tests."""
 
+import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient, Response
+from pydantic import ValidationError
 
 from messenger.bootstrap.app import create_app
 from messenger.bootstrap.settings import AppEnvironment, AppSettings
@@ -34,3 +36,27 @@ async def test_production_does_not_expose_openapi() -> None:
 
     assert (await get(application, "/docs")).status_code == 404
     assert (await get(application, "/openapi.json")).status_code == 404
+
+
+def test_production_accepts_exact_capacitor_origin_without_wildcard() -> None:
+    settings = AppSettings(
+        app_env=AppEnvironment.PRODUCTION,
+        database_url=TEST_DATABASE_URL,
+        allowed_origins=[
+            "https://chat.example",
+            "capacitor://app.yvchat.local",
+            "https://app.yvchat.local",
+        ],
+    )
+
+    assert settings.allowed_origins == [
+        "https://chat.example",
+        "capacitor://app.yvchat.local",
+        "https://app.yvchat.local",
+    ]
+    with pytest.raises(ValidationError):
+        AppSettings(
+            app_env=AppEnvironment.PRODUCTION,
+            database_url=TEST_DATABASE_URL,
+            allowed_origins=["capacitor://*"],
+        )

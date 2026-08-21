@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { ApplicationError } from '../app/application/errors'
-import { ApiClient } from '../app/infrastructure/http/api-client'
+import { ApiClient, resolveApiUrl } from '../app/infrastructure/http/api-client'
 import { HttpAttachmentGateway } from '../app/infrastructure/http/attachment-gateway'
 import { HttpMessagingGateway } from '../app/infrastructure/http/messaging-gateway'
 import { parseCurrentAccount } from '../app/infrastructure/http/runtime-parsers'
@@ -63,6 +63,14 @@ afterEach(() => {
 })
 
 describe('api boundary', () => {
+  it('keeps web URLs relative and resolves native URLs only against an explicit origin', () => {
+    expect(resolveApiUrl('/api/v1/auth/session', '')).toBe('/api/v1/auth/session')
+    expect(resolveApiUrl('/api/v1/auth/session', 'https://chat.example')).toBe(
+      'https://chat.example/api/v1/auth/session',
+    )
+    expect(() => resolveApiUrl('api/v1/auth/session', 'https://chat.example')).toThrow(TypeError)
+  })
+
   it('reports actual binary upload bytes while preserving cookie and CSRF semantics', async () => {
     vi.stubGlobal('XMLHttpRequest', FakeXMLHttpRequest)
     vi.spyOn(document, 'cookie', 'get').mockReturnValue('__Host-yv_csrf=csrf-upload')
@@ -189,6 +197,23 @@ describe('api boundary', () => {
     const [, init] = fetchMock.mock.calls[0] ?? []
     expect(init?.credentials).toBe('include')
     expect(new Headers(init?.headers).get('X-CSRF-Token')).toBe('csrf-test')
+  })
+
+  it('uses explicit native origin and asynchronous CSRF reader without bearer credentials', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(null, { status: 204 }),
+    )
+
+    await new ApiClient(
+      'https://chat.example',
+      async () => 'native-csrf',
+    ).request('/api/v1/auth/logout', { method: 'POST' })
+
+    const [url, init] = fetchMock.mock.calls[0] ?? []
+    expect(url).toBe('https://chat.example/api/v1/auth/logout')
+    expect(init?.credentials).toBe('include')
+    expect(new Headers(init?.headers).get('X-CSRF-Token')).toBe('native-csrf')
+    expect(new Headers(init?.headers).has('Authorization')).toBe(false)
   })
 
   it('rejects malformed account JSON at the boundary', () => {

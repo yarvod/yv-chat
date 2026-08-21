@@ -281,4 +281,19 @@ describe('realtime sync', () => {
     expect(socket?.sent.at(-1)).toBe('{"type":"typing","conversation_id":"conversation-id","active":true}')
     vi.unstubAllGlobals()
   })
+
+  it('builds native realtime against the explicit API origin without a query credential', () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    vi.stubGlobal('window', { location: { href: 'capacitor://app.yvchat.local/chat' } })
+
+    new BrowserRealtimeGateway('https://chat.example').connect({
+      onFrame: vi.fn(),
+      onOpen: vi.fn(),
+      onClose: vi.fn(),
+    })
+
+    expect(FakeWebSocket.instances.at(-1)?.url).toBe('wss://chat.example/api/v1/realtime')
+    expect(FakeWebSocket.instances.at(-1)?.url).not.toContain('?')
+    vi.unstubAllGlobals()
+  })
 })

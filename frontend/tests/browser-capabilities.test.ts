@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { ImpactStyle, NotificationType } from '@capacitor/haptics'
 
+import { CapacitorHaptics } from '../app/infrastructure/capacitor/capacitor-haptics'
 import { BrowserDeviceInfo } from '../app/infrastructure/browser/device-info'
 import { BrowserHaptics } from '../app/infrastructure/browser/haptics'
 import { BrowserLocation } from '../app/infrastructure/browser/browser-location'
@@ -33,6 +35,29 @@ describe('browser capability adapters', () => {
     haptics.perform('error')
     expect(vibrate).toHaveBeenCalledTimes(1)
     expect(() => new BrowserHaptics({} as Navigator, localStorage).perform('success')).not.toThrow()
+  })
+
+  it('maps the same semantic haptics to native impact and notification feedback', async () => {
+    const driver = { impact: vi.fn(async () => undefined), notification: vi.fn(async () => undefined) }
+    const haptics = new CapacitorHaptics(localStorage, driver)
+
+    haptics.perform('selection')
+    haptics.perform('sent')
+    haptics.perform('success')
+    haptics.perform('warning')
+    haptics.perform('error')
+    await Promise.resolve()
+
+    expect(driver.impact).toHaveBeenCalledTimes(2)
+    expect(driver.impact).toHaveBeenCalledWith(ImpactStyle.Light)
+    expect(driver.notification.mock.calls.map(([type]) => type)).toEqual([
+      NotificationType.Success,
+      NotificationType.Warning,
+      NotificationType.Error,
+    ])
+    haptics.setEnabled(false)
+    haptics.perform('error')
+    expect(driver.notification).toHaveBeenCalledTimes(3)
   })
 
   it('persists theme preference and resolves system theme', () => {

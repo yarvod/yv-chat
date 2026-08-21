@@ -13,6 +13,27 @@ export interface NotificationNavigationTarget {
   messageId: string
 }
 
+export function nativeNavigationTarget(value: string): NotificationNavigationTarget | null {
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    return null
+  }
+  const path = url.pathname.split('/').filter(Boolean)
+  const conversationId = url.hostname === 'chat' ? path[0] : null
+  const messageId = url.searchParams.get('message')
+  if (
+    url.protocol !== 'yvchat:'
+    || path.length !== 1
+    || !conversationId
+    || !messageId
+    || !notificationUuid.test(conversationId)
+    || !notificationUuid.test(messageId)
+  ) return null
+  return { conversationId, messageId }
+}
+
 export function notificationNavigationTarget(value: unknown): NotificationNavigationTarget | null {
   if (typeof value !== 'object' || value === null) return null
   const candidate = value as Record<string, unknown>
