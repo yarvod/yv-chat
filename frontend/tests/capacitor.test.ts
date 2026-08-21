@@ -47,9 +47,25 @@ describe('Capacitor native boundary', () => {
 
     expect(manifest).toContain('android.permission.CAMERA')
     expect(manifest).toContain('android.permission.RECORD_AUDIO')
+    expect(manifest).toContain('android.permission.MODIFY_AUDIO_SETTINGS')
+    expect(manifest).toContain('android.permission.WAKE_LOCK')
     expect(manifest).toContain('android:scheme="yvchat" android:host="chat"')
     expect(plist).toContain('<key>NSCameraUsageDescription</key>')
     expect(plist).toContain('<key>NSMicrophoneUsageDescription</key>')
     expect(plist).toContain('<string>yvchat</string>')
+  })
+
+  it('keeps native call audio plugins outside auth, crypto and storage boundaries', () => {
+    const android = readFileSync(
+      resolve(process.cwd(), 'android/app/src/main/java/ru/yoowee/chat/CallAudioPlugin.java'),
+      'utf8',
+    )
+    const ios = readFileSync(resolve(process.cwd(), 'ios/App/App/CallAudioPlugin.swift'), 'utf8')
+
+    for (const source of [android, ios]) {
+      expect(source).not.toMatch(/cookie|csrf|indexeddb|opfs|mls|token|message|cipher/iu)
+      expect(source).toMatch(/voice|communication/iu)
+      expect(source).toMatch(/proximity/iu)
+    }
   })
 })

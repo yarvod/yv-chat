@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { OutgoingCallSignal } from '../app/application/ports/realtime-gateway'
+import type { NativeCallAudioPort } from '../app/application/ports/native-call-audio'
 import { BrowserVoiceCallService } from '../app/infrastructure/webrtc/browser-voice-call-service'
 
 const ALICE_USER = '1b0a32e8-144f-4f60-bcb6-112f71bd5316'
@@ -207,6 +208,74 @@ describe('browser voice calls', () => {
     service.hangup()
     expect(signals.at(-1)).toMatchObject({ type: 'call_ended', reason: 'hangup' })
     expect(stream.track.stop).toHaveBeenCalled()
+  })
+
+  it('uses native receiver/speaker routing and releases proximity state on hangup', async () => {
+    let route: 'system' | 'earpiece' | 'speaker' = 'system'
+    const state = () => ({
+      selectedRoute: route,
+      outputs: [
+        { deviceId: 'native:earpiece', label: 'Разговорный динамик', kind: 'earpiece' as const },
+        { deviceId: 'native:speaker', label: 'Встроенный динамик', kind: 'speaker' as const },
+      ],
+    })
+    const native: NativeCallAudioPort = {
+      activate: vi.fn(async () => state()),
+      setVideo: vi.fn(async () => state()),
+      selectRoute: vi.fn(async selected => {
+        route = selected
+        return state()
+      }),
+      setProximity: vi.fn(async () => undefined),
+      deactivate: vi.fn(async () => undefined),
+      subscribe: vi.fn(async () => async () => undefined),
+    }
+    const service = new BrowserVoiceCallService(
+      signaling,
+      config,
+      fakeIdentity(),
+      ALICE_USER,
+      ALICE_DEVICE,
+      null,
+      fakeTones(),
+      native,
+    )
+    let latest = null
+    service.subscribe(value => { latest = value })
+
+    await service.start(CONVERSATION, BOB_USER)
+    expect(native.activate).toHaveBeenCalledWith(false)
+    expect(latest).toMatchObject({
+      audioOutputSupported: true,
+      audioOutputPickerSupported: false,
+      selectedAudioOutputId: '',
+    })
+    await service.selectAudioOutput('native:earpiece')
+    expect(native.selectRoute).toHaveBeenCalledWith('earpiece')
+    expect(latest).toMatchObject({ selectedAudioOutputId: 'native:earpiece' })
+
+    const offer = signals.find(signal => signal.type === 'call_offer')!
+    await service.apply({
+      type: 'call_answer',
+      version: 2,
+      eventId: 'event',
+      conversationId: CONVERSATION,
+      callId: offer.call_id,
+      actorUserId: BOB_USER,
+      actorDeviceId: BOB_DEVICE,
+      sdp: 'answer-sdp',
+      candidate: null,
+      reason: null,
+      identitySignature: '07'.repeat(64),
+    })
+    const peer = FakePeerConnection.instances[0]!
+    peer.connectionState = 'connected'
+    peer.dispatchEvent(new Event('connectionstatechange'))
+    await vi.waitFor(() => expect(native.setProximity).toHaveBeenCalledWith(true))
+
+    service.hangup()
+    await vi.waitFor(() => expect(native.deactivate).toHaveBeenCalledOnce())
+    expect(native.setProximity).toHaveBeenCalledWith(false)
   })
 
   it('does not request microphone until an incoming call is accepted', async () => {

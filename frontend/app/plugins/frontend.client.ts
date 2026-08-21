@@ -72,6 +72,7 @@ import { parseTrustedDevicePairingOrigins } from '../infrastructure/browser/devi
 import { BrowserHaptics } from '../infrastructure/browser/haptics'
 import { CapacitorHaptics } from '../infrastructure/capacitor/capacitor-haptics'
 import { CapacitorPushAdapter } from '../infrastructure/capacitor/capacitor-push'
+import { CapacitorCallAudio } from '../infrastructure/capacitor/capacitor-call-audio'
 import { capacitorCsrfToken } from '../infrastructure/capacitor/capacitor-csrf'
 import { BrowserLocation } from '../infrastructure/browser/browser-location'
 import { BrowserNetworkStatus } from '../infrastructure/browser/browser-network-status'
@@ -115,6 +116,7 @@ export default defineNuxtPlugin(nuxtApp => {
   const runtimeConfig = useRuntimeConfig()
   const apiOrigin = runtimeConfig.public.apiOrigin
   const native = Capacitor.isNativePlatform()
+  const nativeCallAudio = native ? new CapacitorCallAudio() : null
   const apiClient = new ApiClient(
     apiOrigin,
     native ? () => capacitorCsrfToken(apiOrigin) : undefined,
@@ -344,6 +346,8 @@ export default defineNuxtPlugin(nuxtApp => {
             localUserId,
             localDeviceId,
             recordHistory,
+            undefined,
+            nativeCallAudio,
           )
         ),
         createTypingIndicators: (transport: TypingTransport) => (

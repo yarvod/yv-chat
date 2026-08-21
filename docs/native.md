@@ -96,6 +96,26 @@ CallKit/PushKit VoIP и Android Telecom full-screen incoming-call UI ещё не
 этот notification slice: обычный generic incoming-call push уже маршрутизируется,
 но полноценный системный call surface выполняется отдельным workplan.
 
+### Call audio runtime
+
+Существующий `RTCPeerConnection`, signaling, TURN и MLS call identity остаются в
+WebView/application layer. Локальный `CallAudio` plugin не получает API origin,
+cookie/CSRF, user/device/call IDs, SDP, media stream, keys или plaintext. Его полный
+contract ограничен `video`, `proximity` и маршрутами `system`/`earpiece`/`speaker`.
+
+На iOS активный звонок использует `AVAudioSession.playAndRecord` с `voiceChat` или
+`videoChat`, системными Bluetooth routes и receiver/speaker override. На Android
+используются `MODE_IN_COMMUNICATION`, transient voice audio focus и communication
+device API; legacy speaker routing остаётся только для поддерживаемых Android 7–11.
+Датчик приближения включается только для active audio-only звонка не на громкой
+связи и снимается вместе с route override/audio focus во всех terminal paths.
+
+Это улучшает foreground native-call UX, но не означает background/killed-app call:
+для системного входящего экрана и background wake-up всё ещё нужны отдельные
+PushKit/CallKit и Android Telecom/ConnectionService implementation и store-policy
+acceptance. Web/PWA продолжают использовать browser `setSinkId`/output picker и не
+вызывают `CallAudio` plugin.
+
 ## Local platform prerequisites
 
 - Node/npm versions из `frontend/package.json`;
@@ -120,3 +140,9 @@ permission allow/deny, token rotation/reinstall, foreground/background/terminate
 delivery, tap routing, revoked session, invalid-token cleanup и отсутствие plaintext
 в APNs/FCM provider console. Без provider credentials и physical devices эти пункты
 не считаются подтверждёнными локальными mocks.
+
+Для call audio обязательны реальные iPhone/Android проверки receiver/speaker,
+wired/Bluetooth connect/disconnect, proximity, camera transition, OS interruption,
+background/foreground и cleanup после reject/hangup/media error. Android plugin
+компилируется локально; для iOS compile/sign требуется полный Xcode, которого нет в
+текущем workspace (Swift syntax и Xcode project structure проверяются отдельно).

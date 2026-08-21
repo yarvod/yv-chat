@@ -10,6 +10,11 @@ import {
   type CallTonePlayer,
 } from '../browser/browser-call-tone-service'
 import type { CallIdentityGateway } from '../../application/ports/call-identity-gateway'
+import type {
+  NativeCallAudioPort,
+  NativeCallAudioRoute,
+  NativeCallAudioState,
+} from '../../application/ports/native-call-audio'
 
 interface CallSignalingTransport {
   sendCallSignal(signal: OutgoingCallSignal): boolean
@@ -95,6 +100,9 @@ export class BrowserVoiceCallService {
   private summaryRecorded = false
   private connectedAt: number | null = null
   private listeningForDeviceChanges = false
+  private nativeAudioActive = false
+  private stopNativeAudioSubscription: (() => Promise<void>) | null = null
+  private nativeAudioCleanup: Promise<void> = Promise.resolve()
 
   constructor(
     private readonly signaling: CallSignalingTransport,
@@ -104,6 +112,7 @@ export class BrowserVoiceCallService {
     private readonly localDeviceId: string,
     private readonly recordHistory: VoiceCallHistoryRecorder | null = null,
     private readonly tones: CallTonePlayer = new BrowserCallToneService(),
+    private readonly nativeCallAudio: NativeCallAudioPort | null = null,
   ) {}
 
   subscribe(listener: (state: VoiceCallState) => void): () => void {
@@ -322,6 +331,20 @@ export class BrowserVoiceCallService {
       item.deviceId === deviceId
     ))
     if (!allowed || !this.state.audioOutputSupported) return
+    if (this.nativeCallAudio && this.nativeAudioActive) {
+      const route: NativeCallAudioRoute = deviceId === 'native:speaker'
+        ? 'speaker'
+        : deviceId === 'native:earpiece'
+          ? 'earpiece'
+          : 'system'
+      try {
+        this.applyNativeAudioState(await this.nativeCallAudio.selectRoute(route))
+        await this.syncNativeProximity()
+      } catch {
+        this.update({ ...this.state, notice: 'Система не разрешила сменить аудиовыход' })
+      }
+      return
+    }
     const audio = this.remoteAudio
     if (!audio?.setSinkId) return
     try {
@@ -546,6 +569,7 @@ export class BrowserVoiceCallService {
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       video: false,
     })
+    await this.activateNativeAudio()
     const peer = new RTCPeerConnection(loaded.configuration)
     this.peer = peer
     for (const track of this.localStream.getAudioTracks()) peer.addTrack(track, this.localStream)
@@ -588,6 +612,7 @@ export class BrowserVoiceCallService {
             ...this.state,
             remoteVideoEnabled: event.track.readyState === 'live' && !event.track.muted,
           })
+          void this.syncNativeProximity()
         }
         event.track.addEventListener('mute', updateRemoteVideo)
         event.track.addEventListener('unmute', updateRemoteVideo)
@@ -614,6 +639,7 @@ export class BrowserVoiceCallService {
           return
         }
         this.update({ ...this.state, phase: 'active', startedAt: this.connectedAt, notice: null })
+        void this.syncNativeProximity()
       } else if (peer.connectionState === 'disconnected') {
         this.update({
           ...this.state,
@@ -729,6 +755,7 @@ export class BrowserVoiceCallService {
         cameraFacingMode: facingMode,
         notice: null,
       })
+      void this.updateNativeVideo(true)
     } catch (error) {
       for (const item of stream?.getTracks() ?? []) item.stop()
       if (this.peer !== peer) return
@@ -757,6 +784,7 @@ export class BrowserVoiceCallService {
     this.attachStream(this.localVideoElement, null)
     if (this.peer !== peer) return
     this.update({ ...this.state, cameraEnabled: false, cameraBusy: false, notice: null })
+    void this.updateNativeVideo(false)
   }
 
   private async limitVideoSender(sender: RTCRtpSender): Promise<void> {
@@ -914,6 +942,7 @@ export class BrowserVoiceCallService {
     this.pendingCandidates = []
     this.pendingLocalCandidates = []
     this.localDescriptionSignaled = false
+    this.deactivateNativeAudio()
     if (this.listeningForDeviceChanges) {
       navigator.mediaDevices?.removeEventListener?.('devicechange', this.handleDeviceChange)
       this.listeningForDeviceChanges = false
@@ -925,6 +954,7 @@ export class BrowserVoiceCallService {
   }
 
   private async refreshAudioOutputs(preferred?: VoiceCallAudioOutput): Promise<void> {
+    if (this.nativeCallAudio && this.nativeAudioActive) return
     const audio = this.remoteAudio
     const mediaDevices = navigator.mediaDevices as AudioOutputMediaDevices | undefined
     const sinkSupported = typeof audio?.setSinkId === 'function'
@@ -1001,6 +1031,72 @@ export class BrowserVoiceCallService {
               : 'other'
     )
     return { deviceId: device.deviceId, label, kind }
+  }
+
+  private async activateNativeAudio(): Promise<void> {
+    if (!this.nativeCallAudio || this.nativeAudioActive) return
+    await this.nativeAudioCleanup
+    try {
+      const state = await this.nativeCallAudio.activate(false)
+      this.nativeAudioActive = true
+      this.applyNativeAudioState(state)
+      this.stopNativeAudioSubscription = await this.nativeCallAudio.subscribe(state => {
+        if (!this.nativeAudioActive) return
+        this.applyNativeAudioState(state)
+        void this.syncNativeProximity()
+      })
+    } catch {
+      this.nativeAudioCleanup = this.nativeCallAudio.deactivate().catch(() => undefined)
+      this.nativeAudioActive = false
+      this.stopNativeAudioSubscription = null
+    }
+  }
+
+  private applyNativeAudioState(state: NativeCallAudioState): void {
+    const selectedAudioOutputId = state.selectedRoute === 'speaker'
+      ? 'native:speaker'
+      : state.selectedRoute === 'earpiece'
+        ? 'native:earpiece'
+        : ''
+    this.update({
+      ...this.state,
+      audioOutputSupported: true,
+      audioOutputPickerSupported: false,
+      audioOutputs: state.outputs,
+      selectedAudioOutputId,
+      notice: null,
+    })
+  }
+
+  private async updateNativeVideo(video: boolean): Promise<void> {
+    if (!this.nativeCallAudio || !this.nativeAudioActive) return
+    try {
+      this.applyNativeAudioState(await this.nativeCallAudio.setVideo(video))
+      await this.syncNativeProximity()
+    } catch {
+      // WebRTC remains usable when a platform route transition is unavailable.
+    }
+  }
+
+  private async syncNativeProximity(): Promise<void> {
+    if (!this.nativeCallAudio || !this.nativeAudioActive) return
+    const enabled = this.state.phase === 'active'
+      && !this.state.cameraEnabled
+      && !this.state.remoteVideoEnabled
+      && this.state.selectedAudioOutputId !== 'native:speaker'
+    await this.nativeCallAudio.setProximity(enabled).catch(() => undefined)
+  }
+
+  private deactivateNativeAudio(): void {
+    if (!this.nativeCallAudio || !this.nativeAudioActive) return
+    this.nativeAudioActive = false
+    const stop = this.stopNativeAudioSubscription
+    this.stopNativeAudioSubscription = null
+    this.nativeAudioCleanup = Promise.all([
+      this.nativeCallAudio.setProximity(false),
+      this.nativeCallAudio.deactivate(),
+      stop?.() ?? Promise.resolve(),
+    ]).then(() => undefined).catch(() => undefined)
   }
 
   private recordSummary(outcome: VoiceCallSummary['outcome']): void {

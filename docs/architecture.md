@@ -355,6 +355,14 @@ routing payload, не подменяя sync или E2EE. CallKit/PushKit VoIP и
 остаются отдельной capability: обычный incoming-call notification не считается
 полноценным системным звонковым surface и не разрешает server-readable call metadata.
 
+Native call-audio adapter владеет только platform audio session/focus, системным
+receiver/speaker route и proximity lifecycle. Его port не принимает API/session/
+device/call IDs, SDP, media, crypto state или plaintext. `RTCPeerConnection`, TURN,
+signaling и MLS call identity остаются общими WebView services; plugin активируется
+только после разрешённого microphone capture и освобождается во всех terminal paths.
+На web/PWA этот port отсутствует, поэтому browser `setSinkId` path и Service Worker
+не получают native side effects.
+
 Native WebView storage является отдельным origin-scoped device store. MLS provider
 state, conversation crypto checkpoints, archive/outbox/snapshot keys и encrypted
 records остаются в IndexedDB с non-extractable WebCrypto keys внутри application
@@ -1713,9 +1721,10 @@ picker; выданный устройству permission sink добавляет
 Если browser не раскрывает отдельный earpiece/speaker/Bluetooth sink, routing остаётся
 за системой. Web PWA не использует камеру или другие эвристики как fake proximity:
 текущий Proximity Sensor draft не реализован browser engines, а web API для
-принудительного выключения дисплея нет. Настоящий phone audio-session, proximity
-screen-off и native incoming-call surface требуют отдельного mobile wrapper и не
-могут быть обещаны этой PWA.
+принудительного выключения дисплея нет. Phone audio-session и proximity screen-off
+реализуются только Capacitor call-audio adapter и не обещаются PWA. Native
+incoming-call surface по-прежнему требует отдельные CallKit/PushKit и Android
+Telecom capabilities.
 
 `WP-102` добавляет локальное presentation-состояние `callMinimized` в chat
 workspace, не создавая второй media/signaling owner. Полноэкранный call dialog может

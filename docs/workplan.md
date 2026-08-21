@@ -1,72 +1,69 @@
 # Текущий workplan
 
-## WP-117 — Native APNs/FCM notifications
+## WP-118 — Native call audio runtime
 
-Статус: **completed locally; physical provider acceptance pending**
+Статус: **completed locally; physical audio and full Xcode acceptance pending**
 Backlog: `BL-079`
 
-Цель: подключить нативные push-уведомления для Capacitor iOS/Android как отдельные
-device-bound transports, сохранив существующий Web Push и неизменный web/PWA runtime.
+Цель: дать существующим WebRTC-аудио/видеозвонкам корректную нативную аудиосессию,
+выбор разговорного/громкого маршрута и датчик приближения на Capacitor iOS/Android,
+не меняя signaling, MLS identity, cookie auth и web/PWA runtime.
 
 ### Scope
 
-- явный provider-aware subscription contract: `web`, `apns`, `fcm`;
-- additive Alembic migration существующих Web Push строк без потери endpoint/keys;
-- Capacitor adapter для permission, token registration/rotation, unregister и
-  безопасной навигации по opaque routing hints;
-- APNs HTTP/2 token-auth и FCM HTTP v1 provider adapters с bounded timeout;
-- generic lock-screen copy без имени отправителя, plaintext сообщения, SDP или key
-  material;
-- удаление permanently invalid provider tokens и отсутствие rollback уже
-  committed message/call event;
-- platform capability/config runbook без committed signing/provider secrets;
-- regression tests для web compatibility, native token lifecycle, API validation,
-  persistence и provider payloads.
+- узкий frontend port для platform-owned call audio без доступа к auth/storage/crypto;
+- web adapter с текущими `setSinkId`/browser picker semantics без native side effects;
+- iOS `AVAudioSession` в `playAndRecord` + `voiceChat`/`videoChat`, receiver/speaker
+  routing, route-change events и proximity monitoring;
+- Android `MODE_IN_COMMUNICATION`, communication-device routing, audio focus,
+  route-change events и bounded proximity wake lock;
+- активация только после разрешённого microphone capture и гарантированный cleanup
+  при hangup/error/dispose;
+- native speaker/receiver controls через существующий call UI;
+- unit/static/native build regression tests и platform runbook.
 
-### Security и architecture invariants
+### Security и compatibility invariants
 
-- push token принадлежит exact authenticated device/session; guessed device/user id
-  клиент не передаёт;
-- `HttpOnly` session cookie и double-submit CSRF остаются единственной HTTP auth
-  границей; push token не становится bearer credential;
-- payload содержит только version/event/conversation/message-or-call IDs и
-  `sync_required`; приложение после открытия выполняет обычный authenticated sync;
-- APNs/FCM credentials читаются только как backend secrets и не входят в frontend
-  bundle, image или repository;
-- native token не кэшируется в localStorage; актуальный token запрашивается у OS на
-  launch/inspection и идемпотентно upsert-ится;
-- браузерный Service Worker, VAPID subscription и web UI не зависят от Capacitor.
+- plugin получает только `video`, `active` и requested audio route; cookie, CSRF token,
+  push token, MLS/device keys, SDP, call identity и plaintext не передаются;
+- WebRTC media остаётся в стандартном WebView peer connection и не проходит через
+  FastAPI или новый native persistence;
+- native runtime не читает и не записывает IndexedDB, OPFS, cookies или media cache;
+- web/PWA не импортируют platform implementation в runtime и сохраняют service worker,
+  Web Push, same-origin HTTP/WebSocket и browser audio-output behavior;
+- release audio focus/session, route override и proximity state выполняется
+  идемпотентно во всех terminal paths.
 
 ### Exclusions
 
-- CallKit/PushKit VoIP pushes и Android Telecom full-screen incoming-call UI;
-- store signing/provisioning и создание Apple/Firebase projects/credentials;
-- plaintext notification previews;
-- изменение WebRTC signaling/media или MLS protocol.
+- PushKit VoIP token/provider и CallKit incoming-call system UI;
+- Android Telecom/ConnectionService и full-screen incoming-call activity;
+- гарантированный background WebRTC при suspended/killed app;
+- изменение WebRTC signaling, TURN, MLS или call-history protocol.
 
 ### Definition of Done
 
-- pre-existing `push_subscriptions` мигрируют в provider `web` без изменения
-  endpoint/key material;
-- API принимает только provider-specific valid shapes и не раскрывает tokens;
-- native adapter регистрирует текущий APNs/FCM token после permission и обрабатывает
-  validated notification taps; web adapter остаётся прежним;
-- server отправляет privacy-safe APNs/FCM/Web Push payload и удаляет только явно
-  permanently invalid destinations;
-- frontend/backend checks и fresh migration head зелёные; physical delivery явно
-  остаётся rollout gate до появления real provider credentials/devices.
+- iOS/Android shells содержат локальный Capacitor plugin; Android проходит compile,
+  iOS source/project проходит доступные static checks, а full Xcode compile остаётся
+  явным rollout gate при отсутствии полного Xcode в workspace;
+- на native service exposes receiver/speaker routes и синхронизирует platform route
+  changes с текущим call overlay;
+- voice/video mode, proximity и cleanup следуют lifecycle звонка;
+- browser tests подтверждают неизменный `setSinkId` path и отсутствие native calls;
+- frontend unit/lint/typecheck/PWA build и native generate/sync/build зелёные;
+- physical audio-route/proximity acceptance явно остаётся rollout gate до проверки на
+  real iPhone/Android hardware.
 
 ### Проверка
 
-- frontend: `372 passed`, ESLint, Nuxt typecheck, production web/PWA build зелёные;
-- native static generate и Capacitor sync для iOS/Android зелёные, Service Worker
-  остаётся только в web build;
-- backend: Ruff check/format, strict mypy и `292 passed, 12 skipped` зелёные;
-- fresh PostgreSQL успешно прошёл `alembic upgrade head` до `0029_native_push`;
-- отдельный PostgreSQL upgrade `0028 -> 0029` сохранил существующие endpoint/p256dh/
-  auth byte-for-byte и добавил `provider=web`, `native_token=NULL`;
-- dev/production Compose config зелёный, provider secrets остаются optional atomic
-  groups и не попали в repository;
-- physical APNs/FCM delivery не запускался: в workspace нет Apple/Firebase provider
-  credentials, provisioning и physical devices. Это обязательный rollout gate, а
-  не подтверждённый результат mocks.
+- frontend: `376 passed`, ESLint и Nuxt typecheck зелёные;
+- web/PWA production build зелёный, Service Worker сохранил `generateSW` и 67-entry
+  precache;
+- native static generate с exact HTTPS API origin и Capacitor sync iOS/Android
+  зелёные;
+- Android `assembleDebug` и повторный `compileDebugJavaWithJavac` зелёные на JDK из
+  Android Studio + SDK 36;
+- Swift source проходит `swiftc -parse`, Xcode project — `plutil -lint`;
+- full iOS build/sign не запускался: установлен только Command Line Tools, не полный
+  Xcode. Physical receiver/speaker/Bluetooth/proximity/interruption acceptance также
+  не запускался и остаётся обязательным rollout gate.
