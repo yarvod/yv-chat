@@ -91,6 +91,8 @@ Thumbs.db
 .env.test
 secrets/
 frontend/android/app/google-services.json
+*.jks
+*.keystore
 *.key
 *.pem
 !.env.example

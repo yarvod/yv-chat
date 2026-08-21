@@ -1,0 +1,154 @@
+name: Release Android APK
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-apk:
+    runs-on: ubuntu-latest
+    env:
+      ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      ANDROID_GOOGLE_SERVICES_JSON_B64: ${{ secrets.ANDROID_GOOGLE_SERVICES_JSON_B64 }}
+      YV_CHAT_NATIVE_API_ORIGIN: https://chat.yoowee.ru
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Validate release tag and signing inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          version_name=$(sed -n 's/^VERSION_NAME=//p' frontend/native-version.properties)
+          version_code=$(sed -n 's/^VERSION_CODE=//p' frontend/native-version.properties)
+          [[ "$version_name" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          test "$GITHUB_REF_NAME" = "v$version_name"
+          [[ "$version_code" =~ ^[1-9][0-9]*$ ]]
+          release_commit=$(git rev-list -n 1 "$GITHUB_REF_NAME")
+          git fetch origin main
+          git merge-base --is-ancestor "$release_commit" origin/main
+          previous_tag=$(
+            git tag --merged "$release_commit" --list 'v*' \
+              | grep -E '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' \
+              | grep -Fvx "$GITHUB_REF_NAME" \
+              | sort -V \
+              | tail -n 1 \
+              || true
+          )
+          if [ -n "$previous_tag" ]; then
+            previous_version=${previous_tag#v}
+            highest_version=$(printf '%s\n%s\n' "$previous_version" "$version_name" | sort -V | tail -n 1)
+            test "$highest_version" = "$version_name"
+            test "$previous_version" != "$version_name"
+            previous_code=$(
+              git show "$previous_tag:frontend/native-version.properties" \
+                | sed -n 's/^VERSION_CODE=//p'
+            )
+            [[ "$previous_code" =~ ^[1-9][0-9]*$ ]]
+            (( version_code > previous_code ))
+          fi
+          test -n "$ANDROID_KEYSTORE_B64"
+          test -n "$ANDROID_KEYSTORE_PASSWORD"
+          test -n "$ANDROID_KEY_ALIAS"
+          test -n "$ANDROID_KEY_PASSWORD"
+
+      - name: Install locked frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Restore ephemeral Android release inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          keystore_path="$RUNNER_TEMP/yv-chat-release.jks"
+          printf '%s' "$ANDROID_KEYSTORE_B64" | base64 --decode > "$keystore_path"
+          chmod 600 "$keystore_path"
+          echo "ANDROID_KEYSTORE_PATH=$keystore_path" >> "$GITHUB_ENV"
+          if [ -n "$ANDROID_GOOGLE_SERVICES_JSON_B64" ]; then
+            printf '%s' "$ANDROID_GOOGLE_SERVICES_JSON_B64" | base64 --decode \
+              > frontend/android/app/google-services.json
+            chmod 600 frontend/android/app/google-services.json
+          fi
+
+      - name: Build native production bundle
+        working-directory: frontend
+        run: |
+          npm run build:native
+          npm run cap:sync
+          npm run generate:native-assets
+
+      - name: Build signed release APK
+        working-directory: frontend/android
+        run: ./gradlew --no-daemon assembleRelease
+
+      - name: Verify package, version and signature
+        id: artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          source frontend/native-version.properties
+          source_apk=frontend/android/app/build/outputs/apk/release/app-release.apk
+          test -s "$source_apk"
+          build_tools_dir=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 \
+            -type d | sort -V | tail -n 1)
+          "$build_tools_dir/apksigner" verify --verbose --print-certs "$source_apk"
+          package_badging=$("$build_tools_dir/aapt" dump badging "$source_apk")
+          [[ "$package_badging" == *"name='de.com.yoowee.chat'"* ]]
+          [[ "$package_badging" == *"versionCode='$VERSION_CODE'"* ]]
+          [[ "$package_badging" == *"versionName='$VERSION_NAME'"* ]]
+          artifact_dir="$RUNNER_TEMP/android-release"
+          mkdir -p "$artifact_dir"
+          apk="$artifact_dir/yv-chat-$VERSION_NAME.apk"
+          cp "$source_apk" "$apk"
+          checksum="$apk.sha256"
+          (
+            cd "$artifact_dir"
+            sha256sum "$(basename "$apk")" > "$(basename "$checksum")"
+          )
+          echo "apk=$apk" >> "$GITHUB_OUTPUT"
+          echo "checksum=$checksum" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub Release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APK: ${{ steps.artifact.outputs.apk }}
+          CHECKSUM: ${{ steps.artifact.outputs.checksum }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "$APK" "$CHECKSUM" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "$APK" "$CHECKSUM" \
+              --verify-tag --generate-notes --title "yv-chat $GITHUB_REF_NAME"
+          fi
+
+      - name: Remove ephemeral signing files
+        if: always()
+        shell: bash
+        run: |
+          rm -f "$RUNNER_TEMP/yv-chat-release.jks"
+          rm -f frontend/android/app/google-services.json

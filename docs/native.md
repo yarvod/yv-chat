@@ -4,6 +4,10 @@ Capacitor shell использует тот же Nuxt UI/application layer, но
 установкой и отдельным cryptographic device. Web/PWA остаются самостоятельными
 production-клиентами и не зависят от native SDK.
 
+Окончательный Android application ID и iOS Bundle ID: `de.com.yoowee.chat`. Это
+не API host: production native bundle по-прежнему обращается к configured exact
+HTTPS origin, а идентификатор остаётся неизменным весь lifetime установленного app.
+
 ## Storage and identity boundary
 
 | Данные | Web/PWA | Capacitor installation |
@@ -72,9 +76,94 @@ exact authenticated `device_id`; status API token не возвращает. Not
 принимает только versioned UUID routing hints и запускает обычный authenticated sync.
 Lock-screen текст всегда generic и не содержит sender/message/attachment/SDP.
 
+## Identity, signing and releases
+
+Tracked source версии: `frontend/native-version.properties`:
+
+```text
+VERSION_CODE=1
+VERSION_NAME=1.0.0
+```
+
+`VERSION_CODE` — строго возрастающее positive integer, которое Android использует
+для upgrade/downgrade policy. `VERSION_NAME` — пользовательская SemVer и должна exact
+совпадать с release tag `vX.Y.Z`. Уже опубликованный versionCode никогда не
+переиспользуется. Ручное редактирование версий не требуется: release command
+синхронизирует Android source of truth с iOS `MARKETING_VERSION`/
+`CURRENT_PROJECT_VERSION`.
+
+Подготовить commit и annotated tag только локально:
+
+```bash
+./scripts/release-android.sh 1.1.0
+```
+
+Скрипт требует clean `main`, обновляет remote refs без push, проверяет новую strict
+SemVer относительно всех `vX.Y.Z` tags, автоматически увеличивает `VERSION_CODE`,
+синхронизирует обе iOS build configurations и запускает frontend tests, lint,
+typecheck и web/PWA production build. Если version уже подготовлена в tracked-файле,
+но ещё не имеет tag (включая первый `1.0.0`), лишний version commit не создаётся.
+
+Полная публикация выполняется только явным флагом:
+
+```bash
+./scripts/release-android.sh 1.1.0 --push
+```
+
+До изменения version этот режим дополнительно проверяет GitHub authentication и
+наличие четырёх signing secret names без чтения их значений. После зелёных checks он
+одной atomic операцией отправляет `main` и tag. Push `main` запускает production
+deployment, push tag запускает signed APK GitHub Release. Без `--push` никакие remote
+refs и production не меняются; напечатанную команду публикации можно выполнить позже.
+
+Self-managed release keystore существует только вне repository:
+
+```text
+/Users/yarvod/workspace/vpn/.yv-chat-secrets/android/yv-chat-release.jks
+alias: yv-chat-release
+macOS Keychain service: de.com.yoowee.chat.android-signing
+```
+
+Рядом лежат только shareable public certificate/fingerprint и local README. Пароль
+сгенерирован случайно и хранится в macOS Keychain. GitHub Secret не является backup:
+нужны минимум две отдельные encrypted offline copies исходного `.jks` и доступный
+password-manager/Keychain recovery plan. Потеря private app signing key означает
+невозможность обновлять уже установленные GitHub APK. Private key, password и raw
+base64 никогда не печатаются в CI logs и не коммитятся.
+
+Repository GitHub Actions secrets:
+
+```text
+ANDROID_KEYSTORE_B64
+ANDROID_KEYSTORE_PASSWORD
+ANDROID_KEY_ALIAS
+ANDROID_KEY_PASSWORD
+ANDROID_GOOGLE_SERVICES_JSON_B64  # optional until Firebase Android app is registered
+```
+
+Workflow `.github/workflows/android-release.yml` запускается только по tag `vX.Y.Z`,
+проверяет совпадение tag с tracked version, строгое возрастание SemVer/versionCode
+относительно предыдущего release и принадлежность commit ветке `main`,
+собирает local native bundle для `https://chat.yoowee.ru`, подписывает release APK,
+проверяет signature/package/version через Android build tools и публикует APK вместе
+с SHA-256 checksum в GitHub Release. Signing files существуют на runner только во
+временном каталоге и удаляются в `always()` step.
+
+Android сохраняет app sandbox/IndexedDB/cookie jar при установке нового APK поверх
+старого только если application ID и signing certificate совпадают, а versionCode
+возрос. Debug APK использует другой certificate: первый production release требует
+однократного удаления ранее установленной debug-сборки, поэтому debug APK нельзя
+раздавать пользователям как predecessor. После первого signed release переустановка
+не нужна; обычный Package Installer предлагает «Обновить» и сохраняет local data.
+
+Идентификатор должен быть зарегистрирован как exact Android app
+`de.com.yoowee.chat` в Firebase перед включением FCM и как package name + public
+certificate в Android Developer Console/Play Console. Firebase/API/provider keys не
+являются signing key и управляются независимо.
+
 ### Provider setup
 
-Для iOS включается Push Notifications capability для App ID `ru.yoowee.chat` и
+Для iOS включается Push Notifications capability для App ID `de.com.yoowee.chat` и
 подходящий provisioning profile. Committed `App.entitlements` содержит development
 environment; distribution signing/profile должен сформировать production entitlement.
 На backend одним комплектом задаются `APNS_KEY_ID`, `APNS_TEAM_ID`,

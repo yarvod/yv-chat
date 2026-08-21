@@ -1,4 +1,4 @@
-package ru.yoowee.chat;
+package de.com.yoowee.chat;
 
 import com.getcapacitor.BridgeActivity;
 import android.os.Bundle;

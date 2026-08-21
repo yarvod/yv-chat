@@ -357,6 +357,15 @@ CSRF, а realtime использует тот же remote WSS endpoint. Web/PWA 
 origin и relative same-origin transport. Backend разрешает только exact configured
 browser/native origins; wildcard, bearer в URL и WebSocket query token запрещены.
 
+Native installation identity зафиксирована как `de.com.yoowee.chat` для Capacitor,
+Android package/namespace и iOS Bundle ID. Identity не является network origin и не
+выбирает API host. Signed Android update совместим с существующей installation только
+при неизменных application ID + signing certificate и строго большем versionCode;
+эти значения являются release governance state, а не runtime config. Self-managed
+private signing key существует вне repository/CI artifacts, workflow получает его
+только как encrypted GitHub Secret и публикует проверенный APK + checksum по exact
+SemVer tag из `main`. Debug certificate не входит в production signing lineage.
+
 Native haptics/system bars/keyboard/app lifecycle реализуются маленькими adapters.
 APNs/FCM transport использует provider-specific device destinations и generic opaque
 routing payload, не подменяя sync или E2EE. CallKit/PushKit VoIP и Android Telecom

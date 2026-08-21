@@ -1,14 +1,39 @@
 apply plugin: 'com.android.application'
 
+def nativeVersionProperties = new Properties()
+def nativeVersionFile = rootProject.file('../native-version.properties')
+if (!nativeVersionFile.exists()) {
+    throw new GradleException("Missing native version file: ${nativeVersionFile}")
+}
+nativeVersionFile.withInputStream { nativeVersionProperties.load(it) }
+
+def nativeVersionCode = nativeVersionProperties.getProperty('VERSION_CODE')
+def nativeVersionName = nativeVersionProperties.getProperty('VERSION_NAME')
+if (!(nativeVersionCode ==~ /[1-9][0-9]*/) || !(nativeVersionName ==~ /[0-9]+\.[0-9]+\.[0-9]+/)) {
+    throw new GradleException('native-version.properties must contain positive VERSION_CODE and SemVer VERSION_NAME')
+}
+
+def releaseSigningValues = [
+    storeFile: System.getenv('ANDROID_KEYSTORE_PATH'),
+    storePassword: System.getenv('ANDROID_KEYSTORE_PASSWORD'),
+    keyAlias: System.getenv('ANDROID_KEY_ALIAS'),
+    keyPassword: System.getenv('ANDROID_KEY_PASSWORD'),
+]
+def releaseTaskRequested = gradle.startParameter.taskNames.any { it.toLowerCase().contains('release') }
+def releaseSigningComplete = releaseSigningValues.values().every { it != null && !it.isBlank() }
+if (releaseTaskRequested && !releaseSigningComplete) {
+    throw new GradleException('Release signing requires ANDROID_KEYSTORE_PATH, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD')
+}
+
 android {
-    namespace = "ru.yoowee.chat"
+    namespace = "de.com.yoowee.chat"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "ru.yoowee.chat"
+        applicationId "de.com.yoowee.chat"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode nativeVersionCode.toInteger()
+        versionName nativeVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,8 +41,19 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        if (releaseSigningComplete) {
+            release {
+                storeFile file(releaseSigningValues.storeFile)
+                storePassword releaseSigningValues.storePassword
+                keyAlias releaseSigningValues.keyAlias
+                keyPassword releaseSigningValues.keyPassword
+            }
+        }
+    }
     buildTypes {
         release {
+            if (releaseSigningComplete) signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

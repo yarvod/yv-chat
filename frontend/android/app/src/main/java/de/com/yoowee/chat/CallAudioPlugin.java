@@ -1,4 +1,4 @@
-package ru.yoowee.chat;
+package de.com.yoowee.chat;
 
 import android.content.Context;
 import android.media.AudioAttributes;

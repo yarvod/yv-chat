@@ -83,6 +83,19 @@ selected требуют отдельных application/server contracts и не 
 markers, clipboard failure retention и exact chronological copy format; полный
 frontend suite `379 passed`, lint, typecheck и production/PWA build зелёные.
 
+### BL-081 — Подписанные Android releases
+
+Статус: **completed locally; GitHub secrets/tag/physical update pending owner action**
+(`WP-120`).
+
+Результат: окончательная native identity `de.com.yoowee.chat`, единый tracked
+version source, long-lived signing certificate и tag-triggered GitHub Release APK.
+Одинаковые application ID/certificate и возрастающий versionCode позволяют Android
+обновлять установленный release без очистки app sandbox. Keystore и provider files
+остаются вне Git; debug APK не объявляется совместимым production predecessor.
+Guarded release command синхронизирует Android/iOS версии, выполняет checks и только
+по explicit `--push` атомарно отправляет `main` + tag, запуская prod deploy и APK CI.
+
 ### BL-041 — Visual system, accessibility и PWA polish
 
 Статус: **remaining accessibility/visual gate**. Реализованные shell, responsive

@@ -1,7 +1,7 @@
 import type { CapacitorConfig } from '@capacitor/cli'
 
 const config: CapacitorConfig = {
-  appId: 'ru.yoowee.chat',
+  appId: 'de.com.yoowee.chat',
   appName: 'yv-chat',
   webDir: '.output/public',
   loggingBehavior: 'none',
