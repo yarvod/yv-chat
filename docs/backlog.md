@@ -85,7 +85,7 @@ frontend suite `379 passed`, lint, typecheck и production/PWA build зелён�
 
 ### BL-081 — Подписанные Android releases
 
-Статус: **completed locally; GitHub secrets/tag/physical update pending owner action**
+Статус: **published and production configured; physical Android update/push acceptance pending**
 (`WP-120`).
 
 Результат: окончательная native identity `de.com.yoowee.chat`, единый tracked
@@ -95,6 +95,11 @@ version source, long-lived signing certificate и tag-triggered GitHub Release A
 остаются вне Git; debug APK не объявляется совместимым production predecessor.
 Guarded release command синхронизирует Android/iOS версии, выполняет checks и только
 по explicit `--push` атомарно отправляет `main` + tag, запуская prod deploy и APK CI.
+Первый подписанный release `v1.0.0` опубликован в GitHub, скачанный APK независимо
+проверен, Firebase app/certificate зарегистрированы, а production FCM sender успешно
+проходит Google OAuth. Финальный внешний gate — установка на реальный Android,
+background/terminated delivery и обновление следующим signed release без очистки
+данных.
 
 ### BL-041 — Visual system, accessibility и PWA polish
 

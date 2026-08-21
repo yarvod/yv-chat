@@ -4,22 +4,6 @@
 
 ## Active
 
-### BUG-104 — Native push migration не проходила backend lint gate
-
-- Статус: `fixed locally; production retry pending`.
-- Severity: `low code quality, high deployment impact`.
-- Reproduction: отправить native push/Capacitor release на `main`; CI run
-  `32535085178` проходит fresh migration, затем backend Ruff останавливается на
-  `E501` в downgrade constraint cleanup.
-- Expected: repository lint/format gate проходит до production verification.
-- Actual: одна строка migration имела длину `102 > 100`, поэтому CI и deploy gate
-  не позволили изменить production.
-- Root cause: migration была функционально проверена, но итоговый backend
-  Ruff lint/format не был повторён после последнего изменения строки downgrade.
-- Исправление: constraint cleanup отформатирован canonical Ruff layout.
-- Проверка: Ruff lint/format, mypy и полный backend suite зелёные (`292 passed`,
-  `12 skipped`); production workflow должен быть повторён на hotfix commit.
-
 ### BUG-103 — Возврат из Settings повторно загружал список чатов
 
 - Статус: `fixed locally in WP-115`.
@@ -1165,6 +1149,23 @@ Physical Pixel acceptance для `BUG-033`/`BUG-034` ожидает пользо
 - Проверка: тест или команда, подтверждающая fix.
 
 ## Resolved
+
+### BUG-104 — Native push migration не проходила backend lint gate
+
+- Статус: `fixed and production verified in 57c7533`.
+- Severity: `low code quality, high deployment impact`.
+- Reproduction: отправить native push/Capacitor release на `main`; CI run
+  `32535085178` проходит fresh migration, затем backend Ruff останавливается на
+  `E501` в downgrade constraint cleanup.
+- Expected: repository lint/format gate проходит до production verification.
+- Actual: одна строка migration имела длину `102 > 100`, поэтому первый CI/deploy
+  gate безопасно не позволил изменить production.
+- Root cause: migration была функционально проверена, но итоговый backend
+  Ruff lint/format не был повторён после последнего изменения строки downgrade.
+- Исправление: constraint cleanup отформатирован canonical Ruff layout.
+- Проверка: Ruff lint/format, mypy и полный backend suite зелёные (`292 passed`,
+  `12 skipped`); CI `32535216880` и production deploy `32535216896` прошли, API и
+  frontend healthy на immutable commit `57c7533`.
 
 ### BUG-053 — Второй device существующего участника не мог войти в READY direct MLS
 

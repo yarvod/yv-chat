@@ -138,7 +138,7 @@ ANDROID_KEYSTORE_B64
 ANDROID_KEYSTORE_PASSWORD
 ANDROID_KEY_ALIAS
 ANDROID_KEY_PASSWORD
-ANDROID_GOOGLE_SERVICES_JSON_B64  # optional until Firebase Android app is registered
+ANDROID_GOOGLE_SERVICES_JSON_B64
 ```
 
 Workflow `.github/workflows/android-release.yml` запускается только по tag `vX.Y.Z`,
@@ -175,6 +175,13 @@ environment; distribution signing/profile должен сформировать 
 `FCM_PROJECT_ID`, service-account email в `FCM_CLIENT_EMAIL` и base64 полного PKCS8
 PEM в `FCM_PRIVATE_KEY_B64`. APNs/FCM keys остаются server-only secrets; в native
 bundle попадают только platform-generated installation tokens.
+
+Production Android зарегистрирован в Firebase project `yoowee-chat-prod` как exact
+package `de.com.yoowee.chat`; public signing-certificate SHA-256 также зарегистрирован.
+`google-services.json` передаётся release workflow через GitHub Secret, а dedicated
+service account имеет только FCM send role. Его JSON key хранится вне repository и
+на production преобразуется в три server-only `FCM_*` значения; raw JSON/PEM и OAuth
+token не должны попадать в logs, shell arguments или client bundle.
 
 APNs использует token-auth HTTP/2, Android — FCM HTTP v1 OAuth2. Оба transport
 имеют bounded timeout, удаляют destination только по explicit permanent-invalid

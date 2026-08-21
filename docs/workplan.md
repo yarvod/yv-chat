@@ -2,7 +2,7 @@
 
 ## WP-120 — Подписанные Android releases
 
-Статус: **completed locally; GitHub secret upload и first tag pending explicit owner approval**
+Статус: **completed, published and production configured; physical Android acceptance pending**
 Backlog: `BL-081`
 
 Цель: зафиксировать окончательную native identity `de.com.yoowee.chat`, ввести
@@ -43,8 +43,7 @@ Backlog: `BL-081`
 - публикация в Google Play и Play App Signing enrollment;
 - iOS distribution certificate/provisioning/App Store release;
 - in-app automatic updater/downloader;
-- Android Developer Console identity verification и Firebase project creation,
-  требующие действий владельца во внешних консолях.
+- Android Developer Console / Google Play publication and store identity verification.
 
 ### Definition of Done
 
@@ -74,9 +73,17 @@ Backlog: `BL-081`
   `aapt`/`apksigner`; release без signing environment fail-closed;
 - native production build/sync/assets, iOS plist lint, Swift syntax и Xcode static
   structure checks passed; web/PWA contracts не изменены;
-- keystore/password остались вне repository и logs; GitHub Actions Secrets намеренно
-  не загружены без отдельного разрешения владельца, optional Firebase
-  `google-services.json` ещё не предоставлен;
-- pending external acceptance: encrypted offline keystore backup, first atomic
-  `main + v1.0.0` push, green GitHub Release workflow и physical signed-APK update
-  preserving app data.
+- keystore/password/Firebase service-account key остались вне repository и logs;
+  все пять Android GitHub Actions Secrets установлены, а ignored
+  `google-services.json` соответствует Firebase app `de.com.yoowee.chat`;
+- atomic `main + v1.0.0` push выполнен; production deploy `32535216896` и Android
+  release workflow `32536789587` зелёные;
+- GitHub Release `v1.0.0` содержит подписанный `yv-chat-1.0.0.apk` и checksum;
+  скачанный release asset независимо проверен: package `de.com.yoowee.chat`, version
+  `1.0.0 (1)`, APK Signature Scheme v2 и ожидаемый SHA-256 certificate;
+- production API получил FCM HTTP v1 credentials, пересоздан на неизменяемом образе
+  `sha-57c75332a408a1339eeb6d7d0989d6c3ac57c2d6`, остался healthy, а реальный OAuth2
+  token exchange с Google прошёл без вывода token/key;
+- pending external acceptance: encrypted offline keystore backup, установка на
+  физический Android, background/terminated push и последующее signed-APK update с
+  сохранением app data.

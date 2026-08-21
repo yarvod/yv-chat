@@ -155,6 +155,15 @@ fail-fast отклоняется settings validation; пустой компле�
 не влияя на Web Push. Полный setup и physical rollout gate описаны в
 [native.md](native.md).
 
+Production FCM был включён 2026-08-22 без замены application images: три `FCM_*`
+значения атомарно добавлены в mode-0600 `.env` с timestamped server-side backup,
+затем пересоздан только `api` на immutable
+`sha-57c75332a408a1339eeb6d7d0989d6c3ac57c2d6`. Settings validation, container
+health, public health/frontend, expected unauthenticated WebSocket `403` и реальный
+Google OAuth2 token exchange прошли. Token и private key при проверке не выводились.
+Полный delivery acceptance остаётся device-bound: signed APK должен получить runtime
+notification permission и зарегистрировать настоящий FCM installation token.
+
 Relevant non-secret ingress values are:
 
 ```text
