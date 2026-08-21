@@ -68,6 +68,21 @@ PushKit VoIP и Android Telecom surfaces остаются отдельным rol
 нативной аудиосессии/route/proximity runtime; существующий browser Web Push и
 WebRTC остаются рабочими на каждом этапе.
 
+### BL-080 — Multi-select и копирование сообщений
+
+Статус: **completed locally** (`WP-119`).
+
+Результат: existing long-press/context menu включает transient selection mode для
+нескольких уже локально расшифрованных сообщений. Пользователь видит circular
+markers, количество и может скопировать chronological Telegram-подобные blocks с
+display name и локальными датой/временем. Selection не становится persistence или
+sync state, не читает ciphertext и очищается при смене разговора. Forward/delete
+selected требуют отдельных application/server contracts и не входят в этот slice.
+
+Проверено: long-press/context-menu entry, touch/click/keyboard toggle, circular
+markers, clipboard failure retention и exact chronological copy format; полный
+frontend suite `379 passed`, lint, typecheck и production/PWA build зелёные.
+
 ### BL-041 — Visual system, accessibility и PWA polish
 
 Статус: **remaining accessibility/visual gate**. Реализованные shell, responsive

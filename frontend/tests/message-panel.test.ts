@@ -299,6 +299,106 @@ describe('message panel', () => {
     expect(wrapper.find('.message-context-menu').exists()).toBe(true)
   })
 
+  it('selects multiple messages and copies visible text with sender and timestamp', async () => {
+    const copyText = vi.fn()
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true)
+    const messages = [{
+      messageId: 'message-selected-2',
+      clientMessageId: 'client-selected-2',
+      conversationId: 'conversation-1',
+      senderUserId: 'alice-id',
+      senderDeviceId: 'alice-device',
+      protocolVersion: 2,
+      cryptoGenerationId: 'generation',
+      cryptoEpoch: 1,
+      sequence: 2,
+      createdAt: '2026-08-22T00:40:00',
+      expiresAt: '2026-09-21T00:00:00',
+      ciphertextBase64: 'b3BhcXVl',
+      deletionReason: null,
+      deletedAt: null,
+      contentState: 'available' as const,
+      displayBody: 'Второе сообщение',
+      contentSecure: true,
+    }, {
+      messageId: 'message-selected-1',
+      clientMessageId: 'client-selected-1',
+      conversationId: 'conversation-1',
+      senderUserId: 'bob-id',
+      senderDeviceId: 'bob-device',
+      protocolVersion: 2,
+      cryptoGenerationId: 'generation',
+      cryptoEpoch: 1,
+      sequence: 1,
+      createdAt: '2026-08-22T00:39:00',
+      expiresAt: '2026-09-21T00:00:00',
+      ciphertextBase64: 'b3BhcXVl',
+      deletionReason: null,
+      deletedAt: null,
+      contentState: 'available' as const,
+      displayBody: 'Первое сообщение',
+      contentSecure: true,
+    }]
+    const wrapper = mount(MessagePanel, {
+      props: {
+        conversation,
+        messages,
+        actorUserId: 'alice-id',
+        sending: false,
+        protectionSecure: true,
+        protectionLabel: 'E2EE',
+        sendMessage: vi.fn(),
+        deleteMessage: vi.fn(),
+        deletingMessageId: null,
+        copyText,
+        typingActorIds: [],
+        onlineActorIds: [],
+        deliveryStates: [],
+        connectionState: 'connected',
+        setTyping: vi.fn(),
+      },
+    })
+
+    await wrapper.get('[data-message-id="message-selected-1"]').trigger('contextmenu')
+    expect(wrapper.get('.message-context-menu').text()).toContain('Выбрать')
+    await wrapper.get('.context-message-actions button:nth-child(3)').trigger('click')
+
+    expect(wrapper.get('.message-selection-header').text()).toContain('1 выбрано')
+    expect(wrapper.find('form.composer').exists()).toBe(false)
+    expect(wrapper.findAll('.message-selection-marker')).toHaveLength(2)
+    expect(wrapper.get('[data-message-id="message-selected-1"]').attributes('aria-checked')).toBe('true')
+
+    await wrapper.get('[data-message-id="message-selected-2"]').trigger('keydown', { key: ' ' })
+    expect(wrapper.get('.message-selection-header').text()).toContain('2 выбрано')
+    await wrapper.get('.message-selection-copy').trigger('click')
+
+    const expected = 'Bob, [22.08.2026 00:39]\nПервое сообщение\n\n'
+      + 'Alice, [22.08.2026 00:40]\nВторое сообщение'
+    expect(copyText).toHaveBeenLastCalledWith(expected)
+    expect(wrapper.get('.message-selection-header').text()).toContain('2 выбрано')
+    expect(wrapper.get('.message-action-toast').text()).toBe('Не удалось скопировать сообщения')
+
+    await wrapper.get('.message-selection-copy').trigger('click')
+    expect(copyText).toHaveBeenLastCalledWith(expected)
+    expect(wrapper.find('.message-selection-header').exists()).toBe(false)
+    expect(wrapper.find('form.composer').exists()).toBe(true)
+    expect(wrapper.get('.message-action-toast').text()).toBe('Скопировано сообщений: 2')
+
+    await wrapper.get('[data-message-id="message-selected-1"]').trigger('contextmenu')
+    await wrapper.get('.context-message-actions button:nth-child(3)').trigger('click')
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.message-selection-header').exists()).toBe(false)
+
+    await wrapper.get('[data-message-id="message-selected-1"]').trigger('contextmenu')
+    await wrapper.get('.context-message-actions button:nth-child(3)').trigger('click')
+    await wrapper.setProps({
+      conversation: { ...conversation, conversationId: 'conversation-2' },
+    })
+    expect(wrapper.find('.message-selection-header').exists()).toBe(false)
+  })
+
   it('renders a standalone video note without the generic square message frame', async () => {
     vi.useFakeTimers()
     const videoNoteMessage = {

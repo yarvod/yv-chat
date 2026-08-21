@@ -303,6 +303,14 @@ presence metadata и compact grouped bubbles являются presentation де�
 `WP-041` проверяет desktop `1440×900`, mobile `390×844`, keyboard-sized `390×500`,
 long sidebar/timeline и неизменные координаты header/composer после internal scroll.
 
+Multi-message selection также остаётся transient presentation state. В clipboard
+formatter разрешены только уже подготовленные `contentState=available` timeline
+views: display name участника, локальная дата/время, `displayBody` и безопасные
+видимые labels вложений/звонков. Formatter не читает ciphertext, attachment secrets
+или unavailable placeholders; selection не сохраняется в IndexedDB/localStorage,
+не синхронизируется и очищается при смене разговора. Forward/delete selected требуют
+отдельных application/server contracts и не выводятся как неработающие UI actions.
+
 Group info открывается отдельной responsive panel, а не разрастается внутри
 `MessagePanel`: desktop использует bounded side sheet, mobile — `100dvh` surface с
 safe-area и собственным scroll. Panel получает intent callbacks rename/add/remove/

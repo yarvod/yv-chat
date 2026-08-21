@@ -26,6 +26,7 @@ import type {
   ParticipantDeliveryState,
 } from '../../domain/messaging/models'
 import { buildTimelineLayout } from '../../presentation/chat/timeline-layout'
+import { selectedMessageCopyText } from '../../presentation/chat/selected-message-copy'
 import {
   ALL_REACTIONS,
   QUICK_REACTIONS,
@@ -184,6 +185,7 @@ interface MessageSwipeState {
 }
 const messageContextMenu = ref<MessageContextMenuState | null>(null)
 const messageSwipe = ref<MessageSwipeState | null>(null)
+const selectedMessageIds = ref<ReadonlySet<string>>(new Set())
 const MESSAGE_GESTURE_SLOP_PX = 10
 const activePin = computed(() => props.messagePins[activePinIndex.value] ?? props.messagePins[0])
 const activePinnedMessage = computed(() => props.messages.find(message => (
@@ -196,6 +198,14 @@ const attachmentsAllowed = computed(() => (
 const contextMessage = computed(() => props.messages.find(message => (
   message.messageId === messageContextMenu.value?.messageId
 )) ?? null)
+const selectedMessages = computed(() => props.messages
+  .filter(message => (
+    message.contentState === 'available'
+    && selectedMessageIds.value.has(message.messageId)
+  ))
+  .sort((left, right) => left.sequence - right.sequence))
+const selectedMessageCount = computed(() => selectedMessages.value.length)
+const messageSelectionActive = computed(() => selectedMessageCount.value > 0)
 const unpinCandidate = computed(() => props.messages.find(message => (
   message.messageId === unpinCandidateId.value
 )) ?? null)
@@ -544,8 +554,48 @@ async function copyMessageText(message: TimelineMessage): Promise<void> {
   showMessageActionNotice('Не удалось скопировать текст')
 }
 
-function openMessageContext(message: TimelineMessage, clientX: number, clientY: number): void {
+function isMessageSelected(messageId: string): boolean {
+  return selectedMessageIds.value.has(messageId)
+}
+
+function clearMessageSelection(): void {
+  selectedMessageIds.value = new Set()
+}
+
+function toggleMessageSelection(message: TimelineMessage): void {
   if (message.contentState !== 'available') return
+  const next = new Set(selectedMessageIds.value)
+  if (next.has(message.messageId)) next.delete(message.messageId)
+  else next.add(message.messageId)
+  selectedMessageIds.value = next
+  props.haptic('selection')
+}
+
+function startMessageSelection(message: TimelineMessage): void {
+  if (message.contentState !== 'available') return
+  closeTransientSurfaces()
+  closeSearch()
+  resetMessageSwipe()
+  selectedMessageIds.value = new Set([message.messageId])
+  props.haptic('selection')
+}
+
+async function copySelectedMessages(): Promise<void> {
+  const count = selectedMessageCount.value
+  const conversation = props.conversation
+  if (count === 0 || !conversation) return
+  const payload = selectedMessageCopyText(selectedMessages.value, conversation)
+  if (!payload) return
+  if (await props.copyText(payload)) {
+    clearMessageSelection()
+    showMessageActionNotice(`Скопировано сообщений: ${count}`)
+    return
+  }
+  showMessageActionNotice('Не удалось скопировать сообщения')
+}
+
+function openMessageContext(message: TimelineMessage, clientX: number, clientY: number): void {
+  if (message.contentState !== 'available' || messageSelectionActive.value) return
   attachmentMenuOpen.value = false
   const menuWidth = 380
   const menuHeight = 430
@@ -561,10 +611,19 @@ function openMessageContext(message: TimelineMessage, clientX: number, clientY: 
 
 function handleMessageContextMenu(event: MouseEvent, message: TimelineMessage): void {
   event.preventDefault()
+  if (messageSelectionActive.value) {
+    toggleMessageSelection(message)
+    return
+  }
   openMessageContext(message, event.clientX, event.clientY)
 }
 
 function handleMessageKeydown(event: KeyboardEvent, message: TimelineMessage): void {
+  if (messageSelectionActive.value && (event.key === 'Enter' || event.key === ' ')) {
+    event.preventDefault()
+    toggleMessageSelection(message)
+    return
+  }
   if (event.key !== 'ContextMenu' && !(event.key === 'F10' && event.shiftKey)) return
   event.preventDefault()
   const target = event.currentTarget
@@ -602,6 +661,12 @@ function suppressNextVideoNoteClick(messageId: string): void {
 }
 
 function handleMessageClickCapture(event: MouseEvent, message: TimelineMessage): void {
+  if (messageSelectionActive.value && message.contentState === 'available') {
+    event.preventDefault()
+    event.stopPropagation()
+    toggleMessageSelection(message)
+    return
+  }
   if (suppressedMessageClickId !== message.messageId) return
   if (!isVideoNoteGestureTarget(event.target, message)) return
   event.preventDefault()
@@ -622,6 +687,7 @@ function resetMessageSwipe(): void {
 
 function handleMessagePointerDown(event: PointerEvent, message: TimelineMessage): void {
   if (suppressedMessageClickId) clearSuppressedMessageClick()
+  if (messageSelectionActive.value) return
   if (event.pointerType === 'mouse' || event.button !== 0 || isInteractiveTarget(event.target, message)) return
   const startedOnVideoNote = isVideoNoteGestureTarget(event.target, message)
   messageSwipe.value = {
@@ -690,6 +756,10 @@ function handleDocumentPointerDown(event: PointerEvent): void {
 
 function handleDocumentKeydown(event: KeyboardEvent): void {
   if (event.key !== 'Escape') return
+  if (messageSelectionActive.value) {
+    clearMessageSelection()
+    return
+  }
   closeTransientSurfaces()
   deleteCandidateId.value = null
   unpinCandidateId.value = null
@@ -699,6 +769,18 @@ watch(
   () => props.messagePins.map(pin => pin.messageId).join(','),
   () => {
     if (activePinIndex.value >= props.messagePins.length) activePinIndex.value = 0
+  },
+)
+
+watch(
+  () => props.messages.map(message => `${message.messageId}:${message.contentState}`).join(','),
+  () => {
+    if (!messageSelectionActive.value) return
+    const selectableIds = new Set(props.messages
+      .filter(message => message.contentState === 'available')
+      .map(message => message.messageId))
+    const next = new Set([...selectedMessageIds.value].filter(messageId => selectableIds.has(messageId)))
+    if (next.size !== selectedMessageIds.value.size) selectedMessageIds.value = next
   },
 )
 
@@ -851,6 +933,7 @@ function clipboardFiles(event: ClipboardEvent): File[] {
 }
 
 function handlePaste(event: ClipboardEvent): void {
+  if (messageSelectionActive.value) return
   const files = clipboardFiles(event)
   if (files.length === 0) return
   event.preventDefault()
@@ -862,14 +945,14 @@ function carriesFiles(event: DragEvent): boolean {
 }
 
 function handleAttachmentDragEnter(event: DragEvent): void {
-  if (!carriesFiles(event)) return
+  if (messageSelectionActive.value || !carriesFiles(event)) return
   event.preventDefault()
   attachmentDragDepth += 1
   attachmentDragActive.value = true
 }
 
 function handleAttachmentDragOver(event: DragEvent): void {
-  if (!carriesFiles(event)) return
+  if (messageSelectionActive.value || !carriesFiles(event)) return
   event.preventDefault()
   if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'
 }
@@ -881,7 +964,7 @@ function handleAttachmentDragLeave(event: DragEvent): void {
 }
 
 function handleAttachmentDrop(event: DragEvent): void {
-  if (!carriesFiles(event)) return
+  if (messageSelectionActive.value || !carriesFiles(event)) return
   event.preventDefault()
   attachmentDragDepth = 0
   attachmentDragActive.value = false
@@ -1155,6 +1238,7 @@ watch(
       deleteCandidateId.value = null
       unpinCandidateId.value = null
       messageContextMenu.value = null
+      clearMessageSelection()
       messageActionNotice.value = null
       if (messageActionNoticeTimer) clearTimeout(messageActionNoticeTimer)
       messageActionNoticeTimer = null
@@ -1233,7 +1317,22 @@ onBeforeUnmount(() => {
       <small v-else-if="protectionSecure">Файлы будут зашифрованы до загрузки</small>
       <small v-else>Ожидаем готовности E2EE</small>
     </div>
-    <header class="conversation-header">
+    <header v-if="messageSelectionActive" class="conversation-header message-selection-header">
+      <button
+        class="message-selection-close"
+        type="button"
+        aria-label="Снять выделение"
+        @click="clearMessageSelection"
+      >
+        <AppIcon name="close" />
+      </button>
+      <strong aria-live="polite">{{ selectedMessageCount }} выбрано</strong>
+      <button class="message-selection-copy" type="button" @click="copySelectedMessages">
+        <span aria-hidden="true">⧉</span>
+        <span>Копировать</span>
+      </button>
+    </header>
+    <header v-else class="conversation-header">
       <button class="mobile-back" type="button" aria-label="К списку диалогов" @click="emit('back')">
         <AppIcon name="back" />
       </button>
@@ -1359,8 +1458,12 @@ onBeforeUnmount(() => {
     <div
       ref="timeline"
       class="message-timeline"
-      :class="{ 'message-timeline--restoring': restorationPending }"
+      :class="{
+        'message-timeline--restoring': restorationPending,
+        'message-timeline--selecting': messageSelectionActive,
+      }"
       :aria-busy="restorationPending"
+      :aria-label="messageSelectionActive ? 'Выбор сообщений' : undefined"
       aria-live="polite"
       @scroll.passive="handleTimelineScroll"
       @pointerdown.passive="releaseLayoutAnchor"
@@ -1396,11 +1499,18 @@ onBeforeUnmount(() => {
             'message-bubble--sticker': isStandaloneSticker(item.message),
             'message-bubble--call': isCallHistory(item.message),
             'message-bubble--swiping': messageSwipe?.messageId === item.message.messageId,
+            'message-bubble--selected': isMessageSelected(item.message.messageId),
           }"
           :style="messageSwipeStyle(item.message.messageId)"
           :tabindex="item.message.contentState === 'available' ? 0 : undefined"
+          :role="messageSelectionActive && item.message.contentState === 'available' ? 'checkbox' : undefined"
+          :aria-checked="messageSelectionActive && item.message.contentState === 'available'
+            ? isMessageSelected(item.message.messageId)
+            : undefined"
           :aria-label="item.message.contentState === 'available'
-            ? `Сообщение #${item.message.sequence}. Открыть действия: Shift+F10`
+            ? messageSelectionActive
+              ? `Сообщение #${item.message.sequence}. ${isMessageSelected(item.message.messageId) ? 'Выбрано' : 'Не выбрано'}`
+              : `Сообщение #${item.message.sequence}. Открыть действия: Shift+F10`
             : undefined"
           :data-message-id="item.message.messageId"
           :data-sequence="item.message.sequence"
@@ -1412,6 +1522,12 @@ onBeforeUnmount(() => {
           @click.capture="handleMessageClickCapture($event, item.message)"
           @keydown="handleMessageKeydown($event, item.message)"
         >
+          <span
+            v-if="messageSelectionActive && item.message.contentState === 'available'"
+            class="message-selection-marker"
+            :class="{ selected: isMessageSelected(item.message.messageId) }"
+            aria-hidden="true"
+          >{{ isMessageSelected(item.message.messageId) ? '✓' : '' }}</span>
           <strong v-if="item.showSender">{{ senderName(item.message) }}</strong>
           <MessageAttachments
             v-if="item.message.contentState === 'available' && (item.message.displayAttachments?.length ?? 0) > 0"
@@ -1519,7 +1635,7 @@ onBeforeUnmount(() => {
       {{ messageActionNotice }}
     </p>
 
-    <form class="composer" @submit.prevent="submit">
+    <form v-if="!messageSelectionActive" class="composer" @submit.prevent="submit">
       <div v-if="replyingTo" class="composer-reply">
         <span>
           <strong>Ответ {{ senderName(replyingTo) }}</strong>
@@ -1770,6 +1886,9 @@ onBeforeUnmount(() => {
             @click="copyMessageText(contextMessage)"
           >
             <span aria-hidden="true">⧉</span><strong>Копировать текст</strong>
+          </button>
+          <button type="button" role="menuitem" @click="startMessageSelection(contextMessage)">
+            <span aria-hidden="true">◉</span><strong>Выбрать</strong>
           </button>
           <button
             v-if="canManagePins()"
