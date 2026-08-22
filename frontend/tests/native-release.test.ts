@@ -37,13 +37,20 @@ describe('Android release command', () => {
         resolve(root, 'scripts/update-native-version.mjs'),
         join(repository, 'scripts/update-native-version.mjs'),
       )
-      copyFixture(
-        resolve(root, 'frontend/native-version.properties'),
+      mkdirSync(join(repository, 'frontend/ios/App/App.xcodeproj'), { recursive: true })
+      writeFileSync(
         join(repository, 'frontend/native-version.properties'),
+        'VERSION_CODE=1\nVERSION_NAME=1.0.0\n',
       )
-      copyFixture(
+      const xcodeFixture = readFileSync(
         resolve(root, 'frontend/ios/App/App.xcodeproj/project.pbxproj'),
+        'utf8',
+      )
+        .replace(/CURRENT_PROJECT_VERSION = \d+;/g, 'CURRENT_PROJECT_VERSION = 1;')
+        .replace(/MARKETING_VERSION = \d+\.\d+\.\d+;/g, 'MARKETING_VERSION = 1.0.0;')
+      writeFileSync(
         join(repository, 'frontend/ios/App/App.xcodeproj/project.pbxproj'),
+        xcodeFixture,
       )
       chmodSync(join(repository, 'scripts/release-android.sh'), 0o755)
       chmodSync(join(repository, 'scripts/update-native-version.mjs'), 0o755)
