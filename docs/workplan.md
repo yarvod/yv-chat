@@ -2,7 +2,7 @@
 
 ## WP-122 — Android realtime, resilient history sync и status-bar continuity
 
-Статус: **completed locally; authenticated release acceptance pending**
+Статус: **production deployed and Android v1.0.2 published; authenticated native WSS acceptance pending**
 Backlog: `BL-082`
 Bugs: `BUG-107`, `BUG-108`, `BUG-109`
 
@@ -83,3 +83,7 @@ edge-to-edge status bar.
   hero background beneath the `142 px` status inset;
 - production accepted native WSS remains a release acceptance step because the
   headless AVD intentionally has no user production credentials.
+- release `v1.0.2`: signed APK package/version/signature verification and GitHub
+  publication passed; production workflow `32566984086` completed, API/frontend
+  run healthy from immutable SHA `99cecb7e072563a5a6944261cf917e158465e51b`, and
+  public `/api/v1/health` returns `{"status":"ok"}`.

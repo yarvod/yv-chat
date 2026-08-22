@@ -6,7 +6,7 @@
 
 ### BUG-109 — Android status bar обрывал native background прямоугольной полосой
 
-- Статус: `fixed locally in WP-122; release rollout pending`.
+- Статус: `fixed and published in Android v1.0.2`.
 - Severity: `medium native visual polish`.
 - Reproduction: открыть signed/debug Android wrapper на edge-to-edge Pixel 9;
   system status icons находятся в safe area над auth hero, но полоса под ними
@@ -22,7 +22,7 @@
 
 ### BUG-108 — Один unreadable history chunk останавливал синхронизацию всех чатов
 
-- Статус: `fixed locally in WP-122; release rollout pending`.
+- Статус: `fixed and production deployed in 99cecb7 / Android v1.0.2`.
 - Severity: `high multi-device history reliability`.
 - Reproduction: history attempt показывает available records и несколько chats,
   но один старый MLS chunk не расшифровывается/содержит malformed transfer payload;
@@ -37,7 +37,7 @@
 
 ### BUG-107 — Capacitor Android не передавал session cookie в WebSocket handshake
 
-- Статус: `fixed locally in WP-122; authenticated release acceptance pending`.
+- Статус: `published in Android v1.0.2; authenticated native WSS acceptance pending`.
 - Severity: `high realtime/presence correctness`.
 - Reproduction: войти в Android wrapper: HTTP `/me`, conversations и sync отвечают
   `200`, но `/api/v1/realtime` повторно отклоняется `403`; online/presence не меняется.

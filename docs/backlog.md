@@ -85,7 +85,7 @@ frontend suite `379 passed`, lint, typecheck и production/PWA build зелён�
 
 ### BL-081 — Подписанные Android releases
 
-Статус: **v1.0.1 published; native login/origin, QR, edge-to-edge и signed update accepted on Pixel 9 AVD**
+Статус: **v1.0.2 published; native login/origin, QR, edge-to-edge и signed update accepted on Pixel 9 AVD**
 (`WP-120`, `WP-121`).
 
 Результат: окончательная native identity `de.com.yoowee.chat`, единый tracked
@@ -95,7 +95,7 @@ version source, long-lived signing certificate и tag-triggered GitHub Release A
 остаются вне Git; debug APK не объявляется совместимым production predecessor.
 Guarded release command синхронизирует Android/iOS версии, выполняет checks и только
 по explicit `--push` атомарно отправляет `main` + tag, запуская prod deploy и APK CI.
-Первый подписанный release `v1.0.0` и исправляющий `v1.0.1` опубликованы в GitHub,
+Подписанные releases `v1.0.0`, `v1.0.1` и `v1.0.2` опубликованы в GitHub,
 скачанные APK независимо проверены, Firebase app/certificate зарегистрированы, а
 production FCM sender успешно проходит Google OAuth. `v1.0.1` установлен поверх
 `v1.0.0` на Pixel 9 AVD: versionCode вырос `1 -> 2`, `firstInstallTime` сохранился,
@@ -104,7 +104,7 @@ gate — background/terminated push delivery и update на физическом
 
 ### BL-082 — Android realtime и устойчивый history sync
 
-Статус: **completed locally; authenticated release acceptance pending** (`WP-122`).
+Статус: **production deployed and Android `v1.0.2` published; authenticated native WSS acceptance pending** (`WP-122`).
 
 Результат: Capacitor Android использует cookie-aware native WebSocket для exact
 realtime endpoint, потому что WebView с локальным app origin не может приложить
@@ -119,7 +119,8 @@ conversation binding остаётся terminal fail-closed. Native auth и produ
 рисуют theme-aligned background под edge-to-edge Android status bar, сохраняя
 safe inset для controls. Debug APK собран и проверен на headless Pixel 9 AVD;
 финальная accepted production handshake требует существующей authenticated
-release session и не подменяется тестовой учётной записью.
+release session и не подменяется тестовой учётной записью. Production stack
+работает на immutable image `sha-99cecb7e072563a5a6944261cf917e158465e51b`.
 
 ### BL-041 — Visual system, accessibility и PWA polish
 
