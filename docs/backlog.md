@@ -85,8 +85,8 @@ frontend suite `379 passed`, lint, typecheck и production/PWA build зелён�
 
 ### BL-081 — Подписанные Android releases
 
-Статус: **published and production configured; physical Android update/push acceptance pending**
-(`WP-120`).
+Статус: **v1.0.0 published; native login/origin, QR и edge-to-edge acceptance in progress**
+(`WP-120`, `WP-121`).
 
 Результат: окончательная native identity `de.com.yoowee.chat`, единый tracked
 version source, long-lived signing certificate и tag-triggered GitHub Release APK.

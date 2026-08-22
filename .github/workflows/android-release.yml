@@ -22,6 +22,7 @@ jobs:
       ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
       ANDROID_GOOGLE_SERVICES_JSON_B64: ${{ secrets.ANDROID_GOOGLE_SERVICES_JSON_B64 }}
       YV_CHAT_NATIVE_API_ORIGIN: https://chat.yoowee.ru
+      YV_CHAT_NATIVE_DEVICE_PAIRING_ORIGINS: '["https://chat.yoowee.ru","https://chat.yoowee.com.de","https://app.yvchat.local","capacitor://app.yvchat.local"]'
     steps:
       - uses: actions/checkout@v7
         with:

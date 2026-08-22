@@ -143,7 +143,7 @@ services:
     environment:
       NITRO_HOST: 0.0.0.0
       NITRO_PORT: 3000
-      NUXT_PUBLIC_DEVICE_PAIRING_ORIGINS: '${ALLOWED_ORIGINS:-["https://chat.yoowee.ru","https://chat.yoowee.com.de"]}'
+      NUXT_PUBLIC_DEVICE_PAIRING_ORIGINS: '${ALLOWED_ORIGINS:-["https://chat.yoowee.ru","https://chat.yoowee.com.de","https://app.yvchat.local","capacitor://app.yvchat.local"]}'
     ports:
       - 127.0.0.1:${YV_CHAT_FRONTEND_BIND_PORT:-18082}:3000
     networks: [ingress]

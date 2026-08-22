@@ -197,6 +197,8 @@ describe('api boundary', () => {
     const [, init] = fetchMock.mock.calls[0] ?? []
     expect(init?.credentials).toBe('include')
     expect(new Headers(init?.headers).get('X-CSRF-Token')).toBe('csrf-test')
+    expect(new Headers(init?.headers).has('Origin')).toBe(false)
+    expect(new Headers(init?.headers).has('X-YV-Native-Origin')).toBe(false)
   })
 
   it('uses explicit native origin and asynchronous CSRF reader without bearer credentials', async () => {
@@ -207,12 +209,17 @@ describe('api boundary', () => {
     await new ApiClient(
       'https://chat.example',
       async () => 'native-csrf',
+      'https://app.yvchat.local',
     ).request('/api/v1/auth/logout', { method: 'POST' })
 
     const [url, init] = fetchMock.mock.calls[0] ?? []
     expect(url).toBe('https://chat.example/api/v1/auth/logout')
     expect(init?.credentials).toBe('include')
     expect(new Headers(init?.headers).get('X-CSRF-Token')).toBe('native-csrf')
+    expect(new Headers(init?.headers).has('Origin')).toBe(false)
+    expect(new Headers(init?.headers).get('X-YV-Native-Origin')).toBe(
+      'https://app.yvchat.local',
+    )
     expect(new Headers(init?.headers).has('Authorization')).toBe(false)
   })
 

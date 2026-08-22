@@ -67,6 +67,18 @@ body {
   overscroll-behavior: none;
   -webkit-font-smoothing: antialiased;
 }
+html.app-native,
+html.app-native body,
+html.app-native #__nuxt,
+html.app-native .app-root { height: 100%; }
+html.app-native body { overflow: hidden; }
+html.app-native .auth-layout {
+  position: fixed;
+  inset: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
 #__nuxt { min-height: 100%; }
 button, input, select, textarea { font: inherit; }
 button, a { -webkit-tap-highlight-color: transparent; }

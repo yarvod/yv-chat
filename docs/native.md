@@ -40,7 +40,9 @@ Native build получает API origin только во время сборк
 
 ```bash
 cd frontend
-YV_CHAT_NATIVE_API_ORIGIN=https://chat.example npm run build:native
+YV_CHAT_NATIVE_API_ORIGIN=https://chat.example \
+YV_CHAT_NATIVE_DEVICE_PAIRING_ORIGINS='["https://chat.example","https://app.yvchat.local","capacitor://app.yvchat.local"]' \
+npm run build:native
 npm run cap:sync
 npm run generate:native-assets
 ```
@@ -57,6 +59,11 @@ https://app.yvchat.local
 
 Wildcard запрещён. `__Host-` cookie остаются Secure/HttpOnly/SameSite=Strict/no
 Domain и принадлежат реальному API host; JS не получает session credential.
+Поскольку native HTTP bridge не синтезирует browser `Origin`, composition root
+добавляет `X-YV-Native-Origin` только native transport-у. Backend использует его
+только при отсутствии обычного `Origin`; если обычный header присутствует, он всегда
+имеет приоритет. Значение всё равно обязано exact совпадать с `ALLOWED_ORIGINS`, а
+web/PWA этот header не отправляют.
 
 ## Platform capabilities
 

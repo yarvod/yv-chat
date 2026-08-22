@@ -120,6 +120,7 @@ export default defineNuxtPlugin(nuxtApp => {
   const apiClient = new ApiClient(
     apiOrigin,
     native ? () => capacitorCsrfToken(apiOrigin) : undefined,
+    native ? window.location.origin : undefined,
   )
   const authGateway = new HttpAuthGateway(apiClient)
   const adminAccountsGateway = new HttpAdminAccountsGateway(apiClient)

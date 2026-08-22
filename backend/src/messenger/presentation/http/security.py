@@ -8,10 +8,14 @@ from starlette.requests import HTTPConnection
 
 from messenger.bootstrap.settings import AppSettings
 
+NATIVE_ORIGIN_HEADER = "X-YV-Native-Origin"
+
 
 def require_allowed_origin(request: HTTPConnection, settings: AppSettings) -> None:
-    """Reject missing and non-exact browser origins for state changes."""
+    """Reject missing and non-exact browser/native origins for state changes."""
     origin = request.headers.get("origin")
+    if origin is None:
+        origin = request.headers.get(NATIVE_ORIGIN_HEADER)
     if origin is None or origin not in settings.allowed_origins:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="request forbidden")
 

@@ -31,6 +31,7 @@ from messenger.presentation.http.messages import router as messages_router
 from messenger.presentation.http.push import router as push_router
 from messenger.presentation.http.read_states import router as read_states_router
 from messenger.presentation.http.realtime import router as realtime_router
+from messenger.presentation.http.security import NATIVE_ORIGIN_HEADER
 from messenger.presentation.http.sync import router as sync_router
 from messenger.presentation.http.users import router as users_router
 
@@ -67,7 +68,11 @@ def create_app(
         allow_origins=resolved_settings.allowed_origins,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-        allow_headers=[resolved_settings.csrf_header_name, "Content-Type"],
+        allow_headers=[
+            resolved_settings.csrf_header_name,
+            NATIVE_ORIGIN_HEADER,
+            "Content-Type",
+        ],
     )
     application.include_router(health_router)
     application.include_router(auth_router)

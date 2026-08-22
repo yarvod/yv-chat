@@ -700,6 +700,31 @@ async def run_cookie_only_auth() -> None:
         )
         assert missing_origin.status_code == 403
 
+        native_invalid_login = await client.post(
+            "/api/v1/auth/login",
+            headers={"X-YV-Native-Origin": "https://test"},
+            json={
+                "username": "unknown",
+                "password": "incorrect password",
+                "device_name": "Android",
+            },
+        )
+        assert native_invalid_login.status_code == 401
+
+        browser_origin_takes_precedence = await client.post(
+            "/api/v1/auth/login",
+            headers={
+                "Origin": "https://evil.example",
+                "X-YV-Native-Origin": "https://test",
+            },
+            json={
+                "username": "unknown",
+                "password": "incorrect password",
+                "device_name": "Android",
+            },
+        )
+        assert browser_origin_takes_precedence.status_code == 403
+
         invalid_login = await client.post(
             "/api/v1/auth/login",
             headers={"Origin": "https://test"},

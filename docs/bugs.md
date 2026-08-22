@@ -4,6 +4,43 @@
 
 ## Active
 
+### BUG-106 — Native auth scroll уходил под системную status bar
+
+- Статус: `confirmed on physical Android; fix in WP-121`.
+- Severity: `medium mobile usability`.
+- Reproduction: открыть signed `v1.0.0`, прокрутить login до блока «Войти без
+  пароля»; заголовок и eyebrow рисуются под системными часами/icons.
+- Expected: interactive/text content остаётся внутри system-bar safe area на всех
+  поддерживаемых Android API и при edge-to-edge enforcement.
+- Actual: chat shell содержит CSS safe-area reservations, но auth page использует
+  root document scroll; `StatusBar.overlaysWebView` не является рабочей layout
+  гарантией на Android 15+/target API 36.
+- Root cause: Android config использует `adjustMarginsForEdgeToEdge: auto`, которое
+  не создаёт единый inset contract на всех supported API, а auth layout не имеет
+  native-only clipped safe viewport.
+- Expected fix: native WebView margins применяются consistently, auth scrollport
+  ограничивается native safe viewport, web/PWA layout остаётся прежним.
+
+### BUG-105 — Signed Android не мог войти и локально отклонял production QR
+
+- Статус: `confirmed in production; fix in WP-121`.
+- Severity: `critical native availability`.
+- Reproduction: установить signed `v1.0.0`, выполнить password login либо отсканировать
+  enrollment offer с `https://chat.yoowee.ru`.
+- Expected: password login проходит тот же opaque-session flow, а production QR
+  доходит до authoritative server pairing validation.
+- Actual: production log в `2026-08-21T23:52:54Z` показывает
+  `POST /api/v1/auth/login -> 403`; scan endpoint от Android отсутствует, UI выводит
+  generic invalid QR.
+- Root cause: production `ALLOWED_ORIGINS` не содержит exact Android WebView origin
+  `https://app.yvchat.local`; Capacitor native HTTP bridge не добавляет browser
+  `Origin` автоматически; native release build также не получает production
+  `NUXT_PUBLIC_DEVICE_PAIRING_ORIGINS`, поэтому fail-closed parser оставляет только
+  local app origin.
+- Expected fix: добавить exact server allowlist entry, передавать local origin только
+  native HTTP adapter-ом и внедрить build-time validated native QR allowlist без
+  wildcard/remote WebView navigation.
+
 ### BUG-103 — Возврат из Settings повторно загружал список чатов
 
 - Статус: `fixed locally in WP-115`.

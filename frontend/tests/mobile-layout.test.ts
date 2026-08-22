@@ -91,6 +91,17 @@ describe('mobile application shell', () => {
     expect(mobileBlock).toMatch(/\.conversation-header \{[^}]*padding: 7px 9px;/)
   })
 
+  it('clips only the native auth scrollport to the system safe viewport', () => {
+    const css = readFileSync(resolve(process.cwd(), 'app/assets/main.css'), 'utf8')
+    const plugin = readFileSync(resolve(process.cwd(), 'app/plugins/system-bars.client.ts'), 'utf8')
+
+    expect(plugin).toContain("root.classList.add('app-native', `app-native--${platform}`)")
+    expect(plugin).toContain("root.classList.remove('app-native', `app-native--${platform}`)")
+    expect(css).toMatch(/html\.app-native body \{ overflow: hidden; \}/)
+    expect(css).toMatch(/html\.app-native \.auth-layout \{[\s\S]*position: fixed;[\s\S]*inset: env\(safe-area-inset-top, 0px\)[\s\S]*overflow: auto;/)
+    expect(css).not.toMatch(/(?:^|\n)\.auth-layout \{[^}]*position: fixed;/)
+  })
+
   it('pairs bottom-tab press feedback with a semantic selection haptic', () => {
     const css = readFileSync(resolve(process.cwd(), 'app/assets/main.css'), 'utf8')
     const layout = readFileSync(resolve(process.cwd(), 'app/layouts/app.vue'), 'utf8')

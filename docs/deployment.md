@@ -167,7 +167,7 @@ notification permission и зарегистрировать настоящий F
 Relevant non-secret ingress values are:
 
 ```text
-ALLOWED_ORIGINS=["https://chat.yoowee.ru","https://chat.yoowee.com.de"]
+ALLOWED_ORIGINS=["https://chat.yoowee.ru","https://chat.yoowee.com.de","https://app.yvchat.local","capacitor://app.yvchat.local"]
 TRUSTED_PROXY_CIDRS=["172.30.243.1/32"]
 YV_CHAT_API_BIND_PORT=18081
 YV_CHAT_FRONTEND_BIND_PORT=18082
@@ -178,6 +178,11 @@ Production Compose передаёт exact JSON `ALLOWED_ORIGINS` frontend-кон
 между двумя официальными chat origins, не создавая cross-origin HTTP/cookie flow.
 Если runtime value отсутствует, malformed или не содержит current origin, frontend
 fail-closed принимает QR только своего текущего origin.
+
+Capacitor release получает тот же exact набор во время native build. Его HTTP bridge
+передаёт local app origin через `X-YV-Native-Origin`; API учитывает этот header только
+когда стандартный browser `Origin` отсутствует. Оба варианта проходят одну exact
+allowlist, поэтому native support не добавляет wildcard и не меняет PWA cookie flow.
 
 Do not inspect the rest of `.env` during routine deployment. To validate without
 revealing values:

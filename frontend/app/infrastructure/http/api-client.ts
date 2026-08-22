@@ -29,11 +29,18 @@ export class ApiClient {
   constructor(
     private readonly apiOrigin = '',
     private readonly readCsrfToken: CsrfTokenReader = csrfToken,
+    private readonly requestOrigin = '',
   ) {}
+
+  private headers(accept: string): Headers {
+    const headers = new Headers({ Accept: accept })
+    if (this.requestOrigin) headers.set('X-YV-Native-Origin', this.requestOrigin)
+    return headers
+  }
 
   async request(path: string, request: ApiRequest = {}): Promise<unknown> {
     const method = request.method ?? 'GET'
-    const headers = new Headers({ Accept: 'application/json' })
+    const headers = this.headers('application/json')
     if (request.body !== undefined) headers.set('Content-Type', 'application/json')
     if (method !== 'GET') {
       const token = await this.readCsrfToken()
@@ -67,10 +74,8 @@ export class ApiClient {
     body: Blob,
     onProgress?: BinaryUploadProgressHandler,
   ): Promise<unknown> {
-    const headers = new Headers({
-      Accept: 'application/json',
-      'Content-Type': 'application/octet-stream',
-    })
+    const headers = this.headers('application/json')
+    headers.set('Content-Type', 'application/octet-stream')
     const token = await this.readCsrfToken()
     if (token) headers.set('X-CSRF-Token', token)
     return await new Promise<unknown>((resolve, reject) => {
@@ -128,7 +133,7 @@ export class ApiClient {
     try {
       response = await fetch(resolveApiUrl(path, this.apiOrigin), {
         method: 'GET',
-        headers: new Headers({ Accept: 'application/octet-stream,image/*,video/*' }),
+        headers: this.headers('application/octet-stream,image/*,video/*'),
         credentials: 'include',
       })
     } catch {

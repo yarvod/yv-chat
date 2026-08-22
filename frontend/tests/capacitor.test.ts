@@ -15,6 +15,7 @@ describe('Capacitor native boundary', () => {
     expect(config).not.toContain('allowNavigation')
     expect(config).toContain('CapacitorCookies: { enabled: true }')
     expect(config).toContain('CapacitorHttp: { enabled: true }')
+    expect(config).toContain("adjustMarginsForEdgeToEdge: 'force'")
     expect(nuxt).toContain("nativeBuild ? [] : ['@vite-pwa/nuxt']")
   })
 
@@ -104,6 +105,9 @@ describe('Capacitor native boundary', () => {
     expect(workflow).toContain('git merge-base --is-ancestor "$release_commit" origin/main')
     expect(workflow).toContain('(( version_code > previous_code ))')
     expect(workflow).toContain('ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}')
+    expect(workflow).toContain('YV_CHAT_NATIVE_DEVICE_PAIRING_ORIGINS:')
+    expect(workflow).toContain('https://app.yvchat.local')
+    expect(workflow).toContain('capacitor://app.yvchat.local')
     expect(workflow).toContain('./gradlew --no-daemon assembleRelease')
     expect(workflow).toContain('apksigner" verify --verbose --print-certs')
     expect(workflow).toContain("name='de.com.yoowee.chat'")
@@ -120,6 +124,10 @@ describe('Capacitor native boundary', () => {
       resolve(process.cwd(), '../scripts/update-native-version.mjs'),
       'utf8',
     )
+    const nativeBuilder = readFileSync(
+      resolve(process.cwd(), 'scripts/build-native.mjs'),
+      'utf8',
+    )
 
     expect(releaseScript).toContain('working tree must be clean before release')
     expect(releaseScript).toContain('version $requested_version must be greater than latest release')
@@ -132,5 +140,7 @@ describe('Capacitor native boundary', () => {
     expect(releaseScript).not.toContain('gh secret get')
     expect(versionUpdater).toContain('Xcode MARKETING_VERSION must contain')
     expect(versionUpdater).toContain('Xcode CURRENT_PROJECT_VERSION must contain')
+    expect(nativeBuilder).toContain('YV_CHAT_NATIVE_DEVICE_PAIRING_ORIGINS is required')
+    expect(nativeBuilder).toContain('NUXT_PUBLIC_DEVICE_PAIRING_ORIGINS: JSON.stringify(pairingOrigins)')
   })
 })

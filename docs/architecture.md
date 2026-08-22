@@ -356,6 +356,11 @@ HTTP/cookie bridge, сохраняя revocable opaque `HttpOnly` session и doub
 CSRF, а realtime использует тот же remote WSS endpoint. Web/PWA оставляют пустой API
 origin и relative same-origin transport. Backend разрешает только exact configured
 browser/native origins; wildcard, bearer в URL и WebSocket query token запрещены.
+Для native HTTP bridge composition root передаёт local WebView origin в
+`X-YV-Native-Origin`, потому что bridge не гарантирует browser `Origin`. Сервер
+рассматривает этот header только когда стандартный `Origin` отсутствует; стандартный
+header имеет приоритет, а выбранное значение всё равно сравнивается с exact allowlist.
+Web/PWA не отправляют native header и сохраняют прежнюю same-origin boundary.
 
 Native installation identity зафиксирована как `de.com.yoowee.chat` для Capacitor,
 Android package/namespace и iOS Bundle ID. Identity не является network origin и не

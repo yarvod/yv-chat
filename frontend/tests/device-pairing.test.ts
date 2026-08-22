@@ -18,6 +18,8 @@ import {
 
 const origin = 'https://chat.example'
 const aliasOrigin = 'https://chat-alias.example'
+const androidOrigin = 'https://app.yvchat.local'
+const iosOrigin = 'capacitor://app.yvchat.local'
 const future = '2099-08-13T10:10:00Z'
 const pairingId = '7f0551de-b774-4a47-9f1f-7bead64062fe'
 const scanToken = 'scan-token-with-at-least-thirty-two-random-bytes'
@@ -175,6 +177,14 @@ describe('device pairing', () => {
       origin,
     ])
     expect(parseTrustedDevicePairingOrigins('{broken', origin)).toEqual([origin])
+    expect(parseTrustedDevicePairingOrigins(
+      JSON.stringify([origin, androidOrigin, iosOrigin]),
+      iosOrigin,
+    )).toEqual([origin, androidOrigin, iosOrigin])
+    expect(parseTrustedDevicePairingOrigins(
+      [iosOrigin, `${iosOrigin}/path`],
+      iosOrigin,
+    )).toEqual([iosOrigin])
 
     const config = readFileSync(resolve(process.cwd(), 'nuxt.config.ts'), 'utf8')
     const localCompose = readFileSync(resolve(process.cwd(), '../compose.yml'), 'utf8')
@@ -182,6 +192,8 @@ describe('device pairing', () => {
     expect(config).toContain("devicePairingOrigins: ''")
     expect(localCompose).toContain("NUXT_PUBLIC_DEVICE_PAIRING_ORIGINS: '${ALLOWED_ORIGINS")
     expect(compose).toContain("NUXT_PUBLIC_DEVICE_PAIRING_ORIGINS: '${ALLOWED_ORIGINS")
+    expect(compose).toContain(androidOrigin)
+    expect(compose).toContain(iosOrigin)
   })
 
   it('keeps candidate proof out of the QR and rejects another origin', async () => {
