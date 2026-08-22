@@ -102,6 +102,25 @@ production FCM sender успешно проходит Google OAuth. `v1.0.1` у�
 native login дошёл до ожидаемого `401`, safe-area не перекрыта. Оставшийся внешний
 gate — background/terminated push delivery и update на физическом Android.
 
+### BL-082 — Android realtime и устойчивый history sync
+
+Статус: **completed locally; authenticated release acceptance pending** (`WP-122`).
+
+Результат: Capacitor Android использует cookie-aware native WebSocket для exact
+realtime endpoint, потому что WebView с локальным app origin не может приложить
+API `SameSite=Strict` cookie к cross-site JavaScript socket. Cookie остаётся внутри
+native boundary, не возвращается JavaScript, не попадает в URL и не требует
+ослабления browser session policy. Web/PWA сохраняют browser WebSocket.
+
+Повреждённый или нечитаемый history transfer теперь quarantines только свой
+conversation: relay chunk подтверждается, chat отмечается skipped, а остальные
+доступные разговоры продолжают синхронизацию. Несовпадение pairing/device/
+conversation binding остаётся terminal fail-closed. Native auth и product shell
+рисуют theme-aligned background под edge-to-edge Android status bar, сохраняя
+safe inset для controls. Debug APK собран и проверен на headless Pixel 9 AVD;
+финальная accepted production handshake требует существующей authenticated
+release session и не подменяется тестовой учётной записью.
+
 ### BL-041 — Visual system, accessibility и PWA polish
 
 Статус: **remaining accessibility/visual gate**. Реализованные shell, responsive

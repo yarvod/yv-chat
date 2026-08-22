@@ -4,6 +4,56 @@
 
 ## Active
 
+### BUG-109 — Android status bar обрывал native background прямоугольной полосой
+
+- Статус: `fixed locally in WP-122; release rollout pending`.
+- Severity: `medium native visual polish`.
+- Reproduction: открыть signed/debug Android wrapper на edge-to-edge Pixel 9;
+  system status icons находятся в safe area над auth hero, но полоса под ними
+  окрашена отдельным root background и резко обрывает radial hero.
+- Root cause: native `.auth-layout` начинался с `inset: safe-area-inset-top`, поэтому
+  hero вообще не рисовался под status bar.
+- Исправление: native auth scrollport занимает весь WebView, hero background идёт
+  до верхней границы, а интерактивный content получает отдельный top inset. App shell
+  рисует bounded theme gradient в своей свободной status safe-area.
+- Проверка: mobile CSS regression и headless Pixel 9 API 37 screenshot подтверждают
+  непрерывный hero под status icons; WebView занимает `1080×2424`, platform сообщил
+  status inset `142 px`, brand/controls начинаются ниже него.
+
+### BUG-108 — Один unreadable history chunk останавливал синхронизацию всех чатов
+
+- Статус: `fixed locally in WP-122; release rollout pending`.
+- Severity: `high multi-device history reliability`.
+- Reproduction: history attempt показывает available records и несколько chats,
+  но один старый MLS chunk не расшифровывается/содержит malformed transfer payload;
+  UI остаётся на `0 из N`, повторяет всю попытку и заканчивает unknown failure.
+- Root cause: receive loop не имел per-conversation failure boundary: decrypt,
+  JSON или record validation exception выходил из общего sync job.
+- Исправление: unreadable/corrupt content ACK-ается и явно quarantine-ит только свой
+  conversation как skipped; остальные markers/records продолжают обрабатываться.
+  Mismatch pairing/device/conversation binding остаётся terminal и не ACK-ается.
+- Проверка: regressions покрывают corrupt + valid conversations в одной попытке и
+  отрицательный mismatched pairing payload; полный frontend suite — `388 passed`.
+
+### BUG-107 — Capacitor Android не передавал session cookie в WebSocket handshake
+
+- Статус: `fixed locally in WP-122; authenticated release acceptance pending`.
+- Severity: `high realtime/presence correctness`.
+- Reproduction: войти в Android wrapper: HTTP `/me`, conversations и sync отвечают
+  `200`, но `/api/v1/realtime` повторно отклоняется `403`; online/presence не меняется.
+- Production evidence: в одном API runtime browser WSS принимался, а Android после
+  успешных authenticated HTTP requests получал серии handshake `403`; exact Android
+  origins уже присутствовали в production `ALLOWED_ORIGINS`.
+- Root cause: JavaScript WebSocket идёт с local WebView site
+  `https://app.yvchat.local` на `wss://chat.yoowee.ru`; host-only
+  `SameSite=Strict` API session cookie cross-site handshake не получает.
+- Исправление: только Android composition выбирает bounded Capacitor/OkHttp WSS
+  adapter. Он читает matching HttpOnly cookie внутри CookieManager, ставит exact
+  local Origin и не отдаёт cookie JavaScript/URL/logs. Web/PWA path не изменён.
+- Проверка: TS transport lifecycle/security regressions, Android Java compile,
+  debug APK install/launch на headless Pixel 9 и crash-free filtered logcat зелёные.
+  Финальный accepted authenticated WSS требует existing login в release build.
+
 ### BUG-103 — Возврат из Settings повторно загружал список чатов
 
 - Статус: `fixed locally in WP-115`.

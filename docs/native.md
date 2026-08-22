@@ -49,7 +49,13 @@ npm run generate:native-assets
 
 Web/PWA build оставляет `apiOrigin` пустым и продолжает использовать относительные
 `/api/v1` и same-origin `wss`. Native build использует exact HTTPS/WSS API origin,
-native cookie/HTTP bridge и WebSocket без bearer/query credential. Backend
+native cookie/HTTP bridge и WebSocket без bearer/query credential. На Android WSS
+идёт через маленький Capacitor/OkHttp adapter: JavaScript WebSocket из local WebView
+не получил бы API `SameSite=Strict` cookie. Adapter читает matching HttpOnly cookie
+внутри Android CookieManager, разрешает только `wss` exact `/api/v1/realtime` без
+query/credentials/fragment и передаёт frames обратно без cookie. Web/PWA сохраняют
+обычный browser WebSocket. Эквивалентный iOS cookie-aware realtime adapter остаётся
+обязательным до production acceptance iOS wrapper. Backend
 `ALLOWED_ORIGINS` должен дополнительно содержать обе точные WebView origin:
 
 ```text
@@ -69,7 +75,8 @@ web/PWA этот header не отправляют.
 
 - semantic haptic intents используют Capacitor Haptics на native и
   `navigator.vibrate`/no-op в web;
-- native status bar следует выбранной light/dark theme;
+- native status bar следует выбранной light/dark theme; auth hero рисуется под
+  edge-to-edge status bar, а controls учитывают safe inset;
 - native keyboard events используют существующий `app-keyboard-active` layout
   contract, не создавая второй mobile layout;
 - `yvchat://chat/<conversation>?message=<message>` принимается только с UUID fields;

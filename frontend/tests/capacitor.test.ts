@@ -71,6 +71,25 @@ describe('Capacitor native boundary', () => {
     }
   })
 
+  it('keeps Android realtime cookies inside a bounded native WebSocket bridge', () => {
+    const android = readFileSync(
+      resolve(process.cwd(), 'android/app/src/main/java/de/com/yoowee/chat/NativeRealtimePlugin.java'),
+      'utf8',
+    )
+    const composition = readFileSync(resolve(process.cwd(), 'app/plugins/frontend.client.ts'), 'utf8')
+    const gradle = readFileSync(resolve(process.cwd(), 'android/app/build.gradle'), 'utf8')
+
+    expect(android).toContain('CookieManager.getInstance().getCookie')
+    expect(android).toContain('.header("Cookie", cookie)')
+    expect(android).toContain('.header("Origin", origin)')
+    expect(android).toContain('"wss".equals(uri.getScheme())')
+    expect(android).toContain('"/api/v1/realtime".equals(uri.getPath())')
+    expect(android).toContain('uri.getQuery() == null')
+    expect(android).not.toMatch(/notifyListeners\([^\n]*cookie/i)
+    expect(composition).toContain("native && Capacitor.getPlatform() === 'android'")
+    expect(gradle).toContain('com.squareup.okhttp3:okhttp:4.12.0')
+  })
+
   it('keeps release identity and versions aligned across Android and iOS', () => {
     const android = readFileSync(resolve(process.cwd(), 'android/app/build.gradle'), 'utf8')
     const ios = readFileSync(resolve(process.cwd(), 'ios/App/App.xcodeproj/project.pbxproj'), 'utf8')

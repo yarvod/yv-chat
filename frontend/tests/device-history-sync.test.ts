@@ -499,6 +499,117 @@ describe('QR-linked bidirectional device history sync', () => {
     expect(relay.chunks).toHaveLength(0)
   })
 
+  it('quarantines an unreadable conversation and continues importing peer markers', async () => {
+    const validChunkId = '66666666-6666-4666-8666-666666666661'
+    const brokenChunkId = '66666666-6666-4666-8666-666666666662'
+    const relay: RelayState = {
+      acknowledged: new Set(),
+      chunks: [
+        {
+          chunkId: validChunkId,
+          serverSequence: 1,
+          senderDeviceId: candidate,
+          targetDeviceId: trusted,
+          conversationId: conversation,
+          clientChunkId: validChunkId,
+          ciphertextBase64: encode(JSON.stringify({
+            type: 'yv-chat-device-history',
+            version: 3,
+            pairingId: pairing,
+            senderDeviceId: candidate,
+            targetDeviceId: trusted,
+            conversationId: conversation,
+            clientChunkId: validChunkId,
+            records: [],
+            complete: true,
+            skippedConversationIds: [],
+          })),
+          createdAt: '2026-08-13T12:00:00Z',
+          expiresAt: '2026-08-14T12:00:00Z',
+          acknowledgedAt: null,
+        },
+        {
+          chunkId: brokenChunkId,
+          serverSequence: 2,
+          senderDeviceId: candidate,
+          targetDeviceId: trusted,
+          conversationId: blockedConversation,
+          clientChunkId: brokenChunkId,
+          ciphertextBase64: encode('{broken-json'),
+          createdAt: '2026-08-13T12:00:00Z',
+          expiresAt: '2026-08-14T12:00:00Z',
+          acknowledgedAt: null,
+        },
+      ],
+    }
+    const result = await service(
+      trusted,
+      new MemoryArchive([]),
+      relay,
+      new MemoryJobs(),
+      null,
+      null,
+      [conversation, blockedConversation],
+    ).synchronize({
+      ownerUserId: owner,
+      currentDeviceId: trusted,
+      pairingId: pairing,
+      targetDeviceId: candidate,
+      expiresAt: '2099-08-14T12:00:00Z',
+    })
+
+    expect(result).toMatchObject({
+      confirmedConversations: 2,
+      skippedConversations: 1,
+      skippedConversationIds: [blockedConversation],
+    })
+    expect(relay.acknowledged).toEqual(new Set([validChunkId, brokenChunkId]))
+  })
+
+  it('does not quarantine a decrypted relay payload with a mismatched pairing binding', async () => {
+    const chunkId = '66666666-6666-4666-8666-666666666663'
+    const relay: RelayState = {
+      acknowledged: new Set(),
+      chunks: [{
+        chunkId,
+        serverSequence: 1,
+        senderDeviceId: candidate,
+        targetDeviceId: trusted,
+        conversationId: conversation,
+        clientChunkId: chunkId,
+        ciphertextBase64: encode(JSON.stringify({
+          type: 'yv-chat-device-history',
+          version: 3,
+          pairingId: '44444444-4444-4444-8444-444444444499',
+          senderDeviceId: candidate,
+          targetDeviceId: trusted,
+          conversationId: conversation,
+          clientChunkId: chunkId,
+          records: [],
+          complete: true,
+          skippedConversationIds: [],
+        })),
+        createdAt: '2026-08-13T12:00:00Z',
+        expiresAt: '2026-08-14T12:00:00Z',
+        acknowledgedAt: null,
+      }],
+    }
+
+    await expect(service(
+      trusted,
+      new MemoryArchive([]),
+      relay,
+      new MemoryJobs(),
+    ).synchronize({
+      ownerUserId: owner,
+      currentDeviceId: trusted,
+      pairingId: pairing,
+      targetDeviceId: candidate,
+      expiresAt: '2099-08-14T12:00:00Z',
+    })).rejects.toThrow()
+    expect(relay.acknowledged).toEqual(new Set())
+  })
+
   it('merges independently available sent history without overwriting either side', async () => {
     const trustedArchive = new MemoryArchive([archived(1, trusted, 'from phone')])
     const candidateArchive = new MemoryArchive([archived(2, candidate, 'from mac')])

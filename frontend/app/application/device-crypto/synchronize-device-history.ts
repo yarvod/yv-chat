@@ -4,6 +4,7 @@ import type { DevicePairingGateway } from '../ports/device-pairing-gateway'
 import type { MessagingGateway } from '../ports/messaging-gateway'
 import type { ScheduledTask, Scheduler } from '../ports/scheduler'
 import type { ProtocolMessageProtection } from '../messaging/message-protection'
+import { MessageProtectionError } from '../messaging/message-protection'
 import { ApplicationError } from '../errors'
 
 const CHUNK_RECORD_LIMIT = 20
@@ -88,6 +89,8 @@ type ConversationClassifier = (
 ) => Promise<ConversationState>
 
 class DeviceHistorySyncCancelled extends Error {}
+class HistoryTransferBindingError extends Error {}
+class InvalidHistoryTransfer extends Error {}
 
 function failureFrom(error: unknown): {
   failure: DeviceHistorySyncFailure
@@ -119,16 +122,20 @@ function transferRecords(
   value: unknown,
   expected: Omit<HistoryTransferPayload, 'version' | 'records' | 'complete'>,
 ): { records: ArchivedMessage[], complete: boolean, skippedConversationIds: string[] } {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error()
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new InvalidHistoryTransfer()
+  }
   const payload = value as Record<string, unknown>
   if (
     payload.type !== expected.type
-    || (payload.version !== 1 && payload.version !== 2 && payload.version !== 3)
     || payload.pairingId !== expected.pairingId
     || payload.senderDeviceId !== expected.senderDeviceId
     || payload.targetDeviceId !== expected.targetDeviceId
     || payload.conversationId !== expected.conversationId
     || payload.clientChunkId !== expected.clientChunkId
+  ) throw new HistoryTransferBindingError()
+  if (
+    (payload.version !== 1 && payload.version !== 2 && payload.version !== 3)
     || !Array.isArray(payload.records)
     || (payload.version === 1 && (
       payload.records.length === 0 || payload.records.length > CHUNK_RECORD_LIMIT
@@ -148,11 +155,13 @@ function transferRecords(
       )
       || new Set(payload.skippedConversationIds).size !== payload.skippedConversationIds.length
     ))
-  ) throw new Error()
+  ) throw new InvalidHistoryTransfer()
   const records: ArchivedMessage[] = []
   let previousSequence = 0
   for (const value of payload.records) {
-    if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error()
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+      throw new InvalidHistoryTransfer()
+    }
     const message = value as Record<string, unknown>
     const sequence = message.sequence
     const protocolVersion = message.protocolVersion
@@ -164,7 +173,9 @@ function transferRecords(
     const localPlaintext = message.localPlaintext
     if (
       message.conversationId !== expected.conversationId
-      || typeof message.messageId !== 'string' || !UUID.test(message.messageId)
+    ) throw new HistoryTransferBindingError()
+    if (
+      typeof message.messageId !== 'string' || !UUID.test(message.messageId)
       || typeof message.clientMessageId !== 'string' || !UUID.test(message.clientMessageId)
       || typeof message.senderUserId !== 'string' || !UUID.test(message.senderUserId)
       || typeof message.senderDeviceId !== 'string' || !UUID.test(message.senderDeviceId)
@@ -198,7 +209,7 @@ function transferRecords(
         && Number(cryptoEpoch) > 0
       )
       || (protocolVersion === 1 && (cryptoGenerationId !== null || cryptoEpoch !== null))
-    ) throw new Error()
+    ) throw new InvalidHistoryTransfer()
     previousSequence = Number(sequence)
     records.push({
       messageId: message.messageId,
@@ -626,12 +637,6 @@ export class SynchronizeDeviceHistory {
           this.report(progress, onProgress)
           continue
         }
-        const content = await this.protection.unprotectText(2, {
-          conversationId: chunk.conversationId,
-          clientMessageId: chunk.clientChunkId,
-          ciphertextBase64: chunk.ciphertextBase64,
-        })
-        this.ensureActive(job.pairingId)
         const expected = {
           type: 'yv-chat-device-history' as const,
           pairingId: job.pairingId,
@@ -640,7 +645,41 @@ export class SynchronizeDeviceHistory {
           conversationId: chunk.conversationId,
           clientChunkId: chunk.clientChunkId,
         }
-        const payload = transferRecords(JSON.parse(content.plaintext), expected)
+        let payload: ReturnType<typeof transferRecords>
+        try {
+          const content = await this.protection.unprotectText(2, {
+            conversationId: chunk.conversationId,
+            clientMessageId: chunk.clientChunkId,
+            ciphertextBase64: chunk.ciphertextBase64,
+          })
+          this.ensureActive(job.pairingId)
+          payload = transferRecords(JSON.parse(content.plaintext), expected)
+        } catch (error) {
+          if (
+            error instanceof HistoryTransferBindingError
+            || (error instanceof MessageProtectionError && error.kind !== 'corrupt-envelope')
+          ) throw error
+          if (!(error instanceof InvalidHistoryTransfer || error instanceof SyntaxError
+            || error instanceof MessageProtectionError)) throw error
+          locallySkipped.add(chunk.conversationId)
+          peerComplete.add(chunk.conversationId)
+          this.jobs.save({
+            ...job,
+            peerCompletedConversationIds: [...peerComplete],
+          })
+          await this.gateway.acknowledgeHistoryChunk(job.pairingId, chunk.chunkId)
+          this.ensureActive(job.pairingId)
+          progress = {
+            ...progress,
+            confirmedConversations: conversations.filter(
+              conversation => peerComplete.has(conversation.conversationId),
+            ).length,
+            skippedConversations: locallySkipped.size,
+            skippedConversationIds: [...locallySkipped],
+          }
+          this.report(progress, onProgress)
+          continue
+        }
         if (payload.skippedConversationIds.some(id => !conversationIds.has(id))) {
           throw new Error('history skip manifest binding mismatch')
         }

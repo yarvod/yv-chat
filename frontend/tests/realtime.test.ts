@@ -9,6 +9,10 @@ import type {
 import type { ScheduledTask, Scheduler } from '../app/application/ports/scheduler'
 import { ApplicationError } from '../app/application/errors'
 import { BrowserRealtimeGateway } from '../app/infrastructure/realtime/browser-realtime-gateway'
+import {
+  CapacitorRealtimeGateway,
+  type NativeRealtimePlugin,
+} from '../app/infrastructure/capacitor/capacitor-realtime-gateway'
 import { parseRealtimeFrame } from '../app/infrastructure/realtime/realtime-parser'
 
 class FakeScheduledTask implements ScheduledTask {
@@ -295,5 +299,51 @@ describe('realtime sync', () => {
     expect(FakeWebSocket.instances.at(-1)?.url).toBe('wss://chat.example/api/v1/realtime')
     expect(FakeWebSocket.instances.at(-1)?.url).not.toContain('?')
     vi.unstubAllGlobals()
+  })
+
+  it('uses the native cookie-aware socket bridge for a cross-origin Capacitor app', async () => {
+    const listeners = new Map<string, (event: never) => void>()
+    const plugin = {
+      connect: vi.fn().mockResolvedValue(undefined),
+      send: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn().mockResolvedValue(undefined),
+      addListener: vi.fn(async (name: string, listener: (event: never) => void) => {
+        listeners.set(name, listener)
+        return { remove: vi.fn(async () => listeners.delete(name)) }
+      }),
+    } as unknown as NativeRealtimePlugin
+    const callbacks: RealtimeCallbacks = {
+      onFrame: vi.fn(),
+      onOpen: vi.fn(),
+      onClose: vi.fn(),
+    }
+    const connection = new CapacitorRealtimeGateway(
+      'https://chat.example',
+      'https://app.yvchat.local',
+      plugin,
+    ).connect(callbacks)
+
+    await vi.waitFor(() => expect(plugin.connect).toHaveBeenCalledWith({
+      url: 'wss://chat.example/api/v1/realtime',
+      origin: 'https://app.yvchat.local',
+      connectionId: 1,
+    }))
+    listeners.get('realtimeOpen')?.({ connectionId: 1 } as never)
+    expect(callbacks.onOpen).toHaveBeenCalledOnce()
+    listeners.get('realtimeMessage')?.({
+      connectionId: 1,
+      data: '{"type":"ping"}',
+    } as never)
+    await vi.waitFor(() => expect(plugin.send).toHaveBeenCalledWith({
+      data: '{"type":"pong"}',
+      connectionId: 1,
+    }))
+    connection.setTyping('conversation-id', true)
+    await vi.waitFor(() => expect(plugin.send).toHaveBeenLastCalledWith({
+      data: '{"type":"typing","conversation_id":"conversation-id","active":true}',
+      connectionId: 1,
+    }))
+    listeners.get('realtimeClose')?.({ connectionId: 1, code: 1006 } as never)
+    expect(callbacks.onClose).toHaveBeenCalledWith({ unauthorized: false })
   })
 })

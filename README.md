@@ -95,6 +95,13 @@ Debug APK не является совместимым predecessor и не пр�
 `./scripts/release-android.sh X.Y.Z` готовит проверенные version commit/tag локально;
 только explicit `--push` атомарно запускает production deployment и Android Release.
 
+Capacitor Android открывает realtime через нативный cookie-aware WebSocket: локальный
+WebView origin не может приложить API `SameSite=Strict` cookie к cross-site
+JavaScript socket. Cookie остаётся внутри native boundary и не переносится в URL
+или JavaScript. При device-to-device history sync нечитаемый transfer теперь
+пропускает только повреждённый conversation, сохраняя fail-closed проверку pairing
+и device binding; остальные доступные чаты продолжают синхронизацию.
+
 Runtime v7 восстанавливает утраченный conversation control-checkpoint по exact
 совпадению public local MLS epoch/roster с server generation без logout/login.
 Permanent primary device нет: coordinator — временная роль одной MLS generation.

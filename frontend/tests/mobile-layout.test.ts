@@ -91,14 +91,17 @@ describe('mobile application shell', () => {
     expect(mobileBlock).toMatch(/\.conversation-header \{[^}]*padding: 7px 9px;/)
   })
 
-  it('clips only the native auth scrollport to the system safe viewport', () => {
+  it('paints native auth behind the status bar while keeping controls inside its inset', () => {
     const css = readFileSync(resolve(process.cwd(), 'app/assets/main.css'), 'utf8')
+    const mobileBlock = css.slice(css.indexOf('@media (max-width: 840px)'))
     const plugin = readFileSync(resolve(process.cwd(), 'app/plugins/system-bars.client.ts'), 'utf8')
 
     expect(plugin).toContain("root.classList.add('app-native', `app-native--${platform}`)")
     expect(plugin).toContain("root.classList.remove('app-native', `app-native--${platform}`)")
     expect(css).toMatch(/html\.app-native body \{ overflow: hidden; \}/)
-    expect(css).toMatch(/html\.app-native \.auth-layout \{[\s\S]*position: fixed;[\s\S]*inset: env\(safe-area-inset-top, 0px\)[\s\S]*overflow: auto;/)
+    expect(css).toMatch(/html\.app-native \.auth-layout \{[\s\S]*position: fixed;[\s\S]*inset: 0;[\s\S]*overflow: auto;/)
+    expect(mobileBlock).toMatch(/\.auth-hero \{[^}]*padding: max\(25px, calc\(env\(safe-area-inset-top, 0px\) \+ 12px\)\)/)
+    expect(mobileBlock).toMatch(/html\.app-native--android \.product-shell::before \{[^}]*height: env\(safe-area-inset-top, 0px\);[^}]*linear-gradient/)
     expect(css).not.toMatch(/(?:^|\n)\.auth-layout \{[^}]*position: fixed;/)
   })
 

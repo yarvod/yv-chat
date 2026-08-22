@@ -74,7 +74,7 @@ html.app-native .app-root { height: 100%; }
 html.app-native body { overflow: hidden; }
 html.app-native .auth-layout {
   position: fixed;
-  inset: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+  inset: 0;
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
@@ -706,7 +706,7 @@ legend { padding: 0 6px; color: var(--muted); font-size: .8rem; }
   .push-permission-prompt { left: 14px; right: 14px; bottom: calc(var(--mobile-tabs-slot-height) + 10px); width: auto; align-items: stretch; flex-direction: column; }
   .push-permission-prompt__actions { justify-content: flex-end; }
   .auth-layout { grid-template-columns: 1fr; }
-  .auth-hero { min-height: 30dvh; padding: 25px 24px; }
+  .auth-hero { min-height: 30dvh; padding: max(25px, calc(env(safe-area-inset-top, 0px) + 12px)) 24px 25px; }
   .auth-hero__copy { padding: 38px 0 12px; }
   .auth-hero__copy h2 { font-size: clamp(3rem, 14vw, 5rem); }
   .auth-hero__copy > p:last-child, .security-chip { display: none; }
@@ -724,6 +724,17 @@ legend { padding: 0 6px; color: var(--muted); font-size: .8rem; }
     grid-template-rows: minmax(0, 1fr);
     padding-top: env(safe-area-inset-top, 0px);
     padding-bottom: var(--mobile-tabs-slot-height);
+  }
+  html.app-native--android .product-shell::before {
+    position: absolute;
+    z-index: 20;
+    top: 0;
+    right: 0;
+    left: 0;
+    height: env(safe-area-inset-top, 0px);
+    background: linear-gradient(105deg, color-mix(in srgb, var(--primary) 14%, var(--bg)), color-mix(in srgb, var(--secondary) 6%, var(--bg)));
+    content: "";
+    pointer-events: none;
   }
   .product-shell--conversation { --mobile-tabs-height: 0px; padding-bottom: 0; }
   .product-shell--conversation .mobile-tabs { display: none; }

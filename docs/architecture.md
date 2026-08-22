@@ -353,8 +353,15 @@ platform adapters только в composition root. Production native shell вс
 локальный versioned web bundle; Capacitor `server.url` не является deployment
 механизмом. Native bundle обращается к explicit HTTPS API origin через native
 HTTP/cookie bridge, сохраняя revocable opaque `HttpOnly` session и double-submit
-CSRF, а realtime использует тот же remote WSS endpoint. Web/PWA оставляют пустой API
-origin и relative same-origin transport. Backend разрешает только exact configured
+CSRF, а realtime использует тот же remote WSS endpoint. Android WebView не может
+приложить `SameSite=Strict` API cookie к cross-site JavaScript WebSocket из
+`https://app.yvchat.local`, поэтому Android composition root выбирает отдельный
+native realtime adapter. Он читает matching cookie только внутри CookieManager,
+разрешает только `wss` exact `/api/v1/realtime` без query/credentials/fragment,
+передаёт exact local app `Origin` и никогда не возвращает cookie JavaScript. Web/PWA
+оставляют browser WebSocket, пустой API origin и relative same-origin transport;
+iOS требует эквивалентный native cookie-aware adapter до production realtime
+acceptance. Backend разрешает только exact configured
 browser/native origins; wildcard, bearer в URL и WebSocket query token запрещены.
 Для native HTTP bridge composition root передаёт local WebView origin в
 `X-YV-Native-Origin`, потому что bridge не гарантирует browser `Origin`. Сервер
@@ -1432,6 +1439,13 @@ cursor, read state, crypto state, attachment metadata и outbox. Большие 
 media blobs предпочтительно хранятся в OPFS/origin-private storage.
 
 Device-local archive не является безусловным backup: site data/PWA может быть удалена. Новый device получает только server retention window; старая история переносится отдельным authenticated encrypted device-to-device flow.
+
+Device-to-device history relay остаётся best-effort переносом только тех записей,
+которые источник ещё может authenticated расшифровать. Source gaps считаются и не
+маскируются. На приёмнике unreadable/corrupt encrypted chunk карантинит только свой
+conversation: chunk подтверждается, conversation явно попадает в skipped и остальные
+чаты продолжают sync. Decrypted mismatch pairing/sender/target/conversation binding
+не является «битой историей», не подтверждается и завершает попытку fail-closed.
 
 Local text retention может быть longer/forever. Media cache byte-bounded, LRU и имеет explicit pinned policy.
 

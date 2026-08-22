@@ -1,78 +1,85 @@
 # Текущий workplan
 
-## WP-121 — Android native origin, QR и safe-area acceptance
+## WP-122 — Android realtime, resilient history sync и status-bar continuity
 
-Статус: **completed, released and production verified**
-Backlog: `BL-081`
-Bugs: `BUG-105`, `BUG-106`
+Статус: **completed locally; authenticated release acceptance pending**
+Backlog: `BL-082`
+Bugs: `BUG-107`, `BUG-108`, `BUG-109`
 
-Цель: сделать подписанное Android-приложение реально пригодным для входа и
-device pairing, не ослабляя exact-origin/CSRF boundary и не меняя поведение web/PWA,
-а также устранить перекрытие auth UI системными bars на edge-to-edge Android.
+Цель: восстановить realtime/presence в Capacitor Android без ослабления opaque
+cookie policy, не позволять одному повреждённому history conversation останавливать
+остальной device-to-device sync и визуально продолжить native background под
+edge-to-edge status bar.
+
+### Подтверждённые причины
+
+- production HTTP Android проходит, но WebSocket handshake возвращает `403`:
+  cross-origin WebView socket не получает `SameSite=Strict` host cookie API;
+- history relay обрабатывается одним общим циклом, поэтому unreadable encrypted
+  chunk выбрасывает всю попытку вместо bounded quarantine одного conversation;
+- native auth layout начинается ниже safe-area, оставляя прямоугольную полосу
+  root background вместо продолжения hero background.
 
 ### Scope
 
-- сохранить отдельный local WebView origin `https://app.yvchat.local` и remote API
-  origin `https://chat.yoowee.ru`;
-- разрешить exact Android origin в production backend CORS/origin allowlist без
-  wildcard и без изменения browser cookie policy;
-- передавать trusted QR origins только native release build и валидировать их до
-  Nuxt generation;
-- сделать Android edge-to-edge inset handling одинаковым на поддерживаемых API и
-  ограничить auth safe-area layout native root class;
-- добавить regression tests для release workflow/build config, QR allowlist,
-  platform class, safe-area и неизменного PWA boundary;
-- проверить обычный web/PWA build, native bundle/sync, signed release APK и запуск
-  на локальном Pixel 9 AVD;
-- выпустить signed `v1.0.1`, который обновляет `v1.0.0` без смены application ID или
-  certificate.
+- Android-only Capacitor WebSocket adapter получает HttpOnly cookie внутри native
+  CookieManager, отправляет её только в `wss` handshake exact realtime path и
+  передаёт UI только bounded realtime frames;
+- web/PWA сохраняют browser WebSocket и cookie transport без query credential;
+- unreadable/corrupt history payload переводит только свой conversation в skipped,
+  подтверждает relay chunk и продолжает остальные chats;
+- pairing/device/conversation binding mismatch остаётся terminal fail-closed;
+- auth background рисуется под status bar, controls сохраняют safe inset;
+- authenticated mobile shell получает theme-aligned safe-area gradient;
+- Pixel 9 AVD запускается headless, debug APK проверяется через ADB screenshot,
+  process logs и production handshake.
 
-### Security и compatibility invariants
+### Security invariants
 
-- `de.com.yoowee.chat` остаётся installation identity, а не network origin;
-- local bundle не получает `server.url`/remote navigation и не маскируется под API
-  domain;
-- backend принимает только exact configured web/native origins; wildcard запрещён;
-- QR allowlist содержит только exact origins без path/query/credentials;
-- web/PWA продолжают relative same-origin API, VAPID Service Worker и прежний
-  session/IndexedDB/OPFS lifecycle;
-- native app продолжает использовать opaque HttpOnly cookie, double-submit CSRF и
-  отдельный WebView storage/device identity;
-- signing key, Firebase credentials, cookies, QR tokens и crypto material не
-  попадают в repository, logs или APK assets.
+- session cookie не возвращается JavaScript, не логируется и не попадает в URL;
+- native bridge принимает только `wss`, exact `/api/v1/realtime`, no query,
+  credentials или fragment, и exact local app origin;
+- API `SameSite=Strict`, CSRF, allowed origins и browser WebSocket не ослабляются;
+- malformed decrypted transfer binding не признаётся harmless corruption;
+- unreadable message content не логируется и не копируется в skip diagnostics.
+
+### Tests
+
+- Vitest: native socket URL/origin/no-query, ping/pong and event lifecycle;
+- Vitest: corrupt chat quarantine continues other markers;
+- Vitest: wrong pairing binding remains rejected and unacknowledged;
+- mobile CSS regression for behind-status-bar paint and safe control inset;
+- frontend test, lint, typecheck, native build/sync;
+- Android Gradle debug compile and headless Pixel 9 install/launch/screenshot/logcat;
+- production API logs show accepted native WebSocket after authenticated launch when
+  an existing emulator session is available.
 
 ### Exclusions
 
-- смена application ID, signing certificate или WebView storage origin;
-- public CORS wildcard, bearer-token auth или ослабление CSRF;
-- Google Play/App Store publication;
-- physical iOS compile/sign/acceptance без полного Xcode и Apple provisioning;
-- гарантии для vendor-specific Android bars вне проверенного Capacitor/API contract.
+- `SameSite=None`, bearer/query session credentials или public Origin wildcard;
+- automatic repair of cryptographically unreadable history;
+- clearing Android app data or replacing the user's production device identity;
+- iOS native WebSocket bridge in this Android regression slice;
+- release/tag/deploy without a separate explicit release step.
 
 ### Definition of Done
 
-- password login с Android native origin доходит до credential validation вместо
-  pre-auth `403`;
-- Android scanner принимает QR от обоих production web origins, а arbitrary origin
-  по-прежнему отклоняется локально;
-- auth UI, chat shell, tabs/composer и keyboard flow не перекрываются status/navigation
-  bars на Pixel 9 AVD;
-- frontend tests, lint, typecheck, web/PWA build, native build/sync и Android signed
-  release build проходят;
-- production exact origin обновлён атомарно с backup, API healthy, web/PWA smoke
-  остаётся зелёным;
-- GitHub Release `v1.0.1` опубликован и signature/package/version проверены.
+- Android presence/realtime connects through a cookie-aware native socket;
+- one or more corrupt conversations are reported skipped while valid chats finish;
+- status bar has continuous themed background and no overlapped controls;
+- relevant checks and headless AVD acceptance pass;
+- architecture/native docs, backlog and bugs describe the resulting boundary;
+- changes are committed as one focused feature.
 
-### Проверка
+### Acceptance
 
-- frontend: `64` files / `384` tests, ESLint, Nuxt typecheck и production PWA build;
-- backend: Ruff lint/format, mypy, `292 passed`, `12 skipped`;
-- native: validated production bundle, Capacitor sync и local signed release Gradle
-  build; Pixel 9 Android 17/API 37 safe-area screenshots;
-- production: exact four-origin config с server-side backup, deploy workflow
-  `32543616964`, native invalid-credential request `401` вместо `403`;
-- web/PWA: `/`, `/api/v1/health`, `/sw.js` и manifest на `chat.yoowee.ru`, а также
-  frontend/health/service worker на `chat.yoowee.com.de` вернули `200`;
-- release: GitHub workflow `32544304601`, package `de.com.yoowee.chat`, version
-  `1.0.1 (2)`, matching checksum и v2 signature; скачанный APK обновил AVD с
-  `1.0.0 (1)` без изменения `firstInstallTime` и повторно получил production `401`.
+- production API logs: authenticated Android HTTP requests return `200`, while the
+  former JavaScript `/api/v1/realtime` handshakes repeatedly returned `403`; browser
+  WSS in the same runtime remained accepted and Android origins were allow-listed;
+- frontend: `64 passed` files, `388 passed` tests, ESLint and Nuxt typecheck;
+- native: static build, Capacitor sync and Android Gradle `assembleDebug` pass;
+- headless Pixel 9 API 37: latest debug APK installs and launches, app process stays
+  alive, filtered logcat has no fatal/exception, and screenshot confirms continuous
+  hero background beneath the `142 px` status inset;
+- production accepted native WSS remains a release acceptance step because the
+  headless AVD intentionally has no user production credentials.

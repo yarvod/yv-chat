@@ -74,6 +74,7 @@ import { CapacitorHaptics } from '../infrastructure/capacitor/capacitor-haptics'
 import { CapacitorPushAdapter } from '../infrastructure/capacitor/capacitor-push'
 import { CapacitorCallAudio } from '../infrastructure/capacitor/capacitor-call-audio'
 import { capacitorCsrfToken } from '../infrastructure/capacitor/capacitor-csrf'
+import { CapacitorRealtimeGateway } from '../infrastructure/capacitor/capacitor-realtime-gateway'
 import { BrowserLocation } from '../infrastructure/browser/browser-location'
 import { BrowserNetworkStatus } from '../infrastructure/browser/browser-network-status'
 import { BrowserPageVisibility } from '../infrastructure/browser/page-visibility'
@@ -147,7 +148,9 @@ export default defineNuxtPlugin(nuxtApp => {
     devicePairingOrigins,
   )
   const haptics = native ? new CapacitorHaptics() : new BrowserHaptics()
-  const realtimeGateway = new BrowserRealtimeGateway(apiOrigin)
+  const realtimeGateway = native && Capacitor.getPlatform() === 'android'
+    ? new CapacitorRealtimeGateway(apiOrigin, window.location.origin)
+    : new BrowserRealtimeGateway(apiOrigin)
   const scheduler = new BrowserScheduler()
   const clock = new BrowserClock()
   const clientIdGenerator = new BrowserClientIdGenerator()
