@@ -2,7 +2,7 @@
 
 ## WP-121 — Android native origin, QR и safe-area acceptance
 
-Статус: **in progress**
+Статус: **completed, released and production verified**
 Backlog: `BL-081`
 Bugs: `BUG-105`, `BUG-106`
 
@@ -65,4 +65,14 @@ device pairing, не ослабляя exact-origin/CSRF boundary и не мен�
 
 ### Проверка
 
-- pending implementation.
+- frontend: `64` files / `384` tests, ESLint, Nuxt typecheck и production PWA build;
+- backend: Ruff lint/format, mypy, `292 passed`, `12 skipped`;
+- native: validated production bundle, Capacitor sync и local signed release Gradle
+  build; Pixel 9 Android 17/API 37 safe-area screenshots;
+- production: exact four-origin config с server-side backup, deploy workflow
+  `32543616964`, native invalid-credential request `401` вместо `403`;
+- web/PWA: `/`, `/api/v1/health`, `/sw.js` и manifest на `chat.yoowee.ru`, а также
+  frontend/health/service worker на `chat.yoowee.com.de` вернули `200`;
+- release: GitHub workflow `32544304601`, package `de.com.yoowee.chat`, version
+  `1.0.1 (2)`, matching checksum и v2 signature; скачанный APK обновил AVD с
+  `1.0.0 (1)` без изменения `firstInstallTime` и повторно получил production `401`.

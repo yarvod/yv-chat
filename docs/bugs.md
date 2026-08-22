@@ -4,43 +4,6 @@
 
 ## Active
 
-### BUG-106 — Native auth scroll уходил под системную status bar
-
-- Статус: `confirmed on physical Android; fix in WP-121`.
-- Severity: `medium mobile usability`.
-- Reproduction: открыть signed `v1.0.0`, прокрутить login до блока «Войти без
-  пароля»; заголовок и eyebrow рисуются под системными часами/icons.
-- Expected: interactive/text content остаётся внутри system-bar safe area на всех
-  поддерживаемых Android API и при edge-to-edge enforcement.
-- Actual: chat shell содержит CSS safe-area reservations, но auth page использует
-  root document scroll; `StatusBar.overlaysWebView` не является рабочей layout
-  гарантией на Android 15+/target API 36.
-- Root cause: Android config использует `adjustMarginsForEdgeToEdge: auto`, которое
-  не создаёт единый inset contract на всех supported API, а auth layout не имеет
-  native-only clipped safe viewport.
-- Expected fix: native WebView margins применяются consistently, auth scrollport
-  ограничивается native safe viewport, web/PWA layout остаётся прежним.
-
-### BUG-105 — Signed Android не мог войти и локально отклонял production QR
-
-- Статус: `confirmed in production; fix in WP-121`.
-- Severity: `critical native availability`.
-- Reproduction: установить signed `v1.0.0`, выполнить password login либо отсканировать
-  enrollment offer с `https://chat.yoowee.ru`.
-- Expected: password login проходит тот же opaque-session flow, а production QR
-  доходит до authoritative server pairing validation.
-- Actual: production log в `2026-08-21T23:52:54Z` показывает
-  `POST /api/v1/auth/login -> 403`; scan endpoint от Android отсутствует, UI выводит
-  generic invalid QR.
-- Root cause: production `ALLOWED_ORIGINS` не содержит exact Android WebView origin
-  `https://app.yvchat.local`; Capacitor native HTTP bridge не добавляет browser
-  `Origin` автоматически; native release build также не получает production
-  `NUXT_PUBLIC_DEVICE_PAIRING_ORIGINS`, поэтому fail-closed parser оставляет только
-  local app origin.
-- Expected fix: добавить exact server allowlist entry, передавать local origin только
-  native HTTP adapter-ом и внедрить build-time validated native QR allowlist без
-  wildcard/remote WebView navigation.
-
 ### BUG-103 — Возврат из Settings повторно загружал список чатов
 
 - Статус: `fixed locally in WP-115`.
@@ -1186,6 +1149,31 @@ Physical Pixel acceptance для `BUG-033`/`BUG-034` ожидает пользо
 - Проверка: тест или команда, подтверждающая fix.
 
 ## Resolved
+
+### BUG-106 — Native auth scroll уходил под системную status bar
+
+- Статус: `fixed, released and Pixel 9 AVD verified in 417fbfc / v1.0.1`.
+- Severity: `medium mobile usability`.
+- Причина: Android edge-to-edge margin contract оставался `auto`, а auth page
+  использовала document scroll без native safe viewport.
+- Исправление: Android margins принудительно согласованы с edge-to-edge, native root
+  получает platform class, а auth scrollport ограничен safe-area только в Capacitor.
+- Проверка: Pixel 9 Android 17/API 37 screenshots не имеют status/navigation overlap;
+  web/PWA CSS path не изменён, frontend `384 passed`, lint/typecheck и PWA build зелёные.
+
+### BUG-105 — Signed Android не мог войти и локально отклонял production QR
+
+- Статус: `fixed, production and published v1.0.1 verified in 417fbfc`.
+- Severity: `critical native availability`.
+- Причина: production не разрешал exact local WebView origins, Capacitor HTTP bridge
+  не синтезировал browser `Origin`, а release bundle не получал trusted QR origins.
+- Исправление: exact origins добавлены без wildcard; native transport передаёт
+  `X-YV-Native-Origin`, который server учитывает только при отсутствии обычного
+  `Origin`; native build fail-closed валидирует API/Android/iOS QR origin set.
+- Проверка: скачанный GitHub APK `v1.0.1` на Pixel 9 дошёл до credential validation:
+  UI показал «Неверное имя пользователя или пароль», production log вернул
+  `POST /api/v1/auth/login -> 401` вместо `403`; QR/parser/build regression tests,
+  backend negative-origin tests и оба production PWA origins зелёные.
 
 ### BUG-104 — Native push migration не проходила backend lint gate
 

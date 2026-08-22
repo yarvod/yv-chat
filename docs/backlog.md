@@ -85,7 +85,7 @@ frontend suite `379 passed`, lint, typecheck и production/PWA build зелён�
 
 ### BL-081 — Подписанные Android releases
 
-Статус: **v1.0.0 published; native login/origin, QR и edge-to-edge acceptance in progress**
+Статус: **v1.0.1 published; native login/origin, QR, edge-to-edge и signed update accepted on Pixel 9 AVD**
 (`WP-120`, `WP-121`).
 
 Результат: окончательная native identity `de.com.yoowee.chat`, единый tracked
@@ -95,11 +95,12 @@ version source, long-lived signing certificate и tag-triggered GitHub Release A
 остаются вне Git; debug APK не объявляется совместимым production predecessor.
 Guarded release command синхронизирует Android/iOS версии, выполняет checks и только
 по explicit `--push` атомарно отправляет `main` + tag, запуская prod deploy и APK CI.
-Первый подписанный release `v1.0.0` опубликован в GitHub, скачанный APK независимо
-проверен, Firebase app/certificate зарегистрированы, а production FCM sender успешно
-проходит Google OAuth. Финальный внешний gate — установка на реальный Android,
-background/terminated delivery и обновление следующим signed release без очистки
-данных.
+Первый подписанный release `v1.0.0` и исправляющий `v1.0.1` опубликованы в GitHub,
+скачанные APK независимо проверены, Firebase app/certificate зарегистрированы, а
+production FCM sender успешно проходит Google OAuth. `v1.0.1` установлен поверх
+`v1.0.0` на Pixel 9 AVD: versionCode вырос `1 -> 2`, `firstInstallTime` сохранился,
+native login дошёл до ожидаемого `401`, safe-area не перекрыта. Оставшийся внешний
+gate — background/terminated push delivery и update на физическом Android.
 
 ### BL-041 — Visual system, accessibility и PWA polish
 
