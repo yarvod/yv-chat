@@ -4,6 +4,10 @@ import type { OpaqueMessage } from '../../domain/messaging/models'
 import type { ProtocolMessageProtection } from './message-protection'
 import { prepareTimelineMessage, type TimelineMessage } from './timeline-message'
 import type { DirectAttachmentSecrets } from './direct-message-content'
+import {
+  conversationMediaItems,
+  type ConversationMediaIndex,
+} from './conversation-media'
 
 const HISTORY_PAGE_SIZE = 100
 const MAX_TIMELINE_MESSAGES = 300
@@ -11,6 +15,7 @@ const ANCHOR_BEFORE_LIMIT = 50
 const ANCHOR_AFTER_LIMIT = 50
 const MAX_SEARCH_MESSAGES = 2_000
 const MAX_SEARCH_RESULTS = 100
+const MAX_MEDIA_INDEX_MESSAGES = 2_000
 const MAX_RETENTION_DRAIN_PAGES = 1_000
 
 export interface ConversationHistoryWindow {
@@ -311,6 +316,48 @@ export class ConversationHistory {
     )).slice(-MAX_SEARCH_RESULTS)
   }
 
+  async listMedia(conversationId: string): Promise<ConversationMediaIndex> {
+    const cached = await this.readCachedIndex(conversationId, MAX_MEDIA_INDEX_MESSAGES)
+    const cachedById = new Map(cached.messages.map(message => [message.messageId, message]))
+    const authoritative = new Map<string, ArchivedMessage>()
+    let beforeSequence: number | undefined
+    let truncated = false
+    try {
+      for (let pageNumber = 0; pageNumber < MAX_MEDIA_INDEX_MESSAGES / HISTORY_PAGE_SIZE; pageNumber += 1) {
+        const page = await this.gateway.listMessageHistory(
+          conversationId,
+          beforeSequence,
+          HISTORY_PAGE_SIZE,
+        )
+        await this.persist(conversationId, page.messages)
+        for (const message of page.messages) {
+          const localPlaintext = cachedById.get(message.messageId)?.localPlaintext
+          authoritative.set(message.messageId, {
+            ...message,
+            ...(localPlaintext === undefined ? {} : { localPlaintext }),
+          })
+        }
+        if (!page.hasMore || page.oldestSequence === null) break
+        if (page.oldestSequence === beforeSequence) {
+          throw new TypeError('message media index did not advance')
+        }
+        beforeSequence = page.oldestSequence
+        truncated = pageNumber + 1 === MAX_MEDIA_INDEX_MESSAGES / HISTORY_PAGE_SIZE
+      }
+    } catch (error) {
+      if (cached.messages.length === 0) throw error
+      const prepared = await this.prepare(cached.messages)
+      return {
+        items: conversationMediaItems(prepared),
+        truncated: cached.truncated,
+      }
+    }
+    const prepared = await this.prepare(
+      [...authoritative.values()].sort((left, right) => left.sequence - right.sequence),
+    )
+    return { items: conversationMediaItems(prepared), truncated }
+  }
+
   async acceptAuthoritativeOutgoing(
     message: OpaqueMessage,
     localPlaintext: string | undefined,
@@ -394,6 +441,33 @@ export class ConversationHistory {
     } catch {
       this.archiveAvailable = false
       return []
+    }
+  }
+
+  private async readCachedIndex(
+    conversationId: string,
+    limit: number,
+  ): Promise<{ messages: ArchivedMessage[], truncated: boolean }> {
+    const messages = new Map<string, ArchivedMessage>()
+    let page = await this.readLatest(conversationId)
+    let truncated = false
+    while (page.length > 0 && messages.size < limit) {
+      for (const message of page) messages.set(message.messageId, message)
+      const oldestSequence = page[0]?.sequence
+      if (page.length < HISTORY_PAGE_SIZE || oldestSequence === undefined) break
+      if (messages.size >= limit) {
+        truncated = true
+        break
+      }
+      page = await this.readBefore(
+        conversationId,
+        oldestSequence,
+        Math.min(HISTORY_PAGE_SIZE, limit - messages.size),
+      )
+    }
+    return {
+      messages: [...messages.values()].sort((left, right) => left.sequence - right.sequence),
+      truncated,
     }
   }
 

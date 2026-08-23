@@ -15,7 +15,7 @@ import ConversationSidebar from './ConversationSidebar.vue'
 import MessagePanel from './MessagePanel.vue'
 import VoiceCallOverlay from './VoiceCallOverlay.vue'
 import VoiceCallMiniBar from './VoiceCallMiniBar.vue'
-import GroupDetailsPanel from './GroupDetailsPanel.vue'
+import ConversationDetailsPanel from './ConversationDetailsPanel.vue'
 
 const props = defineProps<{ user: CurrentAccount }>()
 const emit = defineEmits<{ sessionExpired: [] }>()
@@ -40,7 +40,7 @@ const presenceIndicators = ref<readonly PresenceIndicator[]>([])
 const connectionState = ref<RealtimeConnectionState>('connecting')
 const callState = ref<VoiceCallState>(callsState())
 const callMinimized = ref(false)
-const groupDetailsOpen = ref(false)
+const conversationDetailsOpen = ref(false)
 const openingConversationId = ref<string | null>(null)
 const mobilePane = computed<'list' | 'conversation'>(() => (
   selectedConversationId(route.query.conversation) || openingConversationId.value
@@ -138,7 +138,7 @@ async function applyRouteSelection(): Promise<void> {
 
 async function selectConversation(conversationId: string): Promise<void> {
   if (openingConversationId.value !== null) return
-  groupDetailsOpen.value = false
+  conversationDetailsOpen.value = false
   openingConversationId.value = conversationId
   try {
     await messenger.selectConversation(conversationId)
@@ -150,6 +150,13 @@ async function selectConversation(conversationId: string): Promise<void> {
     openingConversationId.value = null
   }
 }
+
+const activeConversationOnline = computed(() => {
+  const conversation = messenger.activeConversation.value
+  if (!conversation || conversation.conversationType !== 'direct') return false
+  const peer = conversation.members.find(member => member.userId !== props.user.userId)
+  return peer !== undefined && activeOnlineActorIds.value.includes(peer.userId)
+})
 
 async function openMessage(messageId: string): Promise<void> {
   const conversationId = messenger.state.activeConversationId
@@ -367,20 +374,27 @@ onBeforeUnmount(() => {
         :start-call="startCall"
         :haptic="$frontend.haptics.perform.bind($frontend.haptics)"
         @back="closeConversation"
-        @group-details="groupDetailsOpen = true"
+        @details="conversationDetailsOpen = true"
       />
-      <GroupDetailsPanel
-        v-if="groupDetailsOpen && messenger.activeConversation.value?.conversationType === 'group'"
+      <ConversationDetailsPanel
+        v-if="conversationDetailsOpen && messenger.activeConversation.value"
         :conversation="messenger.activeConversation.value"
         :directory="messenger.state.directory"
         :actor-user-id="user.userId"
+        :online="activeConversationOnline"
         :busy="messenger.state.groupMutating"
         :notice="workspaceNotice"
+        :media-items="messenger.state.mediaItems"
+        :media-loading="messenger.state.mediaLoading"
+        :media-truncated="messenger.state.mediaTruncated"
+        :reload-media="messenger.loadActiveConversationMedia"
+        :load-attachment="messenger.loadAttachment"
+        :open-message="openMessage"
         :rename-group="messenger.renameActiveGroup"
         :add-member="messenger.addActiveGroupMember"
         :remove-member="messenger.removeActiveGroupMember"
         :leave-group="leaveGroup"
-        @close="groupDetailsOpen = false"
+        @close="conversationDetailsOpen = false"
       />
     </div>
   </section>

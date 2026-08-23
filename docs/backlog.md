@@ -122,6 +122,19 @@ safe inset для controls. Debug APK собран и проверен на head
 release session и не подменяется тестовой учётной записью. Production stack
 работает на immutable image `sha-99cecb7e072563a5a6944261cf917e158465e51b`.
 
+### BL-083 — Профиль переписки и общая медиатека
+
+Статус: **implemented locally** (`WP-123`).
+
+Результат: нажатие на имя/аватар в header личного или группового чата открывает
+responsive profile panel. Direct показывает доступную identity/presence информацию,
+group сохраняет rename/member/leave controls. Отдельные вкладки собирают фото, видео
+и файлы из последних 2 000 retained сообщений после client-side decode, позволяют
+просмотреть/скачать вложение существующим authorized path и перейти к exact source
+message через bounded target window. Для direct server не получает filename/MIME/key:
+индекс строится после MLS decrypt, а offline fallback использует encrypted local
+archive. TTL, tombstones, quota и membership authorization не меняются.
+
 ### BL-041 — Visual system, accessibility и PWA polish
 
 Статус: **remaining accessibility/visual gate**. Реализованные shell, responsive

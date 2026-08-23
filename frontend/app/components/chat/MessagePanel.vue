@@ -118,7 +118,7 @@ const props = withDefaults(defineProps<{
   startCall: async () => undefined,
   haptic: () => undefined,
 })
-const emit = defineEmits<{ back: []; groupDetails: [] }>()
+const emit = defineEmits<{ back: []; details: [] }>()
 
 const draft = ref('')
 const replyingTo = ref<TimelineMessage | null>(null)
@@ -1336,16 +1336,23 @@ onBeforeUnmount(() => {
       <button class="mobile-back" type="button" aria-label="К списку диалогов" @click="emit('back')">
         <AppIcon name="back" />
       </button>
-      <span class="conversation-header-avatar" aria-hidden="true">
-        {{ conversationName(conversation).slice(0, 1).toUpperCase() }}
-      </span>
-      <div class="conversation-header-copy">
-        <h2>{{ conversationName(conversation) }}</h2>
-        <p v-if="typingLabel" class="typing-label" aria-live="polite">
-          {{ typingLabel }}<span aria-hidden="true">…</span>
-        </p>
-        <p v-else>{{ presenceLabel }}</p>
-      </div>
+      <button
+        class="conversation-profile-button"
+        type="button"
+        :aria-label="`Открыть информацию о чате ${conversationName(conversation)}`"
+        @click="emit('details')"
+      >
+        <span class="conversation-header-avatar" aria-hidden="true">
+          {{ conversationName(conversation).slice(0, 1).toUpperCase() }}
+        </span>
+        <span class="conversation-header-copy">
+          <h2>{{ conversationName(conversation) }}</h2>
+          <span v-if="typingLabel" class="typing-label conversation-header-status" aria-live="polite">
+            {{ typingLabel }}<span aria-hidden="true">…</span>
+          </span>
+          <span v-else class="conversation-header-status">{{ presenceLabel }}</span>
+        </span>
+      </button>
       <span
         class="connection-dot"
         :class="`connection-dot--${connectionState}`"
@@ -1369,15 +1376,6 @@ onBeforeUnmount(() => {
         @click="searchOpen ? closeSearch() : searchOpen = true"
       >
         <AppIcon name="search" />
-      </button>
-      <button
-        v-if="conversation.conversationType === 'group'"
-        class="group-info-button"
-        type="button"
-        aria-label="Информация о группе"
-        @click="emit('groupDetails')"
-      >
-        <AppIcon name="users" />
       </button>
     </header>
 

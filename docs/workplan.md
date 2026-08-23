@@ -1,89 +1,72 @@
 # Текущий workplan
 
-## WP-122 — Android realtime, resilient history sync и status-bar continuity
+## WP-123 — Профиль переписки и общая медиатека
 
-Статус: **production deployed and Android v1.0.2 published; authenticated native WSS acceptance pending**
-Backlog: `BL-082`
-Bugs: `BUG-107`, `BUG-108`, `BUG-109`
+Статус: **implemented and verified locally**
+Backlog: `BL-083`
 
-Цель: восстановить realtime/presence в Capacitor Android без ослабления opaque
-cookie policy, не позволять одному повреждённому history conversation останавливать
-остальной device-to-device sync и визуально продолжить native background под
-edge-to-edge status bar.
-
-### Подтверждённые причины
-
-- production HTTP Android проходит, но WebSocket handshake возвращает `403`:
-  cross-origin WebView socket не получает `SameSite=Strict` host cookie API;
-- history relay обрабатывается одним общим циклом, поэтому unreadable encrypted
-  chunk выбрасывает всю попытку вместо bounded quarantine одного conversation;
-- native auth layout начинается ниже safe-area, оставляя прямоугольную полосу
-  root background вместо продолжения hero background.
+Цель: по нажатию на имя/аватар в заголовке личной или групповой переписки
+открывать Telegram-подобную responsive панель с доступной информацией о собеседнике
+или группе, общей медиатекой, скачиванием и переходом к исходному сообщению.
 
 ### Scope
 
-- Android-only Capacitor WebSocket adapter получает HttpOnly cookie внутри native
-  CookieManager, отправляет её только в `wss` handshake exact realtime path и
-  передаёт UI только bounded realtime frames;
-- web/PWA сохраняют browser WebSocket и cookie transport без query credential;
-- unreadable/corrupt history payload переводит только свой conversation в skipped,
-  подтверждает relay chunk и продолжает остальные chats;
-- pairing/device/conversation binding mismatch остаётся terminal fail-closed;
-- auth background рисуется под status bar, controls сохраняют safe inset;
-- authenticated mobile shell получает theme-aligned safe-area gradient;
-- Pixel 9 AVD запускается headless, debug APK проверяется через ADB screenshot,
-  process logs и production handshake.
+- вся identity-зона заголовка чата является доступной кнопкой открытия профиля;
+- единая desktop side-sheet/mobile full-screen panel работает для direct и group;
+- direct показывает display name, username и best-effort online status;
+- group показывает название, число и список участников, сохраняя существующие
+  rename/add/remove/leave operations и authorization;
+- вкладки «Медиа» и «Файлы» индексируют доступные attachment metadata последних
+  2 000 retained сообщений, показывают preview, sender, дату и размер;
+- каждое вложение можно скачать через существующий authenticated/E2EE-aware download
+  path или открыть точное исходное сообщение с уже существующим target window;
+- online failure использует encrypted local archive как bounded fallback, не добавляя
+  server-side plaintext или отдельный attachment metadata index для direct chats.
 
 ### Security invariants
 
-- session cookie не возвращается JavaScript, не логируется и не попадает в URL;
-- native bridge принимает только `wss`, exact `/api/v1/realtime`, no query,
-  credentials или fragment, и exact local app origin;
-- API `SameSite=Strict`, CSRF, allowed origins и browser WebSocket не ослабляются;
-- malformed decrypted transfer binding не признаётся harmless corruption;
-- unreadable message content не логируется и не копируется в skip diagnostics.
+- direct filename/MIME/kind/key продолжают извлекаться только после client-side MLS
+  decrypt; server не получает новый plaintext metadata contract;
+- download повторно использует membership-authorized attachment endpoint, encrypted
+  media cache и direct attachment cipher boundary;
+- media index не обходит TTL, deletion tombstones или conversation membership;
+- profile UI не вводит browser credentials, crypto keys или decrypted body в URL,
+  logs, sync events или persistent presentation state;
+- presence остаётся best-effort metadata и не используется для authorization.
 
 ### Tests
 
-- Vitest: native socket URL/origin/no-query, ping/pong and event lifecycle;
-- Vitest: corrupt chat quarantine continues other markers;
-- Vitest: wrong pairing binding remains rejected and unacknowledged;
-- mobile CSS regression for behind-status-bar paint and safe control inset;
-- frontend test, lint, typecheck, native build/sync;
-- Android Gradle debug compile and headless Pixel 9 install/launch/screenshot/logcat;
-- production API logs show accepted native WebSocket after authenticated launch when
-  an existing emulator session is available.
+- unit: client-side media index декодирует metadata и сортирует newest-first;
+- component: header identity emits profile intent;
+- component: group management сохранился после объединения panel;
+- component: direct identity, media/file counters и переход к exact source message;
+- frontend Vitest, ESLint, Nuxt typecheck и production/PWA build.
 
 ### Exclusions
 
-- `SameSite=None`, bearer/query session credentials или public Origin wildcard;
-- automatic repair of cryptographically unreadable history;
-- clearing Android app data or replacing the user's production device identity;
-- iOS native WebSocket bridge in this Android regression slice;
-- release/tag/deploy without a separate explicit release step.
+- server-side preview generation или расшифровка direct attachments;
+- бессрочный media catalog за пределами server/local retention;
+- новые profile bio/avatar upload schemas;
+- изменение group MLS, storage quota или attachment size policy;
+- отдельный backend media-search index, раскрывающий direct metadata.
 
 ### Definition of Done
 
-- Android presence/realtime connects through a cookie-aware native socket;
-- one or more corrupt conversations are reported skipped while valid chats finish;
-- status bar has continuous themed background and no overlapped controls;
-- relevant checks and headless AVD acceptance pass;
-- architecture/native docs, backlog and bugs describe the resulting boundary;
-- changes are committed as one focused feature.
+- title/avatar click открывает профиль обоих типов conversation;
+- доступные фото, видео и файлы быстро просматриваются и скачиваются;
+- «К сообщению» загружает bounded timeline window и подсвечивает exact source row;
+- group member-management regressions отсутствуют;
+- relevant docs и checks обновлены, diff не содержит secrets/generated artifacts;
+- изменения готовы к одному focused commit.
 
 ### Acceptance
 
-- production API logs: authenticated Android HTTP requests return `200`, while the
-  former JavaScript `/api/v1/realtime` handshakes repeatedly returned `403`; browser
-  WSS in the same runtime remained accepted and Android origins were allow-listed;
-- frontend: `64 passed` files, `388 passed` tests, ESLint and Nuxt typecheck;
-- native: static build, Capacitor sync and Android Gradle `assembleDebug` pass;
-- headless Pixel 9 API 37: latest debug APK installs and launches, app process stays
-  alive, filtered logcat has no fatal/exception, and screenshot confirms continuous
-  hero background beneath the `142 px` status inset;
-- production accepted native WSS remains a release acceptance step because the
-  headless AVD intentionally has no user production credentials.
-- release `v1.0.2`: signed APK package/version/signature verification and GitHub
-  publication passed; production workflow `32566984086` completed, API/frontend
-  run healthy from immutable SHA `99cecb7e072563a5a6944261cf917e158465e51b`, and
-  public `/api/v1/health` returns `{"status":"ok"}`.
+- frontend: `65 passed` files, `391 passed` tests;
+- ESLint и Nuxt typecheck проходят без diagnostics;
+- production/PWA build завершён, service worker precache сгенерирован;
+- in-app browser desktop `1280×720`: side sheet имеет bounded width `540 px`,
+  document/panel не создают horizontal overflow;
+- mobile `390×844`: panel занимает exact viewport, tabs и source/download actions
+  доступны, `scrollWidth === clientWidth === 390`; visual QA отдельно исправил
+  избыточную высоту file card на mobile;
+- `git diff --check` проходит, temporary preview route удалён.

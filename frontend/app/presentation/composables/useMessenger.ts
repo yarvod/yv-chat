@@ -24,6 +24,7 @@ import {
   outgoingProtocolVersion,
 } from '../../application/messaging/conversation-message-policy'
 import type { TimelineMessage } from '../../application/messaging/timeline-message'
+import type { ConversationMediaItem } from '../../application/messaging/conversation-media'
 import type { VoiceCallSummary } from '../../domain/calls/voice-call'
 import {
   encodeGroupMessageContent,
@@ -96,6 +97,9 @@ interface MessengerState {
   attachmentUploadBytesTotal: number
   reactionSummaries: MessageReactionSummary[]
   messagePins: MessagePinSummary[]
+  mediaItems: ConversationMediaItem[]
+  mediaLoading: boolean
+  mediaTruncated: boolean
   conversationCryptoPhase: ConversationCryptoPhase
   conversationCryptoBlockReason: string | null
   message: string | null
@@ -230,6 +234,9 @@ export function useMessenger(
     attachmentUploadBytesTotal: 0,
     reactionSummaries: [],
     messagePins: [],
+    mediaItems: [],
+    mediaLoading: false,
+    mediaTruncated: false,
     conversationCryptoPhase: 'checking',
     conversationCryptoBlockReason: null,
     message: null,
@@ -245,6 +252,7 @@ export function useMessenger(
     conversationId => history.cacheRetainedBeforeEpochAdvance(conversationId),
   )
   let polling = false
+  let mediaLoadRevision = 0
   let snapshotAvailable = true
   let snapshotPersistQueue = Promise.resolve()
   const readAdvances = new Map<string, number>()
@@ -892,9 +900,13 @@ export function useMessenger(
     const changed = conversationId !== state.activeConversationId
     let hotWindow: ConversationHistoryWindow | null = null
     if (changed) {
+      mediaLoadRevision += 1
       rememberActiveHistoryWindow()
       state.activeConversationId = conversationId
       state.messagePins = []
+      state.mediaItems = []
+      state.mediaLoading = false
+      state.mediaTruncated = false
       hotWindow = hotHistoryWindow(conversationId)
       if (hotWindow) applyHistoryWindow(hotWindow, conversationId)
       else resetHistoryWindow()
@@ -1246,6 +1258,26 @@ export function useMessenger(
     }
   }
 
+  async function loadActiveConversationMedia(): Promise<void> {
+    const conversationId = state.activeConversationId
+    if (!conversationId || state.mediaLoading) return
+    const revision = ++mediaLoadRevision
+    state.mediaLoading = true
+    try {
+      const index = await history.listMedia(conversationId)
+      syncArchiveStatus()
+      if (state.activeConversationId !== conversationId || revision !== mediaLoadRevision) return
+      state.mediaItems = [...index.items]
+      state.mediaTruncated = index.truncated
+    } catch (error) {
+      if (state.activeConversationId === conversationId) fail(error)
+    } finally {
+      if (state.activeConversationId === conversationId && revision === mediaLoadRevision) {
+        state.mediaLoading = false
+      }
+    }
+  }
+
   async function deleteMessage(messageId: string): Promise<boolean> {
     const conversationId = state.activeConversationId
     if (!conversationId || !messageId || state.deletingMessageId !== null) return false
@@ -1254,6 +1286,7 @@ export function useMessenger(
     try {
       const result = await deleteMessageForEveryone.execute(conversationId, messageId)
       state.messagePins = state.messagePins.filter(pin => pin.messageId !== messageId)
+      state.mediaItems = state.mediaItems.filter(item => item.messageId !== messageId)
       state.messages = state.messages.map(message => (
         message.messageId === result.messageId
           ? {
@@ -1368,6 +1401,7 @@ export function useMessenger(
           state.messages = state.messages.map(message => (
             message.messageId === event.messageId ? tombstone : message
           ))
+          state.mediaItems = state.mediaItems.filter(item => item.messageId !== event.messageId)
           rememberActiveHistoryWindow()
         } else {
           const inactiveWindow = hotHistoryWindows.get(event.conversationId)
@@ -1440,6 +1474,7 @@ export function useMessenger(
     loadAttachment,
     retryOutgoing,
     searchActiveConversation,
+    loadActiveConversationMedia,
     toggleReaction,
     togglePin,
     deleteMessage,

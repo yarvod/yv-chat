@@ -311,13 +311,26 @@ views: display name участника, локальная дата/время, 
 не синхронизируется и очищается при смене разговора. Forward/delete selected требуют
 отдельных application/server contracts и не выводятся как неработающие UI actions.
 
-Group info открывается отдельной responsive panel, а не разрастается внутри
-`MessagePanel`: desktop использует bounded side sheet, mobile — `100dvh` surface с
-safe-area и собственным scroll. Panel получает intent callbacks rename/add/remove/
-leave, а реализации находятся в `application/conversations` и вызывают typed
-`MessagingGateway`. После successful mutation `useMessenger` заменяет authoritative
-conversation DTO и сохраняет encrypted snapshot; другой device сходится через
-durable `conversation_updated` + cursor catch-up.
+Conversation profile открывается по всей identity-зоне header в отдельной responsive
+panel, а не разрастается внутри `MessagePanel`: desktop использует bounded side sheet,
+mobile — full-height surface с safe-area и собственным scroll. Direct profile
+показывает только уже доступные conversation-member metadata и best-effort presence;
+group дополнительно получает intent callbacks rename/add/remove/leave, а реализации
+остаются в `application/conversations` и вызывают typed `MessagingGateway`. После
+successful mutation `useMessenger` заменяет authoritative conversation DTO и сохраняет
+encrypted snapshot; другой device сходится через durable `conversation_updated` +
+cursor catch-up.
+
+Общая медиатека является client-side projection доступной retained history, а не
+новым server metadata index. `ConversationHistory` bounded-сканирует до 2 000
+последних envelopes, обогащает server rows сохранённым внутри encrypted archive
+`localPlaintext`, затем protocol adapter декодирует attachment metadata. Поэтому
+direct filename/MIME/kind и file secret не раскрываются backend. При offline failure
+допустим bounded fallback на encrypted local archive; download всё равно проходит
+через существующие media cache, TTL, membership и direct attachment cipher boundaries.
+Каждый media item хранит source message ID/sequence только в transient view state;
+переход использует обычный bounded target history window и highlight, не lifetime
+timeline render.
 
 Transport flow разделён явно:
 

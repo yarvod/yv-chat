@@ -31,6 +31,31 @@ const conversation = {
 }
 
 describe('message panel', () => {
+  it('opens conversation details when the chat identity is pressed', async () => {
+    const wrapper = mount(MessagePanel, {
+      props: {
+        conversation,
+        messages: [],
+        actorUserId: 'alice-id',
+        sending: false,
+        protectionSecure: true,
+        protectionLabel: 'E2EE',
+        sendMessage: vi.fn(),
+        deleteMessage: vi.fn(),
+        deletingMessageId: null,
+        typingActorIds: [],
+        onlineActorIds: [],
+        deliveryStates: [],
+        connectionState: 'connected',
+        setTyping: vi.fn(),
+      },
+    })
+
+    await wrapper.get('.conversation-profile-button').trigger('click')
+
+    expect(wrapper.emitted('details')).toHaveLength(1)
+  })
+
   it('renders an encrypted missed-call item as call history instead of empty text', () => {
     const wrapper = mount(MessagePanel, {
       props: {
