@@ -2,7 +2,7 @@
 
 ## WP-125 — Годовое server retention для сообщений и media
 
-Статус: **in progress**
+Статус: **production deployed**
 Backlog: `BL-018`
 ADR: `ADR-0006`
 
@@ -62,3 +62,19 @@ ciphertext и committed media, продлив ещё не удалённые с�
 - migration, reconciliation и повторный deploy безопасны и idempotent;
 - checks проходят, изменения собраны в один focused commit и production rollout
   проверен без вывода content/secrets.
+
+### Acceptance
+
+- backend: Ruff format/lint, import boundaries и mypy проходят; полный suite —
+  `293 passed`, `12 skipped`;
+- fresh PostgreSQL применил все migrations до `0030_year_retention`; PostgreSQL
+  integration — `2 passed`;
+- Compose, deploy shell/runbook guards, docs и `git diff --check` проходят;
+- production workflow `32769115857` развернул immutable
+  `sha-424ab59e3d5bb2b55408cf5c33d90f1ea863b8b0`;
+- API и cleanup получают effective `31536000/63072000`, Alembic head —
+  `0030_year_retention`;
+- production aggregates: `503` active messages, `0` короче 365 дней, minimum
+  retention `31536000` секунд; `72` committed active media, `0` короче linked
+  message expiry; pending media — `0`;
+- оба public origins вернули health/frontend HTTP `200`.

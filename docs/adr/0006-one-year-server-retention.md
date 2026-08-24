@@ -1,6 +1,6 @@
 # ADR-0006: Extend production server retention to one year
 
-Status: accepted for implementation and production rollout (`WP-125`)
+Status: accepted and production deployed (`WP-125`)
 
 ## Context
 

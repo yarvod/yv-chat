@@ -500,7 +500,7 @@ polished desktop/mobile interaction без server-side preview/transcoding.
 
 ### BL-018 — Server TTL cleanup и tombstone retention
 
-Статус: **bounded year policy and extension active in `WP-125`; forever/type
+Статус: **bounded year policy production-active in `WP-125`; forever/type
 overrides remain**. Message/media cleanup, tombstones, bounded concurrency и
 missing-file tolerance уже production-ready через `WP-028`/`WP-056` и сохранены в
 `Completed` (`BL-010`, `BL-016`).
