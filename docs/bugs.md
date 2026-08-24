@@ -6,7 +6,8 @@
 
 ### BUG-110 — Список упоминаний сжимал composer и ломал mobile layout
 
-- Статус: `fixed locally in WP-124`.
+- Статус: `fixed and production deployed in WP-124` (`97ef4cd`, workflow
+  `32757622621`).
 - Severity: `medium messaging UX and responsive layout`.
 - Reproduction: в group composer ввести `@`; horizontal mention cards становятся
   отдельным full-span grid item после attachment control, из-за чего textarea

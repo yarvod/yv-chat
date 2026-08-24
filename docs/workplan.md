@@ -2,7 +2,7 @@
 
 ## WP-124 — Responsive список упоминаний в composer
 
-Статус: **implemented and verified locally**
+Статус: **production deployed**
 Backlog: `BL-041`
 Bug: `BUG-110`
 
@@ -60,4 +60,7 @@ Bug: `BUG-110`
 - mobile `390×844`: textarea сохраняет всю среднюю колонку `272 px`, panel имеет
   `clientHeight: 294`, `scrollHeight: 682`, а document остаётся ровно `390 px`;
 - семь Arrow Down прокручивают panel до `scrollTop: 158` и сохраняют active option;
-- `git diff --check` проходит, temporary preview route и dev server удалены.
+- `git diff --check` проходит, temporary preview route и dev server удалены;
+- production workflow `32757622621` (attempt 3) развернул immutable
+  `sha-97ef4cdde6336fb89992aa0af70d1285ee8bcc51`; оба public origins вернули
+  health/frontend HTTP `200`.

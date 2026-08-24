@@ -372,6 +372,15 @@ vhost regression restore only its immediate backup. Never use `docker system pru
 
 ## Rollout records
 
+`WP-124` responsive mention suggestions deployed 2026-08-24 in workflow
+`32757622621` (successful attempt 3) for commit `97ef4cd`. Repository verification,
+dependency audit, immutable backend/frontend builds, migrations and isolated rollout
+passed. The first two deploy attempts stopped during image pull because the VPS timed
+out against GHCR; cached layers made the third retry complete without code or runtime
+configuration changes. Both `chat.yoowee.ru` and `chat.yoowee.com.de` returned
+health/frontend HTTP `200`. Immutable production tag is
+`sha-97ef4cdde6336fb89992aa0af70d1285ee8bcc51`.
+
 `WP-110` reaction delight, animated GIF/WebP stickers and iOS composer polish
 deployed 2026-08-20 workflow `32355715677` for commit `bc083d9`; parallel CI
 `32355715710` also passed. Repository verification, dependency audit, immutable
