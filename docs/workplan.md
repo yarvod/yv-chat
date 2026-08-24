@@ -1,72 +1,63 @@
 # Текущий workplan
 
-## WP-123 — Профиль переписки и общая медиатека
+## WP-124 — Responsive список упоминаний в composer
 
 Статус: **implemented and verified locally**
-Backlog: `BL-083`
+Backlog: `BL-041`
+Bug: `BUG-110`
 
-Цель: по нажатию на имя/аватар в заголовке личной или групповой переписки
-открывать Telegram-подобную responsive панель с доступной информацией о собеседнике
-или группе, общей медиатекой, скачиванием и переходом к исходному сообщению.
+Цель: заменить ломающие grid горизонтальные mention cards на Telegram-подобную
+вертикальную панель над composer, которая не сжимает поле ввода и остаётся удобной
+на mobile.
 
 ### Scope
 
-- вся identity-зона заголовка чата является доступной кнопкой открытия профиля;
-- единая desktop side-sheet/mobile full-screen panel работает для direct и group;
-- direct показывает display name, username и best-effort online status;
-- group показывает название, число и список участников, сохраняя существующие
-  rename/add/remove/leave operations и authorization;
-- вкладки «Медиа» и «Файлы» индексируют доступные attachment metadata последних
-  2 000 retained сообщений, показывают preview, sender, дату и размер;
-- каждое вложение можно скачать через существующий authenticated/E2EE-aware download
-  path или открыть точное исходное сообщение с уже существующим target window;
-- online failure использует encrypted local archive как bounded fallback, не добавляя
-  server-side plaintext или отдельный attachment metadata index для direct chats.
+- mention suggestions не участвуют в grid layout строки composer;
+- панель открывается над всей строкой ввода и получает bounded desktop/mobile height;
+- все действующие участники, кроме текущего пользователя, доступны через вертикальный
+  scroll; покинувшие группу исключаются;
+- строка участника показывает компактный avatar initial, display name и username;
+- touch/pointer selection и существующая вставка username сохраняются;
+- Arrow Up/Down, Enter и Tab позволяют выбрать участника без ухода из textarea;
+- listbox/combobox ARIA связывает textarea, список и активный option.
 
 ### Security invariants
 
-- direct filename/MIME/kind/key продолжают извлекаться только после client-side MLS
-  decrypt; server не получает новый plaintext metadata contract;
-- download повторно использует membership-authorized attachment endpoint, encrypted
-  media cache и direct attachment cipher boundary;
-- media index не обходит TTL, deletion tombstones или conversation membership;
-- profile UI не вводит browser credentials, crypto keys или decrypted body в URL,
-  logs, sync events или persistent presentation state;
-- presence остаётся best-effort metadata и не используется для authorization.
+- member eligibility по-прежнему строится только из уже authorized conversation state;
+- composer не отправляет и не сохраняет дополнительный profile/member metadata;
+- mention payload остаётся существующим набором `mentionedUserIds`, crypto и transport
+  contracts не меняются.
 
 ### Tests
 
-- unit: client-side media index декодирует metadata и сортирует newest-first;
-- component: header identity emits profile intent;
-- component: group management сохранился после объединения panel;
-- component: direct identity, media/file counters и переход к exact source message;
-- frontend Vitest, ESLint, Nuxt typecheck и production/PWA build.
+- component: доступны все eligible group members, self/left members исключены;
+- component: keyboard navigation меняет active option и вставляет exact username;
+- полный frontend Vitest, ESLint, Nuxt typecheck и production/PWA build;
+- visual QA в in-app browser на desktop `1280×720` и mobile `390×844`.
 
 ### Exclusions
 
-- server-side preview generation или расшифровка direct attachments;
-- бессрочный media catalog за пределами server/local retention;
-- новые profile bio/avatar upload schemas;
-- изменение group MLS, storage quota или attachment size policy;
-- отдельный backend media-search index, раскрывающий direct metadata.
+- avatar upload/profile schema;
+- server-side member search;
+- изменение синтаксиса или transport semantics упоминаний;
+- redesign остальных composer surfaces.
 
 ### Definition of Done
 
-- title/avatar click открывает профиль обоих типов conversation;
-- доступные фото, видео и файлы быстро просматриваются и скачиваются;
-- «К сообщению» загружает bounded timeline window и подсвечивает exact source row;
-- group member-management regressions отсутствуют;
-- relevant docs и checks обновлены, diff не содержит secrets/generated artifacts;
+- открытый список не меняет высоту и колонки основной строки composer;
+- mobile viewport не получает horizontal overflow;
+- длинный список имеет реальный vertical scroll и keyboard-follow selection;
+- relevant docs и checks обновлены, временный preview route удалён;
 - изменения готовы к одному focused commit.
 
 ### Acceptance
 
-- frontend: `65 passed` files, `391 passed` tests;
+- frontend: `65 passed` files, `392 passed` tests;
 - ESLint и Nuxt typecheck проходят без diagnostics;
 - production/PWA build завершён, service worker precache сгенерирован;
-- in-app browser desktop `1280×720`: side sheet имеет bounded width `540 px`,
-  document/panel не создают horizontal overflow;
-- mobile `390×844`: panel занимает exact viewport, tabs и source/download actions
-  доступны, `scrollWidth === clientWidth === 390`; visual QA отдельно исправил
-  избыточную высоту file card на mobile;
-- `git diff --check` проходит, temporary preview route удалён.
+- desktop `1280×720`: textarea сохраняет `1090 px`, panel имеет
+  `position: absolute`, `clientHeight: 300`, `scrollHeight: 706`;
+- mobile `390×844`: textarea сохраняет всю среднюю колонку `272 px`, panel имеет
+  `clientHeight: 294`, `scrollHeight: 682`, а document остаётся ровно `390 px`;
+- семь Arrow Down прокручивают panel до `scrollTop: 158` и сохраняют active option;
+- `git diff --check` проходит, temporary preview route и dev server удалены.

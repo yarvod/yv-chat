@@ -4,6 +4,24 @@
 
 ## Active
 
+### BUG-110 — Список упоминаний сжимал composer и ломал mobile layout
+
+- Статус: `fixed locally in WP-124`.
+- Severity: `medium messaging UX and responsive layout`.
+- Reproduction: в group composer ввести `@`; horizontal mention cards становятся
+  отдельным full-span grid item после attachment control, из-за чего textarea
+  auto-placement попадает в узкую колонку. На mobile поле визуально схлопывается,
+  а список растягивает composer вместо overlay над ним.
+- Root cause: `.mention-suggestions` участвовал в основном CSS Grid composer и
+  использовал horizontal overflow с отдельной карточкой фиксированной ширины на
+  каждого участника.
+- Исправление: suggestions вынесены в absolute popover над composer, получили
+  bounded vertical scroll, компактные строки участника и keyboard/ARIA listbox
+  navigation. Ограничение первых восьми кандидатов удалено; self и left members
+  по-прежнему исключаются.
+- Проверка: component regression с 11 eligible участниками, полный frontend suite,
+  lint/typecheck/build и responsive in-app browser QA `1280×720`/`390×844`.
+
 ### BUG-109 — Android status bar обрывал native background прямоугольной полосой
 
 - Статус: `fixed and published in Android v1.0.2`.

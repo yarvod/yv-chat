@@ -133,6 +133,8 @@ const messageActionNotice = ref<string | null>(null)
 const activePinIndex = ref(0)
 const timeline = ref<HTMLElement | null>(null)
 const composerInput = ref<HTMLTextAreaElement | null>(null)
+const mentionList = ref<HTMLElement | null>(null)
+const activeMentionIndex = ref(0)
 const mediaInput = ref<HTMLInputElement | null>(null)
 const stickerInput = ref<HTMLInputElement | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
@@ -226,8 +228,19 @@ const mentionSuggestions = computed(() => {
       member.username.toLocaleLowerCase('ru-RU').startsWith(query)
       || member.displayName.toLocaleLowerCase('ru-RU').startsWith(query)
     )
-  )).slice(0, 8)
+  ))
 })
+const activeMentionOptionId = computed(() => {
+  const activeMention = mentionSuggestions.value[activeMentionIndex.value]
+  return activeMention ? `mention-option-${activeMention.userId}` : undefined
+})
+
+watch(
+  () => mentionSuggestions.value.map(member => member.userId).join(','),
+  () => {
+    activeMentionIndex.value = 0
+  },
+)
 
 function boundedPercent(completed: number, total: number): number {
   if (total <= 0) return 0
@@ -364,6 +377,20 @@ async function chooseMention(username: string): Promise<void> {
   await nextTick()
   composerInput.value?.focus()
   resizeComposer()
+}
+
+function mentionInitial(displayName: string, username: string): string {
+  return (displayName.trim()[0] ?? username.trim()[0] ?? '@').toLocaleUpperCase('ru-RU')
+}
+
+async function moveActiveMention(direction: -1 | 1): Promise<void> {
+  if (mentionSuggestions.value.length === 0) return
+  activeMentionIndex.value = (
+    activeMentionIndex.value + direction + mentionSuggestions.value.length
+  ) % mentionSuggestions.value.length
+  await nextTick()
+  const activeOption = mentionList.value?.querySelector<HTMLElement>('[aria-selected="true"]')
+  activeOption?.scrollIntoView?.({ block: 'nearest' })
 }
 
 async function runSearch(): Promise<void> {
@@ -1187,6 +1214,21 @@ function resizeComposer(): void {
 }
 
 function handleComposerKeydown(event: KeyboardEvent): void {
+  if (mentionSuggestions.value.length > 0 && !event.isComposing) {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      void moveActiveMention(event.key === 'ArrowDown' ? 1 : -1)
+      return
+    }
+    if ((event.key === 'Enter' && !event.shiftKey) || event.key === 'Tab') {
+      const activeMention = mentionSuggestions.value[activeMentionIndex.value]
+      if (activeMention) {
+        event.preventDefault()
+        void chooseMention(activeMention.username)
+        return
+      }
+    }
+  }
   if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return
   event.preventDefault()
   void submit()
@@ -1768,25 +1810,47 @@ onBeforeUnmount(() => {
         </Transition>
       </div>
       <label class="sr-only" for="message-draft">Сообщение</label>
-      <div v-if="mentionSuggestions.length > 0" class="mention-suggestions" role="listbox" aria-label="Участники для упоминания">
-        <button
-          v-for="member in mentionSuggestions"
-          :key="member.userId"
-          type="button"
-          role="option"
-          @click="chooseMention(member.username)"
+      <Transition name="mention-panel">
+        <div
+          v-if="mentionSuggestions.length > 0"
+          id="mention-suggestions"
+          ref="mentionList"
+          class="mention-suggestions"
+          role="listbox"
+          aria-label="Участники для упоминания"
         >
-          <strong>{{ member.displayName }}</strong>
-          <small>@{{ member.username }}</small>
-        </button>
-      </div>
+          <button
+            v-for="(member, index) in mentionSuggestions"
+            :id="`mention-option-${member.userId}`"
+            :key="member.userId"
+            type="button"
+            role="option"
+            :aria-selected="index === activeMentionIndex"
+            @pointermove="activeMentionIndex = index"
+            @click="chooseMention(member.username)"
+          >
+            <span class="mention-suggestions__avatar" aria-hidden="true">
+              {{ mentionInitial(member.displayName, member.username) }}
+            </span>
+            <span class="mention-suggestions__copy">
+              <strong>{{ member.displayName }}</strong>
+              <small>@{{ member.username }}</small>
+            </span>
+          </button>
+        </div>
+      </Transition>
       <textarea
         id="message-draft"
         ref="composerInput"
         v-model="draft"
         maxlength="4000"
         rows="1"
+        role="combobox"
         placeholder="Напишите сообщение…"
+        aria-autocomplete="list"
+        :aria-expanded="mentionSuggestions.length > 0"
+        :aria-controls="mentionSuggestions.length > 0 ? 'mention-suggestions' : undefined"
+        :aria-activedescendant="activeMentionOptionId"
         @input="resizeComposer"
         @keydown="handleComposerKeydown"
         @focus="handleComposerFocus"

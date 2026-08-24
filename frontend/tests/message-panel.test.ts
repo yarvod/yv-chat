@@ -1693,6 +1693,68 @@ describe('message panel', () => {
     }))
     wrapper.unmount()
   })
+  it('shows every eligible mention in a scrollable list without taking over the composer grid', async () => {
+    const groupMembers = [
+      conversation.members[0]!,
+      ...Array.from({ length: 11 }, (_, index) => ({
+        userId: `member-${index}`,
+        username: `member${index}`,
+        displayName: `Member ${index}`,
+        role: 'member' as const,
+        joinedAt: '2026-08-11T12:00:00Z',
+        leftAt: null,
+      })),
+      {
+        userId: 'former-member',
+        username: 'former',
+        displayName: 'Former member',
+        role: 'member' as const,
+        joinedAt: '2026-08-11T12:00:00Z',
+        leftAt: '2026-08-12T12:00:00Z',
+      },
+    ]
+    const wrapper = mount(MessagePanel, {
+      props: {
+        conversation: {
+          ...conversation,
+          conversationType: 'group',
+          title: 'Team',
+          members: groupMembers,
+        },
+        messages: [],
+        actorUserId: 'alice-id',
+        sending: false,
+        protectionSecure: false,
+        protectionLabel: 'Тестовый режим без E2EE',
+        sendMessage: vi.fn(),
+        deleteMessage: vi.fn(),
+        deletingMessageId: null,
+        typingActorIds: [],
+        onlineActorIds: [],
+        deliveryStates: [],
+        connectionState: 'connected',
+        setTyping: vi.fn(),
+      },
+    })
+
+    const textarea = wrapper.get('textarea')
+    await textarea.setValue('@')
+
+    const options = wrapper.findAll('.mention-suggestions [role="option"]')
+    expect(options).toHaveLength(11)
+    expect(wrapper.find('.mention-suggestions').attributes('role')).toBe('listbox')
+    expect(wrapper.findAll('.mention-suggestions__avatar')).toHaveLength(11)
+    expect(textarea.attributes('aria-expanded')).toBe('true')
+    expect(wrapper.text()).not.toContain('@former')
+
+    await textarea.trigger('keydown', { key: 'ArrowDown' })
+    expect(wrapper.findAll('.mention-suggestions [aria-selected="true"]')[0]?.text())
+      .toContain('Member 1')
+    await textarea.trigger('keydown', { key: 'Enter' })
+    expect((textarea.element as HTMLTextAreaElement).value).toBe('@member1 ')
+    expect(wrapper.find('.mention-suggestions').exists()).toBe(false)
+  })
+
   it('searches, replies, mentions and toggles reactions without exposing message text to search API', async () => {
     const message = {
       messageId: 'message-1',
