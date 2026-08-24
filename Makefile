@@ -174,6 +174,7 @@ deploy-check:
 	grep -q 'compose up -d --wait --wait-timeout 120 frontend' deploy/remote-deploy.sh
 	grep -q 'YV_CHAT_API_BIND_PORT:-18081' deploy/remote-deploy.sh
 	grep -q 'YV_CHAT_FRONTEND_BIND_PORT:-18082' deploy/remote-deploy.sh
+	grep -q 'messenger.reconcile_retention' deploy/remote-deploy.sh
 	grep -q './deploy/nginx/local.conf:/etc/nginx/conf.d/default.conf:ro' compose.yml
 	test ! -e deploy/nginx/host-chat.http.conf
 	test ! -e deploy/nginx/host-chat.conf

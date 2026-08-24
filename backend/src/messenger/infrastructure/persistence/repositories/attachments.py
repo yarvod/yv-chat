@@ -3,11 +3,11 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from messenger.domain.entities import Attachment, AttachmentMediaKind
-from messenger.infrastructure.persistence.models import AttachmentModel
+from messenger.infrastructure.persistence.models import AttachmentModel, MessageModel
 
 
 class SqlAlchemyAttachmentRepository:
@@ -118,6 +118,28 @@ class SqlAlchemyAttachmentRepository:
         await self._session.execute(
             delete(AttachmentModel).where(AttachmentModel.id == attachment_id)
         )
+
+    async def align_committed_expiry_with_active_messages(self) -> int:
+        message_expiry = (
+            select(MessageModel.expires_at)
+            .where(
+                MessageModel.id == AttachmentModel.committed_message_id,
+                MessageModel.deleted_at.is_(None),
+            )
+            .scalar_subquery()
+        )
+        extended_ids = (
+            await self._session.scalars(
+                update(AttachmentModel)
+                .where(
+                    AttachmentModel.committed_message_id.is_not(None),
+                    AttachmentModel.expires_at < message_expiry,
+                )
+                .values(expires_at=message_expiry)
+                .returning(AttachmentModel.id)
+            )
+        ).all()
+        return len(extended_ids)
 
 
 def map_attachment(model: AttachmentModel) -> Attachment:

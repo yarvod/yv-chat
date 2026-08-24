@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from messenger.application.attachments.policy import AttachmentPolicy
@@ -17,6 +17,7 @@ from messenger.application.messaging.delete_message import (
     DeleteMessageForEveryone,
     DeleteMessageForEveryoneCommand,
 )
+from messenger.application.messaging.extend_retention import ExtendExistingRetention
 from messenger.application.messaging.list_delivery_states import (
     ListParticipantDeliveryStates,
     ListParticipantDeliveryStatesQuery,
@@ -226,6 +227,24 @@ async def run_flow(database_url: str) -> None:
                 )
             ),
         )
+        extension = ExtendExistingRetention(
+            unit_of_work=SqlAlchemyMessagingUnitOfWorkFactory(session_factory),
+            retention_policy=MessageRetentionPolicy(
+                timedelta(days=365),
+                timedelta(days=730),
+            ),
+        )
+        extended = await extension.execute()
+        repeated_extension = await extension.execute()
+        assert extended.extended_messages == 3
+        assert extended.extended_attachments == 0
+        assert repeated_extension.extended_messages == 0
+        async with session_factory.begin() as session:
+            expiries = (await session.scalars(select(MessageModel.expires_at))).all()
+            assert all(expiry >= NOW + timedelta(days=365) for expiry in expiries)
+            await session.execute(
+                update(MessageModel).values(expires_at=MessageModel.created_at + timedelta(days=30))
+            )
         read_state_factory = SqlAlchemyMessagingUnitOfWorkFactory(session_factory)
         history = await ListMessageHistory(unit_of_work=read_state_factory).execute(
             ListMessageHistoryQuery(alice.id, conversation.id, limit=2)

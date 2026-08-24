@@ -1136,7 +1136,8 @@ direct conversation выполняет retention drain: client читает serv
 Только после окончания drain разрешён Commit/Welcome advance. Новые OpenMLS
 groups и joins дополнительно хранят count-bounded 128 past epochs: это страховка
 от delivery/Commit ordering для OpenMLS 0.8, а не unlimited key archive и не замена
-30-day server TTL. Legacy groups с нулевым window защищает drain; уже
+configured server TTL (365 days in production). Legacy groups с нулевым window
+защищает drain; уже
 удалённые в прошлом secrets server восстановить не может.
 
 Каждый v2 message transport содержит `crypto_generation_id` и `crypto_epoch`,
@@ -1425,7 +1426,7 @@ response в фактически возвращаемый `StreamingResponse`; �
 новый digest, а browser останется со старым credential и после grace получит replay
 revocation.
 
-Committed group media наследует server-side `Message.expires_at` (default 30 days),
+Committed group media наследует server-side `Message.expires_at` (production 365 days),
 uncommitted upload живёт не больше 24 часов. Bounded cleanup блокирует expiry batch
 через persistence adapter, терпит already-missing blob и удаляет metadata. Default
 limits: 12 MiB image, 100 MiB video, 25 MiB generic file, 5 GiB active media per
@@ -1462,12 +1463,13 @@ conversation: chunk подтверждается, conversation явно попа
 
 Local text retention может быть longer/forever. Media cache byte-bounded, LRU и имеет explicit pinned policy.
 
-Message retention задаётся typed bootstrap settings. Текущие defaults:
+Message retention задаётся typed bootstrap settings. Code/development defaults
+остаются короткими, а production `.env` использует принятую годовую policy:
 
 ```text
-ciphertext TTL        30 days
+ciphertext TTL        30 days code default / 365 days production
 sync event retention  30 days
-tombstone retention   90 days (strictly greater than both values above)
+tombstone retention   90 days code default / 730 days production
 cleanup batch         200 rows
 cleanup cadence       5 minutes
 ```
@@ -1488,6 +1490,14 @@ path; WebSocket нужен только для уменьшения latency ру
 истечения ordinary sync events. После этого новый device не получает более старую
 server history — она возможна только через будущий secure device-to-device transfer.
 Backup retention не должна сохранять TTL-deleted ciphertext бесконечно.
+
+`ADR-0006` фиксирует extension-only смену production policy. Migration поднимает
+сохранившиеся active messages до `max(expires_at, created_at + 365 days)` и
+выравнивает committed attachment expiry. После healthy API rollout deployment
+повторяет reconciliation с фактической typed configuration, закрывая окно записи
+старым API между migration и container replacement. Повтор безопасен и пишет только
+aggregate counts. Tombstones/pending uploads не продлеваются; уменьшение config
+меняет только новые messages и не сокращает существующие rows задним числом.
 
 Attachment cleanup реализован тем же low-memory process: pending blobs имеют
 24-hour TTL, committed blobs наследуют message expiry и удаляются bounded/idempotent

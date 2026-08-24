@@ -140,6 +140,10 @@ if ! rollout; then
     exit 1
 fi
 
+# Reconcile after the new API is healthy so rows created by the previous API
+# between migration and rollout receive the effective extension-only policy too.
+compose run --rm --no-deps api uv run python -m messenger.reconcile_retention
+
 curl --fail --silent --show-error \
     "http://127.0.0.1:${YV_CHAT_FRONTEND_BIND_PORT:-18082}/" >/dev/null
 

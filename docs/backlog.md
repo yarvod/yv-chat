@@ -500,16 +500,18 @@ polished desktop/mobile interaction без server-side preview/transcoding.
 
 ### BL-018 — Server TTL cleanup и tombstone retention
 
-Статус: **remaining configurable policy only**. Message/media cleanup, tombstones,
-bounded concurrency и missing-file tolerance уже production-ready через `WP-028`/
-`WP-056` и сохранены в `Completed` (`BL-010`, `BL-016`).
+Статус: **bounded year policy and extension active in `WP-125`; forever/type
+overrides remain**. Message/media cleanup, tombstones, bounded concurrency и
+missing-file tolerance уже production-ready через `WP-028`/`WP-056` и сохранены в
+`Completed` (`BL-010`, `BL-016`).
 
 Результат: администратор выбирает retention policy без нарушения уже проверенной
 cleanup/tombstone семантики.
 
 - configurable retention по типам, включая forever policy;
-- migration/config validation для существующих conversations/messages;
-- media expiry наследует effective message policy, pending upload остаётся bounded;
+- [x] bounded 30-day/year runtime configuration и extension-only migration/
+  reconciliation для существующих active messages;
+- [x] media expiry наследует effective message policy, pending upload остаётся bounded;
 - policy-boundary tests для forever/type override и tombstone window;
 - документация backup compatibility и redacted operational summary.
 
@@ -1189,9 +1191,10 @@ KAT/interop, browser/corruption, license/dependency и independent binding revie
 Sender и group owner/admin могут авторизованно удалить opaque message; direct peer,
 ordinary group member, outsider и foreign conversation/message binding закрыты
 negative tests. Первая операция scrubs ciphertext и атомарно создаёт durable
-recipient-specific `message_deleted`, duplicate retry — no-op. Automatic 30-day TTL
-использует тот же tombstone contract, 90-day tombstone window переживает ordinary
-sync retention, а отдельный conversation high-water не переиспользует sequence после
+recipient-specific `message_deleted`, duplicate retry — no-op. Automatic configured
+TTL использует тот же tombstone contract; production 365-day ciphertext и 730-day
+tombstone windows переживают ordinary sync retention, а отдельный conversation
+high-water не переиспользует sequence после
 physical purge. Frontend strict parser, use case/composable и confirm UI применяют
 manual/expired tombstones без decode `null` и без обещания remote erasure уже
 просмотренных копий. Production Compose/deploy включает изолированный low-memory

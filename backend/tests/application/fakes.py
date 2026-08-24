@@ -3,7 +3,7 @@
 import hashlib
 from collections.abc import AsyncIterable, AsyncIterator
 from dataclasses import dataclass, field, replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from types import TracebackType
 from typing import Self
 from uuid import UUID, uuid4
@@ -1341,6 +1341,15 @@ class FakeMessageRepository:
             del self._state.messages[message.id]
         return len(expired)
 
+    async def extend_active_retention(self, retention: timedelta) -> int:
+        extended = 0
+        for message_id, message in tuple(self._state.messages.items()):
+            target_expiry = message.created_at + retention
+            if not message.is_deleted and message.expires_at < target_expiry:
+                self._state.messages[message_id] = replace(message, expires_at=target_expiry)
+                extended += 1
+        return extended
+
 
 class FakeAttachmentRepository:
     def __init__(self, state: IdentityState) -> None:
@@ -1413,6 +1422,24 @@ class FakeAttachmentRepository:
 
     async def delete(self, attachment_id: UUID) -> None:
         self._state.attachments.pop(attachment_id, None)
+
+    async def align_committed_expiry_with_active_messages(self) -> int:
+        extended = 0
+        for attachment_id, attachment in tuple(self._state.attachments.items()):
+            if attachment.committed_message_id is None:
+                continue
+            message = self._state.messages.get(attachment.committed_message_id)
+            if (
+                message is not None
+                and not message.is_deleted
+                and attachment.expires_at < message.expires_at
+            ):
+                self._state.attachments[attachment_id] = replace(
+                    attachment,
+                    expires_at=message.expires_at,
+                )
+                extended += 1
+        return extended
 
 
 class FakeConversationReadStateRepository:

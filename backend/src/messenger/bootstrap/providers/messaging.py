@@ -4,6 +4,7 @@ from dishka import Provider, Scope, provide
 
 from messenger.application.messaging.cleanup_messages import CleanupExpiredMessages
 from messenger.application.messaging.delete_message import DeleteMessageForEveryone
+from messenger.application.messaging.extend_retention import ExtendExistingRetention
 from messenger.application.messaging.get_message import GetMessage
 from messenger.application.messaging.list_delivery_states import ListParticipantDeliveryStates
 from messenger.application.messaging.list_message_history import ListMessageHistory
@@ -47,6 +48,7 @@ class MessagingUseCaseProvider(Provider):
     delete_message_for_everyone = provide(DeleteMessageForEveryone, scope=Scope.REQUEST)
     get_message = provide(GetMessage, scope=Scope.REQUEST)
     cleanup_expired_messages = provide(CleanupExpiredMessages, scope=Scope.REQUEST)
+    extend_existing_retention = provide(ExtendExistingRetention, scope=Scope.REQUEST)
     list_messages = provide(ListMessages, scope=Scope.REQUEST)
     list_message_history = provide(ListMessageHistory, scope=Scope.REQUEST)
     list_sync_events = provide(ListSyncEvents, scope=Scope.REQUEST)

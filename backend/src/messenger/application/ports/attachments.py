@@ -45,6 +45,8 @@ class AttachmentRepository(Protocol):
 
     async def delete(self, attachment_id: UUID) -> None: ...
 
+    async def align_committed_expiry_with_active_messages(self) -> int: ...
+
 
 class AttachmentUnitOfWork(Protocol):
     attachments: AttachmentRepository

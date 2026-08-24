@@ -1,6 +1,6 @@
 """SQLAlchemy opaque message repository adapter."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import delete, select, update
@@ -188,6 +188,21 @@ class SqlAlchemyMessageRepository:
             )
         ).all()
         return len(deleted_ids)
+
+    async def extend_active_retention(self, retention: timedelta) -> int:
+        target_expiry = MessageModel.created_at + retention
+        extended_ids = (
+            await self._session.scalars(
+                update(MessageModel)
+                .where(
+                    MessageModel.deleted_at.is_(None),
+                    MessageModel.expires_at < target_expiry,
+                )
+                .values(expires_at=target_expiry)
+                .returning(MessageModel.id)
+            )
+        ).all()
+        return len(extended_ids)
 
 
 def map_message(model: MessageModel) -> Message:

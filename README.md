@@ -201,6 +201,19 @@ source of truth — `backend/pyproject.toml` и `backend/uv.lock`, Rust —
 make migrate
 ```
 
+Server retention задаётся в runtime environment. Production preset хранит active
+message ciphertext и committed opaque media 365 дней, tombstones — 730 дней:
+
+```dotenv
+MESSAGE_CIPHERTEXT_RETENTION_SECONDS=31536000
+MESSAGE_TOMBSTONE_RETENTION_SECONDS=63072000
+```
+
+Увеличение policy во время production deploy автоматически продлевает существующие
+active rows и связанные media, но не восстанавливает уже очищенные данные. Pending
+uploads сохраняют отдельный 24-часовой TTL. Уменьшение значения применяется только к
+новым сообщениям; ретроактивное сокращение требует отдельной destructive операции.
+
 Первый администратор создаётся ровно один раз. Перед запуском задайте `BOOTSTRAP_ADMIN_USERNAME`, `BOOTSTRAP_ADMIN_DISPLAY_NAME` и секретный `BOOTSTRAP_ADMIN_PASSWORD` в runtime environment, затем выполните:
 
 ```bash

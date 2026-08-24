@@ -1,6 +1,6 @@
 """Opaque message repository port."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Protocol
 from uuid import UUID
 
@@ -64,3 +64,5 @@ class MessageRepository(Protocol):
         now: datetime,
         limit: int,
     ) -> int: ...
+
+    async def extend_active_retention(self, retention: timedelta) -> int: ...
