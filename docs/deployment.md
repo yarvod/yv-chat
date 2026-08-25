@@ -372,6 +372,15 @@ vhost regression restore only its immediate backup. Never use `docker system pru
 
 ## Rollout records
 
+`WP-128` photo/sticker message gestures deployed 2026-08-26 workflow
+`32902619863` for commit `e384a36`. Full repository verify, dependency audit,
+immutable backend/frontend builds, migrations and isolated rollout passed.
+`chat.yoowee.ru` and `chat.yoowee.com.de` returned frontend/health HTTP `200`,
+unauthenticated WebSocket upgrade reached FastAPI with expected `403`, and
+`nginx -t` remained successful. API, cleanup and frontend containers are healthy.
+Immutable production tag is
+`sha-e384a36f2bd48299fa228f226c8a788ab672b9b2`.
+
 `WP-127` stable cached-media geometry и recoverable local history deployed
 2026-08-25 workflow `32897318703` for commit `66ad43f`. Full repository verify,
 dependency audit, immutable backend/frontend builds, migrations и isolated rollout

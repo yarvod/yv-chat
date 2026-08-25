@@ -2,8 +2,8 @@
 
 ## WP-128 — Reply и long-press непосредственно на media сообщения
 
-Статус: **completed locally**
-Backlog: `BL-077`
+Статус: **completed and production deployed**
+Backlog: `BL-FIX-057`
 
 Цель: фото и sticker внутри message bubble участвуют в том же touch gesture
 contract, что и рамка сообщения: обычный tap открывает media viewer, deliberate
@@ -51,3 +51,9 @@ right swipe начинает reply, long-press открывает message contex
 доходит до viewer как раньше, а long-press/right swipe используют bubble gesture
 state и suppress-ят только synthetic click после состоявшегося gesture. Frontend:
 `399 passed`, ESLint, Nuxt typecheck и production/PWA build зелёные.
+
+Production rollout: commit `e384a36` развёрнут workflow `32902619863` immutable
+образами `sha-e384a36f2bd48299fa228f226c8a788ab672b9b2`. API, cleanup и
+frontend healthy; оба public origin вернули frontend/health HTTP `200`,
+unauthenticated WebSocket upgrade дошёл до FastAPI с ожидаемым `403`, `nginx -t`
+успешен.

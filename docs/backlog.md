@@ -730,13 +730,16 @@ sender negotiated remote-offer video transceiver до signed answer, а fullscre
 
 ### BL-FIX-057 — Message gestures непосредственно на photo/sticker surface
 
-Статус: **completed locally** (`WP-128`).
+Статус: **completed and production deployed** (`WP-128`, `e384a36`, workflow
+`32902619863`).
 
 Photo/sticker button больше не исключает bubble pointer pipeline: обычный tap
 открывает viewer, long-press открывает actions, right swipe запускает reply. После
 состоявшегося hold/swipe synthetic click подавляется, поэтому viewer не открывается
 поверх нового UI; vertical scroll и video-note behavior сохранены. Frontend
-`399 passed`, lint, typecheck и production/PWA build зелёные.
+`399 passed`, lint, typecheck и production/PWA build зелёные. Immutable production
+tag `sha-e384a36f2bd48299fa228f226c8a788ab672b9b2`; API/frontend healthy, оба
+public origin вернули frontend/health HTTP `200`.
 
 ### BL-FIX-056 — Stable cached media geometry и recoverable local history
 

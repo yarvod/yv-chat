@@ -6,7 +6,8 @@
 
 ### BUG-113 — Фото перехватывало reply swipe и touch long-press сообщения
 
-- Статус: `fixed locally` (`WP-128`).
+- Статус: `fixed and production deployed` (`WP-128`, `e384a36`, workflow
+  `32902619863`).
 - Найдено в: user QA на touch device.
 - Severity: `high messaging UX`.
 - Условия воспроизведения: начать right swipe или удержание непосредственно на
@@ -20,7 +21,9 @@
 - Исправление: photo/sticker включены в общий message gesture target; click
   подавляется только после состоявшегося hold/swipe, обычный tap сохраняется.
 - Проверка: component regression покрывает tap/hold/swipe непосредственно на photo;
-  полный frontend suite (`399 passed`), lint, typecheck и production/PWA build.
+  полный frontend suite (`399 passed`), lint, typecheck и production/PWA build;
+  production containers healthy, оба public origin frontend/health HTTP `200`,
+  WebSocket `403` ожидаем без session и `nginx -t` успешен.
 
 ### BUG-112 — PWA update навсегда помечал local history недоступной после transient IndexedDB failure
 
