@@ -176,6 +176,15 @@ interface MessageContextMenuState {
   expandedReactions: boolean
 }
 
+interface ContextReactionActor {
+  key: string
+  reaction: string
+  userId: string
+  displayName: string
+  username: string | null
+  initial: string
+}
+
 interface MessageSwipeState {
   messageId: string
   pointerId: number
@@ -200,6 +209,26 @@ const attachmentsAllowed = computed(() => (
 const contextMessage = computed(() => props.messages.find(message => (
   message.messageId === messageContextMenu.value?.messageId
 )) ?? null)
+const contextReactionActors = computed<readonly ContextReactionActor[]>(() => {
+  const message = contextMessage.value
+  const conversation = props.conversation
+  if (!message || !conversation) return []
+  return reactionsFor(message.messageId).flatMap(summary => (
+    summary.actorUserIds.map(userId => {
+      const member = conversation.members.find(item => item.userId === userId)
+      const displayName = member?.displayName ?? 'Участник'
+      const username = member?.username ?? null
+      return {
+        key: `${summary.reaction}:${userId}`,
+        reaction: summary.reaction,
+        userId,
+        displayName,
+        username,
+        initial: mentionInitial(displayName, username ?? ''),
+      }
+    })
+  ))
+})
 const selectedMessages = computed(() => props.messages
   .filter(message => (
     message.contentState === 'available'
@@ -625,7 +654,7 @@ function openMessageContext(message: TimelineMessage, clientX: number, clientY: 
   if (message.contentState !== 'available' || messageSelectionActive.value) return
   attachmentMenuOpen.value = false
   const menuWidth = 380
-  const menuHeight = 430
+  const menuHeight = reactionsFor(message.messageId).length > 0 ? 570 : 430
   messageContextMenu.value = {
     messageId: message.messageId,
     x: Math.max(12, Math.min(clientX, window.innerWidth - menuWidth - 12)),
@@ -1972,6 +2001,27 @@ onBeforeUnmount(() => {
             <span aria-hidden="true">⌫</span><strong>Удалить у всех</strong>
           </button>
         </div>
+        <section
+          v-if="contextReactionActors.length > 0"
+          class="context-reaction-details"
+          aria-label="Кто поставил реакции"
+        >
+          <div class="context-reaction-actors" role="list">
+            <div
+              v-for="actor in contextReactionActors"
+              :key="actor.key"
+              class="context-reaction-actor"
+              role="listitem"
+            >
+              <span class="context-reaction-emoji" aria-hidden="true">{{ actor.reaction }}</span>
+              <span class="context-reaction-identity">
+                <strong>{{ actor.displayName }}</strong>
+                <small v-if="actor.username">@{{ actor.username }}</small>
+              </span>
+              <span class="context-reaction-avatar" aria-hidden="true">{{ actor.initial }}</span>
+            </div>
+          </div>
+        </section>
     </section>
   </div>
 

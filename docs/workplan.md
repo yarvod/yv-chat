@@ -1,80 +1,76 @@
 # Текущий workplan
 
-## WP-125 — Годовое server retention для сообщений и media
+## WP-126 — Кто поставил реакцию в message context menu
 
-Статус: **production deployed**
-Backlog: `BL-018`
-ADR: `ADR-0006`
+Статус: **locally verified; ready for production rollout**
+Backlog: `BL-077`
 
-Цель: переключить production с 30-дневного на годовое хранение server-side
-ciphertext и committed media, продлив ещё не удалённые существующие записи без
-сокращения их текущего срока.
+Цель: в long-press/right-click меню сообщения показывать Telegram-подобный
+вертикальный список участников и поставленных ими реакций для group и direct
+conversation, не перегружая timeline и не ломая mobile viewport.
 
 ### Scope
 
-- production ciphertext retention: `31536000` секунд (365 дней);
-- production tombstone retention: `63072000` секунд (730 дней), строго больше
-  ciphertext и sync windows;
-- data migration продлевает active сообщения до `created_at + 365 days`, только если
-  новый expiry позже текущего;
-- committed attachment expiry выравнивается с продлённым message expiry;
-- deploy-time reconciliation повторяет extension-only операцию с фактической typed
-  configuration после rollout, закрывая окно между migration и заменой API;
-- pending/uncommitted uploads сохраняют bounded TTL 24 часа;
-- примеры production configuration и архитектурная документация фиксируют semantics
-  увеличения и последующего уменьшения срока.
+- authorized reaction summary transport дополнительно возвращает bounded ordered
+  reactor user IDs для каждой emoji aggregate;
+- frontend сопоставляет IDs с уже authorized conversation members и не делает
+  отдельного directory/profile запроса;
+- внизу context menu показывается compact section «Реакции»: emoji, display name,
+  username и avatar initial для каждой пары actor/reaction;
+- section отсутствует у сообщений без реакций;
+- длинный список имеет bounded height, настоящий vertical scroll и удерживается
+  внутри viewport на mobile/desktop;
+- текущие quick/all reaction palette, toggle, haptics, reply/pin/copy/delete/select и
+  long-press/right-click/keyboard entry points сохраняются.
 
 ### Security and data invariants
 
-- ciphertext/media остаются opaque, plaintext, filename и crypto keys не читаются и
-  не логируются;
-- deleted/tombstoned messages и уже удалённые media не восстанавливаются;
-- reconciliation никогда не оживляет tombstone и не сокращает существующий expiry;
-- committed media продлевается только через существующую FK-связь с active message;
-- cleanup остаётся bounded/idempotent, pending uploads не становятся бессрочными.
+- list endpoint по-прежнему требует authenticated active actor и membership exact
+  conversation;
+- server не возвращает global directory и не раскрывает реакции outsider-у;
+- actor IDs берутся только из persisted reactions от messages exact conversation;
+- UI использует только metadata, уже доступную участнику conversation; message
+  plaintext/direct MLS content не участвует в запросе;
+- durable sync/realtime event shape и reaction mutation semantics не меняются.
 
 ### Tests
 
-- application: extension-only для active messages, committed media alignment,
-  deleted/pending records untouched, repeat is no-op;
-- persistence: bulk updates возвращают точные counts и соблюдают extension-only
-  predicates;
-- migration graph и fresh database upgrade to head;
-- backend Ruff format/lint, mypy и полный pytest;
-- production Compose/config/deploy script checks;
-- production post-deploy redacted verification: effective settings, Alembic head,
-  active message/media expiry boundaries и public health.
+- backend application: actor IDs сохраняют deterministic order, count совпадает с
+  длиной списка, group/direct membership проходит, outsider/foreign остаются denied;
+- HTTP/parser: bounded actor IDs сериализуются/валидируются, malformed/duplicate IDs
+  отвергаются;
+- component: footer показывает exact emoji/name/username, скрыт без reactions и имеет
+  несколько actor/reaction rows;
+- component: existing quick toggle и expanded 48-emoji palette не регрессируют;
+- frontend Vitest, ESLint, Nuxt typecheck и production/PWA build;
+- responsive browser QA desktop и mobile, включая overflowing actor list;
+- backend Ruff/import boundaries/mypy/pytest и production config/deploy checks.
 
 ### Exclusions
 
-- forever retention и per-conversation/type overrides;
-- восстановление уже очищенных ciphertext/media из backups;
-- изменение 30-дневного sync-event window;
-- изменение local device archive/cache policy;
-- global disk quota/dashboard из `BL-019`.
+- profile photos/avatar upload;
+- отдельное modal reaction analytics/history;
+- reaction timestamps и push notification content;
+- изменение allowed palette или количества реакций пользователя;
+- изменение E2EE/message payload.
 
 ### Definition of Done
 
-- новые production messages получают expiry `created_at + 365 days`;
-- все сохранившиеся active сообщения имеют expiry не раньше годовой policy, а их
-  committed media — тот же expiry;
-- pending media по-прежнему истекает через 24 часа;
-- migration, reconciliation и повторный deploy безопасны и idempotent;
-- checks проходят, изменения собраны в один focused commit и production rollout
-  проверен без вывода content/secrets.
+- long-press на reacted message показывает каждого reactor-а и его exact emoji внизу
+  меню как в reference interaction;
+- список работает одинаково в direct/group, scroll-ится без horizontal overflow и
+  не уводит actions за пределы mobile viewport;
+- authorization и parser regressions проходят;
+- docs/checks обновлены, изменения готовы к focused commit и production rollout.
 
 ### Acceptance
 
-- backend: Ruff format/lint, import boundaries и mypy проходят; полный suite —
-  `293 passed`, `12 skipped`;
-- fresh PostgreSQL применил все migrations до `0030_year_retention`; PostgreSQL
-  integration — `2 passed`;
-- Compose, deploy shell/runbook guards, docs и `git diff --check` проходят;
-- production workflow `32769115857` развернул immutable
-  `sha-424ab59e3d5bb2b55408cf5c33d90f1ea863b8b0`;
-- API и cleanup получают effective `31536000/63072000`, Alembic head —
-  `0030_year_retention`;
-- production aggregates: `503` active messages, `0` короче 365 дней, minimum
-  retention `31536000` секунд; `72` committed active media, `0` короче linked
-  message expiry; pending media — `0`;
-- оба public origins вернули health/frontend HTTP `200`.
+- backend Ruff format/lint, import boundaries, mypy и полный pytest зелёные:
+  `294 passed`, `12 skipped`;
+- frontend ESLint, Nuxt typecheck, полный Vitest и production/PWA build зелёные;
+- Docker Compose, deploy scripts и docs-check зелёные;
+- responsive browser QA: desktop `1280×720` и mobile `390×844`, 12 actor rows,
+  actor list `176px` при `scrollHeight=622px`, scroll достигает последней строки,
+  horizontal overflow отсутствует и menu остаётся внутри viewport;
+- локальный crypto-check не повторён: `cargo` отсутствует в текущем PATH; crypto
+  source/package не менялись, production workflow повторит pinned crypto suite.

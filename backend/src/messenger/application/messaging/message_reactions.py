@@ -24,6 +24,7 @@ class MessageReactionSummary:
     reaction: str
     count: int
     reacted_by_actor: bool
+    actor_user_ids: tuple[UUID, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,16 +47,24 @@ def aggregate_reactions(
     reactions: list[MessageReaction],
     actor_user_id: UUID,
 ) -> list[MessageReactionSummary]:
-    counts: dict[tuple[UUID, str], tuple[int, bool]] = {}
+    grouped: dict[tuple[UUID, str], list[MessageReaction]] = {}
     for item in reactions:
         key = (item.message_id, item.reaction)
-        count, mine = counts.get(key, (0, False))
-        counts[key] = (count + 1, mine or item.user_id == actor_user_id)
+        grouped.setdefault(key, []).append(item)
     reaction_order = {reaction: index for index, reaction in enumerate(ALLOWED_MESSAGE_REACTIONS)}
     return [
-        MessageReactionSummary(message_id, reaction, count, mine)
-        for (message_id, reaction), (count, mine) in sorted(
-            counts.items(),
+        MessageReactionSummary(
+            message_id=message_id,
+            reaction=reaction,
+            count=len(items),
+            reacted_by_actor=any(item.user_id == actor_user_id for item in items),
+            actor_user_ids=tuple(
+                item.user_id
+                for item in sorted(items, key=lambda item: (item.created_at, item.user_id.int))
+            ),
+        )
+        for (message_id, reaction), items in sorted(
+            grouped.items(),
             key=lambda item: (item[0][0].int, reaction_order[item[0][1]]),
         )
     ]

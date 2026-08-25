@@ -1,5 +1,6 @@
 """Message reaction authorization and idempotency specifications."""
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -82,8 +83,12 @@ async def test_reactions_are_idempotent_aggregated_and_durably_notified() -> Non
     )
 
     assert first[0].count == 1 and first[0].reacted_by_actor is True
+    assert first[0].actor_user_ids == (alice.id,)
     assert duplicate == first
     assert second_user[0].count == 2 and second_user[0].reacted_by_actor is True
+    assert second_user[0].actor_user_ids == tuple(
+        sorted((alice.id, bob.id), key=lambda user_id: user_id.int)
+    )
     assert len(state.sync_events) == 4
     assert all(
         event.event_type is SyncEventType.MESSAGE_REACTION_UPDATED for event in state.sync_events
@@ -98,6 +103,31 @@ async def test_reactions_are_idempotent_aggregated_and_durably_notified() -> Non
         ListMessageReactionsQuery(alice.id, conversation.id, (message.id,))
     )
     assert listed == removed
+
+
+async def test_direct_participants_can_list_exact_reaction_actors() -> None:
+    state, alice, bob, _, message, _ = reaction_state()
+    direct = Conversation.create_direct(created_by=alice.id, other_user_id=bob.id, now=NOW)
+    direct_message = replace(message, conversation_id=direct.id)
+    state.conversations = {direct.id: direct}
+    state.messages = {direct_message.id: direct_message}
+    use_case = SetMessageReaction(
+        unit_of_work=FakeMessagingUnitOfWorkFactory(state),
+        clock=FixedClock(NOW),
+        sync_policy=SyncPolicy(),
+        realtime_notifier=RecordingRealtimeNotifier(),
+    )
+    await use_case.execute(
+        SetMessageReactionCommand(alice.id, direct.id, direct_message.id, "🔥", True)
+    )
+    result = await use_case.execute(
+        SetMessageReactionCommand(bob.id, direct.id, direct_message.id, "🔥", True)
+    )
+
+    assert result[0].count == 2
+    assert result[0].actor_user_ids == tuple(
+        sorted((alice.id, bob.id), key=lambda user_id: user_id.int)
+    )
 
 
 async def test_reaction_authorization_rejects_outsider_foreign_and_invalid_values() -> None:

@@ -311,6 +311,14 @@ views: display name участника, локальная дата/время, 
 не синхронизируется и очищается при смене разговора. Forward/delete selected требуют
 отдельных application/server contracts и не выводятся как неработающие UI actions.
 
+Reaction actor details входят в существующее message context menu, а не создают
+отдельный profile/directory surface. Presentation разворачивает authorized aggregate
+в строки `emoji + display name + username + avatar initial` через уже загруженный
+conversation roster. Длинный footer имеет собственную bounded высоту и vertical
+scroll; menu остаётся внутри desktop/mobile viewport. Для сообщения без реакций
+footer отсутствует, а quick/expanded reaction palettes и остальные actions не
+меняют поведение.
+
 Conversation profile открывается по всей identity-зоне header в отдельной responsive
 panel, а не разрастается внутри `MessagePanel`: desktop использует bounded side sheet,
 mobile — full-height surface с safe-area и собственным scroll. Direct profile
@@ -726,6 +734,14 @@ expiry cleanup удаляют pin в той же messaging transaction. Кажд
 recipient-specific `message_pin_updated`; WebSocket остаётся hint, а canonical
 состояние восстанавливается list API после cursor catch-up. Preview вычисляется
 только frontend из уже локально расшифрованного timeline message.
+
+Message reaction list остаётся conversation-scoped authorized read. Каждая aggregate
+возвращает emoji, count, признак реакции текущего actor-а и bounded deterministic
+`actor_user_ids`, полученные только из persisted reaction rows exact message.
+Application сначала проверяет active actor и membership, поэтому endpoint не является
+global activity/directory oracle. Frontend сопоставляет IDs с уже authorized
+conversation members; отдельный profile lookup, plaintext сообщения, crypto material
+и изменения durable sync/realtime contracts для показа списка не требуются.
 
 PostgreSQL — source of truth для server-side sync state только в retention window. WebSocket — notification channel. После reconnect/sleep/lost events клиент выполняет cursor catch-up:
 

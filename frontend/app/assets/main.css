@@ -334,7 +334,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 @keyframes reaction-chip-in { from { opacity: 0; transform: translateY(4px) scale(.82); } }
 @keyframes reaction-pop { 0%, 100% { transform: scale(1); } 45% { transform: scale(1.35) rotate(-8deg); } }
 .message-context-backdrop { position: fixed; z-index: 120; inset: 0; background: rgb(6 10 18 / 12%); }
-.message-context-menu { position: fixed; display: grid; width: min(380px, calc(100vw - 24px)); gap: 6px; padding: 8px; border: 1px solid color-mix(in srgb, var(--border) 82%, transparent); border-radius: 20px; background: color-mix(in srgb, var(--surface-solid) 96%, transparent); box-shadow: 0 22px 70px rgb(0 0 0 / 28%); backdrop-filter: blur(22px); animation: context-menu-in .16s ease both; }
+.message-context-menu { position: fixed; display: grid; width: min(380px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); gap: 6px; padding: 8px; overflow-y: auto; overscroll-behavior: contain; border: 1px solid color-mix(in srgb, var(--border) 82%, transparent); border-radius: 20px; background: color-mix(in srgb, var(--surface-solid) 96%, transparent); box-shadow: 0 22px 70px rgb(0 0 0 / 28%); scrollbar-width: thin; backdrop-filter: blur(22px); animation: context-menu-in .16s ease both; }
 .message-context-menu:focus-visible { outline: 1px solid color-mix(in srgb, var(--primary) 38%, transparent); outline-offset: 2px; }
 @keyframes context-menu-in { from { opacity: 0; transform: translateY(7px) scale(.97); } }
 .context-quick-reactions { display: flex; align-items: center; gap: 3px; overflow-x: auto; padding: 2px; scrollbar-width: none; }
@@ -361,6 +361,15 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .context-message-actions > button.danger { color: var(--danger); }
 .context-message-actions .app-icon, .context-message-actions > button > span { display: grid; width: 22px; height: 22px; place-items: center; font-size: 1.35rem; }
 .context-message-actions strong { margin: 0; color: inherit; font-size: .88rem; }
+.context-reaction-details { min-height: 0; padding: 5px 3px 2px; border-top: 1px solid var(--border); }
+.context-reaction-actors { display: grid; max-height: min(176px, 25dvh); gap: 2px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.context-reaction-actor { display: grid; min-height: 50px; grid-template-columns: 38px minmax(0, 1fr) 38px; align-items: center; gap: 9px; padding: 4px 7px; border-radius: 13px; }
+.context-reaction-actor:hover { background: var(--surface-hover); }
+.context-reaction-emoji { display: grid; width: 36px; height: 36px; place-items: center; border-radius: 50%; background: color-mix(in srgb, var(--primary) 8%, var(--surface-raised)); font-size: 1.42rem; }
+.context-reaction-identity { display: grid; min-width: 0; gap: 1px; }
+.context-reaction-identity strong { overflow: hidden; margin: 0; color: var(--text); font-size: .86rem; text-overflow: ellipsis; white-space: nowrap; }
+.context-reaction-identity small { overflow: hidden; color: var(--muted); font-size: .7rem; text-overflow: ellipsis; white-space: nowrap; }
+.context-reaction-avatar { display: grid; width: 36px; height: 36px; place-items: center; border: 1px solid color-mix(in srgb, var(--primary) 20%, var(--border)); border-radius: 50%; color: var(--primary-strong); background: color-mix(in srgb, var(--primary) 11%, var(--surface-raised)); font-size: .78rem; font-weight: 850; }
 .message-confirm-backdrop { position: fixed; z-index: 130; inset: 0; display: grid; place-items: center; padding: 18px; background: rgb(4 8 16 / 46%); backdrop-filter: blur(6px); }
 .message-confirm-dialog { display: grid; width: min(390px, 100%); justify-items: center; padding: 24px; border: 1px solid var(--border); border-radius: 22px; color: var(--text); background: var(--surface-solid); box-shadow: 0 24px 80px rgb(0 0 0 / 34%); text-align: center; }
 .message-confirm-icon { display: grid; width: 48px; height: 48px; place-items: center; border-radius: 50%; color: var(--primary); background: color-mix(in srgb, var(--primary) 13%, var(--surface-raised)); }
@@ -803,7 +812,7 @@ legend { padding: 0 6px; color: var(--muted); font-size: .8rem; }
   .mobile-back { display: grid; }
   .message-bubble { max-width: 88%; }
   .message-context-backdrop { background: rgb(6 10 18 / 24%); }
-  .message-context-menu { top: auto !important; right: 8px; bottom: max(8px, env(safe-area-inset-bottom)); left: 8px !important; width: auto; border-radius: 22px; animation-name: context-sheet-in; }
+  .message-context-menu { top: auto !important; right: 8px; bottom: max(8px, env(safe-area-inset-bottom)); left: 8px !important; width: auto; max-height: calc(100dvh - max(16px, env(safe-area-inset-bottom))); border-radius: 22px; animation-name: context-sheet-in; }
   @keyframes context-sheet-in { from { opacity: 0; transform: translateY(20px); } }
   .message-timeline { padding: 10px 9px 14px; scrollbar-gutter: auto; }
   .message-timeline--selecting { padding-left: 50px; }

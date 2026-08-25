@@ -739,12 +739,15 @@ Frontend `361` tests, lint, typecheck и production build проходят.
 ### BL-077 — Telegram-like message interactions
 
 Статус: **completed and production verified** (`WP-092`, `WP-093`, `WP-094`, `WP-095`,
-`WP-096`, `WP-110`).
+`WP-096`, `WP-110`, `WP-126`).
 
 - swipe right для reply не конфликтует с вертикальным timeline scroll;
 - long-press/right-click/`Shift+F10` открывают context menu вместо постоянной строки actions;
 - compact quick reactions раскрываются до 48 server-accepted emoji с
   reduced-motion-safe animation и semantic haptics;
+- внизу context menu виден exact список «кто какую реакцию поставил» для direct/group;
+  длинный roster прокручивается внутри bounded desktop/mobile surface, а actor IDs
+  раскрываются только после conversation membership authorization (`WP-126`);
 - local GIF/WebP можно отправить как frameless animated sticker, сохраняя
   direct E2EE/group v1 security boundary (`WP-110`);
 - header/context unpin и delete требуют подтверждения;

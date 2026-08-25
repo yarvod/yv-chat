@@ -78,6 +78,7 @@ export interface MessageReactionSummary {
   reaction: string
   count: number
   reactedByActor: boolean
+  actorUserIds: readonly string[]
 }
 
 export interface MessagePinSummary {

@@ -112,6 +112,7 @@ class MessageReactionResponse(BaseModel):
     reaction: str
     count: int
     reacted_by_actor: bool
+    actor_user_ids: list[UUID] = Field(min_length=1, max_length=100)
 
 
 class MessagePinResponse(BaseModel):

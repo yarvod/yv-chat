@@ -267,17 +267,27 @@ describe('messaging boundaries', () => {
       reaction: '👍',
       count: 2,
       reacted_by_actor: true,
+      actor_user_ids: ['alice-id', 'bob-id'],
     }])).toEqual([{
       messageId: 'message-1',
       reaction: '👍',
       count: 2,
       reactedByActor: true,
+      actorUserIds: ['alice-id', 'bob-id'],
     }])
     expect(() => parseMessageReactions([{
       message_id: 'message-1',
       reaction: '👍',
       count: 0,
       reacted_by_actor: false,
+      actor_user_ids: [],
+    }])).toThrow(ApplicationError)
+    expect(() => parseMessageReactions([{
+      message_id: 'message-1',
+      reaction: '👍',
+      count: 2,
+      reacted_by_actor: false,
+      actor_user_ids: ['bob-id', 'bob-id'],
     }])).toThrow(ApplicationError)
   })
 

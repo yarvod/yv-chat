@@ -190,7 +190,20 @@ export function parseMessageReactions(value: unknown): MessageReactionSummary[] 
     const item = record(raw)
     const count = integerField(item, 'count')
     const reaction = stringField(item, 'reaction')
-    if (count <= 0 || reaction.length === 0 || reaction.length > 8) {
+    const actorUserIds = arrayField(item, 'actor_user_ids').map(actorUserId => {
+      if (typeof actorUserId !== 'string' || actorUserId.length === 0) {
+        throw new ApplicationError(200, 'invalid-response', 'invalid message reaction actor')
+      }
+      return actorUserId
+    })
+    if (
+      count <= 0
+      || reaction.length === 0
+      || reaction.length > 8
+      || actorUserIds.length !== count
+      || actorUserIds.length > 100
+      || new Set(actorUserIds).size !== actorUserIds.length
+    ) {
       throw new ApplicationError(200, 'invalid-response', 'invalid message reaction')
     }
     return {
@@ -198,6 +211,7 @@ export function parseMessageReactions(value: unknown): MessageReactionSummary[] 
       reaction,
       count,
       reactedByActor: booleanField(item, 'reacted_by_actor'),
+      actorUserIds,
     }
   })
 }

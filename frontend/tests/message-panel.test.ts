@@ -1796,6 +1796,7 @@ describe('message panel', () => {
           reaction: '❤️',
           count: 2,
           reactedByActor: true,
+          actorUserIds: ['alice-id', 'bob-id'],
         }],
         toggleReaction,
         haptic,
@@ -1819,6 +1820,9 @@ describe('message panel', () => {
       clientX: 120,
       clientY: 140,
     })
+    expect(wrapper.findAll('.context-reaction-actor')).toHaveLength(2)
+    expect(wrapper.get('.context-reaction-details').text()).toContain('❤️Alice@alice')
+    expect(wrapper.get('.context-reaction-details').text()).toContain('❤️Bob@bob')
     await wrapper.get('.context-message-actions button').trigger('click')
     expect(wrapper.text()).toContain('Ответ Bob')
     await wrapper.get('textarea').setValue('Привет @b')
@@ -1843,5 +1847,76 @@ describe('message panel', () => {
     expect(toggleReaction).toHaveBeenCalledWith('message-1', '🥰', true)
     expect(haptic).toHaveBeenCalledWith('success')
     expect(wrapper.get('.reaction-burst').text()).toContain('🥰')
+  })
+
+  it('keeps many group reaction actors in a bounded scrollable footer', async () => {
+    const members = Array.from({ length: 12 }, (_, index) => ({
+      userId: `member-${index}`,
+      username: `member${index}`,
+      displayName: `Member ${index}`,
+      role: index === 0 ? 'owner' as const : 'member' as const,
+      joinedAt: '2026-08-11T12:00:00Z',
+      leftAt: null,
+    }))
+    const message = {
+      messageId: 'group-message',
+      clientMessageId: 'group-client',
+      conversationId: 'group-conversation',
+      senderUserId: 'member-1',
+      senderDeviceId: 'member-device',
+      protocolVersion: 1,
+      cryptoGenerationId: null,
+      cryptoEpoch: null,
+      sequence: 1,
+      createdAt: '2026-08-11T12:00:00Z',
+      expiresAt: '2027-08-11T12:00:00Z',
+      ciphertextBase64: 'b3BhcXVl',
+      deletionReason: null,
+      deletedAt: null,
+      contentState: 'available' as const,
+      displayBody: 'Group reaction details',
+      contentSecure: false,
+    }
+    const wrapper = mount(MessagePanel, {
+      props: {
+        conversation: {
+          ...conversation,
+          conversationId: 'group-conversation',
+          conversationType: 'group' as const,
+          title: 'Team',
+          createdBy: 'member-0',
+          members,
+        },
+        messages: [message],
+        actorUserId: 'member-0',
+        sending: false,
+        protectionSecure: false,
+        protectionLabel: 'Без E2EE',
+        sendMessage: vi.fn(),
+        deleteMessage: vi.fn(),
+        deletingMessageId: null,
+        typingActorIds: [],
+        onlineActorIds: [],
+        deliveryStates: [],
+        reactionSummaries: [{
+          messageId: 'group-message',
+          reaction: '🔥',
+          count: 12,
+          reactedByActor: true,
+          actorUserIds: members.map(member => member.userId),
+        }],
+        connectionState: 'connected',
+        setTyping: vi.fn(),
+      },
+    })
+
+    expect(wrapper.find('.context-reaction-details').exists()).toBe(false)
+    await wrapper.get('[data-message-id="group-message"]').trigger('contextmenu', {
+      clientX: 120,
+      clientY: 140,
+    })
+    expect(wrapper.findAll('.context-reaction-actor')).toHaveLength(12)
+    expect(wrapper.get('.context-reaction-actors').attributes('role')).toBe('list')
+    expect(wrapper.get('.context-reaction-details').text()).toContain('🔥Member 11@member11')
   })
 })
