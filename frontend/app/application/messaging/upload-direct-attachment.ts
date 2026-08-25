@@ -13,6 +13,7 @@ import {
   maximumDirectAttachmentBytes,
   normalizeAttachmentContentType,
   supportsStickerPresentation,
+  validAttachmentDimensions,
 } from './group-attachment-policy'
 import type { GroupAttachmentSource } from './upload-group-attachment'
 import { safeDisplayName } from './upload-group-attachment'
@@ -65,6 +66,7 @@ export class UploadDirectAttachment {
       || source.size > maximum
       || source.body.size !== source.size
       || (source.presentation === 'video_note' && source.size > VIDEO_NOTE_MAX_BYTES)
+      || !validAttachmentDimensions(kind, source.pixelWidth, source.pixelHeight)
       || !presentationMetadataValid
     ) throw new TypeError('invalid direct attachment source')
 
@@ -107,6 +109,9 @@ export class UploadDirectAttachment {
       name: safeDisplayName(source.name),
       contentType,
       byteSize: source.size,
+      ...(source.pixelWidth && source.pixelHeight
+        ? { pixelWidth: source.pixelWidth, pixelHeight: source.pixelHeight }
+        : {}),
       ...(source.presentation ? { presentation: source.presentation } : {}),
       ...(source.durationSeconds ? { durationSeconds: source.durationSeconds } : {}),
     }

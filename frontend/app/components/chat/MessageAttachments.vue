@@ -60,6 +60,15 @@ function stateFor(attachmentId: string): MediaState | undefined {
   return mediaStates.value.get(attachmentId)
 }
 
+function mediaAspectStyle(attachment: MessageAttachment): Record<string, string> {
+  const width = attachment.pixelWidth
+  const height = attachment.pixelHeight
+  const ratio = width && height
+    ? Math.max(3 / 4, Math.min(16 / 9, width / height))
+    : 4 / 3
+  return { '--message-media-aspect': ratio.toFixed(6) }
+}
+
 function setState(attachmentId: string, state: MediaState): void {
   if (!disposed) mediaStates.value = new Map(mediaStates.value).set(attachmentId, state)
 }
@@ -509,6 +518,7 @@ onBeforeUnmount(() => {
         v-else-if="attachment.kind === 'image'"
         class="message-photo-shell"
         :data-attachment-id="attachment.attachmentId"
+        :style="mediaAspectStyle(attachment)"
       >
         <button
           v-if="stateFor(attachment.attachmentId)?.phase === 'ready'"
@@ -600,6 +610,7 @@ onBeforeUnmount(() => {
         v-else-if="attachment.kind === 'video'"
         class="message-video-shell"
         :data-attachment-id="attachment.attachmentId"
+        :style="mediaAspectStyle(attachment)"
       >
         <template v-if="stateFor(attachment.attachmentId)?.phase === 'ready'">
           <div v-if="playbackFailed(attachment.attachmentId)" class="message-video-fallback">

@@ -138,15 +138,16 @@ archive. TTL, tombstones, quota и membership authorization не меняютс�
 ### BL-041 — Visual system, accessibility и PWA polish
 
 Статус: **remaining accessibility/visual gate**. Реализованные shell, responsive
-timeline, mobile viewport, install assets и update UX перенесены в `Completed` как
-`BL-041A`; здесь перечислено только незавершённое.
+timeline, mobile viewport, install assets, update UX и stable media geometry
+перенесены в `Completed` как `BL-041A`/`BL-FIX-056`; здесь перечислено только
+незавершённое.
 
 Результат: ключевые desktop/mobile состояния проходят воспроизводимый accessibility
 и visual-regression gate, а не только ручной happy-path smoke.
 
 - attachment/emoji-ready composer slots после secure attachment boundary;
 - полный focus-visible, keyboard navigation, ARIA/live regions и contrast audit;
-- skeleton/empty/error/offline states без layout shift;
+- remaining non-media skeleton/empty/error/offline states без layout shift;
 - user-facing install/update education; schema compatibility принадлежит `BL-025`;
 - repository-owned visual regression screenshots для short/long timeline,
   empty/loading/error, keyboard-sized mobile viewport и основных desktop states.
@@ -568,8 +569,9 @@ bounded offline-период, не превращая origin storage в безл
 
 Статус: **частично выполнено**: install surface и Workbox app shell готовы;
 `WP-078` заменяет surprise automatic activation на user-controlled update, `WP-097`
-добавляет cross-release executable asset continuity. Persistent-schema compatibility
-и background ownership остаются.
+добавляет cross-release executable asset continuity, `WP-127` освобождает stale
+archive/snapshot/media connections и восстанавливается после transient open failure.
+Полный compatibility gate/migrations и background ownership остаются.
 
 Результат: приложение устанавливается, работает с offline shell и безопасно обновляется.
 
@@ -725,6 +727,19 @@ sender negotiated remote-offer video transceiver до signed answer, а fullscre
 физическая packet-delivery проверка phone ↔ desktop остаётся acceptance шагом.
 
 ## Completed
+
+### BL-FIX-056 — Stable cached media geometry и recoverable local history
+
+Статус: **completed locally** (`WP-127`).
+
+Image/video skeleton заранее занимает bounded aspect-ratio box из attachment
+dimensions, а legacy envelope использует стабильный fallback; async cache
+read/decrypt/browser decode больше не меняет высоту timeline. Message archive,
+messenger snapshot и media cache закрывают stale IndexedDB connection на
+`versionchange`/`pagehide`, сбрасывают failed open promise и допускают recovery без
+logout или очистки Site Data. Snapshot failure больше не выдаётся за недоступность
+message archive. Frontend `398 passed`, lint, typecheck и production/PWA build
+зелёные.
 
 ### BL-FIX-055 — Keep-alive chat workspace across application tabs
 

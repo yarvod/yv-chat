@@ -435,12 +435,12 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .composer-attachment-error { grid-column: 1 / -1; margin: 0; padding: 0 5px; color: var(--danger); font-size: .72rem; }
 .message-attachments { display: grid; gap: 3px; margin: -3px -6px 6px; overflow: hidden; border-radius: 12px; }
 .message-attachments--gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.message-photo-shell { display: grid; min-width: 0; overflow: hidden; background: var(--field); }
-.message-photo { position: relative; display: block; min-width: 0; overflow: hidden; padding: 0; border: 0; border-radius: 12px; background: var(--field); cursor: zoom-in; }
-.message-photo img { display: block; width: min(420px, 68vw); max-width: 100%; max-height: 58dvh; object-fit: contain; }
+.message-photo-shell { display: grid; width: min(420px, 68vw); max-width: 100%; max-height: 58dvh; aspect-ratio: var(--message-media-aspect, 1.333333); min-width: 0; overflow: hidden; background: var(--field); }
+.message-photo { position: relative; display: block; width: 100%; height: 100%; min-width: 0; overflow: hidden; padding: 0; border: 0; border-radius: 12px; background: var(--field); cursor: zoom-in; }
+.message-photo img { display: block; width: 100%; height: 100%; object-fit: contain; }
 .message-gif-badge, .message-sticker__badge { position: absolute; right: 8px; bottom: 8px; padding: 4px 7px; border: 1px solid rgb(255 255 255 / 24%); border-radius: 999px; color: white; background: rgb(3 5 10 / 62%); box-shadow: 0 4px 14px rgb(0 0 0 / 20%); font-size: .58rem; font-weight: 850; letter-spacing: .08em; backdrop-filter: blur(7px); }
-.message-photo img, .message-sticker img { animation: media-pop-in .32s cubic-bezier(.2,.82,.2,1.18) both; }
-@keyframes media-pop-in { from { opacity: 0; transform: scale(.94); filter: blur(4px); } }
+.message-photo img, .message-sticker img { animation: media-pop-in .18s ease-out both; }
+@keyframes media-pop-in { from { opacity: 0; } }
 .message-attachments--sticker { overflow: visible; background: transparent; }
 .message-sticker-shell { display: grid; width: min(280px, 68vw); min-height: min(180px, 44vw); place-items: center; overflow: visible; background: transparent; }
 .message-sticker { position: relative; display: grid; width: 100%; max-height: 320px; place-items: center; overflow: visible; padding: 0; border: 0; background: transparent; cursor: zoom-in; filter: drop-shadow(0 10px 18px rgb(0 0 0 / 14%)); transition: transform .18s cubic-bezier(.2,.8,.2,1.3); }
@@ -448,12 +448,13 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .message-sticker img { display: block; width: 100%; max-height: 320px; object-fit: contain; }
 .message-sticker-loading, .message-sticker-unavailable { display: grid; width: min(240px, 62vw); min-height: 180px; place-items: center; align-content: center; gap: 8px; padding: 16px; border-radius: 28px; color: var(--muted); background: color-mix(in srgb, var(--primary) 7%, var(--field)); text-align: center; font-size: .75rem; }
 .message-attachments--gallery .message-photo, .message-attachments--gallery .message-photo-shell { border-radius: 5px; }
+.message-attachments--gallery .message-photo-shell { width: 100%; height: clamp(120px, 24vw, 230px); aspect-ratio: auto; }
 .message-attachments--gallery .message-photo img { width: 100%; height: clamp(120px, 24vw, 230px); object-fit: cover; }
-.message-photo-loading { display: grid; width: min(420px, 68vw); min-height: 170px; place-items: center; background: color-mix(in srgb, var(--primary) 5%, var(--field)); }
-.message-attachments--gallery .message-photo-loading { width: 100%; min-height: clamp(120px, 24vw, 230px); }
+.message-photo-loading { display: grid; width: 100%; height: 100%; min-height: 0; place-items: center; background: color-mix(in srgb, var(--primary) 5%, var(--field)); }
+.message-attachments--gallery .message-photo-loading { width: 100%; height: 100%; min-height: 0; }
 .message-photo-loading .loading-orbit { width: 24px; height: 24px; }
-.message-video-shell { position: relative; display: grid; min-width: 0; overflow: hidden; border-radius: 12px; background: #090b12; }
-.message-video { display: block; width: min(480px, 72vw); max-width: 100%; max-height: 58dvh; background: #090b12; object-fit: contain; }
+.message-video-shell { position: relative; display: grid; width: min(480px, 72vw); max-width: 100%; max-height: 58dvh; aspect-ratio: var(--message-media-aspect, 1.333333); min-width: 0; overflow: hidden; border-radius: 12px; background: #090b12; }
+.message-video { display: block; width: 100%; height: 100%; background: #090b12; object-fit: contain; }
 .message-video__open { position: absolute; top: 8px; right: 8px; display: grid; width: 34px; height: 34px; place-items: center; padding: 0; border: 1px solid rgb(255 255 255 / 28%); border-radius: 50%; color: white; background: rgb(5 7 13 / 70%); backdrop-filter: blur(8px); }
 .message-video__open .app-icon { width: 17px; height: 17px; }
 .message-video-fallback { display: grid; min-height: 150px; place-items: center; align-content: center; gap: 6px; padding: 18px; color: white; text-align: center; }
@@ -475,6 +476,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .message-video-note-unavailable { color: var(--danger); }
 .message-video-note-unavailable button { min-height: 30px; padding: 3px 10px; border: 1px solid currentcolor; border-radius: 999px; color: inherit; background: transparent; }
 .message-attachments--gallery .message-video-shell { border-radius: 5px; }
+.message-attachments--gallery .message-video-shell { width: 100%; height: clamp(120px, 24vw, 230px); aspect-ratio: auto; }
 .message-attachments--gallery .message-video { width: 100%; height: clamp(120px, 24vw, 230px); object-fit: cover; }
 .message-file { display: grid; min-width: min(310px, 65vw); grid-column: 1 / -1; grid-template-columns: 42px minmax(0, 1fr); align-items: center; gap: 9px; padding: 8px; border: 0; border-radius: 12px; color: inherit; background: color-mix(in srgb, var(--primary) 8%, transparent); text-align: left; cursor: pointer; }
 .message-file:disabled { cursor: wait; opacity: .7; }

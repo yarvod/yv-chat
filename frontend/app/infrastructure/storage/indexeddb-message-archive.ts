@@ -158,8 +158,9 @@ export class IndexedDbMessageArchive implements MessageArchive {
 
   close(): void {
     if (!this.database) return
-    void this.database.then(database => database.close())
+    const database = this.database
     this.database = null
+    void database.then(value => value.close()).catch(() => undefined)
   }
 
   private async load(
@@ -334,6 +335,7 @@ export class IndexedDbMessageArchive implements MessageArchive {
   private open(): Promise<IDBDatabase> {
     if (this.database) return this.database
     this.database = new Promise((resolve, reject) => {
+      let failed = false
       const request = this.indexedDb.open(DATABASE_NAME, DATABASE_VERSION)
       request.addEventListener('upgradeneeded', () => {
         const database = request.result
@@ -347,9 +349,28 @@ export class IndexedDbMessageArchive implements MessageArchive {
           )
         }
       }, { once: true })
-      request.addEventListener('success', () => resolve(request.result), { once: true })
-      request.addEventListener('error', () => reject(request.error), { once: true })
-      request.addEventListener('blocked', () => reject(new Error('database blocked')), { once: true })
+      request.addEventListener('success', () => {
+        const database = request.result
+        if (failed) {
+          database.close()
+          return
+        }
+        database.addEventListener('versionchange', () => {
+          database.close()
+          this.database = null
+        }, { once: true })
+        resolve(database)
+      }, { once: true })
+      request.addEventListener('error', () => {
+        failed = true
+        this.database = null
+        reject(request.error)
+      }, { once: true })
+      request.addEventListener('blocked', () => {
+        failed = true
+        this.database = null
+        reject(new Error('database blocked'))
+      }, { once: true })
     })
     return this.database
   }

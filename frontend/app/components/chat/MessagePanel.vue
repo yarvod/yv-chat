@@ -14,6 +14,7 @@ import {
   GROUP_ATTACHMENT_LIMIT,
   maximumAttachmentBytes,
   maximumDirectAttachmentBytes,
+  validAttachmentDimensions,
 } from '../../application/messaging/group-attachment-policy'
 import type { OutgoingMessageView } from '../../application/messaging/outgoing-message-view'
 import type { RealtimeConnectionState } from '../../application/messaging/realtime-sync-service'
@@ -144,6 +145,8 @@ interface SelectedAttachment {
   file: File
   kind: 'image' | 'video' | 'file'
   previewUrl: string | null
+  pixelWidth?: number
+  pixelHeight?: number
   presentation?: 'sticker'
 }
 const selectedAttachments = ref<SelectedAttachment[]>([])
@@ -857,11 +860,17 @@ async function confirmDelete(messageId: string): Promise<void> {
 async function submit(): Promise<void> {
   if (props.sending || (draft.value.trim().length === 0 && selectedAttachments.value.length === 0)) return
   const value = draft.value
-  const attachments = selectedAttachments.value.map(({ file, presentation }) => ({
+  const attachments = selectedAttachments.value.map(({
+    file,
+    presentation,
+    pixelWidth,
+    pixelHeight,
+  }) => ({
     name: attachmentName(file),
     type: file.type,
     size: file.size,
     body: file,
+    ...(pixelWidth && pixelHeight ? { pixelWidth, pixelHeight } : {}),
     ...(presentation ? { presentation } : {}),
   }))
   const interaction = {
@@ -897,6 +906,8 @@ async function sendVideoNote(recording: RecordedVideoNote): Promise<void> {
     body: recording.body,
     presentation: 'video_note',
     durationSeconds: recording.durationSeconds,
+    pixelWidth: 720,
+    pixelHeight: 720,
   }])
   if (!sent) attachmentError.value = 'Не удалось отправить видеокружок. Запишите его ещё раз.'
 }
@@ -920,6 +931,26 @@ function attachmentName(file: File): string {
   if (file.name.trim()) return file.name
   const extension = file.type.split('/')[1]?.replace(/[^a-z0-9.+-]/gi, '')
   return extension ? `Вставленное изображение.${extension}` : 'Вставленный файл'
+}
+
+function rememberAttachmentDimensions(index: number, event: Event): void {
+  const item = selectedAttachments.value[index]
+  if (!item || item.kind === 'file') return
+  const dimensions = item.kind === 'image'
+    ? {
+        width: (event.currentTarget as HTMLImageElement).naturalWidth,
+        height: (event.currentTarget as HTMLImageElement).naturalHeight,
+      }
+    : {
+        width: (event.currentTarget as HTMLVideoElement).videoWidth,
+        height: (event.currentTarget as HTMLVideoElement).videoHeight,
+      }
+  const pixelWidth = dimensions.width
+  const pixelHeight = dimensions.height
+  if (!validAttachmentDimensions(item.kind, pixelWidth, pixelHeight)) return
+  selectedAttachments.value = selectedAttachments.value.map((candidate, candidateIndex) => (
+    candidateIndex === index ? { ...candidate, pixelWidth, pixelHeight } : candidate
+  ))
 }
 
 function addAttachments(
@@ -1736,6 +1767,7 @@ onBeforeUnmount(() => {
               v-if="item.previewUrl && item.kind === 'image'"
               :src="item.previewUrl"
               :alt="`Предпросмотр ${attachmentName(item.file)}`"
+              @load="rememberAttachmentDimensions(index, $event)"
             >
             <video
               v-else-if="item.previewUrl && item.kind === 'video'"
@@ -1744,6 +1776,7 @@ onBeforeUnmount(() => {
               playsinline
               preload="metadata"
               :aria-label="`Предпросмотр ${attachmentName(item.file)}`"
+              @loadedmetadata="rememberAttachmentDimensions(index, $event)"
             />
             <span v-else class="composer-attachment__icon"><AppIcon name="attachment" /></span>
             <span class="composer-attachment__copy">

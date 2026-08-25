@@ -192,6 +192,18 @@ export default defineNuxtPlugin(nuxtApp => {
     directAttachmentSecrets,
   )
   const conversationCryptoState = new IndexedDbConversationCryptoState()
+  const closeLocalStores = (): void => {
+    messageArchive.close()
+    messengerSnapshotStore.close()
+    messageOutbox.close()
+    mediaCache.close()
+    conversationCryptoState.close()
+  }
+  window.addEventListener('pagehide', closeLocalStores)
+  nuxtApp.vueApp.onUnmount(() => {
+    window.removeEventListener('pagehide', closeLocalStores)
+    closeLocalStores()
+  })
   const deviceCryptoSession = new DeviceCryptoSession(
     deviceCryptoRegistryGateway,
     deviceKeyPackageGateway,

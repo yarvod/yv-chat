@@ -384,24 +384,26 @@ export class ConversationHistory {
   }
 
   async persist(conversationId: string, messages: readonly ArchivedMessage[]): Promise<void> {
-    if (!this.archiveAvailable || messages.length === 0) return
+    if (messages.length === 0) return
     try {
       await this.archive.put(this.ownerUserId, conversationId, messages)
+      this.archiveAvailable = true
     } catch {
-      this.archiveAvailable = false
+      this.markArchiveUnavailable()
     }
   }
 
   private async readLatest(conversationId: string): Promise<ArchivedMessage[]> {
-    if (!this.archiveAvailable) return []
     try {
-      return await this.archive.loadLatest(
+      const messages = await this.archive.loadLatest(
         this.ownerUserId,
         conversationId,
         HISTORY_PAGE_SIZE,
       )
+      this.archiveAvailable = true
+      return messages
     } catch {
-      this.archiveAvailable = false
+      this.markArchiveUnavailable()
       return []
     }
   }
@@ -411,16 +413,17 @@ export class ConversationHistory {
     beforeSequence: number,
     limit: number = HISTORY_PAGE_SIZE,
   ): Promise<ArchivedMessage[]> {
-    if (!this.archiveAvailable) return []
     try {
-      return await this.archive.loadBefore(
+      const messages = await this.archive.loadBefore(
         this.ownerUserId,
         conversationId,
         beforeSequence,
         limit,
       )
+      this.archiveAvailable = true
+      return messages
     } catch {
-      this.archiveAvailable = false
+      this.markArchiveUnavailable()
       return []
     }
   }
@@ -430,16 +433,17 @@ export class ConversationHistory {
     afterSequence: number,
     limit: number,
   ): Promise<ArchivedMessage[]> {
-    if (!this.archiveAvailable) return []
     try {
-      return await this.archive.loadAfter(
+      const messages = await this.archive.loadAfter(
         this.ownerUserId,
         conversationId,
         afterSequence,
         limit,
       )
+      this.archiveAvailable = true
+      return messages
     } catch {
-      this.archiveAvailable = false
+      this.markArchiveUnavailable()
       return []
     }
   }
@@ -514,7 +518,7 @@ export class ConversationHistory {
         this.directSecrets,
       ))
     }
-    if (this.archiveAvailable) {
+    if (recoveredForArchive.length > 0) {
       try {
         for (let offset = 0; offset < recoveredForArchive.length; offset += HISTORY_PAGE_SIZE) {
           const page = recoveredForArchive.slice(offset, offset + HISTORY_PAGE_SIZE)
@@ -522,11 +526,17 @@ export class ConversationHistory {
             await this.archive.put(this.ownerUserId, page[0]!.conversationId, page)
           }
         }
+        this.archiveAvailable = true
       } catch {
-        this.archiveAvailable = false
+        this.markArchiveUnavailable()
       }
     }
     return prepared
+  }
+
+  private markArchiveUnavailable(): void {
+    this.archiveAvailable = false
+    this.archive.close()
   }
 
   private latestWindow(messages: readonly TimelineMessage[]): TimelineMessage[] {

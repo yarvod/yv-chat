@@ -58,6 +58,23 @@ beforeEach(() => {
 })
 
 describe('encrypted device media cache', () => {
+  it('releases its connection when a newer PWA requests a database upgrade', async () => {
+    const cache = new EncryptedMediaCache(
+      indexedDb,
+      webcrypto.subtle as unknown as SubtleCrypto,
+      array => webcrypto.getRandomValues(array),
+      null,
+      1024,
+      () => now,
+    )
+    await cache.inspect(userId, deviceId)
+
+    const upgraded = await requestResult(indexedDb.open('yv-chat-media-cache-v1', 2))
+
+    expect(upgraded.version).toBe(2)
+    upgraded.close()
+  })
+
   it('round-trips authenticated chunks with a non-extractable key and no plaintext record', async () => {
     const cache = new EncryptedMediaCache(
       indexedDb,

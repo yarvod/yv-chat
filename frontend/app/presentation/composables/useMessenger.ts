@@ -253,7 +253,6 @@ export function useMessenger(
   )
   let polling = false
   let mediaLoadRevision = 0
-  let snapshotAvailable = true
   let snapshotPersistQueue = Promise.resolve()
   const readAdvances = new Map<string, number>()
   const deliveryAdvances = new Map<string, number>()
@@ -607,9 +606,7 @@ export function useMessenger(
   }
 
   function syncArchiveStatus(): void {
-    state.archiveStatus = history.archiveStatus === 'ready' && snapshotAvailable
-      ? 'ready'
-      : 'unavailable'
+    state.archiveStatus = history.archiveStatus
   }
 
   function bumpConversationActivity(conversationId: string, activityAt: string): void {
@@ -661,7 +658,7 @@ export function useMessenger(
     // Never persist an advanced sync cursor when the encrypted message archive is
     // unavailable. Otherwise a later startup could trust that cursor while the
     // corresponding message envelopes were never stored locally.
-    if (!snapshotAvailable || history.archiveStatus !== 'ready') return
+    if (history.archiveStatus !== 'ready') return
     const snapshot: MessengerSnapshot = {
       ownerUserId: actorUserId,
       directory: [...state.directory],
@@ -677,8 +674,7 @@ export function useMessenger(
       snapshotPersistQueue = snapshotPersistQueue.then(save, save)
       await snapshotPersistQueue
     } catch {
-      snapshotAvailable = false
-      syncArchiveStatus()
+      messengerSnapshotStore.close()
     }
   }
 
@@ -687,8 +683,7 @@ export function useMessenger(
     try {
       snapshot = await messengerSnapshotStore.load(actorUserId)
     } catch {
-      snapshotAvailable = false
-      syncArchiveStatus()
+      messengerSnapshotStore.close()
       return false
     }
     if (!snapshot) return false

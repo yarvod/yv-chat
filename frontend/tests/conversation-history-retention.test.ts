@@ -29,6 +29,37 @@ function message(sequence: number): OpaqueMessage {
 }
 
 describe('retained history epoch drain', () => {
+  it('reopens a transiently unavailable archive and restores ready status', async () => {
+    const cached = { ...message(1), localPlaintext: 'cached message' }
+    const loadLatest = vi.fn()
+      .mockRejectedValueOnce(new Error('database blocked'))
+      .mockResolvedValueOnce([cached])
+    const close = vi.fn()
+    const archive = {
+      put: vi.fn().mockResolvedValue(undefined),
+      loadLatest,
+      loadBefore: vi.fn().mockResolvedValue([]),
+      loadAfter: vi.fn().mockResolvedValue([]),
+      close,
+    } satisfies MessageArchive
+    const history = new ConversationHistory(
+      'user-alice',
+      {} as MessagingGateway,
+      archive,
+      new ProtocolMessageProtection([]),
+    )
+
+    await expect(history.loadCachedLatest(conversationId)).resolves.toBeNull()
+    expect(history.archiveStatus).toBe('unavailable')
+    expect(close).toHaveBeenCalledOnce()
+
+    await expect(history.loadCachedLatest(conversationId)).resolves.toMatchObject({
+      messages: [{ displayBody: 'cached message' }],
+    })
+    expect(history.archiveStatus).toBe('ready')
+    expect(loadLatest).toHaveBeenCalledTimes(2)
+  })
+
   it('decrypts forward pages in authoritative order before reconciliation can advance', async () => {
     const retained = Array.from({ length: 101 }, (_, index) => message(index + 1))
     const listMessages = vi.fn(async (_conversationId: string, afterSequence = 0) => (

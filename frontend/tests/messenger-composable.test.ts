@@ -1353,6 +1353,18 @@ describe('messenger orchestration', () => {
     expect(messengerSnapshotStore.save).not.toHaveBeenCalled()
   })
 
+  it('does not report message history lost when only the snapshot store fails', async () => {
+    vi.mocked(messengerSnapshotStore.load).mockRejectedValueOnce(new Error('database blocked'))
+    const messenger = useMessenger('alice-id', 'device-alice', vi.fn(), messengerDependencies())
+
+    await messenger.load()
+
+    expect(messenger.state.phase).toBe('ready')
+    expect(messenger.state.archiveStatus).toBe('ready')
+    expect(messengerSnapshotStore.close).toHaveBeenCalled()
+    expect(messengerSnapshotStore.save).toHaveBeenCalled()
+  })
+
   it('bounds the reactive history window and can return to the latest page', async () => {
     const history = Array.from({ length: 401 }, (_, index) => ({
       ...message,

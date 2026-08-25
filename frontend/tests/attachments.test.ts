@@ -73,6 +73,8 @@ describe('group message attachment content', () => {
       name: 'clip.mp4',
       contentType: 'video/mp4',
       byteSize: 30 * 1024 * 1024,
+      pixelWidth: 1_920,
+      pixelHeight: 1_080,
     }
     const encoded = encodeGroupMessageContent({ text: 'caption', attachments: [attachment, video] })
 
@@ -88,6 +90,20 @@ describe('group message attachment content', () => {
       text: 'yv-chat/group-content/v1:{broken',
       attachments: [],
     })
+    expect(() => encodeGroupMessageContent({
+      text: '',
+      attachments: [{ ...attachment, pixelWidth: 800 }],
+    })).toThrow('invalid group attachment metadata')
+    expect(() => encodeGroupMessageContent({
+      text: '',
+      attachments: [{
+        ...attachment,
+        kind: 'file',
+        contentType: 'application/octet-stream',
+        pixelWidth: 800,
+        pixelHeight: 600,
+      }],
+    })).toThrow('invalid group attachment metadata')
   })
 
   it('rejects an empty content envelope', () => {
@@ -165,12 +181,16 @@ describe('group attachment upload use case', () => {
       type: 'image/png',
       size: body.size,
       body,
+      pixelWidth: 4_032,
+      pixelHeight: 3_024,
     }
     const onProgress = vi.fn()
     await expect(useCase.execute('group-1', 'group', source, onProgress)).resolves.toMatchObject({
       attachmentId: 'server-attachment',
       name: 'camera.png',
       kind: 'image',
+      pixelWidth: 4_032,
+      pixelHeight: 3_024,
     })
     expect(onProgress).toHaveBeenCalledWith({ uploadedBytes: body.size, totalBytes: body.size })
     await useCase.execute('group-1', 'group', source)
@@ -355,6 +375,78 @@ describe('group attachment download use case', () => {
 })
 
 describe('message attachment rendering', () => {
+  it('keeps one aspect-ratio box before and after cached media becomes ready', async () => {
+    let resolveLoad: ((blob: Blob) => void) | null = null
+    const measured = { ...attachment, pixelWidth: 1_920, pixelHeight: 1_080 }
+    const wrapper = mount(MessageAttachments, {
+      props: {
+        conversationId: 'conversation-1',
+        expiresAt,
+        attachments: [measured],
+        loadAttachment: vi.fn(() => new Promise<Blob>(resolve => { resolveLoad = resolve })),
+      },
+      global: { stubs: { Teleport: true } },
+    })
+    await wrapper.vm.$nextTick()
+
+    const loadingStyle = wrapper.get('.message-photo-shell').attributes('style')
+    expect(loadingStyle).toContain('--message-media-aspect: 1.777778')
+    expect(wrapper.find('.message-photo-loading').exists()).toBe(true)
+    resolveLoad?.(new Blob(['x'.repeat(measured.byteSize)], { type: measured.contentType }))
+    await flushPromises()
+
+    expect(wrapper.get('.message-photo-shell').attributes('style')).toBe(loadingStyle)
+    expect(wrapper.find('.message-photo-loading').exists()).toBe(false)
+    expect(wrapper.get('.message-photo img').exists()).toBe(true)
+    await wrapper.unmount()
+
+    const legacy = mount(MessageAttachments, {
+      props: {
+        conversationId: 'conversation-1',
+        expiresAt,
+        attachments: [attachment],
+        loadAttachment: vi.fn().mockResolvedValue(
+          new Blob(['x'.repeat(attachment.byteSize)], { type: attachment.contentType }),
+        ),
+      },
+      global: { stubs: { Teleport: true } },
+    })
+    await flushPromises()
+    expect(legacy.get('.message-photo-shell').attributes('style'))
+      .toContain('--message-media-aspect: 1.333333')
+    await legacy.unmount()
+
+    let resolveVideo: ((blob: Blob) => void) | null = null
+    const video = {
+      attachmentId: 'video-layout-1',
+      kind: 'video' as const,
+      name: 'clip.mp4',
+      contentType: 'video/mp4',
+      byteSize: 512,
+      pixelWidth: 1_080,
+      pixelHeight: 1_920,
+    }
+    const videoWrapper = mount(MessageAttachments, {
+      props: {
+        conversationId: 'conversation-1',
+        expiresAt,
+        attachments: [video],
+        loadAttachment: vi.fn(() => new Promise<Blob>(resolve => { resolveVideo = resolve })),
+      },
+      global: { stubs: { Teleport: true } },
+    })
+    await videoWrapper.vm.$nextTick()
+
+    const videoLoadingStyle = videoWrapper.get('.message-video-shell').attributes('style')
+    expect(videoLoadingStyle).toContain('--message-media-aspect: 0.750000')
+    resolveVideo?.(new Blob(['x'.repeat(video.byteSize)], { type: video.contentType }))
+    await flushPromises()
+
+    expect(videoWrapper.get('.message-video-shell').attributes('style')).toBe(videoLoadingStyle)
+    expect(videoWrapper.get('.message-video').exists()).toBe(true)
+    await videoWrapper.unmount()
+  })
+
   it('renders animated stickers frameless with an explicit motion badge', async () => {
     const sticker = {
       attachmentId: 'sticker-1',

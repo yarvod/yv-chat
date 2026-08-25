@@ -4,6 +4,46 @@
 
 ## Active
 
+### BUG-112 — PWA update навсегда помечал local history недоступной после transient IndexedDB failure
+
+- Статус: `fixed locally` (`WP-127`).
+- Найдено в: user QA на iPhone 13 после PWA update.
+- Severity: `high`.
+- Условия воспроизведения: IndexedDB open/read один раз завершается blocked или
+  transient storage error во время смены active PWA document.
+- Ожидаемое поведение: старая connection освобождается, store безопасно
+  переоткрывается, а отдельный snapshot failure не объявляет message archive
+  потерянным.
+- Фактическое поведение: rejected database promise и `archiveAvailable=false`
+  сохранялись на весь lifecycle; `snapshotAvailable=false` дополнительно включал
+  ложную плашку «Локальная история недоступна» даже при доступном archive.
+- Причина: stores не закрывали connection на `versionchange`, не сбрасывали failed
+  open promise и application status объединял независимые snapshot/archive stores.
+- Исправление: archive/snapshot/media connections закрываются на
+  `versionchange`/`pagehide`, failed promise сбрасывается для retry, а archive status
+  больше не зависит от отдельного snapshot store.
+- Проверка: recovery regressions, IndexedDB upgrade tests, полный frontend suite
+  (`398 passed`), lint, typecheck и production/PWA build.
+
+### BUG-111 — Async media decode менял высоту сообщения и сдвигал timeline
+
+- Статус: `fixed locally` (`WP-127`).
+- Найдено в: user QA при прокрутке чатов с cached фото.
+- Severity: `high`.
+- Условия воспроизведения: открыть timeline с image/video attachment, дождаться
+  async memory/OPFS/IndexedDB load и browser decode.
+- Ожидаемое поведение: skeleton заранее занимает окончательный media box; cache hit
+  меняет только pixels внутри него и не двигает viewport.
+- Фактическое поведение: loading image имел только `min-height: 170px`, а ready
+  `<img>` получал натуральную высоту; CSS layout пересчитывался во время scroll.
+- Причина: attachment envelope не переносил dimensions, loading и ready states не
+  делили один aspect-ratio contract.
+- Исправление: bounded dimensions сохраняются для новых image/video, legacy получает
+  fallback ratio, а shell/skeleton/ready media используют один fixed layout box и
+  opacity-only reveal.
+- Проверка: image/video component regressions и metadata codec/upload tests; полный
+  frontend suite (`398 passed`), lint, typecheck и production/PWA build.
+
 ### BUG-110 — Список упоминаний сжимал composer и ломал mobile layout
 
 - Статус: `fixed and production deployed in WP-124` (`97ef4cd`, workflow

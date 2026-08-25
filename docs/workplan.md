@@ -1,82 +1,72 @@
 # Текущий workplan
 
-## WP-126 — Кто поставил реакцию в message context menu
+## WP-127 — Стабильная media-лента и восстановление local history после PWA update
 
-Статус: **production deployed**
-Backlog: `BL-077`
+Статус: **completed locally**
+Backlog: `BL-041`, `BL-025`
 
-Цель: в long-press/right-click меню сообщения показывать Telegram-подобный
-вертикальный список участников и поставленных ими реакций для group и direct
-conversation, не перегружая timeline и не ломая mobile viewport.
+Цель: cached фото/видео не меняют геометрию timeline после async OPFS/IndexedDB
+read/decrypt/decode, а временный IndexedDB lifecycle failure после обновления PWA
+не объявляет сохранённую локальную историю потерянной навсегда.
 
 ### Scope
 
-- authorized reaction summary transport дополнительно возвращает bounded ordered
-  reactor user IDs для каждой emoji aggregate;
-- frontend сопоставляет IDs с уже authorized conversation members и не делает
-  отдельного directory/profile запроса;
-- внизу context menu показывается compact section «Реакции»: emoji, display name,
-  username и avatar initial для каждой пары actor/reaction;
-- section отсутствует у сообщений без реакций;
-- длинный список имеет bounded height, настоящий vertical scroll и удерживается
-  внутри viewport на mobile/desktop;
-- текущие quick/all reaction palette, toggle, haptics, reply/pin/copy/delete/select и
-  long-press/right-click/keyboard entry points сохраняются.
+- image/video attachment metadata переносит bounded pixel dimensions для новых
+  сообщений; старые сообщения используют стабильный fallback aspect ratio;
+- loading, ready и unavailable media states занимают один и тот же layout box;
+- появление decoded bitmap меняет только содержимое зарезервированного box, не его
+  высоту и не scroll position;
+- message archive повторно открывает IndexedDB после transient failure и снимает
+  degraded status после успешной операции;
+- IndexedDB connections закрываются на `versionchange`/page lifecycle, чтобы старая
+  PWA page не блокировала новую schema/open operation;
+- snapshot availability больше не маскируется под недоступность message archive;
+- media cache остаётся cache-first и после transient open failure может повторно
+  открыть существующий store вместо постоянного network fallback.
 
 ### Security and data invariants
 
-- list endpoint по-прежнему требует authenticated active actor и membership exact
-  conversation;
-- server не возвращает global directory и не раскрывает реакции outsider-у;
-- actor IDs берутся только из persisted reactions от messages exact conversation;
-- UI использует только metadata, уже доступную участнику conversation; message
-  plaintext/direct MLS content не участвует в запросе;
-- durable sync/realtime event shape и reaction mutation semantics не меняются.
+- local ciphertext, media keys, MLS state и plaintext не удаляются и не мигрируют
+  destructive способом;
+- direct media dimensions находятся только внутри существующего MLS content
+  envelope; server по-прежнему видит opaque attachment bytes/metadata;
+- восстановление не создаёт новый key при наличии существующего valid key record;
+- corrupt/tampered encrypted records остаются fail-closed и не очищаются молча;
+- server TTL, local cache quota и authorization не меняются.
 
 ### Tests
 
-- backend application: actor IDs сохраняют deterministic order, count совпадает с
-  длиной списка, group/direct membership проходит, outsider/foreign остаются denied;
-- HTTP/parser: bounded actor IDs сериализуются/валидируются, malformed/duplicate IDs
-  отвергаются;
-- component: footer показывает exact emoji/name/username, скрыт без reactions и имеет
-  несколько actor/reaction rows;
-- component: existing quick toggle и expanded 48-emoji palette не регрессируют;
-- frontend Vitest, ESLint, Nuxt typecheck и production/PWA build;
-- responsive browser QA desktop и mobile, включая overflowing actor list;
-- backend Ruff/import boundaries/mypy/pytest и production config/deploy checks.
+- attachment codecs принимают paired bounded dimensions, round-trip-ят их и
+  отвергают partial/invalid/file dimensions;
+- component/CSS tests фиксируют одинаковый aspect-ratio box для loading/ready image
+  и video, включая legacy fallback;
+- message archive test подтверждает recovery после transient storage failure;
+- messenger test подтверждает, что snapshot failure не объявляет archive
+  unavailable и последующий snapshot save может восстановиться;
+- IndexedDB tests проверяют закрытие stale connection на version change;
+- полный frontend Vitest, ESLint, Nuxt typecheck и production/PWA build.
 
 ### Exclusions
 
-- profile photos/avatar upload;
-- отдельное modal reaction analytics/history;
-- reaction timestamps и push notification content;
-- изменение allowed palette или количества реакций пользователя;
-- изменение E2EE/message payload.
+- новая media transcoding/thumbnail pipeline;
+- server-side preview plaintext или расшифровка direct media;
+- изменение 2 GiB media-cache quota или server retention;
+- восстановление данных, реально удалённых browser/OS eviction;
+- полная virtualization timeline.
 
 ### Definition of Done
 
-- long-press на reacted message показывает каждого reactor-а и его exact emoji внизу
-  меню как в reference interaction;
-- список работает одинаково в direct/group, scroll-ится без horizontal overflow и
-  не уводит actions за пределы mobile viewport;
-- authorization и parser regressions проходят;
-- docs/checks обновлены, изменения готовы к focused commit и production rollout.
+- при прокрутке loading/cached media не изменяет высоту сообщения после появления;
+- старые attachment envelopes также не вызывают layout shift;
+- transient IndexedDB failure после update самовосстанавливается без logout,
+  очистки Site Data или генерации новых crypto keys;
+- сообщение «Локальная история недоступна» показывается только при фактической
+  недоступности message archive;
+- tracking docs и frontend checks зелёные, изменения зафиксированы focused commit.
 
-### Acceptance
-
-- backend Ruff format/lint, import boundaries, mypy и полный pytest зелёные:
-  `294 passed`, `12 skipped`;
-- frontend ESLint, Nuxt typecheck, полный Vitest и production/PWA build зелёные;
-- Docker Compose, deploy scripts и docs-check зелёные;
-- responsive browser QA: desktop `1280×720` и mobile `390×844`, 12 actor rows,
-  actor list `176px` при `scrollHeight=622px`, scroll достигает последней строки,
-  horizontal overflow отсутствует и menu остаётся внутри viewport;
-- локальный crypto-check не повторён: `cargo` отсутствует в текущем PATH; crypto
-  source/package не менялись; production workflow повторил pinned crypto suite;
-- focused implementation commit: `9f81652`; immutable image tag:
-  `sha-9f81652bca2c64ce73b09ffa144d4b8c9dda8e34`;
-- production workflow `32849076497` прошёл: fresh migration и full verification,
-  backend/frontend image build, isolated rollout и retention reconciliation;
-- post-rollout Compose status подтвердил healthy PostgreSQL, API и frontend;
-  cleanup service активен.
+Результат: новые image/video envelopes несут bounded dimensions, а legacy media
+получает стабильный fallback box; loading → decoded переход больше не меняет layout.
+Archive/snapshot/media stores освобождают stale IndexedDB connections, transient
+failure повторно открывается следующей операцией, а snapshot failure больше не
+выдаётся за потерю message archive. Frontend: `398 passed`, ESLint, Nuxt typecheck и
+production/PWA build зелёные.

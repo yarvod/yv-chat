@@ -5,6 +5,7 @@ export const IMAGE_MAX_BYTES = 12 * 1024 * 1024
 export const VIDEO_MAX_BYTES = 100 * 1024 * 1024
 export const FILE_MAX_BYTES = 25 * 1024 * 1024
 export const AES_GCM_TAG_BYTES = 16
+export const MAX_MEDIA_PIXEL_DIMENSION = 32_768
 
 export const PREVIEWABLE_IMAGE_TYPES = new Set([
   'image/avif', 'image/gif', 'image/jpeg', 'image/png', 'image/webp',
@@ -40,4 +41,19 @@ export function maximumAttachmentBytes(kind: MessageAttachmentKind): number {
 
 export function maximumDirectAttachmentBytes(kind: MessageAttachmentKind): number {
   return Math.min(maximumAttachmentBytes(kind), FILE_MAX_BYTES - AES_GCM_TAG_BYTES)
+}
+
+export function validAttachmentDimensions(
+  kind: MessageAttachmentKind,
+  pixelWidth: unknown,
+  pixelHeight: unknown,
+): boolean {
+  if (pixelWidth === undefined && pixelHeight === undefined) return true
+  return kind !== 'file'
+    && Number.isInteger(pixelWidth)
+    && Number(pixelWidth) >= 1
+    && Number(pixelWidth) <= MAX_MEDIA_PIXEL_DIMENSION
+    && Number.isInteger(pixelHeight)
+    && Number(pixelHeight) >= 1
+    && Number(pixelHeight) <= MAX_MEDIA_PIXEL_DIMENSION
 }

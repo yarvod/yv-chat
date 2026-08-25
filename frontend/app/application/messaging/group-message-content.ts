@@ -2,6 +2,7 @@ import type { MessageAttachment } from '../../domain/messaging/models'
 import {
   maximumAttachmentBytes,
   supportsStickerPresentation,
+  validAttachmentDimensions,
 } from './group-attachment-policy'
 
 const PREFIX = 'yv-chat/group-content/v1:'
@@ -35,6 +36,7 @@ function validAttachment(value: unknown): value is MessageAttachment {
     && Number.isSafeInteger(item.byteSize)
     && Number(item.byteSize) > 0
     && Number(item.byteSize) <= maximumAttachmentBytes(item.kind)
+    && validAttachmentDimensions(item.kind, item.pixelWidth, item.pixelHeight)
   if (!baseValid) return false
   if (item.presentation === undefined && item.durationSeconds === undefined) return true
   if (item.presentation === 'sticker') {

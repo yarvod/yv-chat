@@ -4,6 +4,7 @@ import type { VoiceCallSummary } from '../../domain/calls/voice-call'
 import {
   maximumAttachmentBytes,
   supportsStickerPresentation,
+  validAttachmentDimensions,
 } from './group-attachment-policy'
 import { decodeTextMessageContent } from './text-message-content'
 
@@ -92,6 +93,7 @@ function validAttachment(value: unknown): value is MessageAttachment {
     && Number.isSafeInteger(item.byteSize)
     && Number(item.byteSize) > 0
     && Number(item.byteSize) <= maximumAttachmentBytes(item.kind)
+    && validAttachmentDimensions(item.kind, item.pixelWidth, item.pixelHeight)
   if (!baseValid) return false
   if (item.presentation === undefined && item.durationSeconds === undefined) return true
   if (item.presentation === 'sticker') {
@@ -168,6 +170,8 @@ export function encodeDirectMessageContent(content: DirectMessageContent): strin
       name: item.attachment.name,
       content_type: item.attachment.contentType,
       byte_size: item.attachment.byteSize,
+      pixel_width: item.attachment.pixelWidth ?? null,
+      pixel_height: item.attachment.pixelHeight ?? null,
       presentation: item.attachment.presentation ?? null,
       duration_seconds: item.attachment.durationSeconds ?? null,
       client_attachment_id: item.secret.clientAttachmentId,
@@ -215,6 +219,12 @@ export function decodeDirectMessageContent(
         name: String(raw.name),
         contentType: String(raw.content_type),
         byteSize: Number(raw.byte_size),
+        ...(raw.pixel_width !== null && raw.pixel_width !== undefined
+          ? { pixelWidth: Number(raw.pixel_width) }
+          : {}),
+        ...(raw.pixel_height !== null && raw.pixel_height !== undefined
+          ? { pixelHeight: Number(raw.pixel_height) }
+          : {}),
         ...(raw.presentation === 'video_note' || raw.presentation === 'sticker'
           ? { presentation: raw.presentation }
           : {}),

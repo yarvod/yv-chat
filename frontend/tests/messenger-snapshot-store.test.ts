@@ -81,6 +81,15 @@ beforeEach(() => {
 afterEach(() => store.close())
 
 describe('encrypted messenger snapshot store', () => {
+  it('releases its connection when a newer PWA requests a database upgrade', async () => {
+    await store.save(snapshot)
+
+    const upgraded = await requestResult(indexedDb.open(databaseName, 2))
+
+    expect(upgraded.version).toBe(2)
+    upgraded.close()
+  })
+
   it('round-trips a snapshot without exposing DTOs or an extractable key', async () => {
     await store.save(snapshot)
     store.close()
