@@ -2,7 +2,7 @@
 
 ## WP-126 — Кто поставил реакцию в message context menu
 
-Статус: **locally verified; ready for production rollout**
+Статус: **production deployed**
 Backlog: `BL-077`
 
 Цель: в long-press/right-click меню сообщения показывать Telegram-подобный
@@ -73,4 +73,10 @@ conversation, не перегружая timeline и не ломая mobile viewp
   actor list `176px` при `scrollHeight=622px`, scroll достигает последней строки,
   horizontal overflow отсутствует и menu остаётся внутри viewport;
 - локальный crypto-check не повторён: `cargo` отсутствует в текущем PATH; crypto
-  source/package не менялись, production workflow повторит pinned crypto suite.
+  source/package не менялись; production workflow повторил pinned crypto suite;
+- focused implementation commit: `9f81652`; immutable image tag:
+  `sha-9f81652bca2c64ce73b09ffa144d4b8c9dda8e34`;
+- production workflow `32849076497` прошёл: fresh migration и full verification,
+  backend/frontend image build, isolated rollout и retention reconciliation;
+- post-rollout Compose status подтвердил healthy PostgreSQL, API и frontend;
+  cleanup service активен.

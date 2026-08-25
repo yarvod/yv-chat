@@ -765,6 +765,9 @@ Frontend `361` tests, lint, typecheck и production build проходят.
   tests, backend `279` tests, lint/typecheck/build и mobile visual QA зелёные;
   immutable rollout `bc083d9` / workflow `32355715677` прошёл, оба production
   origin и health endpoint вернули HTTP `200`.
+- `WP-126` добавил authorized reaction actor footer: backend `294 passed`, frontend
+  full suite/lint/typecheck/build и desktop/mobile scroll QA зелёные; immutable
+  rollout `9f81652` / workflow `32849076497` прошёл, API и frontend healthy.
 
 ### BL-065 — Multiple message pins
 
