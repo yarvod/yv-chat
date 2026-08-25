@@ -2,7 +2,7 @@
 
 ## WP-127 — Стабильная media-лента и восстановление local history после PWA update
 
-Статус: **completed locally**
+Статус: **production deployed**
 Backlog: `BL-041`, `BL-025`
 
 Цель: cached фото/видео не меняют геометрию timeline после async OPFS/IndexedDB
@@ -70,3 +70,6 @@ Archive/snapshot/media stores освобождают stale IndexedDB connections
 failure повторно открывается следующей операцией, а snapshot failure больше не
 выдаётся за потерю message archive. Frontend: `398 passed`, ESLint, Nuxt typecheck и
 production/PWA build зелёные.
+Immutable rollout `sha-66ad43f7b192b881b169a025fb8b0ee5173de625` прошёл в
+workflow `32897318703`; оба production origin и health endpoint вернули `200`,
+unauthenticated WebSocket upgrade достиг FastAPI с ожидаемым `403`.

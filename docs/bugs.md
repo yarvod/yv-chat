@@ -6,7 +6,8 @@
 
 ### BUG-112 — PWA update навсегда помечал local history недоступной после transient IndexedDB failure
 
-- Статус: `fixed locally` (`WP-127`).
+- Статус: `fixed and production deployed` (`WP-127`, `66ad43f`, workflow
+  `32897318703`).
 - Найдено в: user QA на iPhone 13 после PWA update.
 - Severity: `high`.
 - Условия воспроизведения: IndexedDB open/read один раз завершается blocked или
@@ -27,7 +28,8 @@
 
 ### BUG-111 — Async media decode менял высоту сообщения и сдвигал timeline
 
-- Статус: `fixed locally` (`WP-127`).
+- Статус: `fixed and production deployed` (`WP-127`, `66ad43f`, workflow
+  `32897318703`).
 - Найдено в: user QA при прокрутке чатов с cached фото.
 - Severity: `high`.
 - Условия воспроизведения: открыть timeline с image/video attachment, дождаться

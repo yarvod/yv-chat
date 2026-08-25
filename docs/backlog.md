@@ -730,7 +730,8 @@ sender negotiated remote-offer video transceiver до signed answer, а fullscre
 
 ### BL-FIX-056 — Stable cached media geometry и recoverable local history
 
-Статус: **completed locally** (`WP-127`).
+Статус: **completed and production deployed** (`WP-127`, `66ad43f`, workflow
+`32897318703`).
 
 Image/video skeleton заранее занимает bounded aspect-ratio box из attachment
 dimensions, а legacy envelope использует стабильный fallback; async cache
@@ -740,6 +741,9 @@ messenger snapshot и media cache закрывают stale IndexedDB connection 
 logout или очистки Site Data. Snapshot failure больше не выдаётся за недоступность
 message archive. Frontend `398 passed`, lint, typecheck и production/PWA build
 зелёные.
+Immutable backend/frontend image `sha-66ad43f7b192b881b169a025fb8b0ee5173de625`
+развёрнут на `ru1`; оба production origin/health вернули `200`, WebSocket routing —
+ожидаемый `403` без authenticated session.
 
 ### BL-FIX-055 — Keep-alive chat workspace across application tabs
 
