@@ -4,6 +4,24 @@
 
 ## Active
 
+### BUG-113 — Фото перехватывало reply swipe и touch long-press сообщения
+
+- Статус: `fixed locally` (`WP-128`).
+- Найдено в: user QA на touch device.
+- Severity: `high messaging UX`.
+- Условия воспроизведения: начать right swipe или удержание непосредственно на
+  загруженном фото внутри сообщения.
+- Ожидаемое поведение: swipe запускает reply, hold открывает message actions, обычный
+  tap открывает viewer.
+- Фактическое поведение: gestures работали только на свободной рамке bubble; фото
+  обрабатывалось как обычный interactive `<button>` и исключалось на `pointerdown`.
+- Причина: video-note имел специальный gesture target/synthetic-click suppression,
+  а photo/sticker action surfaces не входили в этот contract.
+- Исправление: photo/sticker включены в общий message gesture target; click
+  подавляется только после состоявшегося hold/swipe, обычный tap сохраняется.
+- Проверка: component regression покрывает tap/hold/swipe непосредственно на photo;
+  полный frontend suite (`399 passed`), lint, typecheck и production/PWA build.
+
 ### BUG-112 — PWA update навсегда помечал local history недоступной после transient IndexedDB failure
 
 - Статус: `fixed and production deployed` (`WP-127`, `66ad43f`, workflow

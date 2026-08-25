@@ -195,7 +195,7 @@ interface MessageSwipeState {
   startY: number
   offset: number
   longPressFired: boolean
-  startedOnVideoNote: boolean
+  startedOnGestureSurface: boolean
 }
 const messageContextMenu = ref<MessageContextMenuState | null>(null)
 const messageSwipe = ref<MessageSwipeState | null>(null)
@@ -700,8 +700,18 @@ function isVideoNoteGestureTarget(target: EventTarget | null, message: TimelineM
   )
 }
 
+function isMediaGestureTarget(target: EventTarget | null): boolean {
+  return target instanceof Element && Boolean(target.closest(
+    '.message-photo, .message-sticker',
+  ))
+}
+
+function isMessageGestureTarget(target: EventTarget | null, message: TimelineMessage): boolean {
+  return isVideoNoteGestureTarget(target, message) || isMediaGestureTarget(target)
+}
+
 function isInteractiveTarget(target: EventTarget | null, message: TimelineMessage): boolean {
-  if (isVideoNoteGestureTarget(target, message)) return false
+  if (isMessageGestureTarget(target, message)) return false
   return target instanceof Element && Boolean(target.closest(
     'button, input, textarea, video, audio, [role="button"], [contenteditable="true"]',
   ))
@@ -713,7 +723,7 @@ function clearSuppressedMessageClick(): void {
   suppressedMessageClickId = null
 }
 
-function suppressNextVideoNoteClick(messageId: string): void {
+function suppressNextMessageGestureClick(messageId: string): void {
   clearSuppressedMessageClick()
   suppressedMessageClickId = messageId
   suppressedMessageClickTimer = setTimeout(clearSuppressedMessageClick, 800)
@@ -727,7 +737,7 @@ function handleMessageClickCapture(event: MouseEvent, message: TimelineMessage):
     return
   }
   if (suppressedMessageClickId !== message.messageId) return
-  if (!isVideoNoteGestureTarget(event.target, message)) return
+  if (!isMessageGestureTarget(event.target, message)) return
   event.preventDefault()
   event.stopPropagation()
   clearSuppressedMessageClick()
@@ -748,7 +758,7 @@ function handleMessagePointerDown(event: PointerEvent, message: TimelineMessage)
   if (suppressedMessageClickId) clearSuppressedMessageClick()
   if (messageSelectionActive.value) return
   if (event.pointerType === 'mouse' || event.button !== 0 || isInteractiveTarget(event.target, message)) return
-  const startedOnVideoNote = isVideoNoteGestureTarget(event.target, message)
+  const startedOnGestureSurface = isMessageGestureTarget(event.target, message)
   messageSwipe.value = {
     messageId: message.messageId,
     pointerId: event.pointerId,
@@ -756,9 +766,9 @@ function handleMessagePointerDown(event: PointerEvent, message: TimelineMessage)
     startY: event.clientY,
     offset: 0,
     longPressFired: false,
-    startedOnVideoNote,
+    startedOnGestureSurface,
   }
-  if (startedOnVideoNote && event.currentTarget instanceof HTMLElement
+  if (startedOnGestureSurface && event.currentTarget instanceof HTMLElement
     && typeof event.currentTarget.setPointerCapture === 'function') {
     event.currentTarget.setPointerCapture(event.pointerId)
   }
@@ -792,9 +802,10 @@ function finishMessagePointer(event: PointerEvent, message: TimelineMessage): vo
   const swipe = messageSwipe.value
   if (!swipe || swipe.pointerId !== event.pointerId) return
   const shouldReply = !swipe.longPressFired && swipe.offset >= 56
-  const shouldSuppressClick = swipe.startedOnVideoNote && (swipe.longPressFired || swipe.offset > 8)
+  const shouldSuppressClick = swipe.startedOnGestureSurface
+    && (swipe.longPressFired || swipe.offset > 8)
   resetMessageSwipe()
-  if (shouldSuppressClick) suppressNextVideoNoteClick(message.messageId)
+  if (shouldSuppressClick) suppressNextMessageGestureClick(message.messageId)
   if (shouldReply) {
     props.haptic('selection')
     startReply(message)

@@ -276,6 +276,108 @@ describe('message panel', () => {
     vi.useRealTimers()
   })
 
+  it('supports reply and long-press directly on a photo without stealing a tap', async () => {
+    vi.useFakeTimers()
+    const message = {
+      messageId: 'message-photo-gesture',
+      clientMessageId: 'client-photo-gesture',
+      conversationId: 'conversation-1',
+      senderUserId: 'bob-id',
+      senderDeviceId: 'bob-device',
+      protocolVersion: 2,
+      cryptoGenerationId: 'generation-1',
+      cryptoEpoch: 1,
+      sequence: 1,
+      createdAt: '2026-08-26T12:00:01Z',
+      expiresAt: '2026-09-26T12:00:00Z',
+      ciphertextBase64: 'b3BhcXVl',
+      deletionReason: null,
+      deletedAt: null,
+      contentState: 'available' as const,
+      displayBody: '',
+      displayAttachments: [{
+        attachmentId: 'photo-1',
+        kind: 'image' as const,
+        name: 'photo.jpg',
+        contentType: 'image/jpeg',
+        byteSize: 128,
+      }],
+      contentSecure: true,
+    }
+    const wrapper = mount(MessagePanel, {
+      props: {
+        conversation,
+        messages: [message],
+        actorUserId: 'alice-id',
+        sending: false,
+        protectionSecure: true,
+        protectionLabel: 'E2EE',
+        sendMessage: vi.fn(),
+        deleteMessage: vi.fn(),
+        deletingMessageId: null,
+        typingActorIds: [],
+        onlineActorIds: [],
+        deliveryStates: [],
+        connectionState: 'connected',
+        setTyping: vi.fn(),
+      },
+      global: {
+        stubs: {
+          MessageAttachments: {
+            template: '<div class="message-photo-shell fake-photo-shell"><button class="message-photo fake-photo" type="button">photo</button></div>',
+          },
+        },
+      },
+    })
+    const bubble = wrapper.get('[data-message-id="message-photo-gesture"]')
+    const photo = wrapper.get('.fake-photo')
+    const viewerClick = vi.fn()
+    photo.element.addEventListener('click', viewerClick)
+    const pointer = (type: string, pointerId: number, clientX: number, clientY: number) => (
+      new PointerEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        button: 0,
+        pointerId,
+        pointerType: 'touch',
+        clientX,
+        clientY,
+      })
+    )
+    const viewerTap = () => photo.element.dispatchEvent(new MouseEvent('click', {
+      bubbles: true,
+      cancelable: true,
+    }))
+
+    photo.element.dispatchEvent(pointer('pointerdown', 1, 24, 30))
+    photo.element.dispatchEvent(pointer('pointerup', 1, 24, 30))
+    expect(viewerTap()).toBe(true)
+    expect(viewerClick).toHaveBeenCalledTimes(1)
+
+    photo.element.dispatchEvent(pointer('pointerdown', 2, 40, 50))
+    photo.element.dispatchEvent(pointer('pointermove', 2, 44, 57))
+    await vi.advanceTimersByTimeAsync(500)
+    await wrapper.vm.$nextTick()
+    expect(wrapper.get('.message-context-menu').text()).toContain('Ответить')
+    photo.element.dispatchEvent(pointer('pointerup', 2, 44, 57))
+    expect(viewerTap()).toBe(false)
+    expect(viewerClick).toHaveBeenCalledTimes(1)
+    await wrapper.get('.message-context-backdrop').trigger('pointerdown')
+
+    photo.element.dispatchEvent(pointer('pointerdown', 3, 10, 20))
+    photo.element.dispatchEvent(pointer('pointermove', 3, 100, 22))
+    await wrapper.vm.$nextTick()
+    expect(bubble.classes()).toContain('message-bubble--swiping')
+    photo.element.dispatchEvent(pointer('pointerup', 3, 100, 22))
+    expect(viewerTap()).toBe(false)
+    expect(viewerClick).toHaveBeenCalledTimes(1)
+    await wrapper.vm.$nextTick()
+    expect(wrapper.get('.composer-reply').text()).toContain('photo.jpg')
+
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
   it('keeps the context menu open and reports clipboard failure', async () => {
     const copyText = vi.fn().mockResolvedValue(false)
     const wrapper = mount(MessagePanel, {

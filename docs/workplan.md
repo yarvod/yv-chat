@@ -1,75 +1,53 @@
 # Текущий workplan
 
-## WP-127 — Стабильная media-лента и восстановление local history после PWA update
+## WP-128 — Reply и long-press непосредственно на media сообщения
 
-Статус: **production deployed**
-Backlog: `BL-041`, `BL-025`
+Статус: **completed locally**
+Backlog: `BL-077`
 
-Цель: cached фото/видео не меняют геометрию timeline после async OPFS/IndexedDB
-read/decrypt/decode, а временный IndexedDB lifecycle failure после обновления PWA
-не объявляет сохранённую локальную историю потерянной навсегда.
+Цель: фото и sticker внутри message bubble участвуют в том же touch gesture
+contract, что и рамка сообщения: обычный tap открывает media viewer, deliberate
+right swipe начинает reply, long-press открывает message context menu.
 
 ### Scope
 
-- image/video attachment metadata переносит bounded pixel dimensions для новых
-  сообщений; старые сообщения используют стабильный fallback aspect ratio;
-- loading, ready и unavailable media states занимают один и тот же layout box;
-- появление decoded bitmap меняет только содержимое зарезервированного box, не его
-  высоту и не scroll position;
-- message archive повторно открывает IndexedDB после transient failure и снимает
-  degraded status после успешной операции;
-- IndexedDB connections закрываются на `versionchange`/page lifecycle, чтобы старая
-  PWA page не блокировала новую schema/open operation;
-- snapshot availability больше не маскируется под недоступность message archive;
-- media cache остаётся cache-first и после transient open failure может повторно
-  открыть существующий store вместо постоянного network fallback.
+- photo/sticker action surface допускается как message gesture target, несмотря на
+  внутренний `<button>`;
+- tap без gesture сохраняет существующее открытие viewer;
+- после long-press/swipe следующий synthetic click подавляется, чтобы viewer не
+  открылся поверх context/reply;
+- vertical scroll и остальные interactive controls не меняются;
+- существующий video-note gesture contract остаётся тем же.
 
 ### Security and data invariants
 
-- local ciphertext, media keys, MLS state и plaintext не удаляются и не мигрируют
-  destructive способом;
-- direct media dimensions находятся только внутри существующего MLS content
-  envelope; server по-прежнему видит opaque attachment bytes/metadata;
-- восстановление не создаёт новый key при наличии существующего valid key record;
-- corrupt/tampered encrypted records остаются fail-closed и не очищаются молча;
-- server TTL, local cache quota и authorization не меняются.
+- attachment download/cache/E2EE, authorization и message mutation не меняются;
+- gesture использует только уже отрисованный authorized timeline message;
+- context actions продолжают проходить существующие application use cases.
 
 ### Tests
 
-- attachment codecs принимают paired bounded dimensions, round-trip-ят их и
-  отвергают partial/invalid/file dimensions;
-- component/CSS tests фиксируют одинаковый aspect-ratio box для loading/ready image
-  и video, включая legacy fallback;
-- message archive test подтверждает recovery после transient storage failure;
-- messenger test подтверждает, что snapshot failure не объявляет archive
-  unavailable и последующий snapshot save может восстановиться;
-- IndexedDB tests проверяют закрытие stale connection на version change;
+- component regression: plain photo tap не подавляется;
+- component regression: long-press на фото открывает actions и подавляет viewer click;
+- component regression: right swipe на фото начинает reply и подавляет viewer click;
+- существующие bubble/video-note gesture tests остаются зелёными;
 - полный frontend Vitest, ESLint, Nuxt typecheck и production/PWA build.
 
 ### Exclusions
 
-- новая media transcoding/thumbnail pipeline;
-- server-side preview plaintext или расшифровка direct media;
-- изменение 2 GiB media-cache quota или server retention;
-- восстановление данных, реально удалённых browser/OS eviction;
-- полная virtualization timeline.
+- изменение media viewer zoom/navigation;
+- собственные gestures поверх native video controls;
+- изменение context-menu actions или reply payload;
+- redesign bubble/media layout.
 
 ### Definition of Done
 
-- при прокрутке loading/cached media не изменяет высоту сообщения после появления;
-- старые attachment envelopes также не вызывают layout shift;
-- transient IndexedDB failure после update самовосстанавливается без logout,
-  очистки Site Data или генерации новых crypto keys;
-- сообщение «Локальная история недоступна» показывается только при фактической
-  недоступности message archive;
-- tracking docs и frontend checks зелёные, изменения зафиксированы focused commit.
+- reply и hold работают на самих pixels фото/стикера, не только на рамке bubble;
+- tap по-прежнему открывает media;
+- scroll не превращается в reply из-за vertical movement;
+- tracking docs и frontend checks зелёные, изменение зафиксировано focused commit.
 
-Результат: новые image/video envelopes несут bounded dimensions, а legacy media
-получает стабильный fallback box; loading → decoded переход больше не меняет layout.
-Archive/snapshot/media stores освобождают stale IndexedDB connections, transient
-failure повторно открывается следующей операцией, а snapshot failure больше не
-выдаётся за потерю message archive. Frontend: `398 passed`, ESLint, Nuxt typecheck и
-production/PWA build зелёные.
-Immutable rollout `sha-66ad43f7b192b881b169a025fb8b0ee5173de625` прошёл в
-workflow `32897318703`; оба production origin и health endpoint вернули `200`,
-unauthenticated WebSocket upgrade достиг FastAPI с ожидаемым `403`.
+Результат: photo/sticker buttons теперь являются message gesture surfaces. Tap
+доходит до viewer как раньше, а long-press/right swipe используют bubble gesture
+state и suppress-ят только synthetic click после состоявшегося gesture. Frontend:
+`399 passed`, ESLint, Nuxt typecheck и production/PWA build зелёные.
