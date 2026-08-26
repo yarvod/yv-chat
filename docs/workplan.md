@@ -2,7 +2,7 @@
 
 ## WP-131 — Live-tail restoration и bounded device-history completion
 
-Статус: **completed locally; production pending**
+Статус: **completed and production deployed; physical two-device acceptance pending**
 Backlog: `BL-FIX-060`
 
 Цель: возврат Settings → Chats должен различать exact historical anchor и durable
@@ -79,3 +79,17 @@ bounded попытки сам запускать тот же полный цик
   scroll-to-latest action absent, console errors absent;
 - frontend: `65` files / `413` tests passed, ESLint, Nuxt typecheck и production/PWA
   build зелёные.
+
+### Production result
+
+- commit `a85bb3bb7f7458a9ac520ee3ca2ee7526a33070a`, CI workflow
+  `32977268334` и production workflow `32977268412` успешны; первый backend GHCR
+  login получил внешний timeout, failed jobs были безопасно перезапущены без изменения
+  кода, повторная попытка завершила rollout;
+- exact immutable tag `sha-a85bb3bb7f7458a9ac520ee3ca2ee7526a33070a`
+  активен на frontend, API и cleanup; frontend/API/PostgreSQL healthy;
+- оба production origin и health endpoints вернули `200`, unauthenticated WebSocket
+  upgrade достиг FastAPI с ожидаемым `403`, `nginx -t` успешен;
+- физическая проверка между конкретными iPhone/Mac остаётся device-bound acceptance:
+  после принятия PWA update на обоих устройствах запустить одну новую попытку при
+  одновременно открытых peers.

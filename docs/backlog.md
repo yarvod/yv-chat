@@ -730,7 +730,8 @@ sender negotiated remote-offer video transceiver до signed answer, а fullscre
 
 ### BL-FIX-060 — Live-tail restoration и bounded history completion
 
-Статус: **completed locally; production pending** (`WP-131`).
+Статус: **completed and production deployed; physical two-device acceptance pending**
+(`WP-131`, `a85bb3b`, workflow `32977268412`).
 
 `atLatest=true` теперь восстанавливает текущий server tail, а не старый exact anchor;
 route unmount предпочитает фактическую DOM-позицию debounced capture. Exhausted
@@ -740,6 +741,8 @@ relay + `400` group через authoritative history), `40` unique chunks, по�
 target union без потерь. In-app Browser пять раз вернулся из Settings к bottom
 1000-row MessagePanel без стрелки «к новым»; frontend `413 passed`, lint/typecheck и
 production/PWA build зелёные.
+Production runtime: exact immutable tag активен на frontend/API/cleanup, оба origin
+и health вернули `200`, WebSocket без session — ожидаемый `403`, `nginx -t` успешен.
 
 ### BL-FIX-059 — Authoritative chat recovery и stable tab return
 

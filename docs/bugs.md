@@ -6,7 +6,8 @@
 
 ### BUG-120 — Исчерпанный device-history job бесконечно запускался recurring resume
 
-- Статус: `fixed locally; production pending` (`WP-131`).
+- Статус: `fixed and production deployed` (`WP-131`, `a85bb3b`, workflow
+  `32977268412`); physical two-device acceptance pending.
 - Severity: `critical multi-device history reliability`.
 - Причина: `waiting_peer` возвращался как успешный incomplete result с сохранённым job,
   а 30-секундный recurring `resume()` не различал paused/exhausted и новый runnable job;
@@ -16,7 +17,8 @@
 
 ### BUG-119 — `atLatest=true` восстанавливался как старый exact anchor
 
-- Статус: `fixed locally; production pending` (`WP-131`).
+- Статус: `fixed and production deployed` (`WP-131`, `a85bb3b`, workflow
+  `32977268412`); physical iPhone acceptance pending.
 - Severity: `high messaging UX`.
 - Причина: restore всегда сначала выравнивал сохранённый `messageId + offset`, даже
   когда anchor обозначал live-tail intent; unmount мог предпочесть устаревший

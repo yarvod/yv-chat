@@ -11,7 +11,22 @@ not be replaced with the broader JavaScript `unsafe-eval`. Without it, public
 crypto assets still return HTTP 200 but device provisioning stops before the
 `PUT /api/v1/devices/current/crypto-identity` registration request.
 
-## Latest rollout — WP-130 authoritative recovery and pairing pacing
+## Latest rollout — WP-131 live-tail restoration and bounded history completion
+
+- Commit: `a85bb3bb7f7458a9ac520ee3ca2ee7526a33070a`.
+- Production workflow: `32977268412` (success after failed-job rerun); CI workflow:
+  `32977268334` (success). The first backend image job stopped before rollout on an
+  external GHCR login timeout; the repeated job and dependent rollout succeeded.
+- Deployed image tag: `sha-a85bb3bb7f7458a9ac520ee3ca2ee7526a33070a` on frontend,
+  API and cleanup; frontend/API/PostgreSQL reported healthy.
+- Public acceptance: both origins and `/api/v1/health` returned `200`, unauthenticated
+  `/api/v1/realtime` upgrade returned expected `403`, `nginx -t` successful.
+- Browser stress kept the live tail through five Settings round-trips over a real
+  1000-row MessagePanel. Mixed-history stress converged all 1000 records with 40
+  unique direct-relay chunks and complete ACK; exhausted attempts now remain paused
+  until explicit retry. Physical encrypted two-device acceptance remains user-bound.
+
+## Prior rollout — WP-130 authoritative recovery and pairing pacing
 
 - Commit: `a31e81b77998cf5a44ecacf8cb3cbfc7ebbb6832`.
 - Production workflow: `32972440117` (success); CI workflow: `32972440177`
