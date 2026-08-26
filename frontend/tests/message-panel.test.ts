@@ -1,4 +1,5 @@
 import { mount, type VueWrapper } from '@vue/test-utils'
+import { defineComponent, h, KeepAlive, nextTick, ref } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
 
 import MessagePanel from '../app/components/chat/MessagePanel.vue'
@@ -1579,7 +1580,7 @@ describe('message panel', () => {
     }))
   })
 
-  it('keeps a 1000-message live tail at the newest row across settings unmount and remount', async () => {
+  it('keeps a 1000-message live tail across real settings KeepAlive deactivation', async () => {
     const messages = Array.from({ length: 1_000 }, (_, index) => {
       const sequence = index + 1
       return {
@@ -1600,9 +1601,9 @@ describe('message panel', () => {
         contentSecure: false,
       }
     })
-    let savedAnchor: ConversationViewportAnchor | null = null
+    const savedAnchor = ref<ConversationViewportAnchor | null>(null)
     const saveViewport = vi.fn(async anchor => {
-      savedAnchor = anchor
+      savedAnchor.value = anchor
     })
     const props = {
       conversation,
@@ -1621,18 +1622,39 @@ describe('message panel', () => {
       setTyping: vi.fn(),
       saveViewport,
     }
-    const first = mount(MessagePanel, { props })
-    const firstTimeline = first.get('.message-timeline').element as HTMLElement
-    Object.defineProperties(firstTimeline, {
-      scrollHeight: { configurable: true, value: 50_000 },
+    const visible = ref(true)
+    const visibleMessages = ref(messages)
+    const host = defineComponent({
+      setup() {
+        return () => h(KeepAlive, null, {
+          default: () => visible.value
+            ? h(MessagePanel, {
+                key: 'kept-chat',
+                ...props,
+                messages: visibleMessages.value,
+                viewportAnchor: savedAnchor.value,
+              })
+            : h('section', { class: 'settings-fixture' }, 'Настройки'),
+        })
+      },
+    })
+    const wrapper = mount(host)
+    const timeline = wrapper.get('.message-timeline').element as HTMLElement
+    let scrollHeight = 50_000
+    const scrollTo = vi.fn(({ top }: { top: number }) => {
+      timeline.scrollTop = Math.max(0, top - timeline.clientHeight)
+    })
+    Object.defineProperties(timeline, {
+      scrollHeight: { configurable: true, get: () => scrollHeight },
       clientHeight: { configurable: true, value: 400 },
       scrollTop: { configurable: true, value: 49_600, writable: true },
-      scrollTo: { configurable: true, value: vi.fn() },
+      scrollTo: { configurable: true, value: scrollTo },
     })
 
-    await first.get('.message-timeline').trigger('scroll')
-    first.unmount()
-    await vi.waitFor(() => expect(savedAnchor).toMatchObject({
+    await wrapper.get('.message-timeline').trigger('scroll')
+    visible.value = false
+    await nextTick()
+    await vi.waitFor(() => expect(savedAnchor.value).toMatchObject({
       messageId: 'stress-message-1000',
       sequence: 1_000,
       atLatest: true,
@@ -1645,36 +1667,22 @@ describe('message panel', () => {
       sequence: 1_001,
       displayBody: 'stress 1001',
     }
-    const secondTimelineRef: { current: HTMLElement | null } = { current: null }
-    const scrollTo = vi.fn(({ top }: { top: number }) => {
-      const element = secondTimelineRef.current
-      if (element) element.scrollTop = Math.max(0, top - element.clientHeight)
-    })
-    const second = mount(MessagePanel, {
-      props: {
-        ...props,
-        messages: [...messages, newest],
-        viewportAnchor: savedAnchor,
-      },
-    })
-    const secondTimeline = second.get('.message-timeline').element as HTMLElement
-    secondTimelineRef.current = secondTimeline
-    Object.defineProperties(secondTimeline, {
-      scrollHeight: { configurable: true, value: 50_050 },
-      clientHeight: { configurable: true, value: 400 },
-      scrollTop: { configurable: true, value: 0, writable: true },
-      scrollTo: { configurable: true, value: scrollTo },
-    })
-
-    await second.get('.message-timeline').trigger('scroll')
+    // Reproduce WebKit resetting the detached cached scroll element while the
+    // Settings page owns the viewport.
+    timeline.scrollTop = 0
+    scrollHeight = 50_050
+    visibleMessages.value = [...messages, newest]
+    scrollTo.mockClear()
+    visible.value = true
+    await nextTick()
     await vi.waitFor(() => expect(scrollTo).toHaveBeenCalledWith({
       top: 50_050,
       behavior: 'auto',
     }))
-    expect(secondTimeline.scrollTop).toBe(49_650)
-    expect(second.find('.scroll-to-latest').exists()).toBe(false)
-    expect(second.get('[data-message-id="stress-message-1001"]').exists()).toBe(true)
-    second.unmount()
+    expect(timeline.scrollTop).toBe(49_650)
+    expect(wrapper.find('.scroll-to-latest').exists()).toBe(false)
+    expect(wrapper.get('[data-message-id="stress-message-1001"]').exists()).toBe(true)
+    wrapper.unmount()
   })
 
   it('loads the authoritative latest window before restoring a saved live-tail intent', async () => {

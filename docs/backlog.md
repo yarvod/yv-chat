@@ -728,6 +728,17 @@ sender negotiated remote-offer video transceiver до signed answer, а fullscre
 
 ## Completed
 
+### BL-FIX-061 — KeepAlive viewport reactivation
+
+Статус: **completed locally; production pending** (`WP-132`).
+
+`MessagePanel` теперь различает Nuxt KeepAlive deactivation/activation и обычный
+unmount: перед кэшированием flush-ит последний live anchor, после возврата явно
+включает instant restore и observer. Regression использует настоящий `KeepAlive` с
+1000 rows и WebKit-like `scrollTop=0`; Docker Browser QA пять раз прошёл полный route
+round-trip с distance from bottom `0`, без стрелки и browser errors. Полный frontend
+CI выполнен внутри одноразового Docker container: `413 passed`, lint/typecheck/build.
+
 ### BL-FIX-060 — Live-tail restoration и bounded history completion
 
 Статус: **completed and production deployed; physical two-device acceptance pending**

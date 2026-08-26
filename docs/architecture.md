@@ -275,9 +275,11 @@ Desktop использует split view с bounded sidebar. Mobile исполь�
 safe-area-aware viewport slot; внутри conversation они скрываются, поэтому composer
 остаётся у visual viewport и при уменьшении высоты software keyboard.
 Пока app layout жив, переход на Settings сохраняет exact последний chat query как
-target вкладки «Чаты». Message-relative anchor пишется до route unmount, а singleton
-snapshot store сериализует save/load между старым и новым page instance, поэтому
-возврат не проигрывает незавершённую IndexedDB запись позиции.
+target вкладки «Чаты». `/chat` является kept-alive page: message-relative anchor
+flush-ится при route deactivation, а cached `MessagePanel` при activation явно
+восстанавливает его после возврата DOM. Это обязательно даже без нового page instance,
+поскольку WebKit может сбросить `scrollTop` отсоединённого container. Singleton
+snapshot store дополнительно сериализует save/load для cold page recreation.
 
 Компонент не вычисляет grouping inline: pure typed `buildTimelineLayout` создаёт day
 separators и объединяет соседние сообщения одного sender только в пятиминутном окне.
@@ -294,11 +296,11 @@ Cold reload читает из encrypted IndexedDB bounded окно `49 before + 
 pane с нулевой высотой не имеет права вычислять или сохранять anchor. Push/deep-link
 остаётся pending, пока target row не появился в DOM с небольшим контекстом с обеих
 сторон, поэтому sparse latest cache не считается готовым target window.
-`atLatest=true` является отдельным live-tail intent: при remount он всегда открывает
-текущий конец, даже если сохранённый message ID уже не последний. Exact `messageId +
-offset` применяется только при `atLatest=false`. На route boundary фактическая DOM
-позиция приоритетнее более раннего debounced capture; capture остаётся fallback для
-уже скрытого/размонтированного pane.
+`atLatest=true` является отдельным live-tail intent: при mount или KeepAlive activation
+он всегда открывает текущий конец, даже если сохранённый message ID уже не последний.
+Exact `messageId + offset` применяется только при `atLatest=false`. На route boundary
+фактическая DOM-позиция приоритетнее более раннего debounced capture; последний живой
+capture остаётся fallback для уже скрытого/deactivated pane.
 
 History size не определяет стоимость initial render: latest/anchored fetch содержит не
 более 100 rows, reactive timeline ограничен 300 rows, encrypted archive — 2000 rows.

@@ -1,5 +1,14 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import {
+  computed,
+  nextTick,
+  onActivated,
+  onBeforeUnmount,
+  onDeactivated,
+  onMounted,
+  ref,
+  watch,
+} from 'vue'
 
 import type { TimelineMessage } from '../../application/messaging/timeline-message'
 import type { MessageInteractionContext } from '../../application/messaging/text-message-content'
@@ -159,6 +168,7 @@ const highlightedMessageId = ref<string | null>(null)
 const reactionBurst = ref<{ emoji: string, id: number, x: number, y: number } | null>(null)
 let viewportSaveTimer: ReturnType<typeof setTimeout> | null = null
 let pendingViewportAnchor: ConversationViewportAnchor | null = null
+let lastViewportAnchor: ConversationViewportAnchor | null = null
 let highlightTimer: ReturnType<typeof setTimeout> | null = null
 let resizeObserver: ResizeObserver | null = null
 let adjustingViewport = false
@@ -1155,19 +1165,25 @@ function persistViewport(conversationId?: string): void {
   // only as a fallback for an already-hidden mobile pane or after the
   // conversation prop has switched to another chat.
   const current = currentViewportAnchor()
+  if (current) lastViewportAnchor = current
   const live = current && (!conversationId || current.conversationId === conversationId)
     ? current
     : null
   const fallback = captured && (!conversationId || captured.conversationId === conversationId)
     ? captured
     : null
-  const anchor = live ?? fallback
+  const remembered = lastViewportAnchor
+    && (!conversationId || lastViewportAnchor.conversationId === conversationId)
+    ? lastViewportAnchor
+    : null
+  const anchor = live ?? fallback ?? remembered
   if (anchor) void props.saveViewport(anchor)
 }
 
 function scheduleViewportSave(): void {
   pendingViewportAnchor = currentViewportAnchor()
   if (!pendingViewportAnchor) return
+  lastViewportAnchor = pendingViewportAnchor
   if (viewportSaveTimer) clearTimeout(viewportSaveTimer)
   viewportSaveTimer = setTimeout(persistViewport, 220)
 }
@@ -1408,6 +1424,25 @@ onMounted(() => {
   window.visualViewport?.addEventListener('resize', handleVisualViewportResize)
   document.addEventListener('pointerdown', handleDocumentPointerDown, true)
   document.addEventListener('keydown', handleDocumentKeydown)
+})
+
+// `/chat` is a kept-alive Nuxt page. Settings navigation deactivates this
+// component instead of unmounting it, and WebKit may reset the detached
+// scroll container to zero. Flush the last visible anchor on deactivation and
+// explicitly restore it when the cached page becomes visible again.
+onDeactivated(() => {
+  persistViewport()
+  restorationPending.value = true
+  releaseLayoutAnchor()
+  resizeObserver?.disconnect()
+})
+
+onActivated(async () => {
+  restorationPending.value = true
+  releaseLayoutAnchor()
+  await nextTick()
+  observeTimelineLayout()
+  await restoreViewport(false)
 })
 
 onBeforeUnmount(() => {

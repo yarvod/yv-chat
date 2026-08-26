@@ -4,6 +4,18 @@
 
 ## Active
 
+### BUG-121 — KeepAlive activation не восстанавливал viewport чата
+
+- Статус: `fixed locally; production pending` (`WP-132`).
+- Severity: `critical messaging UX on iOS PWA`.
+- Причина: `/chat` имеет `keepalive: true`; Settings вызывал deactivate/activate, а
+  restore существовал только для mount/conversation prop changes. Предыдущий regression
+  ошибочно тестировал unmount/remount и не покрывал production lifecycle.
+- Ожидаемое поведение: deactivation flush-ит последний видимый anchor, activation
+  восстанавливает live tail или exact historical offset даже после WebKit reset к нулю.
+- Проверка: настоящий Vue KeepAlive regression и пять Docker/Nuxt Browser циклов на
+  1000 rows с принудительным reset скрытого container; полный Docker frontend CI зелёный.
+
 ### BUG-120 — Исчерпанный device-history job бесконечно запускался recurring resume
 
 - Статус: `fixed and production deployed` (`WP-131`, `a85bb3b`, workflow
