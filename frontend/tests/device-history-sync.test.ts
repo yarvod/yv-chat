@@ -1136,12 +1136,9 @@ describe('QR-linked bidirectional device history sync', () => {
   })
 
   it('converges 1000 mixed records through direct relay plus authoritative group history', async () => {
-    const directIds = [
-      '55555555-5555-4555-8555-555555555551',
-      '55555555-5555-4555-8555-555555555552',
-      '55555555-5555-4555-8555-555555555553',
-      '55555555-5555-4555-8555-555555555554',
-    ]
+    const directIds = Array.from({ length: 20 }, (_, index) => (
+      `55555555-5555-4555-8555-${String(index + 1).padStart(12, '0')}`
+    ))
     const groupIds = [
       '55555555-5555-4555-8555-555555555561',
       '55555555-5555-4555-8555-555555555562',
@@ -1149,7 +1146,7 @@ describe('QR-linked bidirectional device history sync', () => {
     const sourceRecords: ArchivedMessage[] = []
     let globalIndex = 0
     for (const conversationId of directIds) {
-      for (let sequence = 1; sequence <= 150; sequence += 1) {
+      for (let sequence = 1; sequence <= 40; sequence += 1) {
         globalIndex += 1
         sourceRecords.push(stressArchived(
           conversationId,
@@ -1161,7 +1158,7 @@ describe('QR-linked bidirectional device history sync', () => {
     }
     const authoritativeGroups: ArchivedMessage[] = []
     for (const conversationId of groupIds) {
-      for (let sequence = 1; sequence <= 200; sequence += 1) {
+      for (let sequence = 1; sequence <= 100; sequence += 1) {
         globalIndex += 1
         authoritativeGroups.push(stressArchived(
           conversationId,
@@ -1238,15 +1235,16 @@ describe('QR-linked bidirectional device history sync', () => {
 
     expect(trustedProgress.complete).toBe(true)
     expect(candidateProgress.complete).toBe(true)
-    expect(candidateProgress.importedRecords).toBe(600)
+    expect(candidateProgress.importedRecords).toBe(800)
     expect(candidateArchive.count()).toBe(1_000)
     for (const conversationId of directIds) {
-      expect(candidateArchive.countConversation(conversationId)).toBe(150)
+      expect(candidateArchive.countConversation(conversationId)).toBe(40)
     }
     for (const conversationId of groupIds) {
-      expect(candidateArchive.countConversation(conversationId)).toBe(200)
+      expect(candidateArchive.countConversation(conversationId)).toBe(100)
     }
-    expect(relay.chunks).toHaveLength(16)
+    expect(relay.chunks.filter(chunk => chunk.senderDeviceId === candidate)).toHaveLength(20)
+    expect(relay.chunks.filter(chunk => chunk.senderDeviceId === trusted)).toHaveLength(40)
     expect(new Set(relay.chunks.map(chunk => (
       `${chunk.senderDeviceId}:${chunk.clientChunkId}`
     ))).size).toBe(relay.chunks.length)

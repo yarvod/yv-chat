@@ -15,6 +15,12 @@ const appleLaunchScreens = [
 ] as const
 
 const nativeBuild = process.env.NUXT_PUBLIC_NATIVE_BUILD === 'true'
+const defaultDevicePairingOrigins = JSON.stringify([
+  'https://chat.yoowee.ru',
+  'https://chat.yoowee.com.de',
+  'https://app.yvchat.local',
+  'capacitor://app.yvchat.local',
+])
 
 export default defineNuxtConfig({
   compatibilityDate: '2026-08-11',
@@ -24,7 +30,10 @@ export default defineNuxtConfig({
   css: ['~/assets/main.css'],
   runtimeConfig: {
     public: {
-      devicePairingOrigins: '',
+      // `/` is prerendered into the PWA shell, so this value must exist at image
+      // build time. Runtime-only container env cannot rewrite generated HTML.
+      devicePairingOrigins: process.env.NUXT_PUBLIC_DEVICE_PAIRING_ORIGINS
+        || defaultDevicePairingOrigins,
       apiOrigin: '',
       nativeBuild: false,
     },

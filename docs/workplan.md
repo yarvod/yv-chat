@@ -1,82 +1,93 @@
 # Текущий workplan
 
-## WP-135 — Настоящий offline cold start установленной PWA
+## WP-136 — Асимметричный QR history sync и cross-origin QR
 
-Статус: **completed and production deployed** (`052b668`, workflow `33015105953`)
-Backlog: `BL-FIX-064`
+Статус: **completed locally; production rollout pending**
+Backlog: `BL-FIX-065`
 
-Цель: уже установленная и хотя бы один раз успешно синхронизированная PWA должна
-открывать app shell, список диалогов, encrypted local history и ранее закэшированные
-media без доступа к серверу. Offline не подтверждает действительность server session
-и не разрешает server-only действия; первый authoritative `401` по-прежнему завершает
-локальный authenticated UI.
+Цель: новый пустой device и давно используемый device должны завершать один
+bounded двусторонний history transfer независимо от разницы объёма локальных
+архивов. QR между обоими production web origins должен приниматься без ослабления
+проверки произвольных origins.
 
-### Root cause
+### Production evidence и root cause
 
-- Workbox регистрировал navigation fallback на `/`, но Nuxt `build` не помещал `/`
-  или `index.html` в precache manifest. Холодная navigation поэтому зависела от
-  живого frontend container и падала раньше запуска Vue/IndexedDB;
-- после загрузки shell auth middleware всегда требовал успешный `/api/v1/me`.
-  `CurrentAccount` хранился только в памяти Vue, поэтому network error оставлял
-  `user = null` и отправлял уже авторизованную установку на `/login` до hydration
-  encrypted messenger snapshot;
-- message snapshot/archive и media cache уже имеют cache-first read paths, но были
-  недостижимы из-за этих двух startup gates.
+- две последние authorized попытки `dcb673d2…` и `2fc43658…` создали по `11`
+  chunks только `Android → Firefox`, охватили пять direct conversations и получили
+  `0 ACK`; пустой Firefox не загрузил даже completion marker;
+- Firefox при этом имел immutable MLS identity, восемь доступных KeyPackages и
+  ACK-нул Welcome пяти READY generations. QR/login/server relay поэтому исправны;
+- обе UI-стороны запускали `prepareTarget=true`. Они одновременно invalidated/reconcile
+  одни и те же rosters, а transfer classifier проверял только server READY и не
+  подтверждал, что local MLS vault текущего peer уже применил exact generation;
+- login candidate сохранял job до navigation, но его выполнение зависело от
+  one-shot crypto lifecycle; transient failure мог оставить queued job без recurring
+  runner;
+- production prerendered shell сериализует `devicePairingOrigins:""`: runtime env
+  контейнера не попадает в статический `/`. Поэтому `chat.yoowee.ru` и
+  `chat.yoowee.com.de` доверяли только собственному origin и отклоняли QR друг друга.
 
 ### Scope
 
-- генерировать и precache-ить реальный versioned SPA HTML fallback для navigation;
-- хранить последний подтверждённый `CurrentAccount` в отдельном bounded encrypted
-  IndexedDB store под non-extractable AES-GCM key;
-- использовать cached account только после transient/network bootstrap failure;
-  никогда не использовать его после authoritative `401`;
-- очищать cached account после logout/security reset/session expiry и обновлять после
-  login, `/me`, profile update или device re-enrollment;
-- позволить auth middleware открывать `/chat` и `/settings` с cached account в
-  explicit offline phase;
-- сохранить cache-first message/media behavior и честно показывать unavailable для
-  media, которые устройство никогда не открывало или уже evict-нуло.
+- зафиксировать оба production web origins и native origins в build-time public
+  config, сохранив exact allowlist и rejection произвольного origin;
+- только trusted/display peer выполняет target enrollment; candidate/scanner не
+  запускает второй concurrent roster mutation;
+- перед export/import каждый peer invalidates local cached READY и reconciles exact
+  current generation; server roster и local generation должны совпасть;
+- запуск persisted history jobs не должен навсегда зависеть от успешности одного
+  foreground roster refresh;
+- добавить asymmetric regression: много direct chats, source с большой историей,
+  target с нулём records, symmetric completion markers и ACK всех chunks;
+- проверить группы отдельно: retained group history приходит authoritative API sync;
+  не выдавать non-E2EE group server fetch за MLS device-to-device relay.
 
 ### Tests
 
-- encrypted offline-account store: round-trip, non-extractable key, ciphertext не
-  содержит username/display name, tamper fail-closed, clear;
-- auth regression: cold offline bootstrap восстанавливает cached account, transient
-  failure без cache остаётся на offline login surface, `401` очищает cache и не
-  восстанавливает пользователя;
-- production build: generated Service Worker содержит существующий precached HTML
-  navigation fallback;
-- Docker Browser QA: один online cold start создаёт local snapshot, затем backend и
-  network становятся недоступны; reload `/chat` и переходы Chat/Settings продолжают
-  работать без page-load error. Ранее cached media остаётся отдельным cache-first
-  application regression поверх encrypted `EncryptedMediaCache`.
+- QR parser/config: оба production domains принимают QR друг друга из prerendered
+  shell; чужой origin отклоняется;
+- component contracts: trusted side `prepareTarget=true`, new/existing candidate
+  `prepareTarget=false`;
+- history service: local generation barrier обязателен до protect/unprotect;
+- large asymmetric union: не менее 20 direct conversations и 1 000 records только
+  на source, empty target отправляет completion markers, обе стороны complete;
+- Docker Browser QA: два отдельных origins/profiles, реальный QR, большой dataset,
+  новый пустой device, финальные counters и cold reopen target;
+- frontend full suite/lint/typecheck/build и Compose config.
 
 ### Exclusions
 
-- не обещать offline-доступ к media, которые никогда не были скачаны на устройство;
-- не выполнять offline admin/security/device operations как будто сервер подтвердил их;
-- не переносить HttpOnly session credential в IndexedDB/localStorage;
-- не добавлять Service Worker Background Sync до cross-release storage gate `BL-025`.
+- не переносить plaintext или session credential через server;
+- не ослаблять QR origin check до «любой https origin»;
+- не обещать device relay для старых group records вне server retention до group E2EE;
+- не добавлять Redis/queue service для 10–15 пользователей.
 
 ### Definition of Done
 
-- frontend unit suite, lint, typecheck и production/PWA build проходят в Docker;
-- Compose config валиден, diff не содержит secrets или plaintext local archive;
-- реальный browser reload с выключенной сетью открывает cached `/chat`, сохраняет
-  навигацию и не показывает browser-level «не удалось загрузить страницу»;
-- production rollout использует exact immutable image tag и проходит health/runtime
-  verification.
+- production evidence объяснён точным client state transition;
+- asymmetric tests красные до исправления и зелёные после;
+- реальный empty-target Browser QR transfer завершает все ACK без ручного цикла;
+- production rollout и runtime verification проходят.
 
-### Verification 2026-08-27
+### Result
 
-- `docker build --target build -t yv-chat-wp135-frontend-check ./frontend` — passed;
-- generated `.output/public/index.html` существует, а `sw.js` содержит precached `/`
-  и `createHandlerBoundToURL("/")` — passed;
-- Docker Vitest: `67` files, `424` tests — passed;
-- Docker ESLint и Nuxt typecheck — passed;
-- real Browser QA: создан direct chat и локальное сообщение, затем остановлены nginx,
-  frontend, API и PostgreSQL; cold reload exact `/chat?conversation=…`, переход
-  Settings → Chat и повторный render сообщения — passed.
-- production workflow `33015105953` прошёл verify/build/deploy; публичные `/` и
-  `/api/v1/health` отвечают `200`, опубликованный `sw.js` содержит precache entry
-  `url:"/", revision:"68480ef68f3d4d73b917bb79c98fa0a1"` — passed.
+- prerendered PWA shell теперь получает exact build-time allowlist для
+  `chat.yoowee.ru`, `chat.yoowee.com.de` и native origins; local Compose передаёт
+  deployment allowlist также как Docker build arg;
+- trusted/display peer единолично enroll-ит target, а new/existing candidate
+  запускает relay с `prepareTarget=false`;
+- новый classifier invalidates cached READY, reconciles local MLS vault и разрешает
+  relay только при exact совпадении server/local generation number, ID и epoch;
+- persisted history runner стартует сразу после crypto ready и больше не теряется
+  из-за transient ошибки best-effort foreground roster refresh;
+- Docker regression перенёс `1 000` records через `20` direct chats и `2` groups:
+  empty target импортировал `800` direct records, сохранил `200` authoritative group
+  records и отправил `20` completion markers;
+- настоящий Browser QR прошёл между `localhost`, `127.0.0.1` и чистым IPv6 origin:
+  QR был снят как screenshot и декодирован в Docker; source с `100` реальными MLS
+  messages отправил data + completion, empty target отправил completion, все `3/3`
+  chunks ACK-нуты; target показал `100/100`, `0` corrupt до и после reload;
+- frontend Docker checks: production/PWA build, typecheck, changed-file lint,
+  targeted `37/37`, полный suite `428/428`; Compose config валиден. Общий lint
+  продолжает видеть только ранее сгенерированные Android `build/intermediates`
+  artifacts, изменённые файлы проходят без замечаний.

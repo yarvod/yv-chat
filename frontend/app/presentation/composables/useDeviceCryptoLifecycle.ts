@@ -85,6 +85,25 @@ export function deviceCryptoIssueNeedsReconnect(
     || issue === 'invalid-key-package'
 }
 
+interface ReadyHistorySyncServices {
+  readonly linkedDeviceEnrollment: {
+    reconcileCurrentRoster(ownerUserId: string): Promise<void>
+  }
+  readonly deviceHistorySync: {
+    start(ownerUserId: string, currentDeviceId: string): void
+  }
+}
+
+export function resumeHistorySyncAfterCryptoReady(
+  services: ReadyHistorySyncServices,
+  current: Pick<CurrentAccount, 'userId' | 'deviceId'>,
+): void {
+  services.deviceHistorySync.start(current.userId, current.deviceId)
+  void services.linkedDeviceEnrollment
+    .reconcileCurrentRoster(current.userId)
+    .catch(() => undefined)
+}
+
 function issueFrom(error: unknown): DeviceCryptoLifecycleIssue {
   if (error instanceof DeviceCryptoError) return error.code
   if (error instanceof ApplicationError) {
@@ -121,10 +140,10 @@ export function useDeviceCryptoLifecycle(user: ComputedRef<CurrentAccount | null
       if (operation === generation) {
         state.status = 'ready'
         state.issue = null
-        void $frontend.linkedDeviceEnrollment
-          .reconcileCurrentRoster(current.userId)
-          .then(() => $frontend.deviceHistorySync.start(current.userId, current.deviceId))
-          .catch(() => undefined)
+        // Persisted history jobs must start even when the best-effort foreground
+        // roster refresh hits one transient API failure. Each job has its own
+        // exact MLS-generation barrier and bounded retry policy.
+        resumeHistorySyncAfterCryptoReady($frontend, current)
       }
     } catch (error) {
       if (operation === generation) {

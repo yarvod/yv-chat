@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   deviceCryptoIssueMessage,
   deviceCryptoIssueNeedsReconnect,
+  resumeHistorySyncAfterCryptoReady,
   synchronizeDeviceCryptoSession,
 } from '../app/presentation/composables/useDeviceCryptoLifecycle'
 import type { CurrentAccount } from '../app/domain/accounts/account'
@@ -73,5 +74,19 @@ describe('device crypto lifecycle diagnostics', () => {
       expect(deviceCryptoIssueNeedsReconnect(issue)).toBe(false)
       expect(deviceCryptoIssueMessage(issue).length).toBeGreaterThan(20)
     }
+  })
+
+  it('starts persisted history jobs even when foreground roster refresh fails', async () => {
+    const start = vi.fn()
+    const reconcileCurrentRoster = vi.fn().mockRejectedValue(new Error('network'))
+
+    resumeHistorySyncAfterCryptoReady({
+      deviceHistorySync: { start },
+      linkedDeviceEnrollment: { reconcileCurrentRoster },
+    }, account)
+    await Promise.resolve()
+
+    expect(start).toHaveBeenCalledWith(account.userId, account.deviceId)
+    expect(reconcileCurrentRoster).toHaveBeenCalledWith(account.userId)
   })
 })

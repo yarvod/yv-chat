@@ -1,5 +1,8 @@
 FROM node:24-alpine AS build
 
+ARG NUXT_PUBLIC_DEVICE_PAIRING_ORIGINS='["https://chat.yoowee.ru","https://chat.yoowee.com.de","https://app.yvchat.local","capacitor://app.yvchat.local"]'
+ENV NUXT_PUBLIC_DEVICE_PAIRING_ORIGINS=${NUXT_PUBLIC_DEVICE_PAIRING_ORIGINS}
+
 WORKDIR /app
 
 COPY package.json package-lock.json ./

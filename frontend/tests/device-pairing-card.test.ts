@@ -489,7 +489,7 @@ describe('device pairing settings flow', () => {
       targetDeviceId: 'mac-device',
       pairingId: 'pairing-id',
     }))
-    expect(queue).toHaveBeenCalledWith(expect.objectContaining({ prepareTarget: true }))
+    expect(queue).toHaveBeenCalledWith(expect.objectContaining({ prepareTarget: false }))
     expect(wrapper.text()).not.toContain('завершаем вход')
   })
 })

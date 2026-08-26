@@ -87,7 +87,7 @@ describe('login device pairing flow', () => {
     expect(queue).toHaveBeenCalledWith(expect.objectContaining({
       currentDeviceId: 'phone-device',
       targetDeviceId: 'computer-device',
-      prepareTarget: true,
+      prepareTarget: false,
     }))
     expect(wrapper.emitted('authorized')).toHaveLength(1)
     wrapper.unmount()

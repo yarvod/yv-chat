@@ -4,6 +4,42 @@
 
 ## Active
 
+### BUG-126 — Empty target не запускал вторую половину QR history union
+
+- Статус: `fixed locally; production rollout pending` (`WP-136`).
+- Severity: `critical multi-device history reliability`.
+- Production evidence: pairing `dcb673d2…` и `2fc43658…` сохранили по `11` chunks
+  только из Android в Firefox, `0` chunks в обратную сторону и `0 ACK` для пяти
+  direct conversations. Firefox identity/KeyPackages/Welcome ACK присутствуют.
+- Причина: обе стороны одновременно выполняют target roster reconciliation, local
+  exact-generation barrier перед relay отсутствует, а persisted runner зависит от
+  one-shot lifecycle continuation.
+- Ожидаемое поведение: один peer enroll-ит target, затем оба подтверждают собственную
+  local generation и обмениваются data/completion chunks; пустой архив является
+  нормальным участником и отправляет completion marker для каждого ready direct.
+- Исправление: trusted/display side — единственный roster preparer; candidate
+  reconciles exact server generation через обязательный local barrier, а persisted
+  runner запускается независимо от best-effort roster refresh.
+- Проверка: Docker stress `20 direct / 2 group / 1 000 records`; настоящий
+  three-origin Browser QR перенёс `100/100` MLS messages на пустой target, `3/3`
+  relay chunks ACK-нуты, `0` corrupt до и после reload.
+
+### BUG-125 — Prerendered shell отклонял QR второго production origin
+
+- Статус: `fixed locally; production rollout pending` (`WP-136`).
+- Severity: `high cross-origin device pairing`.
+- Reproduction: показать QR на `chat.yoowee.com.de`, сканировать авторизованным
+  устройством на `chat.yoowee.ru` или наоборот.
+- Фактическое поведение: оба production HTML содержат
+  `devicePairingOrigins:""`; parser fallback доверяет только текущему origin.
+- Причина: runtime environment container не переписывает уже prerendered `/`.
+- Ожидаемое поведение: build-time exact allowlist содержит оба production web origins
+  и native origins; arbitrary origin остаётся invalid.
+- Исправление: exact production/native default закреплён в Nuxt config и Dockerfile,
+  а Compose deployment allowlist передаётся в image build. Собранный prerendered
+  shell содержит оба production domains; cross-origin screenshot QR принят в
+  настоящем Browser flow.
+
 ### BUG-124 — Cold offline PWA не доходила до локальной истории
 
 - Статус: `fixed and production deployed` (`WP-135`, `052b668`, workflow

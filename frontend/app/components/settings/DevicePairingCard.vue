@@ -72,10 +72,9 @@ async function pollExistingCandidate(pairingId: string): Promise<void> {
       view.value = null
       activePairingId = null
       stopPolling()
-      // Existing devices are symmetric relay peers. The scanner must reconcile
-      // its own local MLS checkpoint just like the approving/display side before
-      // either side protects or consumes history chunks.
-      startHistorySync(linked, true)
+      // The display/approving side is the single roster preparer. The scanner
+      // reconciles the resulting exact generation in the history classifier.
+      startHistorySync(linked, false)
       return
     }
     if (!['cancelled', 'expired'].includes(view.value.status)) {

@@ -728,6 +728,18 @@ sender negotiated remote-offer video transceiver до signed answer, а fullscre
 
 ## Completed
 
+### BL-FIX-065 — Asymmetric empty-target QR history sync
+
+Статус: **completed locally; production rollout pending** (`WP-136`).
+
+QR origin allowlist теперь встраивается в prerendered image на build time и точно
+разрешает оба production web domains без wildcard. Trusted/display peer единолично
+готовит MLS roster; empty candidate не создаёт concurrent generation race и начинает
+relay только после exact local/server generation reconciliation. Persisted runner не
+зависит от one-shot foreground roster refresh. Docker stress завершил `20` direct
+chats и `1 000` mixed records; настоящий three-origin Browser QR перенёс `100/100`
+MLS messages на пустой target, получил `3/3 ACK` и сохранил `0` corrupt после reload.
+
 ### BL-FIX-064 — Настоящий offline cold start PWA
 
 Статус: **completed and production deployed** (`052b668`, workflow `33015105953`).

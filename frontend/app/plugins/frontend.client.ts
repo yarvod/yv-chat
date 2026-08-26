@@ -49,6 +49,7 @@ import { ReplenishDeviceKeyPackages } from '../application/device-crypto/repleni
 import { RegisterDeviceCrypto } from '../application/device-crypto/register-device-crypto'
 import { EnrollLinkedDevice } from '../application/device-crypto/enroll-linked-device'
 import { SynchronizeDeviceHistory } from '../application/device-crypto/synchronize-device-history'
+import { ClassifyDeviceHistoryConversation } from '../application/device-crypto/classify-device-history-conversation'
 import { ConversationHistory } from '../application/messaging/conversation-history'
 import { ProtocolMessageProtection } from '../application/messaging/message-protection'
 import { PresenceIndicatorService } from '../application/messaging/presence-indicator-service'
@@ -239,6 +240,10 @@ export default defineNuxtPlugin(nuxtApp => {
       await history.cacheRetainedBeforeEpochAdvance(conversationId)
     },
   )
+  const classifyDeviceHistoryConversation = new ClassifyDeviceHistoryConversation(
+    conversationCryptoGateway,
+    deviceCryptoSession,
+  )
   const deviceHistorySync = new SynchronizeDeviceHistory(
     devicePairingGateway,
     messagingGateway,
@@ -255,21 +260,13 @@ export default defineNuxtPlugin(nuxtApp => {
         ensureActive,
       )
     ),
-    async (conversationId, currentDeviceId, targetDeviceId) => {
-      const generation = await conversationCryptoGateway.getCurrent(conversationId)
-      if (generation?.status === 'ready') {
-        const required = new Set(generation.requiredDevices.map(device => device.deviceId))
-        return required.has(currentDeviceId) && required.has(targetDeviceId)
-          ? 'ready'
-          : 'pending'
-      }
-      if (
-        generation?.status === 'blocked'
-        && (generation.blockReason === 'missing_identity'
-          || generation.blockReason === 'protocol_failure')
-      ) return 'skipped'
-      return 'pending'
-    },
+    (conversationId, currentDeviceId, targetDeviceId) => (
+      classifyDeviceHistoryConversation.execute(
+        conversationId,
+        currentDeviceId,
+        targetDeviceId,
+      )
+    ),
   )
   themePreferences.apply(themePreference)
 
