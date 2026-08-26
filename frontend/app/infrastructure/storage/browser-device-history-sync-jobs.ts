@@ -5,6 +5,15 @@ import type {
 
 const STORAGE_KEY = 'yv-chat-device-history-sync-jobs-v1'
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const AUTOMATIC_RESUME_REASONS = new Set([
+  'waiting_peer',
+  'network',
+  'rate_limited',
+  'server',
+  'pairing_unavailable',
+  'stopped',
+  'unknown',
+])
 
 function validJob(value: unknown): value is DeviceHistorySyncJob {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
@@ -15,6 +24,11 @@ function validJob(value: unknown): value is DeviceHistorySyncJob {
     && Number.isFinite(Date.parse(item.expiresAt))
     && (item.prepareTarget === undefined || typeof item.prepareTarget === 'boolean')
     && (item.cancelRequested === undefined || typeof item.cancelRequested === 'boolean')
+    && (item.automaticResumeBlocked === undefined
+      || typeof item.automaticResumeBlocked === 'boolean')
+    && (item.automaticResumeReason === undefined
+      || (typeof item.automaticResumeReason === 'string'
+        && AUTOMATIC_RESUME_REASONS.has(item.automaticResumeReason)))
     && (item.peerCompletedConversationIds === undefined || (
       Array.isArray(item.peerCompletedConversationIds)
       && item.peerCompletedConversationIds.every(

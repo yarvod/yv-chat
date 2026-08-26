@@ -7,6 +7,15 @@ export interface DeviceHistorySyncJob {
   prepareTarget?: boolean
   peerCompletedConversationIds?: readonly string[]
   cancelRequested?: boolean
+  automaticResumeBlocked?: boolean
+  automaticResumeReason?:
+    | 'waiting_peer'
+    | 'network'
+    | 'rate_limited'
+    | 'server'
+    | 'pairing_unavailable'
+    | 'stopped'
+    | 'unknown'
 }
 
 export interface DeviceHistorySyncJobStore {

@@ -1150,11 +1150,18 @@ function persistViewport(conversationId?: string): void {
   }
   const captured = pendingViewportAnchor
   pendingViewportAnchor = null
-  const anchor = captured && (!conversationId || captured.conversationId === conversationId)
+  // The DOM position at the route boundary is more authoritative than a
+  // debounced capture taken during an earlier scroll event. Keep the capture
+  // only as a fallback for an already-hidden mobile pane or after the
+  // conversation prop has switched to another chat.
+  const current = currentViewportAnchor()
+  const live = current && (!conversationId || current.conversationId === conversationId)
+    ? current
+    : null
+  const fallback = captured && (!conversationId || captured.conversationId === conversationId)
     ? captured
-    : conversationId
-      ? null
-      : currentViewportAnchor()
+    : null
+  const anchor = live ?? fallback
   if (anchor) void props.saveViewport(anchor)
 }
 
@@ -1226,6 +1233,18 @@ async function restoreViewport(waitForRender = true): Promise<void> {
     return
   }
   const anchor = props.viewportAnchor
+  // `atLatest` is a durable follow-the-live-tail intent, not a historical
+  // message offset. The saved row may no longer be the newest one when the
+  // user returns from another tab.
+  if (anchor?.atLatest) {
+    if (props.historyHasNewer) {
+      await props.returnToLatest()
+      await nextTick()
+    }
+    scrollToLatest('auto')
+    showScrollToLatest.value = props.historyHasNewer
+    return
+  }
   if (anchor && alignMessage(anchor.messageId, anchor.offset)) {
     lockLayoutAnchor(anchor.messageId, anchor.offset)
     restorationPending.value = false

@@ -728,6 +728,19 @@ sender negotiated remote-offer video transceiver до signed answer, а fullscre
 
 ## Completed
 
+### BL-FIX-060 — Live-tail restoration и bounded history completion
+
+Статус: **completed locally; production pending** (`WP-131`).
+
+`atLatest=true` теперь восстанавливает текущий server tail, а не старый exact anchor;
+route unmount предпочитает фактическую DOM-позицию debounced capture. Exhausted
+history jobs сохраняют paused reason и не перезапускаются recurring tick-ом до
+explicit «Повторить». Stress проверяет `1000` mixed records (`600` direct через MLS
+relay + `400` group через authoritative history), `40` unique chunks, полный ACK и
+target union без потерь. In-app Browser пять раз вернулся из Settings к bottom
+1000-row MessagePanel без стрелки «к новым»; frontend `413 passed`, lint/typecheck и
+production/PWA build зелёные.
+
 ### BL-FIX-059 — Authoritative chat recovery и stable tab return
 
 Статус: **completed and production deployed; physical two-device acceptance pending**

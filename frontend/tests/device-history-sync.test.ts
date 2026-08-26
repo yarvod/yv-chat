@@ -65,6 +65,63 @@ class MemoryArchive implements MessageArchive {
   close() {}
 }
 
+class PartitionedMemoryArchive implements MessageArchive {
+  private readonly conversations = new Map<string, Map<number, ArchivedMessage>>()
+
+  constructor(messages: readonly ArchivedMessage[]) {
+    for (const message of messages) this.bucket(message.conversationId).set(message.sequence, message)
+  }
+
+  async loadLatest(_owner: string, conversationId: string, limit: number) {
+    return this.sorted(conversationId).slice(-limit)
+  }
+
+  async loadBefore(_owner: string, conversationId: string, before: number, limit: number) {
+    return this.sorted(conversationId)
+      .filter(message => message.sequence < before)
+      .slice(-limit)
+  }
+
+  async loadAfter(_owner: string, conversationId: string, after: number, limit: number) {
+    return this.sorted(conversationId)
+      .filter(message => message.sequence > after)
+      .slice(0, limit)
+  }
+
+  async put(_owner: string, conversationId: string, messages: readonly ArchivedMessage[]) {
+    const bucket = this.bucket(conversationId)
+    for (const message of messages) {
+      const existing = bucket.get(message.sequence)
+      if (existing && existing.messageId !== message.messageId) throw new Error('conflict')
+      bucket.set(message.sequence, { ...existing, ...message })
+    }
+  }
+
+  count(): number {
+    return [...this.conversations.values()]
+      .reduce((total, messages) => total + messages.size, 0)
+  }
+
+  countConversation(conversationId: string): number {
+    return this.bucket(conversationId).size
+  }
+
+  close() {}
+
+  private bucket(conversationId: string): Map<number, ArchivedMessage> {
+    let bucket = this.conversations.get(conversationId)
+    if (!bucket) {
+      bucket = new Map()
+      this.conversations.set(conversationId, bucket)
+    }
+    return bucket
+  }
+
+  private sorted(conversationId: string): ArchivedMessage[] {
+    return [...this.bucket(conversationId).values()].sort((a, b) => a.sequence - b.sequence)
+  }
+}
+
 class MemoryJobs implements DeviceHistorySyncJobStore {
   readonly jobs = new Map<string, DeviceHistorySyncJob>()
   save(job: DeviceHistorySyncJob) { this.jobs.set(job.pairingId, job) }
@@ -183,6 +240,33 @@ function archived(sequence: number, deviceId: string, text: string): ArchivedMes
   }
 }
 
+function stressArchived(
+  conversationId: string,
+  sequence: number,
+  globalIndex: number,
+  deviceId: string,
+): ArchivedMessage {
+  const suffix = String(globalIndex).padStart(12, '0')
+  const clientSuffix = String(100_000 + globalIndex).padStart(12, '0')
+  return {
+    messageId: `88888888-8888-4888-8888-${suffix}`,
+    clientMessageId: `aaaaaaaa-aaaa-4aaa-8aaa-${clientSuffix}`,
+    conversationId,
+    senderUserId: owner,
+    senderDeviceId: deviceId,
+    protocolVersion: 2,
+    cryptoGenerationId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    cryptoEpoch: 1,
+    sequence,
+    createdAt: new Date(Date.UTC(2026, 7, 13, 12, 0, globalIndex)).toISOString(),
+    expiresAt: '2026-09-12T12:00:00Z',
+    ciphertextBase64: encode(`opaque-${globalIndex}`),
+    deletionReason: null,
+    deletedAt: null,
+    localPlaintext: `message-${globalIndex}`,
+  }
+}
+
 function service(
   currentDeviceId: string,
   archive: MessageArchive,
@@ -233,13 +317,49 @@ describe('QR-linked bidirectional device history sync', () => {
       {
         ownerUserId: owner, currentDeviceId: trusted, targetDeviceId: candidate,
         pairingId: newest, expiresAt: '2099-08-14T12:02:00Z',
+        automaticResumeBlocked: true,
+        automaticResumeReason: 'waiting_peer',
       },
     ]))
 
     const jobs = new BrowserDeviceHistorySyncJobStore(storage)
 
     expect(jobs.load(owner, trusted).map(job => job.pairingId)).toEqual([newest])
+    expect(jobs.load(owner, trusted).at(0)?.automaticResumeBlocked).toBe(true)
+    expect(jobs.load(owner, trusted).at(0)?.automaticResumeReason).toBe('waiting_peer')
     expect(JSON.parse(storage.getItem('yv-chat-device-history-sync-jobs-v1')!)).toHaveLength(1)
+  })
+
+  it('restores a blocked durable job as visible paused status without running it', async () => {
+    const jobs = new MemoryJobs()
+    jobs.save({
+      ownerUserId: owner,
+      currentDeviceId: trusted,
+      pairingId: pairing,
+      targetDeviceId: candidate,
+      expiresAt: '2099-08-14T12:00:00Z',
+      automaticResumeBlocked: true,
+      automaticResumeReason: 'waiting_peer',
+    })
+    const listConversations = vi.fn()
+    const sync = new SynchronizeDeviceHistory(
+      {} as DevicePairingGateway,
+      { listConversations } as never,
+      new MemoryArchive([]),
+      new ProtocolMessageProtection([adapter]),
+      jobs,
+      scheduler,
+    )
+
+    sync.resume(owner, trusted)
+    await new Promise(resolve => setTimeout(resolve, 10))
+
+    expect(listConversations).not.toHaveBeenCalled()
+    expect(sync.current(owner, trusted).at(0)).toMatchObject({
+      stage: 'waiting_peer',
+      failure: null,
+      complete: false,
+    })
   })
 
   it('runs restored jobs serially instead of creating concurrent MLS/history pipelines', async () => {
@@ -369,13 +489,60 @@ describe('QR-linked bidirectional device history sync', () => {
     expect(observed).toContain('rate_limited')
     expect(delays.some(delay => delay >= 5_000)).toBe(true)
     expect(outbound).toHaveBeenCalledTimes(4)
-    expect(jobs.load(owner, trusted)).toEqual([job])
+    expect(jobs.load(owner, trusted)).toEqual([{
+      ...job,
+      peerCompletedConversationIds: [],
+      automaticResumeBlocked: true,
+      automaticResumeReason: 'waiting_peer',
+    }])
     expect(sync.current(owner, trusted).at(0)).toMatchObject({
       stage: 'waiting_peer',
       failure: null,
       complete: false,
     })
     expect(delays.some(delay => delay >= 4_000 && delay < 6_000)).toBe(true)
+
+    sync.resume(owner, trusted)
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(outbound).toHaveBeenCalledTimes(4)
+  })
+
+  it('stops exhausted retryable failures until an explicit retry', async () => {
+    const jobs = new MemoryJobs()
+    const listConversations = vi.fn().mockRejectedValue(
+      new ApplicationError(null, 'network', 'offline'),
+    )
+    const sync = new SynchronizeDeviceHistory(
+      {} as DevicePairingGateway,
+      { listConversations } as never,
+      new MemoryArchive([]),
+      new ProtocolMessageProtection([adapter]),
+      jobs,
+      scheduler,
+      2,
+    )
+    const job = {
+      ownerUserId: owner,
+      currentDeviceId: trusted,
+      pairingId: pairing,
+      targetDeviceId: candidate,
+      expiresAt: '2099-08-14T12:00:00Z',
+    }
+    sync.queue(job)
+    sync.resume(owner, trusted)
+
+    await vi.waitFor(() => expect(sync.current(owner, trusted).at(0)?.stage).toBe('failed'))
+    expect(listConversations).toHaveBeenCalledTimes(2)
+    expect(jobs.load(owner, trusted).at(0)?.automaticResumeBlocked).toBe(true)
+    expect(jobs.load(owner, trusted).at(0)?.automaticResumeReason).toBe('network')
+
+    sync.resume(owner, trusted)
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(listConversations).toHaveBeenCalledTimes(2)
+
+    sync.retry(pairing)
+    await vi.waitFor(() => expect(listConversations).toHaveBeenCalledTimes(4))
+    expect(sync.current(owner, trusted).at(0)?.stage).toBe('failed')
   })
 
   it('paces symmetric peer polling below the shared production per-IP budget', async () => {
@@ -756,6 +923,125 @@ describe('QR-linked bidirectional device history sync', () => {
     expect(trustedProgress.complete).toBe(true)
     expect(candidateProgress.complete).toBe(true)
     expect(relay.acknowledged.size).toBe(4)
+  })
+
+  it('converges 1000 mixed records through direct relay plus authoritative group history', async () => {
+    const directIds = [
+      '55555555-5555-4555-8555-555555555551',
+      '55555555-5555-4555-8555-555555555552',
+      '55555555-5555-4555-8555-555555555553',
+      '55555555-5555-4555-8555-555555555554',
+    ]
+    const groupIds = [
+      '55555555-5555-4555-8555-555555555561',
+      '55555555-5555-4555-8555-555555555562',
+    ]
+    const sourceRecords: ArchivedMessage[] = []
+    let globalIndex = 0
+    for (const conversationId of directIds) {
+      for (let sequence = 1; sequence <= 150; sequence += 1) {
+        globalIndex += 1
+        sourceRecords.push(stressArchived(
+          conversationId,
+          sequence,
+          globalIndex,
+          trusted,
+        ))
+      }
+    }
+    const authoritativeGroups: ArchivedMessage[] = []
+    for (const conversationId of groupIds) {
+      for (let sequence = 1; sequence <= 200; sequence += 1) {
+        globalIndex += 1
+        authoritativeGroups.push(stressArchived(
+          conversationId,
+          sequence,
+          globalIndex,
+          trusted,
+        ))
+      }
+    }
+    sourceRecords.push(...authoritativeGroups)
+    expect(sourceRecords).toHaveLength(1_000)
+
+    const trustedArchive = new PartitionedMemoryArchive(sourceRecords)
+    // Group v1 history is fetched from PostgreSQL via the normal history API,
+    // not copied through the direct MLS relay. Model that authoritative fetch
+    // before starting the peer union.
+    const candidateArchive = new PartitionedMemoryArchive(authoritativeGroups)
+    const relay: RelayState = { chunks: [], acknowledged: new Set() }
+    const stressScheduler: Scheduler = {
+      once(_delay, callback): ScheduledTask {
+        const timer = setTimeout(callback, 1)
+        return { cancel() { clearTimeout(timer) } }
+      },
+      repeat(): ScheduledTask { return { cancel() {} } },
+    }
+    const conversations = [
+      ...directIds.map(conversationId => ({ conversationId, conversationType: 'direct' as const })),
+      ...groupIds.map(conversationId => ({ conversationId, conversationType: 'group' as const })),
+    ].map(item => ({
+      ...item,
+      title: null,
+      createdBy: owner,
+      createdAt: '2026-08-13T12:00:00Z',
+      updatedAt: '2026-08-13T12:00:00Z',
+      members: [],
+    }))
+    const messaging = { listConversations: async () => conversations } as never
+    const trustedSync = new SynchronizeDeviceHistory(
+      new RelayGateway(relay, trusted) as unknown as DevicePairingGateway,
+      messaging,
+      trustedArchive,
+      new ProtocolMessageProtection([adapter]),
+      new MemoryJobs(),
+      stressScheduler,
+      100,
+    )
+    const candidateSync = new SynchronizeDeviceHistory(
+      new RelayGateway(relay, candidate) as unknown as DevicePairingGateway,
+      messaging,
+      candidateArchive,
+      new ProtocolMessageProtection([adapter]),
+      new MemoryJobs(),
+      stressScheduler,
+      100,
+    )
+    const expiresAt = '2099-08-14T12:00:00Z'
+
+    const [trustedProgress, candidateProgress] = await Promise.all([
+      trustedSync.synchronize({
+        ownerUserId: owner,
+        currentDeviceId: trusted,
+        pairingId: pairing,
+        targetDeviceId: candidate,
+        expiresAt,
+      }),
+      candidateSync.synchronize({
+        ownerUserId: owner,
+        currentDeviceId: candidate,
+        pairingId: pairing,
+        targetDeviceId: trusted,
+        expiresAt,
+      }),
+    ])
+
+    expect(trustedProgress.complete).toBe(true)
+    expect(candidateProgress.complete).toBe(true)
+    expect(candidateProgress.importedRecords).toBe(600)
+    expect(candidateArchive.count()).toBe(1_000)
+    for (const conversationId of directIds) {
+      expect(candidateArchive.countConversation(conversationId)).toBe(150)
+    }
+    for (const conversationId of groupIds) {
+      expect(candidateArchive.countConversation(conversationId)).toBe(200)
+    }
+    expect(relay.chunks).toHaveLength(40)
+    expect(new Set(relay.chunks.map(chunk => (
+      `${chunk.senderDeviceId}:${chunk.clientChunkId}`
+    ))).size).toBe(relay.chunks.length)
+    expect(relay.chunks.some(chunk => groupIds.includes(chunk.conversationId))).toBe(false)
+    expect(relay.acknowledged.size).toBe(relay.chunks.length)
   })
 
   it('completes union when the second device starts only after the first polling pass', async () => {

@@ -4,6 +4,26 @@
 
 ## Active
 
+### BUG-120 — Исчерпанный device-history job бесконечно запускался recurring resume
+
+- Статус: `fixed locally; production pending` (`WP-131`).
+- Severity: `critical multi-device history reliability`.
+- Причина: `waiting_peer` возвращался как успешный incomplete result с сохранённым job,
+  а 30-секундный recurring `resume()` не различал paused/exhausted и новый runnable job;
+  retryable exceptions после bounded attempts также не получали terminal state.
+- Ожидаемое поведение: одна bounded попытка либо завершается, либо остаётся явно
+  остановленной/failed до нового действия пользователя, без бесконечного export loop.
+
+### BUG-119 — `atLatest=true` восстанавливался как старый exact anchor
+
+- Статус: `fixed locally; production pending` (`WP-131`).
+- Severity: `high messaging UX`.
+- Причина: restore всегда сначала выравнивал сохранённый `messageId + offset`, даже
+  когда anchor обозначал live-tail intent; unmount мог предпочесть устаревший
+  debounced capture фактической bottom position.
+- Ожидаемое поведение: `atLatest=true` всегда открывает текущий хвост, а exact anchor
+  применяется только при чтении старой истории.
+
 ### BUG-118 — Hydrated partial cache перескакивал server events и скрывал сообщения группы
 
 - Статус: `fixed and production deployed` (`WP-130`, `a31e81b`, workflow

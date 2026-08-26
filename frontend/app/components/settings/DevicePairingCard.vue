@@ -183,10 +183,18 @@ function syncDetails(progress: DeviceHistorySyncProgress): string {
             ? ' Получена непредвиденная ошибка; эту попытку можно убрать и запустить заново.'
             : ''
   if (progress.complete) return `${transfer}${chats}${skipped}${gaps} Можно открыть доступные чаты.`
+  if (progress.stage === 'waiting_peer') {
+    return `${transfer}${chats}${skipped}${gaps} Второе устройство не завершило bounded обмен. Автоматический цикл остановлен: откройте приложение на обоих устройствах и нажмите «Повторить».`
+  }
   if (progress.stage === 'cancelled' || progress.stage === 'failed') {
     return `${transfer}${chats}${skipped}${gaps}${failure}`
   }
   return `${transfer}${chats}${skipped}${gaps}${failure} Можно уйти из настроек; перенос продолжится, пока приложение открыто.`
+}
+
+function retrySync(progress: DeviceHistorySyncProgress): void {
+  $frontend.deviceHistorySync.retry(progress.pairingId)
+  refreshSyncStatuses()
 }
 
 async function stopSync(progress: DeviceHistorySyncProgress): Promise<void> {
@@ -309,6 +317,14 @@ onMounted(() => {
         :value="progress.stage === 'preparing_crypto' ? progress.readyConversations + (progress.skippedConversations ?? 0) : progress.confirmedConversations"
       />
       <p>{{ syncDetails(progress) }}</p>
+      <button
+        v-if="progress.stage === 'waiting_peer' || progress.stage === 'failed'"
+        class="button button--primary button--compact"
+        type="button"
+        @click="retrySync(progress)"
+      >
+        Повторить
+      </button>
       <button
         v-if="!progress.complete"
         class="button button--secondary button--compact"

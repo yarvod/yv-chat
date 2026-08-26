@@ -294,6 +294,11 @@ Cold reload читает из encrypted IndexedDB bounded окно `49 before + 
 pane с нулевой высотой не имеет права вычислять или сохранять anchor. Push/deep-link
 остаётся pending, пока target row не появился в DOM с небольшим контекстом с обеих
 сторон, поэтому sparse latest cache не считается готовым target window.
+`atLatest=true` является отдельным live-tail intent: при remount он всегда открывает
+текущий конец, даже если сохранённый message ID уже не последний. Exact `messageId +
+offset` применяется только при `atLatest=false`. На route boundary фактическая DOM
+позиция приоритетнее более раннего debounced capture; capture остаётся fallback для
+уже скрытого/размонтированного pane.
 
 History size не определяет стоимость initial render: latest/anchored fetch содержит не
 более 100 rows, reactive timeline ограничен 300 rows, encrypted archive — 2000 rows.
@@ -1222,8 +1227,12 @@ Canonical content хранится как optional local-only поле рядо�
 envelope внутри существующей non-extractable AES-GCM archive key. Успешный decrypt и
 исходящий encrypted outbox выполняют write-through; одинаковый server refresh не
 стирает local copy, tombstone стирает её, contradictory immutable record fail-closed.
-Transfer job содержит в `localStorage` только несекретные UUID/expiry, периодически
-resume-ится в authenticated runtime и истекает вместе с relay retention. Формат и
+Transfer job содержит в `localStorage` только несекретные UUID/expiry и bounded
+resume state. Пока одна попытка активна, transient failures повторяются с backoff и
+stable IDs. После исчерпания peer polling либо retry budget job сохраняется как
+`automaticResumeBlocked` и больше не запускается 30-секундным runtime tick; Settings
+предлагают explicit «Повторить» или двустороннюю остановку. Новый QR заменяет старый
+job той же local/target пары. Job истекает вместе с relay retention; формат и
 ограничения зафиксированы в ADR-0004.
 
 History relay применяет ту же централизованную transport-failure policy, что и

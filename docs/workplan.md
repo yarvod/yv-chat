@@ -1,87 +1,81 @@
 # Текущий workplan
 
-## WP-130 — Authoritative chat recovery, tab scroll continuity и pairing pacing
+## WP-131 — Live-tail restoration и bounded device-history completion
 
-Статус: **completed and production deployed; physical two-device acceptance pending**
-Backlog: `BL-FIX-059`
+Статус: **completed locally; production pending**
+Backlog: `BL-FIX-060`
 
-Цель: cache-first bootstrap никогда не должен принимать частичную IndexedDB-копию
-за полную server history; возврат из Settings должен открывать тот же chat и exact
-message-relative viewport; два устройства за одним NAT не должны упираться в
-production pairing ingress во время bounded encrypted relay.
+Цель: возврат Settings → Chats должен различать exact historical anchor и durable
+intent «я был на актуальном хвосте»; history relay не должен после исчерпания
+bounded попытки сам запускать тот же полный цикл каждые 30 секунд.
 
-### Production evidence
+### Reproduction evidence
 
-- PostgreSQL хранит все сегодняшние сообщения «Озёрной» `149–155`, включая входящие
-  `149–154`, и admin stream содержит соответствующие `message_created` events;
-- телефон показывал только собственное `155`: hydrated snapshot имел cursor уже после
-  пропущенных events, а наличие одной cached row запрещало authoritative latest fetch;
-- laptop показывал transient «Локальная история недоступна» и не повторял
-  authoritative archive write до следующей message операции;
-- новый pairing `fd05d978…` сохранил `15` opaque chunks, `0` ACK и получил `4 × 429`;
-  production Nginx объединяет control polling и authenticated history relay в одну
-  per-IP zone `120r/m`, `burst=40`.
+- `ConversationViewportAnchor.atLatest=true` сейчас всё равно проходит через
+  `alignMessage(anchor.messageId, anchor.offset)`, поэтому сохранённая последняя строка
+  восстанавливается как historical anchor вместо прокрутки к текущему концу;
+- unmount предпочитает ранее captured debounced anchor свежему DOM-положению, поэтому
+  быстрый переход после ручной прокрутки может сохранить промежуточную строку;
+- `SynchronizeDeviceHistory.run()` после исчерпания peer polling возвращает
+  `waiting_peer` и оставляет durable job; recurring `resume()` через 30 секунд запускает
+  новый полный export/list/ACK цикл без пользовательского решения;
+- после исчерпания retryable exceptions `retryJob()` не публикует terminal state и не
+  удаляет job, что также разрешает бесконечный background restart.
 
 ### Scope
 
-- после cache paint hydrated active window всегда сверяется с server history API;
-- exact non-latest viewport сверяется вокруг message anchor, latest — через latest page;
-- unavailable archive повторяет authoritative active-window fetch/write во время
-  обычного cursor poll;
-- snapshot store сериализует межстраничные save/load, чтобы unmount anchor не проиграл
-  следующему `/chat` mount;
-- app layout запоминает exact `/chat?conversation=…` при переходе в Settings;
-- symmetric relay polling получает bounded device-staggered pacing ниже существующей
-  production per-IP квоты без изменения Nginx security limits.
-
-### Security and data invariants
-
-- PostgreSQL остаётся authoritative только в retention window; local archive не
-  объявляется источником полной server history;
-- direct ciphertext по-прежнему decrypt-ится только client-side, ключи/ plaintext не
-  попадают в server logs или новые snapshot поля;
-- sync cursor не сохраняется при недоступном archive;
-- pairing остаётся authenticated, device/session bound, idempotent и bounded server
-  limits; client pacing не ослабляет ingress или proof/binding validation.
+- `atLatest` восстанавливается как live-tail intent через instant scroll к текущему
+  концу, exact offset используется только для `atLatest=false`;
+- unmount сохраняет фактический видимый anchor, используя debounced capture только
+  когда DOM уже скрыт/недоступен;
+- completed, terminal и exhausted relay attempts получают однозначное durable/UI
+  состояние; automatic recurring resume не перезапускает exhausted transfer;
+- stable chunk IDs, ACK idempotency, pairing/device/conversation binding и server
+  per-conversation ceiling остаются неизменными.
 
 ### Tests
 
-- partial cache + advanced cursor всё равно получает отсутствующие latest messages;
-- anchored cache сохраняет exact viewport и одновременно выполняет API reconciliation;
-- concurrent viewport save/load возвращает последнюю snapshot;
-- Settings → Chats сохраняет conversation query;
-- authoritative recovery retry снимает transient archive warning;
-- полный frontend Vitest, ESLint, Nuxt typecheck, production/PWA build и production QA.
+- component stress: 1000 timeline rows, bottom → unmount/settings → remount/chat
+  остаётся на новой последней строке без scroll-to-latest action;
+- stale pending anchor не побеждает фактический bottom position on unmount;
+- application stress: 1000 записей из нескольких direct conversations сходятся
+  на обоих peer archives с полными ACK и без duplicate/conflict;
+- group rows проверяются через authoritative server history path: они намеренно не
+  идут через direct MLS relay, но входят в общий mixed-history acceptance;
+- exhausted peer wait и retryable failures не запускаются снова recurring timer-ом;
+- focused/full frontend tests, lint, typecheck, production/PWA build;
+- local in-app browser QA на временном 1000-message fixture с реальным MessagePanel.
+
+### Security and data invariants
+
+- direct historical plaintext переносится только внутри existing MLS-protected relay;
+- group history остаётся server-authoritative in retention window и не маскируется под
+  E2EE device relay;
+- никакие local archive/key/session данные не очищаются для восстановления viewport;
+- retry bounding не ослабляет fail-closed binding validation и не повышает Nginx quota.
 
 ### Definition of Done
 
-- сообщения `149–155` снова видны admin на телефоне после обычного reload без очистки;
-- смена вкладки не меняет chat и scroll anchor;
-- transient IndexedDB failure самовосстанавливается либо остаётся честно обозначенным;
-- history relay проходит без Nginx `429` при двух устройствах за одним Wi-Fi;
-- focused commit, зелёный CI, production deploy и runtime acceptance.
+- актуальный хвост после Chats → Settings → Chats остаётся актуальным;
+- historical reader возвращается к exact message-relative offset;
+- 1000 mixed records проходят автоматизированный union/server-history stress без
+  потерь, конфликтов и duplicate chunks;
+- исчерпанная попытка остаётся остановленной до explicit нового user action;
+- local browser QA, полный CI и production rollout зелёные.
 
 ### Local result
 
-- hydrated latest и anchored windows теперь всегда выполняют server reconciliation;
-  local rows вне server retention сохраняются до explicit tombstone;
-- unavailable archive повторяет authoritative fetch/write на fallback poll, а sync
-  cursor не сохраняется до восстановления archive status;
-- singleton snapshot store гарантирует read-after-write между route instances, app
-  layout возвращает exact conversation query;
-- relay ждёт drain control burst и использует `4–6s` device-staggered peer polling;
-  production Nginx security limits не менялись;
-- frontend: `65` files / `407` tests passed, ESLint, Nuxt typecheck и production/PWA
+- `atLatest=true` теперь сначала загружает authoritative latest window при
+  `historyHasNewer`, затем мгновенно открывает текущий конец; historical anchors
+  сохраняют exact message-relative offset;
+- route unmount сохраняет фактическую DOM-позицию и использует debounced capture
+  только как fallback;
+- peer wait/retry exhaustion сохраняет durable blocked reason, не запускается
+  recurring timer-ом после remount и предлагает explicit «Повторить»;
+- stress union: `1000` mixed records (`600` direct / `400` group), exact `40` unique
+  relay chunks, все ACK, на target archive все `1000` записей;
+- in-app Browser: реальный MessagePanel с `1000` DOM rows, `5` циклов
+  Chat → Settings → Chat; каждый раз distance from bottom `0`, last row visible,
+  scroll-to-latest action absent, console errors absent;
+- frontend: `65` files / `413` tests passed, ESLint, Nuxt typecheck и production/PWA
   build зелёные.
-
-### Production result
-
-- commit `a31e81b77998cf5a44ecacf8cb3cbfc7ebbb6832` развернут immutable tag
-  `sha-a31e81b77998cf5a44ecacf8cb3cbfc7ebbb6832` workflow `32972440117`;
-- отдельный CI workflow `32972440177` зелёный: backend, frontend, crypto и Compose;
-- production frontend/API/PostgreSQL healthy; `chat.yoowee.ru` и health отвечают `200`,
-  unauthenticated WebSocket handshake ожидаемо отвечает `403`, `nginx -t` зелёный;
-- in-app browser загрузил новую PWA и login screen; authenticated scroll и реальный
-  encrypted two-device relay требуют одного physical acceptance запуска пользователя;
-- действующий Nginx ingress не менялся: исправление сохраняет `120r/m`, `burst=40` и
-  снижает клиентскую частоту запросов вместо ослабления security limit.

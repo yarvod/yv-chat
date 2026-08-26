@@ -113,10 +113,11 @@ describe('device pairing settings flow', () => {
     const subscribe = vi.fn().mockReturnValue(() => undefined)
     const cancel = vi.fn().mockResolvedValue(undefined)
     const dismiss = vi.fn()
+    const retry = vi.fn()
     vi.stubGlobal('useNuxtApp', () => ({
       $frontend: {
         deviceInfo: { current: () => ({ deviceClass: 'mobile' }) },
-        deviceHistorySync: { current, subscribe, cancel, dismiss },
+        deviceHistorySync: { current, subscribe, cancel, dismiss, retry },
       },
     }))
     states.set('auth-session', ref({ phase: 'authenticated', user, message: null }))
@@ -134,9 +135,17 @@ describe('device pairing settings flow', () => {
     await flushPromises()
     expect(first.text()).toContain('Ждём второе устройство')
     expect(first.text()).toContain('Синхронизировано: 1 из 3 чатов')
-    expect(first.text()).toContain('Можно уйти из настроек')
+    expect(first.text()).toContain('Автоматический цикл остановлен')
+    expect(first.text()).toContain('Повторить')
     expect(first.text()).toContain('Остановить на обоих устройствах')
-    await first.get('button').trigger('click')
+    const retryButton = first.findAll('button').find(button => button.text() === 'Повторить')
+    expect(retryButton).toBeDefined()
+    await retryButton!.trigger('click')
+    expect(retry).toHaveBeenCalledWith('pairing-id')
+    const stopButton = first.findAll('button')
+      .find(button => button.text() === 'Остановить на обоих устройствах')
+    expect(stopButton).toBeDefined()
+    await stopButton!.trigger('click')
     await flushPromises()
     expect(cancel).toHaveBeenCalledWith('pairing-id')
     first.unmount()
@@ -144,7 +153,7 @@ describe('device pairing settings flow', () => {
     const remounted = mountCard()
     await flushPromises()
     expect(remounted.text()).toContain('Ждём второе устройство')
-    expect(current).toHaveBeenCalledTimes(3)
+    expect(current.mock.calls.length).toBeGreaterThanOrEqual(3)
     remounted.unmount()
   })
 

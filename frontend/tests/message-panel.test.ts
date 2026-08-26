@@ -2,6 +2,7 @@ import { mount, type VueWrapper } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 
 import MessagePanel from '../app/components/chat/MessagePanel.vue'
+import type { ConversationViewportAnchor } from '../app/application/ports/messenger-snapshot-store'
 
 const conversation = {
   conversationId: 'conversation-1',
@@ -1575,6 +1576,223 @@ describe('message panel', () => {
       sequence: 7,
       offset: 210,
       atLatest: false,
+    }))
+  })
+
+  it('keeps a 1000-message live tail at the newest row across settings unmount and remount', async () => {
+    const messages = Array.from({ length: 1_000 }, (_, index) => {
+      const sequence = index + 1
+      return {
+        messageId: `stress-message-${sequence}`,
+        clientMessageId: `stress-client-${sequence}`,
+        conversationId: 'conversation-1',
+        senderUserId: sequence % 2 === 0 ? 'alice-id' : 'bob-id',
+        senderDeviceId: sequence % 2 === 0 ? 'alice-device' : 'bob-device',
+        protocolVersion: 1 as const,
+        sequence,
+        createdAt: new Date(Date.UTC(2026, 7, 11, 12, 0, sequence)).toISOString(),
+        expiresAt: '2026-09-10T12:00:00Z',
+        ciphertextBase64: 'b3BhcXVl',
+        deletionReason: null,
+        deletedAt: null,
+        contentState: 'available' as const,
+        displayBody: `stress ${sequence}`,
+        contentSecure: false,
+      }
+    })
+    let savedAnchor: ConversationViewportAnchor | null = null
+    const saveViewport = vi.fn(async anchor => {
+      savedAnchor = anchor
+    })
+    const props = {
+      conversation,
+      messages,
+      actorUserId: 'alice-id',
+      sending: false,
+      protectionSecure: false,
+      protectionLabel: 'Тестовый режим без E2EE',
+      sendMessage: vi.fn(),
+      deleteMessage: vi.fn(),
+      deletingMessageId: null,
+      typingActorIds: [] as string[],
+      onlineActorIds: [] as string[],
+      deliveryStates: [],
+      connectionState: 'connected' as const,
+      setTyping: vi.fn(),
+      saveViewport,
+    }
+    const first = mount(MessagePanel, { props })
+    const firstTimeline = first.get('.message-timeline').element as HTMLElement
+    Object.defineProperties(firstTimeline, {
+      scrollHeight: { configurable: true, value: 50_000 },
+      clientHeight: { configurable: true, value: 400 },
+      scrollTop: { configurable: true, value: 49_600, writable: true },
+      scrollTo: { configurable: true, value: vi.fn() },
+    })
+
+    await first.get('.message-timeline').trigger('scroll')
+    first.unmount()
+    await vi.waitFor(() => expect(savedAnchor).toMatchObject({
+      messageId: 'stress-message-1000',
+      sequence: 1_000,
+      atLatest: true,
+    }))
+
+    const newest = {
+      ...messages.at(-1)!,
+      messageId: 'stress-message-1001',
+      clientMessageId: 'stress-client-1001',
+      sequence: 1_001,
+      displayBody: 'stress 1001',
+    }
+    const secondTimelineRef: { current: HTMLElement | null } = { current: null }
+    const scrollTo = vi.fn(({ top }: { top: number }) => {
+      const element = secondTimelineRef.current
+      if (element) element.scrollTop = Math.max(0, top - element.clientHeight)
+    })
+    const second = mount(MessagePanel, {
+      props: {
+        ...props,
+        messages: [...messages, newest],
+        viewportAnchor: savedAnchor,
+      },
+    })
+    const secondTimeline = second.get('.message-timeline').element as HTMLElement
+    secondTimelineRef.current = secondTimeline
+    Object.defineProperties(secondTimeline, {
+      scrollHeight: { configurable: true, value: 50_050 },
+      clientHeight: { configurable: true, value: 400 },
+      scrollTop: { configurable: true, value: 0, writable: true },
+      scrollTo: { configurable: true, value: scrollTo },
+    })
+
+    await second.get('.message-timeline').trigger('scroll')
+    await vi.waitFor(() => expect(scrollTo).toHaveBeenCalledWith({
+      top: 50_050,
+      behavior: 'auto',
+    }))
+    expect(secondTimeline.scrollTop).toBe(49_650)
+    expect(second.find('.scroll-to-latest').exists()).toBe(false)
+    expect(second.get('[data-message-id="stress-message-1001"]').exists()).toBe(true)
+    second.unmount()
+  })
+
+  it('loads the authoritative latest window before restoring a saved live-tail intent', async () => {
+    const returnToLatest = vi.fn().mockResolvedValue(undefined)
+    const message = {
+      messageId: 'stale-tail-message',
+      clientMessageId: 'stale-tail-client',
+      conversationId: 'conversation-1',
+      senderUserId: 'bob-id',
+      senderDeviceId: 'bob-device',
+      protocolVersion: 1 as const,
+      sequence: 900,
+      createdAt: '2026-08-11T12:09:00Z',
+      expiresAt: '2026-09-10T12:00:00Z',
+      ciphertextBase64: 'b3BhcXVl',
+      deletionReason: null,
+      deletedAt: null,
+      contentState: 'available' as const,
+      displayBody: 'stale tail',
+      contentSecure: false,
+    }
+    const wrapper = mount(MessagePanel, {
+      props: {
+        conversation,
+        messages: [message],
+        historyHasNewer: true,
+        returnToLatest,
+        viewportAnchor: {
+          conversationId: 'conversation-1',
+          messageId: 'stale-tail-message',
+          sequence: 900,
+          offset: 280,
+          atLatest: true,
+          savedAt: '2026-08-11T12:10:00Z',
+        },
+        actorUserId: 'alice-id',
+        sending: false,
+        protectionSecure: false,
+        protectionLabel: 'Тестовый режим без E2EE',
+        sendMessage: vi.fn(),
+        deleteMessage: vi.fn(),
+        deletingMessageId: null,
+        typingActorIds: [],
+        onlineActorIds: [],
+        deliveryStates: [],
+        connectionState: 'connected',
+        setTyping: vi.fn(),
+      },
+    })
+    const timeline = wrapper.get('.message-timeline').element as HTMLElement
+    const scrollTo = vi.fn()
+    Object.defineProperties(timeline, {
+      scrollHeight: { configurable: true, value: 1_200 },
+      clientHeight: { configurable: true, value: 400 },
+      scrollTop: { configurable: true, value: 0, writable: true },
+      scrollTo: { configurable: true, value: scrollTo },
+    })
+
+    await wrapper.get('.message-timeline').trigger('scroll')
+    await vi.waitFor(() => expect(returnToLatest).toHaveBeenCalledOnce())
+    expect(scrollTo).toHaveBeenCalledWith({ top: 1_200, behavior: 'auto' })
+    wrapper.unmount()
+  })
+
+  it('prefers the actual bottom position over an older debounced scroll capture on unmount', async () => {
+    const saveViewport = vi.fn().mockResolvedValue(undefined)
+    const messages = [1, 2].map(sequence => ({
+      messageId: `boundary-message-${sequence}`,
+      clientMessageId: `boundary-client-${sequence}`,
+      conversationId: 'conversation-1',
+      senderUserId: 'bob-id',
+      senderDeviceId: 'bob-device',
+      protocolVersion: 1 as const,
+      sequence,
+      createdAt: `2026-08-11T12:00:0${sequence}Z`,
+      expiresAt: '2026-09-10T12:00:00Z',
+      ciphertextBase64: 'b3BhcXVl',
+      deletionReason: null,
+      deletedAt: null,
+      contentState: 'available' as const,
+      displayBody: `boundary ${sequence}`,
+      contentSecure: false,
+    }))
+    const wrapper = mount(MessagePanel, {
+      props: {
+        conversation,
+        messages,
+        actorUserId: 'alice-id',
+        sending: false,
+        protectionSecure: false,
+        protectionLabel: 'Тестовый режим без E2EE',
+        sendMessage: vi.fn(),
+        deleteMessage: vi.fn(),
+        deletingMessageId: null,
+        typingActorIds: [],
+        onlineActorIds: [],
+        deliveryStates: [],
+        connectionState: 'connected',
+        setTyping: vi.fn(),
+        saveViewport,
+      },
+    })
+    const timeline = wrapper.get('.message-timeline').element as HTMLElement
+    Object.defineProperties(timeline, {
+      scrollHeight: { configurable: true, value: 1_200 },
+      clientHeight: { configurable: true, value: 400 },
+      scrollTop: { configurable: true, value: 200, writable: true },
+      scrollTo: { configurable: true, value: vi.fn() },
+    })
+
+    await wrapper.get('.message-timeline').trigger('scroll')
+    timeline.scrollTop = 800
+    wrapper.unmount()
+
+    expect(saveViewport).toHaveBeenLastCalledWith(expect.objectContaining({
+      messageId: 'boundary-message-2',
+      sequence: 2,
+      atLatest: true,
     }))
   })
 

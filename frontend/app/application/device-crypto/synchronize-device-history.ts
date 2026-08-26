@@ -305,8 +305,13 @@ export class SynchronizeDeviceHistory {
       this.removeStatus(progress.pairingId)
     }
     this.cancelled.delete(job.pairingId)
-    this.jobs.save(job)
-    this.emit(this.initialProgress(job, 'queued'))
+    const runnable = {
+      ...job,
+      automaticResumeBlocked: false,
+      automaticResumeReason: undefined,
+    }
+    this.jobs.save(runnable)
+    this.emit(this.initialProgress(runnable, 'queued'))
   }
 
   current(ownerUserId: string, currentDeviceId: string): readonly DeviceHistorySyncProgress[] {
@@ -322,8 +327,39 @@ export class SynchronizeDeviceHistory {
 
   resume(ownerUserId: string, currentDeviceId: string): void {
     for (const job of this.jobs.load(ownerUserId, currentDeviceId)) {
+      if (job.automaticResumeBlocked) {
+        if (!this.statuses.has(job.pairingId)) {
+          const reason = job.automaticResumeReason
+          const waiting = reason === 'waiting_peer'
+          let failure: DeviceHistorySyncFailure | null = waiting ? null : 'unknown'
+          if (reason && reason !== 'waiting_peer') failure = reason
+          this.emit({
+            ...this.initialProgress(job, waiting ? 'waiting_peer' : 'failed'),
+            failure,
+          })
+        }
+        continue
+      }
       this.schedule(job)
     }
+  }
+
+  retry(pairingId: string): void {
+    const progress = this.statuses.get(pairingId)
+    if (!progress || !['waiting_peer', 'failed'].includes(progress.stage)) return
+    const job = this.jobs.load(progress.ownerUserId, progress.currentDeviceId)
+      .find(item => item.pairingId === pairingId)
+    if (!job) return
+    const runnable = {
+      ...job,
+      automaticResumeBlocked: false,
+      automaticResumeReason: undefined,
+      cancelRequested: false,
+    }
+    this.cancelled.delete(pairingId)
+    this.jobs.save(runnable)
+    this.emit(this.initialProgress(runnable, 'queued'))
+    this.schedule(runnable)
   }
 
   async cancel(pairingId: string): Promise<void> {
@@ -379,6 +415,7 @@ export class SynchronizeDeviceHistory {
       peerPollDelayMilliseconds(job.currentDeviceId),
       resolve,
     ))
+    let lastFailure: DeviceHistorySyncFailure = 'unknown'
     for (let attempt = 0; attempt < this.attempts; attempt += 1) {
       if (this.cancelled.has(job.pairingId)) return
       try {
@@ -390,6 +427,7 @@ export class SynchronizeDeviceHistory {
           return
         }
         const outcome = failureFrom(error)
+        lastFailure = outcome.failure
         const previous = this.statuses.get(job.pairingId) ?? this.initialProgress(job, 'retrying')
         if (outcome.terminal) {
           this.jobs.remove(job.pairingId)
@@ -415,6 +453,21 @@ export class SynchronizeDeviceHistory {
         await new Promise<void>(resolve => this.scheduler.once(delay, resolve))
       }
     }
+    const previous = this.statuses.get(job.pairingId)
+      ?? this.initialProgress(job, 'failed')
+    const latestJob = this.jobs.load(job.ownerUserId, job.currentDeviceId)
+      .find(item => item.pairingId === job.pairingId) ?? job
+    this.jobs.save({
+      ...latestJob,
+      automaticResumeBlocked: true,
+      automaticResumeReason: lastFailure,
+    })
+    this.emit({
+      ...previous,
+      stage: 'failed',
+      failure: lastFailure,
+      complete: false,
+    })
   }
 
   private cancelJob(job: DeviceHistorySyncJob): Promise<void> {
@@ -786,6 +839,12 @@ export class SynchronizeDeviceHistory {
       ))
     }
     progress = { ...progress, stage: 'waiting_peer' }
+    this.jobs.save({
+      ...job,
+      peerCompletedConversationIds: [...peerComplete],
+      automaticResumeBlocked: true,
+      automaticResumeReason: 'waiting_peer',
+    })
     this.report(progress, onProgress)
     return progress
   }

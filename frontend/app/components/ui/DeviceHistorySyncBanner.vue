@@ -31,7 +31,7 @@ const label = computed(() => {
     return `Подготовка E2EE: ${processed}/${progress.totalConversations}`
   }
   if (progress.stage === 'waiting_peer') {
-    return `Ждём второе устройство: ${progress.confirmedConversations}/${progress.totalConversations}`
+    return `Второе устройство не ответило: ${progress.confirmedConversations}/${progress.totalConversations}. Откройте оба и повторите`
   }
   if (progress.stage === 'retrying') {
     return progress.failure === 'rate_limited'
