@@ -65,6 +65,11 @@ export default defineNuxtConfig({
     strict: true,
     typeCheck: true,
   },
+  nitro: {
+    prerender: {
+      routes: ['/'],
+    },
+  },
   routeRules: {
     '/**': {
       headers: {

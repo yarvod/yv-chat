@@ -4,6 +4,28 @@
 
 ## Active
 
+### BUG-124 — Cold offline PWA не доходила до локальной истории
+
+- Статус: `fixed and locally verified` (`WP-135`); production rollout pending.
+- Severity: `critical PWA availability`.
+- Reproduction: открыть авторизованную установленную PWA online, закрыть её, сделать
+  origin недоступным и снова открыть `/` или `/chat`.
+- Фактическое поведение: Workbox navigation fallback ссылался на отсутствующий в
+  precache `/`; если shell всё же был в памяти, auth middleware требовал `/api/v1/me`,
+  терял in-memory account и переводил установку на login до IndexedDB hydration.
+- Ожидаемое поведение: precached shell запускается без origin; transient bootstrap
+  восстанавливает только последний encrypted local account projection, затем чаты,
+  история и ранее cached media читаются локально. Authoritative `401` остаётся
+  fail-closed и удаляет offline projection.
+- Исправление: Nuxt prerender-ит `/`, Workbox precache содержит этот navigation
+  fallback; последний подтверждённый safe account DTO хранится в отдельной
+  AES-GCM IndexedDB projection и пропускает offline route middleware к локальным
+  encrypted snapshot/archive/media без копирования session credential.
+- Проверка: production Docker build подтвердил precached `/`; 424 Vitest tests,
+  lint и typecheck прошли. В реальном браузере после остановки nginx, frontend,
+  API и PostgreSQL cold reload deep-link чата показал сохранённое сообщение,
+  открыл Settings и вернулся в чат без browser page-load error.
+
 ### BUG-123 — Продлённый server TTL отравлял IndexedDB и обрывал QR до первого ACK
 
 - Статус: `fixed and production deployed` (`WP-134`, `3c9ebc6`, workflow

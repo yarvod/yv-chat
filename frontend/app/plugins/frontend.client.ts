@@ -84,6 +84,7 @@ import { BrowserVideoNoteRecorder } from '../infrastructure/browser/video-note-r
 import { IndexedDbMessageArchive } from '../infrastructure/storage/indexeddb-message-archive'
 import { IndexedDbMessengerSnapshotStore } from '../infrastructure/storage/indexeddb-messenger-snapshot-store'
 import { IndexedDbMessageOutbox } from '../infrastructure/storage/indexeddb-message-outbox'
+import { IndexedDbOfflineAccountStore } from '../infrastructure/storage/indexeddb-offline-account-store'
 import { BrowserDeviceHistorySyncJobStore } from '../infrastructure/storage/browser-device-history-sync-jobs'
 import { EncryptedMediaCache } from '../infrastructure/storage/encrypted-media-cache'
 import { SyntheticMessageProtocol } from '../infrastructure/crypto/synthetic-message-protocol'
@@ -179,6 +180,7 @@ export default defineNuxtPlugin(nuxtApp => {
   const themePreference = themePreferences.load()
   const messageArchive = new IndexedDbMessageArchive()
   const messengerSnapshotStore = new IndexedDbMessengerSnapshotStore()
+  const offlineAccountStore = new IndexedDbOfflineAccountStore()
   const messageOutbox = new IndexedDbMessageOutbox()
   const mediaCache = new EncryptedMediaCache()
   const directAttachmentSecrets = new DirectAttachmentSecrets()
@@ -195,6 +197,7 @@ export default defineNuxtPlugin(nuxtApp => {
   const closeLocalStores = (): void => {
     messageArchive.close()
     messengerSnapshotStore.close()
+    offlineAccountStore.close()
     messageOutbox.close()
     mediaCache.close()
     conversationCryptoState.close()
@@ -300,6 +303,7 @@ export default defineNuxtPlugin(nuxtApp => {
         messageProtection,
         messageArchive,
         messengerSnapshotStore,
+        offlineAccountStore,
         listOutboxMessages: new ListOutboxMessages(messageOutbox),
         queueOutgoingMessage: new QueueOutgoingMessage(
           messageOutbox,

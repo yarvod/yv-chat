@@ -259,6 +259,20 @@ crypto dependencies, поэтому client rendering задаётся явно. 
 screens, admin UI скрывается для обычного пользователя, но backend authorization
 всегда остаётся authoritative.
 
+Production build prerender-ит `/` и включает этот exact HTML вместе с hashed client
+chunks в Workbox precache; navigation fallback никогда не должен ссылаться на shell,
+которого нет в precache manifest. Поэтому установленная PWA может выполнить cold
+reload любого same-origin client route без доступного frontend container.
+
+Последний подтверждённый `CurrentAccount` является bounded offline projection, а не
+auth credential. Он хранится в отдельной IndexedDB под non-extractable AES-256-GCM
+key и открывает только уже локально доступные encrypted snapshot/archive/media после
+transient network failure. Успешные login/`/me`/profile/device operations обновляют
+projection; authoritative `401`, logout, session expiry и security reset очищают её.
+Opaque HttpOnly session cookie по-прежнему не читается и не копируется JavaScript.
+Offline UI не разрешает server-only действия и не обещает наличие media, которое
+устройство никогда не загрузило или уже evict-нуло из bounded cache.
+
 ### Messenger viewport и interaction model
 
 Authenticated `product-shell` ограничен ровно `100dvh` и не отдаёт высоту длинному

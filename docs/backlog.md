@@ -728,6 +728,16 @@ sender negotiated remote-offer video transceiver до signed answer, а fullscre
 
 ## Completed
 
+### BL-FIX-064 — Настоящий offline cold start PWA
+
+Production shell prerender-ит и precache-ит exact `/` navigation fallback, поэтому
+installed PWA запускает Nuxt/Vue без живого origin. Последний server-confirmed safe
+account DTO хранится в отдельной bounded AES-GCM IndexedDB projection под
+non-extractable key и используется только для transient offline bootstrap; `401`,
+logout/session expiry/security reset очищают projection, а HttpOnly credential туда
+не попадает. Реальный Docker Browser test остановил весь stack и подтвердил cold
+reload deep-link, локальное сообщение и переход Settings → Chat без сети.
+
 ### BL-FIX-063 — Monotonic retention merge for local and QR history
 
 Статус: **completed and production deployed; physical device acceptance pending**

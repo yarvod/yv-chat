@@ -104,6 +104,13 @@ describe('PWA install assets', () => {
     expect(config).toContain("'cache-control': 'public, max-age=31536000, immutable'")
   })
 
+  it('prerenders the navigation fallback so a cold offline start has an app shell', () => {
+    const config = readFileSync(resolve(process.cwd(), 'nuxt.config.ts'), 'utf8')
+
+    expect(config).toContain("routes: ['/']")
+    expect(config).toContain("navigateFallback: '/'")
+  })
+
   it('keeps standard artwork transparent and the maskable canvas fully opaque', async () => {
     const transparent = await sharp(resolve(process.cwd(), 'public/icons/icon-v3-any-512.png'))
       .ensureAlpha()
