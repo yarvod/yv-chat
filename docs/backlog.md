@@ -730,8 +730,8 @@ sender negotiated remote-offer video transceiver до signed answer, а fullscre
 
 ### BL-FIX-063 — Monotonic retention merge for local and QR history
 
-Статус: **implemented and locally verified; production rollout pending**
-(`WP-134`).
+Статус: **completed and production deployed; physical device acceptance pending**
+(`WP-134`, `3c9ebc6`, workflow `33010001779`).
 
 Production evidence отделил transport от client import: symmetric pairing сохранил
 `22` chunks для пяти chats, но оба направления остались на `0 ACK`. Причиной оказался

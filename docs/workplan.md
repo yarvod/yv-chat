@@ -2,7 +2,7 @@
 
 ## WP-134 — Monotonic retention merge for local and QR history
 
-Статус: **implemented and locally verified; production rollout pending**
+Статус: **completed and production deployed; physical device acceptance pending**
 Backlog: `BL-FIX-063`
 
 Цель: одна и та же immutable message envelope должна безопасно объединяться между
@@ -59,3 +59,16 @@ production retention продлила `expires_at`. Такой metadata drift н
   verification;
 - следующая физическая попытка пользователя ACK-ит первый и последующие chunks без
   повторного бесконечного export loop.
+
+### Production result
+
+- commit `3c9ebc63f513847b0d8c281bac7c54ddf5221f20`; CI workflow
+  `33010001778` и production workflow `33010001779` завершились успешно;
+- verify, dependency audit, immutable backend/frontend builds, migration и isolated
+  rollout прошли; exact tag `sha-3c9ebc63f513847b0d8c281bac7c54ddf5221f20`
+  активен на frontend, API и cleanup;
+- API/frontend/PostgreSQL healthy, cleanup running, loopback health и external
+  `chat.yoowee.ru` health вернули `200`; `yoowee.ru` штатно ведёт на `/login` с `200`;
+- unauthenticated WebSocket вернул ожидаемый `403`, production `nginx -t` успешен;
+- новая физическая попытка остаётся acceptance именно для существующих архивов
+  пользователя после принудительного PWA update.

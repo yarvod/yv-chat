@@ -6,7 +6,8 @@
 
 ### BUG-123 — Продлённый server TTL отравлял IndexedDB и обрывал QR до первого ACK
 
-- Статус: `fixed and locally verified` (`WP-134`); production rollout pending.
+- Статус: `fixed and production deployed` (`WP-134`, `3c9ebc6`, workflow
+  `33010001779`); physical device acceptance pending.
 - Severity: `critical local history and multi-device sync reliability`.
 - Production evidence: pairing `659c29df…` принял symmetric `11 + 11` chunks для
   одинаковых пяти chats, но не ACK-нул ни одного; следующие попытки остановились с
