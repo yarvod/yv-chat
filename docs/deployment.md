@@ -415,6 +415,15 @@ vhost regression restore only its immediate backup. Never use `docker system pru
 
 ## Rollout records
 
+`WP-136` asymmetric empty-target QR history sync deployed 2026-08-27 workflow
+`33020753561` for commit `365e4dd`; separate CI `33020753526` also passed. Docker
+stress transferred `1 000` mixed records and real Browser QR moved `100/100` MLS
+messages to an empty target with `3/3` relay ACK. Both production origins returned
+frontend/health HTTP `200` and expose the same exact build-time pairing allowlist
+containing `chat.yoowee.ru` and `chat.yoowee.com.de`; API/frontend are healthy and
+`nginx -t` succeeded. Immutable production tag is
+`sha-365e4dd07224181707699f69c2d2878b7ec8c20e`.
+
 `WP-129` retry-safe device history sync и bounded iOS date separator deployed
 2026-08-26 workflow `32961867768` for commit `9d08b10`; отдельный CI
 `32961867712` также прошёл. Full repository verify, dependency audit, immutable

@@ -2,7 +2,8 @@
 
 ## WP-136 — Асимметричный QR history sync и cross-origin QR
 
-Статус: **completed locally; production rollout pending**
+Статус: **completed and production deployed** (`365e4dd`, workflows
+`33020753526`, `33020753561`)
 Backlog: `BL-FIX-065`
 
 Цель: новый пустой device и давно используемый device должны завершать один
@@ -91,3 +92,8 @@ bounded двусторонний history transfer независимо от ра
   targeted `37/37`, полный suite `428/428`; Compose config валиден. Общий lint
   продолжает видеть только ранее сгенерированные Android `build/intermediates`
   artifacts, изменённые файлы проходят без замечаний.
+- production rollout `33020753561` завершился успешно: API/frontend запущены из
+  immutable tag `sha-365e4dd07224181707699f69c2d2878b7ec8c20e`, контейнеры
+  healthy, внутренние health endpoints и оба public origins вернули `200`;
+  опубликованный HTML обоих доменов содержит одинаковый exact pairing allowlist,
+  а `nginx -t` успешен.

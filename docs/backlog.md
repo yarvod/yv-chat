@@ -730,7 +730,8 @@ sender negotiated remote-offer video transceiver до signed answer, а fullscre
 
 ### BL-FIX-065 — Asymmetric empty-target QR history sync
 
-Статус: **completed locally; production rollout pending** (`WP-136`).
+Статус: **completed and production deployed** (`WP-136`, `365e4dd`, workflow
+`33020753561`).
 
 QR origin allowlist теперь встраивается в prerendered image на build time и точно
 разрешает оба production web domains без wildcard. Trusted/display peer единолично

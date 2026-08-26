@@ -6,7 +6,8 @@
 
 ### BUG-126 — Empty target не запускал вторую половину QR history union
 
-- Статус: `fixed locally; production rollout pending` (`WP-136`).
+- Статус: `fixed and production deployed` (`WP-136`, `365e4dd`, workflow
+  `33020753561`).
 - Severity: `critical multi-device history reliability`.
 - Production evidence: pairing `dcb673d2…` и `2fc43658…` сохранили по `11` chunks
   только из Android в Firefox, `0` chunks в обратную сторону и `0 ACK` для пяти
@@ -26,7 +27,8 @@
 
 ### BUG-125 — Prerendered shell отклонял QR второго production origin
 
-- Статус: `fixed locally; production rollout pending` (`WP-136`).
+- Статус: `fixed and production deployed` (`WP-136`, `365e4dd`, workflow
+  `33020753561`).
 - Severity: `high cross-origin device pairing`.
 - Reproduction: показать QR на `chat.yoowee.com.de`, сканировать авторизованным
   устройством на `chat.yoowee.ru` или наоборот.
