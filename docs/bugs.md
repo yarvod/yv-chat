@@ -6,7 +6,8 @@
 
 ### BUG-118 — Hydrated partial cache перескакивал server events и скрывал сообщения группы
 
-- Статус: `fixed locally; production pending` (`WP-130`).
+- Статус: `fixed and production deployed` (`WP-130`, `a31e81b`, workflow
+  `32972440117`); physical iPhone acceptance pending.
 - Severity: `critical messaging correctness`.
 - Production evidence: server rows и admin `message_created` events для «Озёрной»
   `149–155` полны, но телефон показывал только собственную cached row `155`.
@@ -17,7 +18,8 @@
 
 ### BUG-117 — Возврат Settings → Chats терял conversation route и viewport save race
 
-- Статус: `fixed locally; production pending` (`WP-130`).
+- Статус: `fixed and production deployed` (`WP-130`, `a31e81b`, workflow
+  `32972440117`); physical viewport acceptance pending.
 - Severity: `high UX`.
 - Причина: tab target всегда был literal `/chat`, а snapshot save queue принадлежала
   уничтожаемому composable instance и не координировалась со следующим load.
@@ -26,7 +28,8 @@
 
 ### BUG-116 — Authenticated history relay делил слишком тесную Nginx zone с pairing poll
 
-- Статус: `fixed locally; production pending` (`WP-130`).
+- Статус: `fixed and production deployed` (`WP-130`, `a31e81b`, workflow
+  `32972440117`); physical two-device acceptance pending.
 - Severity: `critical multi-device history reliability`.
 - Production evidence: pairing `fd05d978…` сохранил `15` chunks, `0` ACK и получил
   `4 × 429`; оба устройства находились за одним NAT.

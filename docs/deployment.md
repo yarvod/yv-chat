@@ -11,6 +11,19 @@ not be replaced with the broader JavaScript `unsafe-eval`. Without it, public
 crypto assets still return HTTP 200 but device provisioning stops before the
 `PUT /api/v1/devices/current/crypto-identity` registration request.
 
+## Latest rollout — WP-130 authoritative recovery and pairing pacing
+
+- Commit: `a31e81b77998cf5a44ecacf8cb3cbfc7ebbb6832`.
+- Production workflow: `32972440117` (success); CI workflow: `32972440177`
+  (backend/frontend/crypto/Compose success).
+- Deployed image tag: `sha-a31e81b77998cf5a44ecacf8cb3cbfc7ebbb6832` on frontend,
+  API and cleanup; frontend/API/PostgreSQL reported healthy.
+- Public acceptance: frontend `200`, `/api/v1/health` `200`, unauthenticated
+  `/api/v1/realtime` upgrade `403` as expected, `nginx -t` successful.
+- Nginx pairing limits remain `120r/m`, `burst=40`; two-peer relay is paced client-side
+  below the existing per-IP budget. Physical encrypted two-device acceptance remains
+  a user-device check because the automation browser has no authenticated admin session.
+
 ## Topology
 
 ```text

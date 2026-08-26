@@ -2,7 +2,7 @@
 
 ## WP-130 — Authoritative chat recovery, tab scroll continuity и pairing pacing
 
-Статус: **completed locally; production pending**
+Статус: **completed and production deployed; physical two-device acceptance pending**
 Backlog: `BL-FIX-059`
 
 Цель: cache-first bootstrap никогда не должен принимать частичную IndexedDB-копию
@@ -73,3 +73,15 @@ production pairing ingress во время bounded encrypted relay.
   production Nginx security limits не менялись;
 - frontend: `65` files / `407` tests passed, ESLint, Nuxt typecheck и production/PWA
   build зелёные.
+
+### Production result
+
+- commit `a31e81b77998cf5a44ecacf8cb3cbfc7ebbb6832` развернут immutable tag
+  `sha-a31e81b77998cf5a44ecacf8cb3cbfc7ebbb6832` workflow `32972440117`;
+- отдельный CI workflow `32972440177` зелёный: backend, frontend, crypto и Compose;
+- production frontend/API/PostgreSQL healthy; `chat.yoowee.ru` и health отвечают `200`,
+  unauthenticated WebSocket handshake ожидаемо отвечает `403`, `nginx -t` зелёный;
+- in-app browser загрузил новую PWA и login screen; authenticated scroll и реальный
+  encrypted two-device relay требуют одного physical acceptance запуска пользователя;
+- действующий Nginx ingress не менялся: исправление сохраняет `120r/m`, `burst=40` и
+  снижает клиентскую частоту запросов вместо ослабления security limit.

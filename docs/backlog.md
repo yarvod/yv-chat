@@ -730,7 +730,8 @@ sender negotiated remote-offer video transceiver до signed answer, а fullscre
 
 ### BL-FIX-059 — Authoritative chat recovery и stable tab return
 
-Статус: **completed locally; production pending** (`WP-130`).
+Статус: **completed and production deployed; physical two-device acceptance pending**
+(`WP-130`, `a31e81b`, workflow `32972440117`).
 
 Cache-first timeline после каждого hydrated bootstrap сверяет active server window,
 не доверяя advanced cursor при частичном/evicted IndexedDB archive. Saved non-latest
@@ -739,6 +740,8 @@ Chats возвращает exact conversation route и сериализован�
 Transient archive failure получает authoritative recovery retry. Authenticated
 bounded device history relay pace-ит два peers ниже существующей Nginx per-IP квоты.
 Frontend `407 passed`, lint/typecheck и production/PWA build зелёные.
+Production runtime smoke-check: exact immutable tag, healthy frontend/API/PostgreSQL,
+HTTPS/health `200`, expected unauthenticated WebSocket `403`, valid unchanged Nginx.
 
 ### BL-FIX-058 — Retry-safe history relay и bounded iOS date-pill shadow
 
