@@ -728,6 +728,18 @@ sender negotiated remote-offer video transceiver до signed answer, а fullscre
 
 ## Completed
 
+### BL-FIX-062 — Bounded QR history crypto pipeline
+
+Статус: **completed locally; production rollout pending** (`WP-133`).
+
+Production pairing подтвердил, что сервер принял `19 + 19` chunks, но оба клиента
+остановились после четырёх ACK первой беседы без HTTP error. Backward-compatible v4
+пакует records по count/bytes, оставляет отдельный stable v3 completion marker и
+уменьшает production-shaped `230`-record transfer с `38` до `22` chunks. Все relay
+upload/list/ACK pace-ятся с NAT headroom; local Compose Nginx зеркалит production
+`120r/m`, `burst=40`. Docker regression завершает `230` symmetric и `1000` mixed
+records, а настоящий two-origin Browser QR flow проходит до `Готово` на обеих сторонах.
+
 ### BL-FIX-061 — KeepAlive viewport reactivation
 
 Статус: **completed and production deployed; physical iPhone acceptance pending**

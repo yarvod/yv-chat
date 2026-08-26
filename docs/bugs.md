@@ -4,6 +4,25 @@
 
 ## Active
 
+### BUG-122 — QR history создавал burst и десятки full crypto checkpoints
+
+- Статус: `fixed locally` (`WP-133`); production rollout pending.
+- Severity: `critical multi-device history reliability`.
+- Production evidence: pairing `539d9afc…` сохранил `38` opaque chunks (`19 + 19`,
+  `695208` base64 bytes); оба направления ACK-нули ровно четыре первых chunks первой
+  беседы. В exact окне было `150 × 200`, `1 × 204`, `0 × 429`, затем пользовательский
+  cancel и `410`.
+- Причина: v1 relay page был ограничен `20` records и имел отдельный completion
+  marker; каждый MLS protect/unprotect сохранял полный encrypted crypto checkpoint.
+  Activity guard одновременно спамил outbound GET во внутреннем conversation loop,
+  а upload/ACK не имели pacing.
+- Ожидаемое поведение: byte-bounded packed payload сокращает число crypto mutations,
+  stable completion переживает partial union/retry, все relay requests pace-ятся ниже
+  общей NAT-квоты.
+- Проверка: `230` records / `5` chats / два peers завершаются с `22` chunks и полным
+  ACK; `1000` mixed records — с `16` chunks. Настоящий Docker Browser QR flow завершён
+  на обоих origins при local Nginx `120r/m`, `burst=40`, без `429`.
+
 ### BUG-121 — KeepAlive activation не восстанавливал viewport чата
 
 - Статус: `fixed and production deployed` (`WP-132`, `5f6643d`, workflow

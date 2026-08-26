@@ -198,6 +198,46 @@ class RelayGateway {
   }
 }
 
+class PacingRequiredRelayGateway extends RelayGateway {
+  rejected = 0
+
+  constructor(
+    state: RelayState,
+    currentDeviceId: string,
+    private readonly consumePermit: () => boolean,
+  ) {
+    super(state, currentDeviceId)
+  }
+
+  private requirePermit(): void {
+    if (this.consumePermit()) return
+    this.rejected += 1
+    throw new ApplicationError(429, 'http', 'shared ingress budget exceeded')
+  }
+
+  override async uploadHistoryChunk(...args: Parameters<RelayGateway['uploadHistoryChunk']>) {
+    this.requirePermit()
+    return super.uploadHistoryChunk(...args)
+  }
+
+  override async listHistoryChunks() {
+    this.requirePermit()
+    return super.listHistoryChunks()
+  }
+
+  override async listOutboundHistoryChunks() {
+    this.requirePermit()
+    return super.listOutboundHistoryChunks()
+  }
+
+  override async acknowledgeHistoryChunk(
+    ...args: Parameters<RelayGateway['acknowledgeHistoryChunk']>
+  ) {
+    this.requirePermit()
+    return super.acknowledgeHistoryChunk(...args)
+  }
+}
+
 const adapter: MessageProtocolAdapter = {
   protocolVersion: 2,
   secure: true,
@@ -545,7 +585,7 @@ describe('QR-linked bidirectional device history sync', () => {
     expect(sync.current(owner, trusted).at(0)?.stage).toBe('failed')
   })
 
-  it('paces symmetric peer polling below the shared production per-IP budget', async () => {
+  it('paces every relay request, including upload and ACK, below the shared NAT budget', async () => {
     const delays: number[] = []
     const pacedScheduler: Scheduler = {
       once(delay, callback): ScheduledTask {
@@ -585,8 +625,116 @@ describe('QR-linked bidirectional device history sync', () => {
     })
 
     expect(result.stage).toBe('waiting_peer')
-    expect(delays).toHaveLength(3)
-    expect(delays.every(delay => delay >= 4_000 && delay < 6_000)).toBe(true)
+    expect(delays.filter(delay => delay === 1_250)).toHaveLength(7)
+    expect(delays.filter(delay => delay >= 4_000 && delay < 6_000)).toHaveLength(3)
+  })
+
+  it('completes the production-shaped 230-record symmetric relay without an unpaced request', async () => {
+    const conversationIds = [
+      '55555555-5555-4555-8555-555555555551',
+      '55555555-5555-4555-8555-555555555552',
+      '55555555-5555-4555-8555-555555555553',
+      '55555555-5555-4555-8555-555555555554',
+      '55555555-5555-4555-8555-555555555555',
+    ]
+    const counts = [126, 57, 27, 12, 8]
+    const records: ArchivedMessage[] = []
+    let globalIndex = 0
+    for (let index = 0; index < conversationIds.length; index += 1) {
+      for (let sequence = 1; sequence <= counts[index]!; sequence += 1) {
+        globalIndex += 1
+        records.push(stressArchived(conversationIds[index]!, sequence, globalIndex, trusted))
+      }
+    }
+    expect(records).toHaveLength(230)
+
+    const relay: RelayState = { chunks: [], acknowledged: new Set() }
+    const permits = new Map([[trusted, 0], [candidate, 0]])
+    const delays = new Map<string, number[]>([[trusted, []], [candidate, []]])
+    const pacedScheduler = (deviceId: string): Scheduler => ({
+      once(delay, callback): ScheduledTask {
+        delays.get(deviceId)!.push(delay)
+        if (delay === 1_250) permits.set(deviceId, permits.get(deviceId)! + 1)
+        const timer = setTimeout(callback, 0)
+        return { cancel() { clearTimeout(timer) } }
+      },
+      repeat(): ScheduledTask { return { cancel() {} } },
+    })
+    const consumePermit = (deviceId: string): boolean => {
+      const available = permits.get(deviceId)!
+      if (available === 0) return false
+      permits.set(deviceId, available - 1)
+      return true
+    }
+    const trustedGateway = new PacingRequiredRelayGateway(
+      relay,
+      trusted,
+      () => consumePermit(trusted),
+    )
+    const candidateGateway = new PacingRequiredRelayGateway(
+      relay,
+      candidate,
+      () => consumePermit(candidate),
+    )
+    const conversations = conversationIds.map(conversationId => ({
+      conversationId,
+      conversationType: 'direct' as const,
+      title: null,
+      createdBy: owner,
+      createdAt: '2026-08-13T12:00:00Z',
+      updatedAt: '2026-08-13T12:00:00Z',
+      members: [],
+    }))
+    const messaging = { listConversations: async () => conversations } as never
+    const trustedSync = new SynchronizeDeviceHistory(
+      trustedGateway as unknown as DevicePairingGateway,
+      messaging,
+      new PartitionedMemoryArchive(records),
+      new ProtocolMessageProtection([adapter]),
+      new MemoryJobs(),
+      pacedScheduler(trusted),
+      4,
+    )
+    const candidateSync = new SynchronizeDeviceHistory(
+      candidateGateway as unknown as DevicePairingGateway,
+      messaging,
+      new PartitionedMemoryArchive(records),
+      new ProtocolMessageProtection([adapter]),
+      new MemoryJobs(),
+      pacedScheduler(candidate),
+      4,
+    )
+
+    const [trustedProgress, candidateProgress] = await Promise.all([
+      trustedSync.synchronize({
+        ownerUserId: owner,
+        currentDeviceId: trusted,
+        pairingId: pairing,
+        targetDeviceId: candidate,
+        expiresAt: '2099-08-14T12:00:00Z',
+      }),
+      candidateSync.synchronize({
+        ownerUserId: owner,
+        currentDeviceId: candidate,
+        pairingId: pairing,
+        targetDeviceId: trusted,
+        expiresAt: '2099-08-14T12:00:00Z',
+      }),
+    ])
+
+    expect(trustedProgress.complete).toBe(true)
+    expect(candidateProgress.complete).toBe(true)
+    expect(relay.chunks).toHaveLength(22)
+    expect(relay.acknowledged.size).toBe(22)
+    expect(Math.max(...relay.chunks.map(chunk => (
+      new TextEncoder().encode(decode(chunk.ciphertextBase64)).byteLength
+    )))).toBeLessThan(192 * 1024)
+    expect(trustedGateway.rejected).toBe(0)
+    expect(candidateGateway.rejected).toBe(0)
+    expect(delays.get(trusted)!.filter(delay => delay === 1_250).length).toBeGreaterThanOrEqual(25)
+    expect(delays.get(candidate)!.filter(delay => delay === 1_250).length).toBeGreaterThanOrEqual(25)
+    expect(permits.get(trusted)).toBe(0)
+    expect(permits.get(candidate)).toBe(0)
   })
 
   it('prepares the exact target MLS leaf before a trusted device exports history', async () => {
@@ -1036,7 +1184,7 @@ describe('QR-linked bidirectional device history sync', () => {
     for (const conversationId of groupIds) {
       expect(candidateArchive.countConversation(conversationId)).toBe(200)
     }
-    expect(relay.chunks).toHaveLength(40)
+    expect(relay.chunks).toHaveLength(16)
     expect(new Set(relay.chunks.map(chunk => (
       `${chunk.senderDeviceId}:${chunk.clientChunkId}`
     ))).size).toBe(relay.chunks.length)

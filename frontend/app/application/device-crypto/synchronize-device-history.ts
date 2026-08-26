@@ -10,14 +10,21 @@ import { ApplicationError } from '../errors'
 const CHUNK_RECORD_LIMIT = 20
 const MAX_CHUNKS_PER_CONVERSATION = 20
 const MAX_TRANSFER_RECORDS = CHUNK_RECORD_LIMIT * MAX_CHUNKS_PER_CONVERSATION
+const PACKED_CHUNK_RECORD_LIMIT = 100
+const PACKED_CHUNK_RECORDS_BYTES = 190 * 1024
 const PEER_POLL_BASE_DELAY_MS = 4_000
 const PEER_POLL_STAGGER_MS = 2_000
+// Production ingress allows 120 pairing requests/minute per public IP. Two
+// linked devices commonly share that IP, so each peer must stay below one
+// relay request/second with enough headroom for the other peer and control
+// traffic. This applies to uploads and ACKs too, not only polling.
+const RELAY_REQUEST_INTERVAL_MS = 1_250
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
 
 interface HistoryTransferPayload {
   type: 'yv-chat-device-history'
-  version: 1 | 2 | 3
+  version: 1 | 2 | 3 | 4
   pairingId: string
   senderDeviceId: string
   targetDeviceId: string
@@ -135,12 +142,25 @@ function peerPollDelayMilliseconds(currentDeviceId: string): number {
   return PEER_POLL_BASE_DELAY_MS + deviceStagger
 }
 
-function chunks<T>(values: readonly T[], size: number): T[][] {
-  const result: T[][] = []
-  for (let offset = 0; offset < values.length; offset += size) {
-    result.push(values.slice(offset, offset + size))
+function packedRecordChunks(values: readonly ArchivedMessage[]): ArchivedMessage[][] {
+  const result: ArchivedMessage[][] = []
+  let current: ArchivedMessage[] = []
+  for (const value of values) {
+    const candidate = [...current, value]
+    const candidateBytes = new TextEncoder().encode(JSON.stringify(candidate)).byteLength
+    if (
+      current.length > 0
+      && (candidate.length > PACKED_CHUNK_RECORD_LIMIT
+        || candidateBytes > PACKED_CHUNK_RECORDS_BYTES)
+    ) {
+      result.push(current)
+      current = [value]
+    } else {
+      current = candidate
+    }
   }
-  return result
+  if (current.length > 0) result.push(current)
+  return result.slice(-MAX_CHUNKS_PER_CONVERSATION)
 }
 
 function transferRecords(
@@ -160,7 +180,8 @@ function transferRecords(
     || payload.clientChunkId !== expected.clientChunkId
   ) throw new HistoryTransferBindingError()
   if (
-    (payload.version !== 1 && payload.version !== 2 && payload.version !== 3)
+    (payload.version !== 1 && payload.version !== 2
+      && payload.version !== 3 && payload.version !== 4)
     || !Array.isArray(payload.records)
     || (payload.version === 1 && (
       payload.records.length === 0 || payload.records.length > CHUNK_RECORD_LIMIT
@@ -179,6 +200,21 @@ function transferRecords(
         value => typeof value !== 'string' || !UUID.test(value),
       )
       || new Set(payload.skippedConversationIds).size !== payload.skippedConversationIds.length
+    ))
+    || (payload.version === 4 && (
+      payload.records.length === 0
+      || payload.records.length > PACKED_CHUNK_RECORD_LIMIT
+      || (payload.complete !== undefined && payload.complete !== true)
+      || (payload.complete !== true && payload.skippedConversationIds !== undefined)
+      || (payload.complete === true && (
+        !Array.isArray(payload.skippedConversationIds)
+        || payload.skippedConversationIds.length > 100
+        || payload.skippedConversationIds.some(
+          value => typeof value !== 'string' || !UUID.test(value),
+        )
+        || new Set(payload.skippedConversationIds).size
+          !== payload.skippedConversationIds.length
+      ))
     ))
   ) throw new InvalidHistoryTransfer()
   const records: ArchivedMessage[] = []
@@ -256,10 +292,13 @@ function transferRecords(
   }
   return {
     records,
-    complete: payload.version === 2 || payload.version === 3,
+    complete: payload.version === 2 || payload.version === 3
+      || (payload.version === 4 && payload.complete === true),
     skippedConversationIds: payload.version === 3
       ? payload.skippedConversationIds as string[]
-      : [],
+      : payload.version === 4
+        ? (payload.skippedConversationIds as string[] | undefined) ?? []
+        : [],
   }
 }
 
@@ -532,6 +571,7 @@ export class SynchronizeDeviceHistory {
       job.prepareTarget && this.prepareTarget ? 'preparing_crypto' : 'transferring',
     )
     const locallySkipped = new Set<string>()
+    let preparationRelayChecked = false
     this.report(progress, onProgress)
     if (job.prepareTarget && this.prepareTarget) {
       const prepared = await this.prepareTarget(
@@ -548,7 +588,15 @@ export class SynchronizeDeviceHistory {
           }
           this.report(progress, onProgress)
         },
-        () => this.ensureRelayActive(job.pairingId),
+        async () => {
+          this.ensureActive(job.pairingId)
+          if (preparationRelayChecked) return
+          preparationRelayChecked = true
+          await this.relayRequest(
+            job.pairingId,
+            () => this.gateway.listOutboundHistoryChunks(job.pairingId),
+          )
+        },
       )
       this.ensureActive(job.pairingId)
       progress = {
@@ -613,8 +661,10 @@ export class SynchronizeDeviceHistory {
       this.report(progress, onProgress)
       return progress
     }
-    const outbound = await this.gateway.listOutboundHistoryChunks(job.pairingId)
-    this.ensureActive(job.pairingId)
+    const outbound = await this.relayRequest(
+      job.pairingId,
+      () => this.gateway.listOutboundHistoryChunks(job.pairingId),
+    )
     const existingOutbound = new Set(outbound.map(chunk => chunk.clientChunkId))
     const completionIds = new Map<string, string>()
     const peerComplete = new Set(job.peerCompletedConversationIds ?? [])
@@ -623,9 +673,9 @@ export class SynchronizeDeviceHistory {
       const records = await this.readTransferable(job.ownerUserId, conversation.conversationId)
       this.ensureActive(job.pairingId)
       progress = { ...progress, gaps: progress.gaps + records.gaps }
-      const pages = chunks(records.messages, CHUNK_RECORD_LIMIT)
-        .slice(-MAX_CHUNKS_PER_CONVERSATION)
-      for (const page of pages) {
+      const pages = packedRecordChunks(records.messages)
+      for (let pageIndex = 0; pageIndex < pages.length; pageIndex += 1) {
+        const page = pages[pageIndex]!
         const first = page.at(0)
         const last = page.at(-1)
         if (!first || !last) continue
@@ -635,13 +685,14 @@ export class SynchronizeDeviceHistory {
           conversation.conversationId,
           first.messageId,
           last.messageId,
+          'packed-v4',
         ])
         progress = { ...progress, exportedRecords: progress.exportedRecords + page.length }
         this.report(progress, onProgress)
         if (!existingOutbound.has(chunkId)) {
           const payload: HistoryTransferPayload = {
             type: 'yv-chat-device-history',
-            version: 1,
+            version: 4,
             pairingId: job.pairingId,
             senderDeviceId: job.currentDeviceId,
             targetDeviceId: job.targetDeviceId,
@@ -655,14 +706,16 @@ export class SynchronizeDeviceHistory {
             plaintext: JSON.stringify(payload),
           })
           this.ensureActive(job.pairingId)
-          await this.gateway.uploadHistoryChunk(
+          await this.relayRequest(
             job.pairingId,
-            job.targetDeviceId,
-            conversation.conversationId,
-            chunkId,
-            protectedChunk.ciphertextBase64,
+            () => this.gateway.uploadHistoryChunk(
+              job.pairingId,
+              job.targetDeviceId,
+              conversation.conversationId,
+              chunkId,
+              protectedChunk.ciphertextBase64,
+            ),
           )
-          this.ensureActive(job.pairingId)
           existingOutbound.add(chunkId)
         }
       }
@@ -692,28 +745,31 @@ export class SynchronizeDeviceHistory {
           plaintext: JSON.stringify(payload),
         })
         this.ensureActive(job.pairingId)
-        await this.gateway.uploadHistoryChunk(
+        await this.relayRequest(
           job.pairingId,
-          job.targetDeviceId,
-          conversation.conversationId,
-          completionId,
-          protectedChunk.ciphertextBase64,
+          () => this.gateway.uploadHistoryChunk(
+            job.pairingId,
+            job.targetDeviceId,
+            conversation.conversationId,
+            completionId,
+            protectedChunk.ciphertextBase64,
+          ),
         )
-        this.ensureActive(job.pairingId)
         existingOutbound.add(completionId)
       }
     }
 
-    // Let the bounded upload burst drain before both peers begin list/ACK
-    // polling, then keep their combined steady-state traffic below ingress.
+    // Let the paced upload stream drain before both peers begin list/ACK polling.
     await new Promise<void>(resolve => this.scheduler.once(
       peerPollDelayMilliseconds(job.currentDeviceId),
       resolve,
     ))
     for (let attempt = 0; attempt < this.attempts; attempt += 1) {
       this.ensureActive(job.pairingId)
-      const incoming = await this.gateway.listHistoryChunks(job.pairingId)
-      this.ensureActive(job.pairingId)
+      const incoming = await this.relayRequest(
+        job.pairingId,
+        () => this.gateway.listHistoryChunks(job.pairingId),
+      )
       for (const chunk of incoming) {
         if (
           chunk.targetDeviceId !== job.currentDeviceId
@@ -721,8 +777,10 @@ export class SynchronizeDeviceHistory {
         ) throw new Error('history relay binding mismatch')
         if (locallySkipped.has(chunk.conversationId)) {
           peerComplete.add(chunk.conversationId)
-          await this.gateway.acknowledgeHistoryChunk(job.pairingId, chunk.chunkId)
-          this.ensureActive(job.pairingId)
+          await this.relayRequest(
+            job.pairingId,
+            () => this.gateway.acknowledgeHistoryChunk(job.pairingId, chunk.chunkId),
+          )
           progress = {
             ...progress,
             confirmedConversations: conversations.filter(
@@ -762,8 +820,10 @@ export class SynchronizeDeviceHistory {
             ...job,
             peerCompletedConversationIds: [...peerComplete],
           })
-          await this.gateway.acknowledgeHistoryChunk(job.pairingId, chunk.chunkId)
-          this.ensureActive(job.pairingId)
+          await this.relayRequest(
+            job.pairingId,
+            () => this.gateway.acknowledgeHistoryChunk(job.pairingId, chunk.chunkId),
+          )
           progress = {
             ...progress,
             confirmedConversations: conversations.filter(
@@ -794,8 +854,10 @@ export class SynchronizeDeviceHistory {
             peerCompletedConversationIds: [...peerComplete],
           })
         }
-        await this.gateway.acknowledgeHistoryChunk(job.pairingId, chunk.chunkId)
-        this.ensureActive(job.pairingId)
+        await this.relayRequest(
+          job.pairingId,
+          () => this.gateway.acknowledgeHistoryChunk(job.pairingId, chunk.chunkId),
+        )
         progress = {
           ...progress,
           confirmedConversations: conversations.filter(
@@ -813,8 +875,10 @@ export class SynchronizeDeviceHistory {
         }
         this.report(progress, onProgress)
       }
-      const latestOutbound = await this.gateway.listOutboundHistoryChunks(job.pairingId)
-      this.ensureActive(job.pairingId)
+      const latestOutbound = await this.relayRequest(
+        job.pairingId,
+        () => this.gateway.listOutboundHistoryChunks(job.pairingId),
+      )
       const acknowledgedCompletionIds = new Set(
         latestOutbound
           .filter(chunk => chunk.acknowledgedAt !== null)
@@ -889,10 +953,16 @@ export class SynchronizeDeviceHistory {
     if (this.cancelled.has(pairingId)) throw new DeviceHistorySyncCancelled()
   }
 
-  private async ensureRelayActive(pairingId: string): Promise<void> {
+  private async relayRequest<T>(
+    pairingId: string,
+    operation: () => Promise<T>,
+  ): Promise<T> {
     this.ensureActive(pairingId)
-    await this.gateway.listOutboundHistoryChunks(pairingId)
+    await new Promise<void>(resolve => this.scheduler.once(RELAY_REQUEST_INTERVAL_MS, resolve))
     this.ensureActive(pairingId)
+    const result = await operation()
+    this.ensureActive(pairingId)
+    return result
   }
 
   private removeStatus(pairingId: string): void {

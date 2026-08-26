@@ -1,57 +1,58 @@
 # Текущий workplan
 
-## WP-132 — KeepAlive chat viewport reactivation
+## WP-133 — Bounded QR history crypto pipeline
 
-Статус: **completed and production deployed; physical iPhone acceptance pending**
-Backlog: `BL-FIX-061`
+Статус: **implemented locally; production rollout pending**
+Backlog: `BL-FIX-062`
 
-Цель: переход `/chat → /settings → /chat` обязан восстанавливать сохранённый
-message-relative viewport при фактическом Nuxt `KeepAlive` lifecycle, включая WebKit
-reset скрытого scroll container к `scrollTop=0`.
+Цель: реальный QR sync двух уже авторизованных devices должен завершать
+двусторонний history union под общей production Nginx NAT-квотой, не создавать
+request burst и не выполнять десятки полных OpenMLS/vault checkpoints для небольшого
+архива.
 
-### Root cause
+### Production root cause
 
-- `/chat` объявлен с `keepalive: true`, поэтому Settings не размонтирует
-  `MessagePanel`, а вызывает `deactivated/activated`;
-- прежнее исправление и его 1000-row regression проверяли `unmount/remount`, то есть
-  не тот lifecycle, который работает в production;
-- `onMounted()` после возврата не вызывается, `restorationPending` не включается, а
-  WebKit может вернуть отсоединённый scroll container с `scrollTop=0`.
+- pairing `539d9afc…` принял все `38` opaque chunks (`19 + 19`, около `695 KiB`),
+  поэтому сервер и upload не были заблокированы;
+- оба направления ACK-нули ровно первые четыре chunks первой беседы и остановились
+  перед одинаковым пятым, самым крупным chunk; до пользовательского cancel ingress
+  вернул `150 × 200`, `1 × 204`, `0 × 429`, затем ожидаемый `410`;
+- v1 exporter дробил `230` доступных records на `19` MLS application messages в
+  каждом направлении и отдельный completion marker на чат; каждый protect/unprotect
+  выполнял encrypted crypto checkpoint;
+- activity guard дополнительно вызывал relay GET почти на каждом внутреннем шаге
+  подготовки каждого разговора, а uploads/ACKs не pace-ились вообще.
 
 ### Scope
 
-- flush последнего живого/captured viewport anchor при `deactivated`;
-- explicit instant restore при `activated`, с повторным подключением layout observer;
-- hidden zero-height pane по-прежнему не вычисляет новый anchor;
-- live-tail и exact historical anchor остаются разными intent.
+- backward-compatible encrypted history payload `v4` пакует до `100` records в
+  byte-bounded page (`190 KiB` records JSON), не меняя server plaintext boundary;
+- stable отдельный `v3` completion marker сохраняет retry/resume semantics даже если
+  peer import расширил локальный union между проходами;
+- каждый relay upload/list/ACK получает `1250 ms` pacing; два peers за одним NAT
+  остаются ниже `120r/m`, а server cancellation проверяется один раз до MLS prepare и
+  затем обычными relay operations;
+- local integrated Nginx зеркалит production `120r/m`, `burst=40`, чтобы regression
+  ловил unpaced history traffic до deploy.
 
 ### Tests and result
 
-- component regression использует настоящий Vue `KeepAlive`, 1000 сообщений,
-  deactivation, принудительный reset `scrollTop=0`, новую строку и reactivation;
-- Docker Compose production build с временным QA route: пять настоящих Nuxt
-  `/chat-like → settings → chat-like` переходов, каждый раз distance from bottom `0`,
-  row `#1000` видна, scroll-to-latest отсутствует, browser warnings/errors отсутствуют;
-- временный QA Compose project, volumes/images/routes удалены после проверки;
-- полный frontend CI в одноразовом `node:24-alpine` Docker container: `65` files /
-  `413` tests, ESLint, Nuxt typecheck и production/PWA build зелёные;
-- host Nuxt process не используется и остановлен; QA выполняется только в Docker.
+- production-shaped unit: `230` records / `5` direct chats / два symmetric peers;
+  полный union и ACK, `22` вместо `38` chunks, ни одного unpaced gateway call;
+- прежний `1000` mixed stress: `600` direct records через relay + `400` group records
+  через authoritative history, полный union, `16` вместо `40` chunks;
+- legacy v1–v3 parsing, cancellation, retry, partial start и stable completion tests
+  сохранены;
+- изолированный Docker Compose + настоящий Browser QR offer → manual scanner fallback
+  → SAS confirmation завершился `Готово` на двух независимых origins при включённом
+  production-shaped Nginx limit; `429 = 0`, browser errors отсутствуют кроме
+  ожидаемого camera-over-HTTP warning до manual fallback;
+- временное QA-поле с QR payload удалено и не входит в production diff.
 
 ### Definition of Done
 
-- cached chat восстанавливается на activation, а не только на mount;
-- bottom/live-tail и historical anchor проходят KeepAlive regression;
-- Docker Browser QA и полный containerized frontend CI зелёные;
-- production rollout и runtime acceptance успешны.
-
-### Production result
-
-- commit `5f6643d23e2ada5831cffc0959e3df58045c34a4`, manually dispatched production
-  workflow `32987332840` success; automatic push event не был зарегистрирован GitHub,
-  поэтому exact main SHA был запущен через `workflow_dispatch`;
-- workflow verify заново выполнил полный repository CI, оба immutable images собраны,
-  migration/isolated rollout успешны;
-- exact tag `sha-5f6643d23e2ada5831cffc0959e3df58045c34a4` активен на frontend,
-  API и cleanup; frontend/API/PostgreSQL healthy;
-- оба origin и health endpoints вернули `200`, unauthenticated WebSocket — ожидаемый
-  `403`, `nginx -t` успешен.
+- full frontend tests, lint, typecheck, production/PWA build проходят в Docker;
+- Compose config и local Nginx config валидны;
+- production rollout exact immutable SHA успешен;
+- новая physical попытка создаёт меньше chunks, ACK-ит оба направления и не повторяет
+  export loop.

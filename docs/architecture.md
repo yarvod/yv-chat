@@ -1210,7 +1210,7 @@ source of truth. Следующий reconciliation создаёт Commit и rota
 После target-verified READY enrollment `device_history_chunks` служит durable
 TTL-bounded почтовым ящиком для opaque MLS application messages. Row привязан к exact
 authorized pairing, sender/target devices и direct conversation; direction имеет
-жёсткий лимит 20 chunks, retry использует stable client chunk ID, target ACK-ит row
+жёсткий лимит 20 data chunks плюс completion marker, retry использует stable client chunk ID, target ACK-ит row
 только после durable local import. PostgreSQL restart не теряет relay, а HTTP/WS не
 получают plaintext, archive key, signer или epoch secret. Оба devices экспортируют
 доступные records, поэтому merge образует union и не назначает primary archive.
@@ -1224,6 +1224,13 @@ malformed response, missing KeyPackage и roster transition продолжают
 direct. Relay server не получает новый plaintext control field. UI отдельно считает
 `synchronized` и `skipped`, а будущая pairing может повторить ранее skipped chat после
 восстановления capable participant device.
+
+Data payload version 4 остаётся тем же MLS `PrivateMessage`, но page формируется по
+двум bounds: не более 100 records и не более 190 KiB records JSON. Это уменьшает
+число full OpenMLS/vault mutations для обычной истории, не поднимая server limit и не
+добавляя plaintext server field. Completion не объединяется с data page: отдельный
+stable v3 marker обязан остаться неизменным, когда partial import расширил локальный
+union и поменял границы следующего v4 page.
 
 Canonical content хранится как optional local-only поле рядом с immutable server
 envelope внутри существующей non-extractable AES-GCM archive key. Успешный decrypt и
@@ -1244,10 +1251,13 @@ History relay применяет ту же централизованную tran
 устройства за одним public Wi-Fi IP делят Nginx pairing bucket. Authorization,
 binding и остальные permanent `4xx` остаются terminal fail-closed и не превращаются
 в retry loop.
-До первого peer poll client даёт control/upload burst стечь, затем каждый device
-использует bounded `4–6s` device-staggered interval. Два peers создают steady-state
-traffic ниже общей `120r/m` per-IP зоны; Nginx limit, authenticated binding и server
-chunk bounds ради этого не повышаются и не отключаются.
+Каждый history upload/list/ACK предваряется `1250 ms` pacing, а между peer poll
+проходами остаётся bounded `4–6s` device-staggered interval. Два peers создают не
+более 96 relay requests/minute за общим NAT и остаются ниже `120r/m` per-IP зоны;
+Nginx limit, authenticated binding и server chunk bounds ради этого не повышаются и
+не отключаются. MLS preparation проверяет server-side cancellation один раз до
+внутреннего conversation loop; дальнейшие relay operations снова являются
+authoritative cancellation boundary, поэтому activity guard не создаёт GET burst.
 
 Первая immutable identity registration вместе с initial KeyPackage теперь в той же
 PostgreSQL transaction добавляет `conversation_updated` каждому active participant
