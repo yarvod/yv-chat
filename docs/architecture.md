@@ -1533,6 +1533,15 @@ connections на `versionchange` и при `pagehide`, чтобы новая PWA
 media bytes в origin storage не доказывает доступность encrypted message archive:
 это независимые stores с разными keys и recovery boundaries.
 
+Локальная immutable identity сообщения состоит из routing/order metadata,
+`created_at`, protocol envelope и ciphertext, но не из server retention projection.
+`expires_at` может extension-only измениться после reconciliation или прийти позже с
+peer archive; одинаковые envelopes объединяют его монотонно через более поздний
+timestamp и не теряют существующий local plaintext projection. Более старая копия не
+может сократить уже сохранённый срок. Несовпадение ciphertext, sender, sequence,
+message/conversation ID или иных immutable полей по-прежнему считается corruption и
+обрабатывается fail-closed.
+
 Message retention задаётся typed bootstrap settings. Code/development defaults
 остаются короткими, а production `.env` использует принятую годовую policy:
 

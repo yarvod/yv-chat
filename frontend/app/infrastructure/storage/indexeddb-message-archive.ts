@@ -28,6 +28,23 @@ function validPage(limit: number): boolean {
   return Number.isSafeInteger(limit) && limit > 0 && limit <= MAX_PAGE_SIZE
 }
 
+function sameInstant(left: string, right: string): boolean {
+  const leftMilliseconds = Date.parse(left)
+  const rightMilliseconds = Date.parse(right)
+  return Number.isFinite(leftMilliseconds)
+    && Number.isFinite(rightMilliseconds)
+    && leftMilliseconds === rightMilliseconds
+}
+
+function laterExpiry(left: string, right: string): string {
+  const leftMilliseconds = Date.parse(left)
+  const rightMilliseconds = Date.parse(right)
+  if (!Number.isFinite(leftMilliseconds) || !Number.isFinite(rightMilliseconds)) {
+    throw new MessageArchiveError('corrupt')
+  }
+  return leftMilliseconds >= rightMilliseconds ? left : right
+}
+
 function messageKeyRange(ownerUserId: string, conversationId: string, upper: number): IDBKeyRange {
   return IDBKeyRange.bound(
     [ownerUserId, conversationId, 0],
@@ -276,17 +293,27 @@ export class IndexedDbMessageArchive implements MessageArchive {
       && existing.cryptoGenerationId === incoming.cryptoGenerationId
       && existing.cryptoEpoch === incoming.cryptoEpoch
       && existing.sequence === incoming.sequence
-      && existing.createdAt === incoming.createdAt
-      && existing.expiresAt === incoming.expiresAt
+      && sameInstant(existing.createdAt, incoming.createdAt)
     if (!sameIdentity) throw new MessageArchiveError('corrupt')
     if (incoming.ciphertextBase64 === null) return incoming
     if (existing.ciphertextBase64 === null) throw new MessageArchiveError('corrupt')
     if (existing.ciphertextBase64 !== incoming.ciphertextBase64) {
       throw new MessageArchiveError('corrupt')
     }
-    return incoming.localPlaintext || !existing.localPlaintext
-      ? incoming
-      : { ...incoming, localPlaintext: existing.localPlaintext }
+    return {
+      ...incoming,
+      // Production retention can only be extended. A server reconciliation or
+      // a peer archive may therefore carry a later expires_at for the exact
+      // same immutable envelope. Treating that mutable policy projection as an
+      // identity mismatch permanently poisoned the IndexedDB row and aborted
+      // QR import before its first ACK.
+      expiresAt: laterExpiry(existing.expiresAt, incoming.expiresAt),
+      ...(incoming.localPlaintext
+        ? { localPlaintext: incoming.localPlaintext }
+        : existing.localPlaintext
+          ? { localPlaintext: existing.localPlaintext }
+          : {}),
+    }
   }
 
   private readRecords(

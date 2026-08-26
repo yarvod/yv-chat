@@ -4,6 +4,24 @@
 
 ## Active
 
+### BUG-123 — Продлённый server TTL отравлял IndexedDB и обрывал QR до первого ACK
+
+- Статус: `fixed and locally verified` (`WP-134`); production rollout pending.
+- Severity: `critical local history and multi-device sync reliability`.
+- Production evidence: pairing `659c29df…` принял symmetric `11 + 11` chunks для
+  одинаковых пяти chats, но не ACK-нул ни одного; следующие попытки остановились с
+  `11/0` и `1/0`. Значит QR, authorization и upload завершились, а import первого
+  data chunk упал до ACK.
+- Причина: `IndexedDbMessageArchive` включал exact string `expires_at` в immutable
+  identity. После extension-only production reconciliation старый device cache и
+  server/peer copy одной envelope расходились только retention metadata; archive
+  выбрасывал `corrupt`, закрывал IndexedDB и повторял API fetch после каждого запуска.
+- Ожидаемое поведение: ciphertext/routing mismatch остаётся fail-closed, но одинаковая
+  envelope объединяет `expires_at` монотонно через максимум и сохраняет local plaintext.
+- Проверка: unit regression, real encrypted union двух отдельных IndexedDB и настоящий
+  Docker Browser QR с `30 ↔ 30`, `4/4 ACK`; два cold reopen сохранили все сообщения без
+  «Локальная история недоступна» и без browser errors.
+
 ### BUG-122 — QR history создавал burst и десятки full crypto checkpoints
 
 - Статус: `fixed and production deployed` (`WP-133`, `d150814`, workflow

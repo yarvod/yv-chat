@@ -203,4 +203,29 @@ describe('encrypted IndexedDB message archive', () => {
     await expect(archive.loadLatest(ownerUserId, conversationId, 100))
       .resolves.toEqual([tombstone])
   })
+
+  it('merges a retention extension without poisoning an existing local row', async () => {
+    const local = {
+      ...message(1),
+      createdAt: '2026-08-11T12:00:01+00:00',
+      localPlaintext: 'canonical local content',
+    }
+    const extended = {
+      ...message(1),
+      expiresAt: '2027-08-11T12:00:00Z',
+    }
+    await archive.put(ownerUserId, conversationId, [local])
+
+    await expect(archive.put(ownerUserId, conversationId, [extended])).resolves.toBeUndefined()
+    await expect(archive.loadLatest(ownerUserId, conversationId, 100)).resolves.toEqual([{
+      ...extended,
+      localPlaintext: 'canonical local content',
+    }])
+
+    await expect(archive.put(ownerUserId, conversationId, [message(1)])).resolves.toBeUndefined()
+    await expect(archive.loadLatest(ownerUserId, conversationId, 100)).resolves.toEqual([{
+      ...extended,
+      localPlaintext: 'canonical local content',
+    }])
+  })
 })

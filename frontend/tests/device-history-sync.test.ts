@@ -1,3 +1,6 @@
+import { webcrypto } from 'node:crypto'
+
+import { IDBFactory, IDBKeyRange } from 'fake-indexeddb'
 import { describe, expect, it, vi } from 'vitest'
 
 import { SynchronizeDeviceHistory } from '../app/application/device-crypto/synchronize-device-history'
@@ -10,6 +13,7 @@ import type { MessageProtocolAdapter } from '../app/application/ports/message-pr
 import type { Scheduler, ScheduledTask } from '../app/application/ports/scheduler'
 import type { DeviceHistoryRelayChunk } from '../app/domain/accounts/device-pairing'
 import { BrowserDeviceHistorySyncJobStore } from '../app/infrastructure/storage/browser-device-history-sync-jobs'
+import { IndexedDbMessageArchive } from '../app/infrastructure/storage/indexeddb-message-archive'
 
 const owner = '11111111-1111-4111-8111-111111111111'
 const trusted = '22222222-2222-4222-8222-222222222222'
@@ -735,6 +739,64 @@ describe('QR-linked bidirectional device history sync', () => {
     expect(delays.get(candidate)!.filter(delay => delay === 1_250).length).toBeGreaterThanOrEqual(25)
     expect(permits.get(trusted)).toBe(0)
     expect(permits.get(candidate)).toBe(0)
+  })
+
+  it('ACKs a real encrypted IndexedDB union when peers cached different retention expiries', async () => {
+    vi.stubGlobal('IDBKeyRange', IDBKeyRange)
+    const randomValues = (array: Uint8Array<ArrayBuffer>) => webcrypto.getRandomValues(array)
+    const trustedArchive = new IndexedDbMessageArchive(
+      new IDBFactory(),
+      webcrypto.subtle as unknown as SubtleCrypto,
+      randomValues,
+      100,
+    )
+    const candidateArchive = new IndexedDbMessageArchive(
+      new IDBFactory(),
+      webcrypto.subtle as unknown as SubtleCrypto,
+      randomValues,
+      100,
+    )
+    const original = archived(1, trusted, 'retained local plaintext')
+    const extended = { ...original, expiresAt: '2027-09-12T12:00:00Z' }
+    const relay: RelayState = { chunks: [], acknowledged: new Set() }
+    try {
+      await trustedArchive.put(owner, conversation, [original])
+      await candidateArchive.put(owner, conversation, [extended])
+
+      const [trustedProgress, candidateProgress] = await Promise.all([
+        service(trusted, trustedArchive, relay, new MemoryJobs()).synchronize({
+          ownerUserId: owner,
+          currentDeviceId: trusted,
+          pairingId: pairing,
+          targetDeviceId: candidate,
+          expiresAt: '2099-08-14T12:00:00Z',
+        }),
+        service(candidate, candidateArchive, relay, new MemoryJobs()).synchronize({
+          ownerUserId: owner,
+          currentDeviceId: candidate,
+          pairingId: pairing,
+          targetDeviceId: trusted,
+          expiresAt: '2099-08-14T12:00:00Z',
+        }),
+      ])
+
+      expect(trustedProgress).toMatchObject({ complete: true, importedRecords: 1 })
+      expect(candidateProgress).toMatchObject({ complete: true, importedRecords: 1 })
+      expect(relay.chunks).toHaveLength(4)
+      expect(relay.acknowledged.size).toBe(4)
+      await expect(trustedArchive.loadLatest(owner, conversation, 100)).resolves.toMatchObject([{
+        expiresAt: extended.expiresAt,
+        localPlaintext: original.localPlaintext,
+      }])
+      await expect(candidateArchive.loadLatest(owner, conversation, 100)).resolves.toMatchObject([{
+        expiresAt: extended.expiresAt,
+        localPlaintext: original.localPlaintext,
+      }])
+    } finally {
+      trustedArchive.close()
+      candidateArchive.close()
+      vi.unstubAllGlobals()
+    }
   })
 
   it('prepares the exact target MLS leaf before a trusted device exports history', async () => {

@@ -728,6 +728,21 @@ sender negotiated remote-offer video transceiver до signed answer, а fullscre
 
 ## Completed
 
+### BL-FIX-063 — Monotonic retention merge for local and QR history
+
+Статус: **implemented and locally verified; production rollout pending**
+(`WP-134`).
+
+Production evidence отделил transport от client import: symmetric pairing сохранил
+`22` chunks для пяти chats, но оба направления остались на `0 ACK`. Причиной оказался
+`expires_at` в immutable IndexedDB identity: годовое extension-only reconciliation
+ADR-0006 сделало старые local rows несовместимыми с теми же ciphertext envelopes от
+API/peer. Archive теперь сравнивает immutable routing/ciphertext отдельно, объединяет
+retention только в сторону более позднего expiry и сохраняет local plaintext.
+Две реальные browser origins в Docker синхронизировали `30 ↔ 30` сообщений через
+снятый и декодированный QR (`4/4 ACK`), затем после cold reopen показали всю историю
+без предупреждения.
+
 ### BL-FIX-062 — Bounded QR history crypto pipeline
 
 Статус: **completed and production deployed; physical device acceptance pending**
