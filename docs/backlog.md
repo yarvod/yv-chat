@@ -730,6 +730,8 @@ sender negotiated remote-offer video transceiver до signed answer, а fullscre
 
 ### BL-FIX-064 — Настоящий offline cold start PWA
 
+Статус: **completed and production deployed** (`052b668`, workflow `33015105953`).
+
 Production shell prerender-ит и precache-ит exact `/` navigation fallback, поэтому
 installed PWA запускает Nuxt/Vue без живого origin. Последний server-confirmed safe
 account DTO хранится в отдельной bounded AES-GCM IndexedDB projection под

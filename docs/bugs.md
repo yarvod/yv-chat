@@ -6,7 +6,8 @@
 
 ### BUG-124 — Cold offline PWA не доходила до локальной истории
 
-- Статус: `fixed and locally verified` (`WP-135`); production rollout pending.
+- Статус: `fixed and production deployed` (`WP-135`, `052b668`, workflow
+  `33015105953`).
 - Severity: `critical PWA availability`.
 - Reproduction: открыть авторизованную установленную PWA online, закрыть её, сделать
   origin недоступным и снова открыть `/` или `/chat`.

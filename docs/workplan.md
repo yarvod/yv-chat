@@ -2,7 +2,7 @@
 
 ## WP-135 — Настоящий offline cold start установленной PWA
 
-Статус: **implemented and locally verified; production rollout pending**
+Статус: **completed and production deployed** (`052b668`, workflow `33015105953`)
 Backlog: `BL-FIX-064`
 
 Цель: уже установленная и хотя бы один раз успешно синхронизированная PWA должна
@@ -77,3 +77,6 @@ media без доступа к серверу. Offline не подтвержда
 - real Browser QA: создан direct chat и локальное сообщение, затем остановлены nginx,
   frontend, API и PostgreSQL; cold reload exact `/chat?conversation=…`, переход
   Settings → Chat и повторный render сообщения — passed.
+- production workflow `33015105953` прошёл verify/build/deploy; публичные `/` и
+  `/api/v1/health` отвечают `200`, опубликованный `sw.js` содержит precache entry
+  `url:"/", revision:"68480ef68f3d4d73b917bb79c98fa0a1"` — passed.
