@@ -39,6 +39,7 @@ export type DeviceHistorySyncStage =
 
 export type DeviceHistorySyncFailure =
   | 'network'
+  | 'rate_limited'
   | 'server'
   | 'pairing_unavailable'
   | 'stopped'
@@ -101,13 +102,30 @@ function failureFrom(error: unknown): {
     if ([401, 404, 409].includes(error.status ?? 0)) {
       return { failure: 'pairing_unavailable', terminal: true }
     }
-    if (error.kind === 'network') return { failure: 'network', terminal: false }
-    if (error.status !== null && error.status >= 500) {
+    if (error.status === 429) return { failure: 'rate_limited', terminal: false }
+    if (error.kind === 'network' || error.status === 408) {
+      return { failure: 'network', terminal: false }
+    }
+    if (
+      error.kind === 'invalid-response'
+      || (error.status !== null && error.status >= 500)
+    ) {
       return { failure: 'server', terminal: false }
     }
     return { failure: 'unknown', terminal: true }
   }
   return { failure: 'unknown', terminal: false }
+}
+
+function retryDelayMilliseconds(
+  failure: DeviceHistorySyncFailure,
+  attempt: number,
+  currentDeviceId: string,
+): number {
+  if (failure !== 'rate_limited') return 1_500
+  const deviceJitter = Number.parseInt(currentDeviceId.slice(-4), 16) % 2_500
+  const boundedAttempt = Math.min(attempt, 3)
+  return Math.min(27_500, 5_000 * (2 ** boundedAttempt)) + deviceJitter
 }
 
 function chunks<T>(values: readonly T[], size: number): T[][] {
@@ -376,7 +394,12 @@ export class SynchronizeDeviceHistory {
           failure: outcome.failure,
           complete: false,
         })
-        await new Promise<void>(resolve => this.scheduler.once(1_500, resolve))
+        const delay = retryDelayMilliseconds(
+          outcome.failure,
+          attempt,
+          job.currentDeviceId,
+        )
+        await new Promise<void>(resolve => this.scheduler.once(delay, resolve))
       }
     }
   }

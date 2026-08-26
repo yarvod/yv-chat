@@ -19,6 +19,14 @@ describe('mobile application shell', () => {
     expect(css).toMatch(/\.message-timeline--restoring \{[^}]*scroll-behavior:\s*auto/)
   })
 
+  it('keeps the sticky date separator shadow compact over iOS media', () => {
+    const css = readFileSync(resolve(process.cwd(), 'app/assets/main.css'), 'utf8')
+
+    expect(css).toMatch(/\.timeline-day span \{[^}]*box-shadow: 0 2px 6px rgb\(0 0 0 \/ 5%\);/)
+    expect(css).toMatch(/\.timeline-day span \{[^}]*backdrop-filter: blur\(7px\);/)
+    expect(css).not.toMatch(/\.timeline-day span \{[^}]*box-shadow: 0 4px 14px/)
+  })
+
   it('pins navigation to the visual viewport and reserves its safe-area slot', () => {
     const cssPath = resolve(process.cwd(), 'app/assets/main.css')
     const css = readFileSync(cssPath, 'utf8')

@@ -1213,6 +1213,14 @@ Transfer job содержит в `localStorage` только несекретн�
 resume-ится в authenticated runtime и истекает вместе с relay retention. Формат и
 ограничения зафиксированы в ADR-0004.
 
+History relay применяет ту же централизованную transport-failure policy, что и
+остальные durable client pipelines: network, `408`, `429`, malformed response и
+`5xx` сохраняют exact job и повторяют тот же idempotent pairing/chunk IDs. Для `429`
+используется bounded exponential backoff с device-derived stagger, потому что два
+устройства за одним public Wi-Fi IP делят Nginx pairing bucket. Authorization,
+binding и остальные permanent `4xx` остаются terminal fail-closed и не превращаются
+в retry loop.
+
 Первая immutable identity registration вместе с initial KeyPackage теперь в той же
 PostgreSQL transaction добавляет `conversation_updated` каждому active participant
 каждого conversation пользователя. Exact registration retry не дублирует события.

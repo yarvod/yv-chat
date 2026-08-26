@@ -11,6 +11,74 @@ afterEach(() => {
 })
 
 describe('device pairing settings flow', () => {
+  it('explains that an HTTP rate limit will retry without a new QR', async () => {
+    const states = new Map<string, ReturnType<typeof ref>>()
+    vi.stubGlobal('useState', (key: string, factory: () => unknown) => {
+      let state = states.get(key)
+      if (!state) {
+        state = ref(factory())
+        states.set(key, state)
+      }
+      return state
+    })
+    vi.stubGlobal('useNuxtApp', () => ({
+      $frontend: {
+        deviceInfo: { current: () => ({ deviceClass: 'mobile' }) },
+        deviceHistorySync: {
+          current: () => [{
+            ownerUserId: 'alice-user',
+            currentDeviceId: 'phone-device',
+            pairingId: 'pairing-id',
+            targetDeviceId: 'mac-device',
+            stage: 'retrying',
+            totalConversations: 7,
+            readyConversations: 5,
+            confirmedConversations: 0,
+            skippedConversations: 2,
+            exportedRecords: 126,
+            importedRecords: 0,
+            importRevision: 0,
+            gaps: 29,
+            complete: false,
+            failure: 'rate_limited',
+            importedConversationIds: [],
+            skippedConversationIds: ['blocked-a', 'blocked-b'],
+          }],
+          subscribe: () => () => undefined,
+        },
+      },
+    }))
+    states.set('auth-session', ref({
+      phase: 'authenticated',
+      user: {
+        userId: 'alice-user',
+        deviceId: 'phone-device',
+        username: 'alice',
+        displayName: 'Alice',
+        role: 'user',
+        deviceDisplayName: 'iPhone · Телефон',
+      },
+      message: null,
+    }))
+    states.set('auth-initialized', ref(true))
+
+    const wrapper = mount(DevicePairingCard, {
+      global: {
+        stubs: {
+          QrcodeVue: { template: '<div />' },
+          DeviceQrScanner: { template: '<div />' },
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Временно не получилось — повторяем автоматически')
+    expect(wrapper.text()).toContain('этот же перенос продолжится автоматически')
+    expect(wrapper.text()).not.toContain('непредвиденная ошибка')
+    expect(wrapper.text()).not.toContain('запустить заново')
+    wrapper.unmount()
+  })
+
   it('restores durable progress after Settings remount and explains safe navigation', async () => {
     const user = {
       userId: 'alice-user', deviceId: 'phone-device', username: 'alice',

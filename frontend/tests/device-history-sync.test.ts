@@ -314,6 +314,69 @@ describe('QR-linked bidirectional device history sync', () => {
     expect(cancelHistorySync).toHaveBeenCalledTimes(2)
   })
 
+  it('keeps the durable job and retries the same pairing after an HTTP 429', async () => {
+    const relay: RelayState = { chunks: [], acknowledged: new Set() }
+    const jobs = new MemoryJobs()
+    const delays: number[] = []
+    const retryScheduler: Scheduler = {
+      once(delay, callback): ScheduledTask {
+        delays.push(delay)
+        const timer = setTimeout(callback, 0)
+        return { cancel() { clearTimeout(timer) } }
+      },
+      repeat(): ScheduledTask { return { cancel() {} } },
+    }
+    const gateway = new RelayGateway(relay, trusted)
+    const outbound = vi.spyOn(gateway, 'listOutboundHistoryChunks')
+      .mockRejectedValueOnce(new ApplicationError(429, 'http', 'rate limited'))
+    const observed: string[] = []
+    const sync = new SynchronizeDeviceHistory(
+      gateway as unknown as DevicePairingGateway,
+      {
+        listConversations: async () => [{
+          conversationId: conversation,
+          conversationType: 'direct' as const,
+          title: null,
+          createdBy: owner,
+          createdAt: '2026-08-13T12:00:00Z',
+          updatedAt: '2026-08-13T12:00:00Z',
+          members: [],
+        }],
+      } as never,
+      new MemoryArchive([archived(1, trusted, 'trusted copy')]),
+      new ProtocolMessageProtection([adapter]),
+      jobs,
+      retryScheduler,
+      2,
+    )
+    const job = {
+      ownerUserId: owner,
+      currentDeviceId: trusted,
+      pairingId: pairing,
+      targetDeviceId: candidate,
+      expiresAt: '2099-08-14T12:00:00Z',
+    }
+    sync.subscribe(progress => {
+      if (progress.failure) observed.push(progress.failure)
+    })
+    sync.queue(job)
+
+    sync.resume(owner, trusted)
+
+    await vi.waitFor(() => expect(
+      sync.current(owner, trusted).at(0)?.stage,
+    ).toBe('waiting_peer'))
+    expect(observed).toContain('rate_limited')
+    expect(delays.at(0)).toBeGreaterThanOrEqual(5_000)
+    expect(outbound).toHaveBeenCalledTimes(4)
+    expect(jobs.load(owner, trusted)).toEqual([job])
+    expect(sync.current(owner, trusted).at(0)).toMatchObject({
+      stage: 'waiting_peer',
+      failure: null,
+      complete: false,
+    })
+  })
+
   it('prepares the exact target MLS leaf before a trusted device exports history', async () => {
     const relay: RelayState = { chunks: [], acknowledged: new Set() }
     const prepareTarget = vi.fn(async (_owner, _target, onProgress) => {

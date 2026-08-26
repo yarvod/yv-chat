@@ -10,6 +10,66 @@ afterEach(() => {
 })
 
 describe('device history sync banner', () => {
+  it('shows a transient rate limit as automatic continuation', async () => {
+    const states = new Map<string, ReturnType<typeof ref>>()
+    vi.stubGlobal('useState', (key: string, factory: () => unknown) => {
+      let state = states.get(key)
+      if (!state) {
+        state = ref(factory())
+        states.set(key, state)
+      }
+      return state
+    })
+    vi.stubGlobal('useNuxtApp', () => ({
+      $frontend: {
+        deviceHistorySync: {
+          current: () => [{
+            ownerUserId: 'alice-user',
+            currentDeviceId: 'phone-device',
+            pairingId: 'pairing-id',
+            targetDeviceId: 'desktop-device',
+            stage: 'retrying',
+            totalConversations: 7,
+            readyConversations: 5,
+            confirmedConversations: 0,
+            skippedConversations: 2,
+            exportedRecords: 126,
+            importedRecords: 0,
+            importRevision: 0,
+            gaps: 29,
+            complete: false,
+            failure: 'rate_limited',
+            importedConversationIds: [],
+            skippedConversationIds: ['blocked-a', 'blocked-b'],
+          }],
+          subscribe: () => () => undefined,
+        },
+      },
+    }))
+    states.set('auth-session', ref({
+      phase: 'authenticated',
+      user: {
+        userId: 'alice-user',
+        deviceId: 'phone-device',
+        username: 'alice',
+        displayName: 'Alice',
+      },
+      message: null,
+    }))
+    states.set('auth-initialized', ref(true))
+
+    const wrapper = mount(DeviceHistorySyncBanner, {
+      global: {
+        stubs: { NuxtLink: { template: '<a><slot /></a>' } },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Сервер занят — синхронизация продолжится автоматически')
+    expect(wrapper.text()).not.toContain('запустить заново')
+    expect(wrapper.find('button').exists()).toBe(false)
+  })
+
   it('lets the user dismiss a completed sync without cancelling it', async () => {
     const states = new Map<string, ReturnType<typeof ref>>()
     vi.stubGlobal('useState', (key: string, factory: () => unknown) => {

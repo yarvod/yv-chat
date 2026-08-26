@@ -278,7 +278,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .load-older { align-self: center; min-height: 40px; margin: 2px 0 12px; padding: 0 14px; border: 1px solid var(--border); border-radius: 999px; color: var(--primary); background: var(--surface-solid); font-size: .76rem; font-weight: 750; }
 .load-older:disabled { cursor: wait; opacity: .65; }
 .timeline-day { position: sticky; z-index: 1; top: 8px; display: grid; place-items: center; margin: 8px 0 12px; pointer-events: none; }
-.timeline-day span { padding: 6px 11px; border: 1px solid var(--border); border-radius: 999px; color: var(--text-soft); background: color-mix(in srgb, var(--surface-solid) 88%, transparent); box-shadow: 0 4px 14px rgb(0 0 0 / 8%); font-size: .7rem; font-weight: 700; backdrop-filter: blur(14px); }
+.timeline-day span { padding: 6px 11px; border: 1px solid color-mix(in srgb, var(--border) 78%, transparent); border-radius: 999px; color: var(--text-soft); background: color-mix(in srgb, var(--surface-solid) 92%, transparent); box-shadow: 0 2px 6px rgb(0 0 0 / 5%); font-size: .7rem; font-weight: 700; backdrop-filter: blur(7px); }
 .empty-timeline { margin: auto; color: var(--muted); text-align: center; }
 .empty-timeline > span { color: var(--primary); font-size: 2rem; }
 .empty-timeline h3 { margin: 12px 0 7px; color: var(--text); }

@@ -33,7 +33,11 @@ const label = computed(() => {
   if (progress.stage === 'waiting_peer') {
     return `Ждём второе устройство: ${progress.confirmedConversations}/${progress.totalConversations}`
   }
-  if (progress.stage === 'retrying') return 'Синхронизация прервалась — повторяем'
+  if (progress.stage === 'retrying') {
+    return progress.failure === 'rate_limited'
+      ? 'Сервер занят — синхронизация продолжится автоматически'
+      : 'Синхронизация прервалась — повторяем'
+  }
   if (progress.stage === 'cancelling') return 'Останавливаем синхронизацию устройств'
   if (progress.stage === 'cancelled') return 'Синхронизация устройств остановлена'
   if (progress.stage === 'failed') return 'Синхронизацию нужно запустить заново'

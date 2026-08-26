@@ -728,6 +728,19 @@ sender negotiated remote-offer video transceiver до signed answer, а fullscre
 
 ## Completed
 
+### BL-FIX-058 — Retry-safe history relay и bounded iOS date-pill shadow
+
+Статус: **completed locally** (`WP-129`).
+
+Два устройства на одном Wi-Fi могут превысить bounded Nginx pairing burst во время
+двустороннего relay. Transient `429` должен сохранять durable single-flight job и
+повторять тот же idempotent transfer с backoff, не превращаясь в terminal unknown.
+Permanent security/validation failures остаются fail-closed. Sticky timeline date
+pill получает компактную малоконтрастную тень без большого Safari blur halo.
+Regression воспроизводит exact production `429`, сохраняет job и продолжает тот же
+pairing с device-staggered backoff; frontend `403 passed`, lint/typecheck/build и
+mobile visual QA зелёные.
+
 ### BL-FIX-057 — Message gestures непосредственно на photo/sticker surface
 
 Статус: **completed and production deployed** (`WP-128`, `e384a36`, workflow

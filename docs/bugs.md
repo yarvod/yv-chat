@@ -4,6 +4,42 @@
 
 ## Active
 
+### BUG-115 — Sticky date separator создавал тяжёлый ореол поверх фото на iOS
+
+- Статус: `fixed locally` (`WP-129`).
+- Найдено в: user QA, iPhone screenshot 2026-08-26.
+- Severity: `medium visual polish`.
+- Условия воспроизведения: прокрутить timeline так, чтобы sticky date pill оказался
+  поверх светлого фото.
+- Фактическое поведение: Safari сочетает `14px` backdrop blur и широкую `14px` shadow
+  в большой многослойный серый ореол.
+- Ожидаемое поведение: компактная полупрозрачная pill с лёгким отделением от media.
+- Исправление: shadow уменьшен с `0 4px 14px / 8%` до `0 2px 6px / 5%`, blur —
+  с `14px` до `7px`, surface стала чуть плотнее.
+- Проверка: CSS regression и local browser QA `390×844` поверх светлого media fixture;
+  полный frontend suite (`403 passed`), lint, typecheck и production/PWA build.
+
+### BUG-114 — Nginx 429 ошибочно завершал retry-safe device history sync
+
+- Статус: `fixed locally` (`WP-129`).
+- Найдено в: production user QA на iPhone + Mac, pairing `3008a1c6…`.
+- Severity: `critical multi-device history reliability`.
+- Production evidence: client подготовил `126` записей; PostgreSQL сохранил 15
+  opaque chunks с двух devices и `0` ACK; exact pairing получил `64 × 200` и
+  `2 × 429` от Nginx.
+- Причина: общий history orchestrator считал только network/5xx временными; HTTP
+  `429` попадал в terminal `unknown`, durable job удалялся и UI требовал новый QR,
+  хотя Nginx per-IP bucket просто ограничил одновременный burst двух устройств.
+- Ожидаемое поведение: `408/429/5xx` сохраняют тот же job и автоматически
+  продолжаются с backoff; permanent authorization/validation `4xx` fail closed.
+- Исправление: `rate_limited` стал отдельным transient outcome; retry использует
+  bounded `5–30s` exponential delay и device-derived stagger, UI больше не требует
+  новый QR, durable job и stable chunk IDs сохраняются.
+- Проверка: application regression воспроизводит первый HTTP `429`, последующий
+  auto-resume того же pairing и сохранённый job; Settings/banner regressions
+  используют production-счётчики `126/0/7/2/29`; frontend `403 passed`, lint,
+  typecheck и production/PWA build зелёные.
+
 ### BUG-113 — Фото перехватывало reply swipe и touch long-press сообщения
 
 - Статус: `fixed and production deployed` (`WP-128`, `e384a36`, workflow
