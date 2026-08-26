@@ -367,7 +367,7 @@ describe('QR-linked bidirectional device history sync', () => {
       sync.current(owner, trusted).at(0)?.stage,
     ).toBe('waiting_peer'))
     expect(observed).toContain('rate_limited')
-    expect(delays.at(0)).toBeGreaterThanOrEqual(5_000)
+    expect(delays.some(delay => delay >= 5_000)).toBe(true)
     expect(outbound).toHaveBeenCalledTimes(4)
     expect(jobs.load(owner, trusted)).toEqual([job])
     expect(sync.current(owner, trusted).at(0)).toMatchObject({
@@ -375,6 +375,51 @@ describe('QR-linked bidirectional device history sync', () => {
       failure: null,
       complete: false,
     })
+    expect(delays.some(delay => delay >= 4_000 && delay < 6_000)).toBe(true)
+  })
+
+  it('paces symmetric peer polling below the shared production per-IP budget', async () => {
+    const delays: number[] = []
+    const pacedScheduler: Scheduler = {
+      once(delay, callback): ScheduledTask {
+        delays.push(delay)
+        const timer = setTimeout(callback, 0)
+        return { cancel() { clearTimeout(timer) } }
+      },
+      repeat(): ScheduledTask { return { cancel() {} } },
+    }
+    const relay: RelayState = { chunks: [], acknowledged: new Set() }
+    const sync = new SynchronizeDeviceHistory(
+      new RelayGateway(relay, trusted) as unknown as DevicePairingGateway,
+      {
+        listConversations: async () => [{
+          conversationId: conversation,
+          conversationType: 'direct' as const,
+          title: null,
+          createdBy: owner,
+          createdAt: '2026-08-13T12:00:00Z',
+          updatedAt: '2026-08-13T12:00:00Z',
+          members: [],
+        }],
+      } as never,
+      new MemoryArchive([archived(1, trusted, 'trusted copy')]),
+      new ProtocolMessageProtection([adapter]),
+      new MemoryJobs(),
+      pacedScheduler,
+      2,
+    )
+
+    const result = await sync.synchronize({
+      ownerUserId: owner,
+      currentDeviceId: trusted,
+      pairingId: pairing,
+      targetDeviceId: candidate,
+      expiresAt: '2099-08-14T12:00:00Z',
+    })
+
+    expect(result.stage).toBe('waiting_peer')
+    expect(delays).toHaveLength(3)
+    expect(delays.every(delay => delay >= 4_000 && delay < 6_000)).toBe(true)
   })
 
   it('prepares the exact target MLS leaf before a trusted device exports history', async () => {

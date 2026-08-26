@@ -10,6 +10,8 @@ import { ApplicationError } from '../errors'
 const CHUNK_RECORD_LIMIT = 20
 const MAX_CHUNKS_PER_CONVERSATION = 20
 const MAX_TRANSFER_RECORDS = CHUNK_RECORD_LIMIT * MAX_CHUNKS_PER_CONVERSATION
+const PEER_POLL_BASE_DELAY_MS = 4_000
+const PEER_POLL_STAGGER_MS = 2_000
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
 
@@ -126,6 +128,11 @@ function retryDelayMilliseconds(
   const deviceJitter = Number.parseInt(currentDeviceId.slice(-4), 16) % 2_500
   const boundedAttempt = Math.min(attempt, 3)
   return Math.min(27_500, 5_000 * (2 ** boundedAttempt)) + deviceJitter
+}
+
+function peerPollDelayMilliseconds(currentDeviceId: string): number {
+  const deviceStagger = Number.parseInt(currentDeviceId.slice(-4), 16) % PEER_POLL_STAGGER_MS
+  return PEER_POLL_BASE_DELAY_MS + deviceStagger
 }
 
 function chunks<T>(values: readonly T[], size: number): T[][] {
@@ -366,6 +373,12 @@ export class SynchronizeDeviceHistory {
   }
 
   private async retryJob(job: DeviceHistorySyncJob): Promise<void> {
+    // Both peers share one public IP on the common home-Wi-Fi case. Let the QR
+    // authorization/status burst drain before starting their history uploads.
+    await new Promise<void>(resolve => this.scheduler.once(
+      peerPollDelayMilliseconds(job.currentDeviceId),
+      resolve,
+    ))
     for (let attempt = 0; attempt < this.attempts; attempt += 1) {
       if (this.cancelled.has(job.pairingId)) return
       try {
@@ -638,6 +651,12 @@ export class SynchronizeDeviceHistory {
       }
     }
 
+    // Let the bounded upload burst drain before both peers begin list/ACK
+    // polling, then keep their combined steady-state traffic below ingress.
+    await new Promise<void>(resolve => this.scheduler.once(
+      peerPollDelayMilliseconds(job.currentDeviceId),
+      resolve,
+    ))
     for (let attempt = 0; attempt < this.attempts; attempt += 1) {
       this.ensureActive(job.pairingId)
       const incoming = await this.gateway.listHistoryChunks(job.pairingId)
@@ -761,7 +780,10 @@ export class SynchronizeDeviceHistory {
       }
       progress = { ...progress, stage: attempt === 0 ? 'transferring' : 'waiting_peer' }
       this.report(progress, onProgress)
-      await new Promise<void>(resolve => this.scheduler.once(1_500, resolve))
+      await new Promise<void>(resolve => this.scheduler.once(
+        peerPollDelayMilliseconds(job.currentDeviceId),
+        resolve,
+      ))
     }
     progress = { ...progress, stage: 'waiting_peer' }
     this.report(progress, onProgress)

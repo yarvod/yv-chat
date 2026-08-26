@@ -274,6 +274,10 @@ Desktop использует split view с bounded sidebar. Mobile исполь�
 его, browser Back возвращает list. На list global bottom tabs занимают отдельный
 safe-area-aware viewport slot; внутри conversation они скрываются, поэтому composer
 остаётся у visual viewport и при уменьшении высоты software keyboard.
+Пока app layout жив, переход на Settings сохраняет exact последний chat query как
+target вкладки «Чаты». Message-relative anchor пишется до route unmount, а singleton
+snapshot store сериализует save/load между старым и новым page instance, поэтому
+возврат не проигрывает незавершённую IndexedDB запись позиции.
 
 Компонент не вычисляет grouping inline: pure typed `buildTimelineLayout` создаёт day
 separators и объединяет соседние сообщения одного sender только в пятиминутном окне.
@@ -483,6 +487,15 @@ capture stream cursor baseline
 ```
 
 Событие, появившееся до baseline, уже покрывается последующим snapshot; событие после baseline будет применено poll. `reset_required` аналогично фиксирует server cursor до full resource reload. Timeline объединяет messages по stable ID и сортирует только по authoritative server `sequence`.
+
+Hydrated cache paint не доказывает полноту archive относительно сохранённого cursor:
+browser может сохранить snapshot DB и частично потерять либо временно заблокировать
+отдельную message DB. Поэтому active latest window всегда сверяется через history API,
+а non-latest viewport — через exact server window вокруг message anchor, до cursor
+catch-up. Server page добавляет/заменяет stable rows, но отсутствие старой local row в
+текущем retention page не является удалением без tombstone. Если archive временно
+недоступен, fallback cursor poll повторяет ту же authoritative reconciliation; cursor
+snapshot сохраняется только после успешного archive состояния.
 
 Frontend message protection boundary асинхронный, чтобы Rust/WASM adapter не менял
 application/UI contract. Application policy выбирает outgoing version только по
@@ -1220,6 +1233,10 @@ History relay применяет ту же централизованную tran
 устройства за одним public Wi-Fi IP делят Nginx pairing bucket. Authorization,
 binding и остальные permanent `4xx` остаются terminal fail-closed и не превращаются
 в retry loop.
+До первого peer poll client даёт control/upload burst стечь, затем каждый device
+использует bounded `4–6s` device-staggered interval. Два peers создают steady-state
+traffic ниже общей `120r/m` per-IP зоны; Nginx limit, authenticated binding и server
+chunk bounds ради этого не повышаются и не отключаются.
 
 Первая immutable identity registration вместе с initial KeyPackage теперь в той же
 PostgreSQL transaction добавляет `conversation_updated` каждому active participant

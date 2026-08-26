@@ -128,9 +128,14 @@ export class ConversationHistory {
       HISTORY_PAGE_SIZE,
     )
     await this.persist(conversationId, page.messages)
+    const authoritativePrepared = await this.prepare(page.messages, cachedPrepared)
     return {
-      messages: this.latestWindow(await this.prepare(page.messages, cachedPrepared)),
-      hasMore: page.hasMore,
+      // A synchronized device may intentionally retain encrypted local history
+      // beyond the server window. Reconciliation adds/replaces authoritative
+      // rows without treating their absence from the current server page as a
+      // deletion; explicit tombstones remain authoritative by stable message ID.
+      messages: this.latestWindow(mergeById(cachedPrepared, authoritativePrepared)),
+      hasMore: page.hasMore || cached.length === HISTORY_PAGE_SIZE,
       hasNewer: false,
     }
   }

@@ -906,7 +906,7 @@ describe('messenger orchestration', () => {
     expect(gateway.listSync).toHaveBeenCalledWith(8)
     expect(gateway.listDirectory).not.toHaveBeenCalled()
     expect(gateway.listConversations).not.toHaveBeenCalled()
-    expect(gateway.listMessageHistory).not.toHaveBeenCalled()
+    expect(gateway.listMessageHistory).toHaveBeenCalledWith('conversation-1', undefined, 100)
     expect(readStateGateway.list).not.toHaveBeenCalled()
     expect(deliveryStateGateway.list).not.toHaveBeenCalled()
     expect(messengerSnapshotStore.save).toHaveBeenCalledWith(expect.objectContaining({
@@ -1031,9 +1031,16 @@ describe('messenger orchestration', () => {
       oldestSequence: number | null
       newestSequence: number | null
     }) => void) | null = null
-    vi.mocked(gateway.listMessageHistory).mockReturnValue(new Promise(resolve => {
-      releaseNetwork = resolve
-    }))
+    vi.mocked(gateway.listMessageHistory).mockImplementation(conversationId => (
+      conversationId === 'conversation-1'
+        ? new Promise(resolve => { releaseNetwork = resolve })
+        : Promise.resolve({
+            messages: [secondMessage],
+            hasMore: false,
+            oldestSequence: 2,
+            newestSequence: 2,
+          })
+    ))
     const messenger = useMessenger('alice-id', 'device-alice', vi.fn(), messengerDependencies())
     await messenger.load('conversation-2')
 
@@ -1112,6 +1119,57 @@ describe('messenger orchestration', () => {
     expect(messenger.state.messages[0]?.messageId).toBe('message-anchor')
     expect(messenger.state.messages.at(-1)?.sequence).toBe(550)
     expect(messenger.state.historyHasNewer).toBe(true)
+  })
+
+  it('reconciles a partial hydrated cache even when its saved cursor is already advanced', async () => {
+    const latest = Array.from({ length: 7 }, (_, index) => ({
+      ...message,
+      messageId: `message-${149 + index}`,
+      clientMessageId: `client-${149 + index}`,
+      sequence: 149 + index,
+      senderUserId: index === 6 ? 'alice-id' : 'bob-id',
+    }))
+    const ownCachedMessage = latest.at(-1)!
+    vi.mocked(messengerSnapshotStore.load).mockResolvedValue({
+      ownerUserId: 'alice-id',
+      directory: [],
+      conversations: [conversation],
+      readStates: [],
+      deliveryStates: [],
+      viewportAnchors: [{
+        conversationId: 'conversation-1',
+        messageId: ownCachedMessage.messageId,
+        sequence: ownCachedMessage.sequence,
+        offset: 20,
+        atLatest: true,
+        savedAt: '2026-08-26T09:35:00Z',
+      }],
+      syncCursor: 3_377,
+      savedAt: '2026-08-26T09:35:00Z',
+    })
+    vi.mocked(messageArchive.loadLatest).mockResolvedValue([ownCachedMessage])
+    vi.mocked(gateway.listMessageHistory).mockResolvedValue({
+      messages: latest,
+      hasMore: true,
+      oldestSequence: 149,
+      newestSequence: 155,
+    })
+    vi.mocked(gateway.listSync).mockReset().mockResolvedValue({
+      events: [],
+      nextCursor: 3_377,
+      streamCursor: 3_377,
+      hasMore: false,
+      resetRequired: false,
+    })
+    const messenger = useMessenger('alice-id', 'device-alice', vi.fn(), messengerDependencies())
+
+    await messenger.load('conversation-1')
+
+    expect(gateway.listMessageHistory).toHaveBeenCalledWith('conversation-1', undefined, 100)
+    expect(messenger.state.messages.map(item => item.sequence)).toEqual([
+      149, 150, 151, 152, 153, 154, 155,
+    ])
+    expect(messageArchive.put).toHaveBeenCalledWith('alice-id', 'conversation-1', latest)
   })
 
   it('loads an exact deep-linked message window and persists its encrypted viewport anchor', async () => {
@@ -1339,7 +1397,10 @@ describe('messenger orchestration', () => {
       newestSequence: null,
     })
     await loading
-    expect(messenger.state.messages).toEqual([])
+    expect(messenger.state.messages).toMatchObject([{
+      messageId: 'message-1',
+      displayBody: 'hello',
+    }])
 
     vi.mocked(messageArchive.loadLatest).mockRejectedValue(new Error('denied'))
     vi.mocked(gateway.listMessageHistory).mockResolvedValue({
@@ -1351,6 +1412,13 @@ describe('messenger orchestration', () => {
     expect(degraded.state.phase).toBe('ready')
     expect(degraded.state.archiveStatus).toBe('unavailable')
     expect(messengerSnapshotStore.save).not.toHaveBeenCalled()
+
+    vi.mocked(messageArchive.loadLatest).mockResolvedValue([])
+    await degraded.poll()
+    expect(degraded.state.archiveStatus).toBe('ready')
+    expect(gateway.listMessageHistory).toHaveBeenLastCalledWith(
+      'conversation-1', undefined, 100,
+    )
   })
 
   it('does not report message history lost when only the snapshot store fails', async () => {

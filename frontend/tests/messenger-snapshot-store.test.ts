@@ -1,7 +1,7 @@
 import { webcrypto } from 'node:crypto'
 
 import { IDBFactory } from 'fake-indexeddb'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { MessengerSnapshot } from '../app/application/ports/messenger-snapshot-store'
 import { IndexedDbMessengerSnapshotStore } from '../app/infrastructure/storage/indexeddb-messenger-snapshot-store'
@@ -119,6 +119,55 @@ describe('encrypted messenger snapshot store', () => {
     )
     await expect(store.load(ownerUserId)).resolves.toEqual(snapshot)
     await expect(store.load('other-user')).resolves.toBeNull()
+  })
+
+  it('waits for an in-flight viewport snapshot before serving the next page load', async () => {
+    const nativeSubtle = webcrypto.subtle
+    let encryptCalls = 0
+    let releaseEncrypt: (() => void) | null = null
+    const subtle = new Proxy(nativeSubtle, {
+      get(target, property) {
+        if (property === 'encrypt') {
+          return async (...args: Parameters<SubtleCrypto['encrypt']>) => {
+            encryptCalls += 1
+            if (encryptCalls === 2) {
+              await new Promise<void>(resolve => { releaseEncrypt = resolve })
+            }
+            return target.encrypt(...args as Parameters<typeof target.encrypt>)
+          }
+        }
+        const value = Reflect.get(target, property, target) as unknown
+        return typeof value === 'function' ? value.bind(target) : value
+      },
+    }) as unknown as SubtleCrypto
+    store.close()
+    store = new IndexedDbMessengerSnapshotStore(
+      indexedDb,
+      subtle,
+      array => webcrypto.getRandomValues(array),
+    )
+    await store.save(snapshot)
+    const updated = {
+      ...snapshot,
+      viewportAnchors: [{
+        ...snapshot.viewportAnchors![0]!,
+        offset: -73,
+        savedAt: '2026-08-11T12:03:00Z',
+      }],
+      syncCursor: 18,
+      savedAt: '2026-08-11T12:03:00Z',
+    }
+
+    const saving = store.save(updated)
+    await vi.waitFor(() => expect(encryptCalls).toBe(2))
+    let loadSettled = false
+    const loading = store.load(ownerUserId).finally(() => { loadSettled = true })
+    await Promise.resolve()
+    expect(loadSettled).toBe(false)
+
+    releaseEncrypt?.()
+    await saving
+    await expect(loading).resolves.toEqual(updated)
   })
 
   it('fails closed when the encrypted snapshot is altered', async () => {

@@ -123,6 +123,14 @@ describe('mobile application shell', () => {
     expect(layout).toMatch(/function performMobileTabSelection\(to: string\): void \{\s+if \(isNavigationItemActive\(to\)\) return\s+\$frontend\.haptics\.perform\('selection'\)/)
   })
 
+  it('returns from settings to the exact conversation route instead of bare chat', () => {
+    const layout = readFileSync(resolve(process.cwd(), 'app/layouts/app.vue'), 'utf8')
+
+    expect(layout).toContain("const lastChatTarget = ref('/chat')")
+    expect(layout).toContain("if (route.path === '/chat') lastChatTarget.value = fullPath")
+    expect(layout).toContain("{ to: lastChatTarget.value, label: 'Чаты', icon: 'chat' }")
+  })
+
   it('opens a tapped conversation optimistically and keeps hover mouse-only', () => {
     const css = readFileSync(resolve(process.cwd(), 'app/assets/main.css'), 'utf8')
     const workspace = readFileSync(resolve(process.cwd(), 'app/components/chat/ChatWorkspace.vue'), 'utf8')

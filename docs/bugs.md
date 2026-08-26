@@ -4,6 +4,39 @@
 
 ## Active
 
+### BUG-118 — Hydrated partial cache перескакивал server events и скрывал сообщения группы
+
+- Статус: `fixed locally; production pending` (`WP-130`).
+- Severity: `critical messaging correctness`.
+- Production evidence: server rows и admin `message_created` events для «Озёрной»
+  `149–155` полны, но телефон показывал только собственную cached row `155`.
+- Причина: snapshot cursor мог оставаться новее частично доступного message archive;
+  bootstrap запрашивал latest history только когда cache был полностью пуст.
+- Ожидаемое поведение: cache paint немедленный, но active window всегда сверяется с
+  authoritative history API вокруг saved anchor/latest page.
+
+### BUG-117 — Возврат Settings → Chats терял conversation route и viewport save race
+
+- Статус: `fixed locally; production pending` (`WP-130`).
+- Severity: `high UX`.
+- Причина: tab target всегда был literal `/chat`, а snapshot save queue принадлежала
+  уничтожаемому composable instance и не координировалась со следующим load.
+- Ожидаемое поведение: app layout сохраняет exact chat query, а singleton snapshot
+  store гарантирует read-after-write для captured message anchor.
+
+### BUG-116 — Authenticated history relay делил слишком тесную Nginx zone с pairing poll
+
+- Статус: `fixed locally; production pending` (`WP-130`).
+- Severity: `critical multi-device history reliability`.
+- Production evidence: pairing `fd05d978…` сохранил `15` chunks, `0` ACK и получил
+  `4 × 429`; оба устройства находились за одним NAT.
+- Причина: общий `/device-pairings/` ingress bucket `120r/m`, `burst=40` учитывал и
+  control polling, и bounded двусторонний authenticated relay.
+- Ожидаемое поведение: server constraints/binding и Nginx limit остаются fail-closed,
+  а два peers используют paced staggered polling ниже общей per-IP квоты.
+- Исправление: перед первым run client ждёт device-staggered drain, peer polling
+  выполняется каждые `4–6s`; действующие Nginx `120r/m`, `burst=40` не изменены.
+
 ### BUG-115 — Sticky date separator создавал тяжёлый ореол поверх фото на iOS
 
 - Статус: `fixed and production deployed` (`WP-129`, `9d08b10`, workflow

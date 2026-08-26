@@ -1,74 +1,75 @@
 # Текущий workplan
 
-## WP-129 — Retry-safe device history sync и спокойный iOS date separator
+## WP-130 — Authoritative chat recovery, tab scroll continuity и pairing pacing
 
-Статус: **completed and production deployed**
-Backlog: `BL-FIX-058`
+Статус: **completed locally; production pending**
+Backlog: `BL-FIX-059`
 
-Цель: двусторонний history relay не должен уничтожать durable job при временном
-Nginx rate limit, а sticky date separator на iOS не должен рисовать тяжёлый серый
-ореол поверх media.
+Цель: cache-first bootstrap никогда не должен принимать частичную IndexedDB-копию
+за полную server history; возврат из Settings должен открывать тот же chat и exact
+message-relative viewport; два устройства за одним NAT не должны упираться в
+production pairing ingress во время bounded encrypted relay.
 
 ### Production evidence
 
-- pairing `3008a1c6…` создал 15 opaque chunks с двух устройств и `0` ACK;
-- exact pairing ingress вернул `64 × 200` и `2 × 429`;
-- UI показал `126` экспортируемых записей, `0/7` подтверждённых чатов и terminal
-  «непредвиденную ошибку»;
-- Nginx pairing zone ограничена `120r/m`, `burst=40`, поэтому два устройства на
-  одном Wi-Fi закономерно могут получить transient `429` во время burst;
-- date pill использует `0 4px 14px / 8%` shadow вместе с `blur(14px)`, который
-  Safari визуально раздувает над светлым изображением.
+- PostgreSQL хранит все сегодняшние сообщения «Озёрной» `149–155`, включая входящие
+  `149–154`, и admin stream содержит соответствующие `message_created` events;
+- телефон показывал только собственное `155`: hydrated snapshot имел cursor уже после
+  пропущенных events, а наличие одной cached row запрещало authoritative latest fetch;
+- laptop показывал transient «Локальная история недоступна» и не повторял
+  authoritative archive write до следующей message операции;
+- новый pairing `fd05d978…` сохранил `15` opaque chunks, `0` ACK и получил `4 × 429`;
+  production Nginx объединяет control polling и authenticated history relay в одну
+  per-IP zone `120r/m`, `burst=40`.
 
 ### Scope
 
-- централизованная history-sync failure policy различает transient `408/429/5xx`
-  и permanent authorization/validation `4xx`;
-- `429` сохраняет durable job, показывает понятное rate-limit состояние и повторяет
-  тот же pairing/envelopes с bounded backoff;
-- существующая single-flight очередь и idempotent chunk IDs сохраняются;
-- iOS/browser date pill получает меньший blur и компактную малоконтрастную тень;
-- regressions покрывают auto-retry после `429`, UI copy и CSS contract.
+- после cache paint hydrated active window всегда сверяется с server history API;
+- exact non-latest viewport сверяется вокруг message anchor, latest — через latest page;
+- unavailable archive повторяет authoritative active-window fetch/write во время
+  обычного cursor poll;
+- snapshot store сериализует межстраничные save/load, чтобы unmount anchor не проиграл
+  следующему `/chat` mount;
+- app layout запоминает exact `/chat?conversation=…` при переходе в Settings;
+- symmetric relay polling получает bounded device-staggered pacing ниже существующей
+  production per-IP квоты без изменения Nginx security limits.
 
 ### Security and data invariants
 
-- binding mismatch, чужой pairing/device/conversation и permanent `4xx` не
-  превращаются в бесконечный retry и остаются fail-closed;
-- retry не создаёт новый pairing, device identity, archive key или logical chunk ID;
-- ACK выполняется только после durable local import;
-- server не получает plaintext direct history или local archive key;
-- group v1 остаётся server-readable и синхронизируется обычным cursor sync; этот fix
-  не объявляет группы E2EE и не меняет crypto protocol.
+- PostgreSQL остаётся authoritative только в retention window; local archive не
+  объявляется источником полной server history;
+- direct ciphertext по-прежнему decrypt-ится только client-side, ключи/ plaintext не
+  попадают в server logs или новые snapshot поля;
+- sync cursor не сохраняется при недоступном archive;
+- pairing остаётся authenticated, device/session bound, idempotent и bounded server
+  limits; client pacing не ослабляет ingress или proof/binding validation.
 
 ### Tests
 
-- application regression: первый history request получает `429`, job остаётся и
-  следующий запуск автоматически продолжает тот же pairing;
-- component regression: rate limit не показывается как terminal unknown failure;
-- CSS regression: date separator использует bounded shadow/blur;
-- полный frontend Vitest, ESLint, Nuxt typecheck и production/PWA build.
+- partial cache + advanced cursor всё равно получает отсутствующие latest messages;
+- anchored cache сохраняет exact viewport и одновременно выполняет API reconciliation;
+- concurrent viewport save/load возвращает последнюю snapshot;
+- Settings → Chats сохраняет conversation query;
+- authoritative recovery retry снимает transient archive warning;
+- полный frontend Vitest, ESLint, Nuxt typecheck, production/PWA build и production QA.
 
 ### Definition of Done
 
-- подтверждённый transient `429` больше не удаляет sync job;
-- UI сообщает об автоматическом продолжении, а не требует нового QR;
-- permanent security errors не ретраятся;
-- date separator на iPhone не создаёт большой тёмный ореол;
-- tracking docs и frontend checks зелёные, изменение зафиксировано focused commit.
+- сообщения `149–155` снова видны admin на телефоне после обычного reload без очистки;
+- смена вкладки не меняет chat и scroll anchor;
+- transient IndexedDB failure самовосстанавливается либо остаётся честно обозначенным;
+- history relay проходит без Nginx `429` при двух устройствах за одним Wi-Fi;
+- focused commit, зелёный CI, production deploy и runtime acceptance.
 
-Результат: HTTP `429` выделен в transient `rate_limited`, durable job больше не
-удаляется и повторяется с bounded `5–30s` device-staggered backoff. Banner и Settings
-объясняют автоматическое продолжение без нового QR. Date pill использует компактные
-`0 2px 6px / 5%` shadow и `blur(7px)` вместо тяжёлых `14px`. Frontend: `403 passed`,
-ESLint, Nuxt typecheck и production/PWA build зелёные; локальный mobile browser QA
-`390×844` подтвердил лёгкую тень над светлым media fixture.
+### Local result
 
-### Production rollout
-
-- commit `9d08b10b6d2768eca68e218c3c996cce3de883b7`;
-- deploy workflow `32961867768` и отдельный CI `32961867712` завершились успешно;
-- backend/frontend развёрнуты с immutable tag
-  `sha-9d08b10b6d2768eca68e218c3c996cce3de883b7`;
-- оба production origin и health endpoint вернули HTTP `200`;
-- корректный unauthenticated WebSocket upgrade достиг приложения с ожидаемым `403`,
-  `nginx -t` успешен, production-контейнеры healthy.
+- hydrated latest и anchored windows теперь всегда выполняют server reconciliation;
+  local rows вне server retention сохраняются до explicit tombstone;
+- unavailable archive повторяет authoritative fetch/write на fallback poll, а sync
+  cursor не сохраняется до восстановления archive status;
+- singleton snapshot store гарантирует read-after-write между route instances, app
+  layout возвращает exact conversation query;
+- relay ждёт drain control burst и использует `4–6s` device-staggered peer polling;
+  production Nginx security limits не менялись;
+- frontend: `65` files / `407` tests passed, ESLint, Nuxt typecheck и production/PWA
+  build зелёные.

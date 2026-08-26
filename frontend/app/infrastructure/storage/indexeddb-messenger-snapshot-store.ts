@@ -19,6 +19,7 @@ const SNAPSHOTS_STORE = 'snapshots'
 
 export class IndexedDbMessengerSnapshotStore implements MessengerSnapshotStore {
   private database: Promise<IDBDatabase> | null = null
+  private writeQueue: Promise<void> = Promise.resolve()
   private readonly codec: MessengerSnapshotCodec
 
   constructor(
@@ -31,6 +32,7 @@ export class IndexedDbMessengerSnapshotStore implements MessengerSnapshotStore {
 
   async load(ownerUserId: string): Promise<MessengerSnapshot | null> {
     if (!ownerUserId) throw new MessengerSnapshotStoreError('corrupt')
+    await this.writeQueue.catch(() => undefined)
     try {
       const database = await this.open()
       const [key, encrypted] = await Promise.all([
@@ -48,6 +50,13 @@ export class IndexedDbMessengerSnapshotStore implements MessengerSnapshotStore {
 
   async save(snapshot: MessengerSnapshot): Promise<void> {
     if (!snapshot.ownerUserId) throw new MessengerSnapshotStoreError('corrupt')
+    const write = () => this.saveNow(snapshot)
+    const operation = this.writeQueue.then(write, write)
+    this.writeQueue = operation
+    return operation
+  }
+
+  private async saveNow(snapshot: MessengerSnapshot): Promise<void> {
     try {
       const [database, key] = await Promise.all([
         this.open(),

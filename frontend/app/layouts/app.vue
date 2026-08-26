@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import DeviceReenrollmentForm from '../components/auth/DeviceReenrollmentForm.vue'
 import AppIcon from '../components/ui/AppIcon.vue'
@@ -25,13 +25,14 @@ const reenrollmentBusy = ref(false)
 const reenrollmentMessage = ref<string | null>(null)
 usePreferences()
 const route = useRoute()
+const lastChatTarget = ref('/chat')
 interface NavigationItem {
   to: string
   label: string
   icon: AppIconName
 }
 const items = computed<NavigationItem[]>(() => [
-  { to: '/chat', label: 'Чаты', icon: 'chat' },
+  { to: lastChatTarget.value, label: 'Чаты', icon: 'chat' },
   { to: '/settings', label: 'Настройки', icon: 'settings' },
   ...(auth.user.value?.isAdmin ? [{ to: '/admin/users', label: 'Люди', icon: 'users' as const }] : []),
 ])
@@ -40,8 +41,16 @@ const conversationFocused = computed(() => (
 ))
 
 function isNavigationItemActive(to: string): boolean {
-  return route.path.startsWith(to)
+  return route.path.startsWith(to.split('?')[0] ?? to)
 }
+
+watch(
+  () => route.fullPath,
+  (fullPath) => {
+    if (route.path === '/chat') lastChatTarget.value = fullPath
+  },
+  { immediate: true },
+)
 
 function performMobileTabSelection(to: string): void {
   if (isNavigationItemActive(to)) return
@@ -114,10 +123,10 @@ async function enrollReplacementDevice(password: string): Promise<void> {
       <nav class="rail-nav" aria-label="Основная навигация">
         <NuxtLink
           v-for="item in items"
-          :key="item.to"
+          :key="item.label"
           :to="item.to"
           class="rail-link"
-          :class="{ active: route.path.startsWith(item.to) }"
+          :class="{ active: isNavigationItemActive(item.to) }"
         >
           <AppIcon :name="item.icon" /><small>{{ item.label }}</small>
         </NuxtLink>
@@ -127,7 +136,7 @@ async function enrollReplacementDevice(password: string): Promise<void> {
     <nav class="mobile-tabs" aria-label="Основная навигация">
       <NuxtLink
         v-for="item in items"
-        :key="item.to"
+        :key="item.label"
         :to="item.to"
         class="mobile-tab"
         :class="{ active: isNavigationItemActive(item.to) }"

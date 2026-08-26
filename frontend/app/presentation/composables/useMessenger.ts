@@ -734,6 +734,43 @@ export function useMessenger(
     await advanceActiveReadIfVisible()
   }
 
+  async function reconcileHydratedActiveHistory(
+    targetMessageId: string | null,
+  ): Promise<void> {
+    const conversationId = state.activeConversationId
+    if (!conversationId) return
+    try {
+      if (targetMessageId) {
+        applyHistoryWindow(
+          await history.loadMessageWindow(conversationId, targetMessageId),
+          conversationId,
+        )
+        return
+      }
+      const anchor = state.viewportAnchors.find(item => item.conversationId === conversationId)
+      if (anchor && !anchor.atLatest) {
+        applyHistoryWindow(await history.loadEndingAtSequence(
+          conversationId,
+          anchor.sequence,
+          cached => {
+            if (state.activeConversationId === conversationId) {
+              applyHistoryWindow(cached, conversationId)
+            }
+          },
+        ), conversationId)
+        return
+      }
+      await loadLatestHistory(conversationId)
+    } catch (error) {
+      syncArchiveStatus()
+      // A cache-first paint remains useful while offline. The next realtime or
+      // fallback poll retries the authoritative reconciliation.
+      if (state.messages.length === 0) throw error
+    } finally {
+      syncArchiveStatus()
+    }
+  }
+
   async function loadForwardMessages(conversationId: string): Promise<void> {
     let window: ConversationHistoryWindow
     try {
@@ -842,13 +879,8 @@ export function useMessenger(
       await outbox.load()
       if (await hydrateSnapshot(preferredConversationId)) {
         await reconcileAllDirectConversations()
+        await reconcileHydratedActiveHistory(targetMessageId)
         await poll()
-        if (
-          state.activeConversationId
-          && state.messages.length === 0
-        ) {
-          await loadLatestHistory(state.activeConversationId)
-        }
         if (state.activeConversationId) {
           await selectConversation(state.activeConversationId, targetMessageId)
         }
@@ -1420,6 +1452,9 @@ export function useMessenger(
       if (deliveryStatesChanged) await reloadDeliveryStates()
       if (reactionsChanged) await reloadActiveReactions()
       if (pinsChanged) await reloadActivePins()
+      if (history.archiveStatus === 'unavailable' && state.activeConversationId) {
+        await reconcileHydratedActiveHistory(null)
+      }
       await persistSnapshot()
       state.phase = 'ready'
       state.message = null
