@@ -730,7 +730,8 @@ sender negotiated remote-offer video transceiver до signed answer, а fullscre
 
 ### BL-FIX-062 — Bounded QR history crypto pipeline
 
-Статус: **completed locally; production rollout pending** (`WP-133`).
+Статус: **completed and production deployed; physical device acceptance pending**
+(`WP-133`, `d150814`, workflow `32991367535`).
 
 Production pairing подтвердил, что сервер принял `19 + 19` chunks, но оба клиента
 остановились после четырёх ACK первой беседы без HTTP error. Backward-compatible v4

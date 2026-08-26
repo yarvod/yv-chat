@@ -6,7 +6,8 @@
 
 ### BUG-122 — QR history создавал burst и десятки full crypto checkpoints
 
-- Статус: `fixed locally` (`WP-133`); production rollout pending.
+- Статус: `fixed and production deployed` (`WP-133`, `d150814`, workflow
+  `32991367535`); physical device acceptance pending.
 - Severity: `critical multi-device history reliability`.
 - Production evidence: pairing `539d9afc…` сохранил `38` opaque chunks (`19 + 19`,
   `695208` base64 bytes); оба направления ACK-нули ровно четыре первых chunks первой

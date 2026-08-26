@@ -2,7 +2,7 @@
 
 ## WP-133 — Bounded QR history crypto pipeline
 
-Статус: **implemented locally; production rollout pending**
+Статус: **completed and production deployed; physical device acceptance pending**
 Backlog: `BL-FIX-062`
 
 Цель: реальный QR sync двух уже авторизованных devices должен завершать
@@ -56,3 +56,17 @@ request burst и не выполнять десятки полных OpenMLS/vau
 - production rollout exact immutable SHA успешен;
 - новая physical попытка создаёт меньше chunks, ACK-ит оба направления и не повторяет
   export loop.
+
+### Production result
+
+- commit `d150814cef2507cbad2f5298220c4175f4710e4b`, manually dispatched production
+  workflow `32991367535` success after GitHub again did not immediately register the
+  push trigger;
+- workflow verify, dependency audit, immutable backend/frontend builds, migration and
+  isolated rollout completed successfully;
+- exact tag `sha-d150814cef2507cbad2f5298220c4175f4710e4b` is active on frontend, API and
+  cleanup; frontend/API/PostgreSQL are healthy;
+- both production origins and health endpoints return `200`, unauthenticated
+  WebSocket returns expected application `403`, `nginx -t` succeeds;
+- a fresh physical two-device attempt remains the final acceptance for the user's
+  actual local MLS archives.
