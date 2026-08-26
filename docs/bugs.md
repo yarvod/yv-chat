@@ -6,7 +6,8 @@
 
 ### BUG-115 — Sticky date separator создавал тяжёлый ореол поверх фото на iOS
 
-- Статус: `fixed locally` (`WP-129`).
+- Статус: `fixed and production deployed` (`WP-129`, `9d08b10`, workflow
+  `32961867768`).
 - Найдено в: user QA, iPhone screenshot 2026-08-26.
 - Severity: `medium visual polish`.
 - Условия воспроизведения: прокрутить timeline так, чтобы sticky date pill оказался
@@ -21,7 +22,8 @@
 
 ### BUG-114 — Nginx 429 ошибочно завершал retry-safe device history sync
 
-- Статус: `fixed locally` (`WP-129`).
+- Статус: `fixed and production deployed` (`WP-129`, `9d08b10`, workflow
+  `32961867768`).
 - Найдено в: production user QA на iPhone + Mac, pairing `3008a1c6…`.
 - Severity: `critical multi-device history reliability`.
 - Production evidence: client подготовил `126` записей; PostgreSQL сохранил 15
@@ -38,7 +40,8 @@
 - Проверка: application regression воспроизводит первый HTTP `429`, последующий
   auto-resume того же pairing и сохранённый job; Settings/banner regressions
   используют production-счётчики `126/0/7/2/29`; frontend `403 passed`, lint,
-  typecheck и production/PWA build зелёные.
+  typecheck и production/PWA build зелёные. Отдельный CI `32961867712`, production
+  deploy и runtime acceptance успешны.
 
 ### BUG-113 — Фото перехватывало reply swipe и touch long-press сообщения
 

@@ -372,6 +372,15 @@ vhost regression restore only its immediate backup. Never use `docker system pru
 
 ## Rollout records
 
+`WP-129` retry-safe device history sync и bounded iOS date separator deployed
+2026-08-26 workflow `32961867768` for commit `9d08b10`; отдельный CI
+`32961867712` также прошёл. Full repository verify, dependency audit, immutable
+backend/frontend builds, migrations и isolated rollout успешны. `chat.yoowee.ru` и
+`chat.yoowee.com.de` вернули frontend/health HTTP `200`, корректный unauthenticated
+WebSocket upgrade достиг FastAPI с ожидаемым `403`, `nginx -t` успешен, production
+containers healthy. Immutable production tag —
+`sha-9d08b10b6d2768eca68e218c3c996cce3de883b7`.
+
 `WP-128` photo/sticker message gestures deployed 2026-08-26 workflow
 `32902619863` for commit `e384a36`. Full repository verify, dependency audit,
 immutable backend/frontend builds, migrations and isolated rollout passed.

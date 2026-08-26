@@ -2,7 +2,7 @@
 
 ## WP-129 — Retry-safe device history sync и спокойный iOS date separator
 
-Статус: **completed locally**
+Статус: **completed and production deployed**
 Backlog: `BL-FIX-058`
 
 Цель: двусторонний history relay не должен уничтожать durable job при временном
@@ -62,3 +62,13 @@ Nginx rate limit, а sticky date separator на iOS не должен рисов
 `0 2px 6px / 5%` shadow и `blur(7px)` вместо тяжёлых `14px`. Frontend: `403 passed`,
 ESLint, Nuxt typecheck и production/PWA build зелёные; локальный mobile browser QA
 `390×844` подтвердил лёгкую тень над светлым media fixture.
+
+### Production rollout
+
+- commit `9d08b10b6d2768eca68e218c3c996cce3de883b7`;
+- deploy workflow `32961867768` и отдельный CI `32961867712` завершились успешно;
+- backend/frontend развёрнуты с immutable tag
+  `sha-9d08b10b6d2768eca68e218c3c996cce3de883b7`;
+- оба production origin и health endpoint вернули HTTP `200`;
+- корректный unauthenticated WebSocket upgrade достиг приложения с ожидаемым `403`,
+  `nginx -t` успешен, production-контейнеры healthy.
