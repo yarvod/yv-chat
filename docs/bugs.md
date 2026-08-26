@@ -6,7 +6,8 @@
 
 ### BUG-121 — KeepAlive activation не восстанавливал viewport чата
 
-- Статус: `fixed locally; production pending` (`WP-132`).
+- Статус: `fixed and production deployed` (`WP-132`, `5f6643d`, workflow
+  `32987332840`); physical iPhone acceptance pending.
 - Severity: `critical messaging UX on iOS PWA`.
 - Причина: `/chat` имеет `keepalive: true`; Settings вызывал deactivate/activate, а
   restore существовал только для mount/conversation prop changes. Предыдущий regression

@@ -11,7 +11,22 @@ not be replaced with the broader JavaScript `unsafe-eval`. Without it, public
 crypto assets still return HTTP 200 but device provisioning stops before the
 `PUT /api/v1/devices/current/crypto-identity` registration request.
 
-## Latest rollout — WP-131 live-tail restoration and bounded history completion
+## Latest rollout — WP-132 KeepAlive viewport reactivation
+
+- Commit: `5f6643d23e2ada5831cffc0959e3df58045c34a4`.
+- Production workflow: `32987332840` (manual dispatch success). GitHub did not
+  register the ordinary push runs for this commit, so the exact remote `main` SHA was
+  dispatched explicitly; its verify job ran the complete repository CI before build.
+- Deployed image tag: `sha-5f6643d23e2ada5831cffc0959e3df58045c34a4` on frontend,
+  API and cleanup; frontend/API/PostgreSQL healthy.
+- Public acceptance: both origins and health endpoints `200`, unauthenticated
+  WebSocket upgrade expected `403`, `nginx -t` successful.
+- Docker Browser acceptance used a production image with 1000 rows and five actual
+  Nuxt KeepAlive route round-trips, forcing the detached scroller to zero each time;
+  every activation restored distance from bottom `0`, last row visible and no arrow.
+  Temporary QA containers, volumes, images and routes were removed afterward.
+
+## Prior rollout — WP-131 live-tail restoration and bounded history completion
 
 - Commit: `a85bb3bb7f7458a9ac520ee3ca2ee7526a33070a`.
 - Production workflow: `32977268412` (success after failed-job rerun); CI workflow:

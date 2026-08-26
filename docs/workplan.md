@@ -2,7 +2,7 @@
 
 ## WP-132 — KeepAlive chat viewport reactivation
 
-Статус: **completed locally; production pending**
+Статус: **completed and production deployed; physical iPhone acceptance pending**
 Backlog: `BL-FIX-061`
 
 Цель: переход `/chat → /settings → /chat` обязан восстанавливать сохранённый
@@ -43,3 +43,15 @@ reset скрытого scroll container к `scrollTop=0`.
 - bottom/live-tail и historical anchor проходят KeepAlive regression;
 - Docker Browser QA и полный containerized frontend CI зелёные;
 - production rollout и runtime acceptance успешны.
+
+### Production result
+
+- commit `5f6643d23e2ada5831cffc0959e3df58045c34a4`, manually dispatched production
+  workflow `32987332840` success; automatic push event не был зарегистрирован GitHub,
+  поэтому exact main SHA был запущен через `workflow_dispatch`;
+- workflow verify заново выполнил полный repository CI, оба immutable images собраны,
+  migration/isolated rollout успешны;
+- exact tag `sha-5f6643d23e2ada5831cffc0959e3df58045c34a4` активен на frontend,
+  API и cleanup; frontend/API/PostgreSQL healthy;
+- оба origin и health endpoints вернули `200`, unauthenticated WebSocket — ожидаемый
+  `403`, `nginx -t` успешен.
