@@ -186,6 +186,16 @@ async function copyMessageText(value: string): Promise<boolean> {
   }
 }
 
+async function copyMessageImage(value: Blob | Promise<Blob>): Promise<boolean> {
+  try {
+    await $frontend.clipboard.writeImage(value)
+    $frontend.haptics.perform('success')
+    return true
+  } catch {
+    return false
+  }
+}
+
 async function createDirect(userId: string): Promise<void> {
   await messenger.createDirect(userId)
   if (messenger.state.activeConversationId) {
@@ -369,6 +379,7 @@ onBeforeUnmount(() => {
         :toggle-pin="messenger.togglePin"
         :pinning-message-id="messenger.state.pinningMessageId"
         :copy-text="copyMessageText"
+        :copy-image="copyMessageImage"
         :connection-state="connectionState"
         :set-typing="typing.setLocal.bind(typing)"
         :viewport-anchor="messenger.activeViewportAnchor.value"

@@ -90,6 +90,7 @@ const props = withDefaults(defineProps<{
   togglePin?: (messageId: string, active: boolean) => Promise<boolean>
   pinningMessageId?: string | null
   copyText?: (value: string) => Promise<boolean>
+  copyImage?: (value: Blob | Promise<Blob>) => Promise<boolean>
   connectionState: RealtimeConnectionState
   setTyping: (conversationId: string, active: boolean) => void
   viewportAnchor?: ConversationViewportAnchor | null
@@ -121,6 +122,14 @@ const props = withDefaults(defineProps<{
   togglePin: async () => false,
   pinningMessageId: null,
   copyText: async () => false,
+  copyImage: async (value: Blob | Promise<Blob>) => {
+    try {
+      await value
+    } catch {
+      // The default keeps an unavailable attachment promise handled in isolated tests.
+    }
+    return false
+  },
   viewportAnchor: null,
   targetMessageId: null,
   saveViewport: async () => undefined,
@@ -184,6 +193,7 @@ let suppressedMessageClickId: string | null = null
 let reactionBurstTimer: ReturnType<typeof setTimeout> | null = null
 interface MessageContextMenuState {
   messageId: string
+  imageAttachmentId: string | null
   x: number
   y: number
   expandedReactions: boolean
@@ -222,6 +232,13 @@ const attachmentsAllowed = computed(() => (
 const contextMessage = computed(() => props.messages.find(message => (
   message.messageId === messageContextMenu.value?.messageId
 )) ?? null)
+const contextImageAttachment = computed(() => {
+  const attachmentId = messageContextMenu.value?.imageAttachmentId
+  if (!attachmentId) return null
+  return contextMessage.value?.displayAttachments?.find(attachment => (
+    attachment.attachmentId === attachmentId && attachment.kind === 'image'
+  )) ?? null
+})
 const contextReactionActors = computed<readonly ContextReactionActor[]>(() => {
   const message = contextMessage.value
   const conversation = props.conversation
@@ -623,6 +640,53 @@ async function copyMessageText(message: TimelineMessage): Promise<void> {
   showMessageActionNotice('Не удалось скопировать текст')
 }
 
+async function copyMessageImage(
+  message: TimelineMessage,
+  attachment: MessageAttachment,
+): Promise<void> {
+  try {
+    const body = props.loadAttachment(
+      message.conversationId,
+      attachment,
+      message.expiresAt,
+    )
+    if (await props.copyImage(body)) {
+      messageContextMenu.value = null
+      showMessageActionNotice('Изображение скопировано')
+      return
+    }
+  } catch {
+    // The user-facing failure below covers both loading and clipboard rejection.
+  }
+  showMessageActionNotice('Не удалось скопировать изображение')
+}
+
+async function downloadMessageImage(
+  message: TimelineMessage,
+  attachment: MessageAttachment,
+): Promise<void> {
+  try {
+    const body = await props.loadAttachment(
+      message.conversationId,
+      attachment,
+      message.expiresAt,
+    )
+    const url = URL.createObjectURL(body)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = attachment.name
+    anchor.style.display = 'none'
+    document.body.append(anchor)
+    anchor.click()
+    anchor.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 0)
+    messageContextMenu.value = null
+    showMessageActionNotice('Скачивание началось')
+  } catch {
+    showMessageActionNotice('Не удалось скачать изображение')
+  }
+}
+
 function isMessageSelected(messageId: string): boolean {
   return selectedMessageIds.value.has(messageId)
 }
@@ -663,13 +727,21 @@ async function copySelectedMessages(): Promise<void> {
   showMessageActionNotice('Не удалось скопировать сообщения')
 }
 
-function openMessageContext(message: TimelineMessage, clientX: number, clientY: number): void {
+function openMessageContext(
+  message: TimelineMessage,
+  clientX: number,
+  clientY: number,
+  imageAttachmentId: string | null = null,
+): void {
   if (message.contentState !== 'available' || messageSelectionActive.value) return
   attachmentMenuOpen.value = false
   const menuWidth = 380
-  const menuHeight = reactionsFor(message.messageId).length > 0 ? 570 : 430
+  const imageActionsHeight = imageAttachmentId ? 96 : 0
+  const menuHeight = (reactionsFor(message.messageId).length > 0 ? 570 : 430)
+    + imageActionsHeight
   messageContextMenu.value = {
     messageId: message.messageId,
+    imageAttachmentId,
     x: Math.max(12, Math.min(clientX, window.innerWidth - menuWidth - 12)),
     y: Math.max(12, Math.min(clientY, window.innerHeight - menuHeight - 12)),
     expandedReactions: false,
@@ -678,13 +750,31 @@ function openMessageContext(message: TimelineMessage, clientX: number, clientY: 
   void nextTick(() => contextMenuElement.value?.focus())
 }
 
+function imageAttachmentIdForTarget(
+  message: TimelineMessage,
+  target: EventTarget | null,
+): string | null {
+  if (!(target instanceof Element)) return null
+  const attachmentId = target.closest<HTMLElement>('[data-attachment-id]')
+    ?.dataset.attachmentId
+  if (!attachmentId) return null
+  return message.displayAttachments?.some(attachment => (
+    attachment.attachmentId === attachmentId && attachment.kind === 'image'
+  )) ? attachmentId : null
+}
+
 function handleMessageContextMenu(event: MouseEvent, message: TimelineMessage): void {
   event.preventDefault()
   if (messageSelectionActive.value) {
     toggleMessageSelection(message)
     return
   }
-  openMessageContext(message, event.clientX, event.clientY)
+  openMessageContext(
+    message,
+    event.clientX,
+    event.clientY,
+    imageAttachmentIdForTarget(message, event.target),
+  )
 }
 
 function handleMessageKeydown(event: KeyboardEvent, message: TimelineMessage): void {
@@ -787,7 +877,12 @@ function handleMessagePointerDown(event: PointerEvent, message: TimelineMessage)
     const swipe = messageSwipe.value
     if (!swipe || swipe.pointerId !== event.pointerId || swipe.offset > 8) return
     swipe.longPressFired = true
-    openMessageContext(message, event.clientX, event.clientY)
+    openMessageContext(
+      message,
+      event.clientX,
+      event.clientY,
+      imageAttachmentIdForTarget(message, event.target),
+    )
   }, 480)
 }
 
@@ -2075,6 +2170,22 @@ onBeforeUnmount(() => {
             @click="copyMessageText(contextMessage)"
           >
             <span aria-hidden="true">⧉</span><strong>Копировать текст</strong>
+          </button>
+          <button
+            v-if="contextImageAttachment"
+            type="button"
+            role="menuitem"
+            @click="copyMessageImage(contextMessage, contextImageAttachment)"
+          >
+            <span aria-hidden="true">▣</span><strong>Копировать изображение</strong>
+          </button>
+          <button
+            v-if="contextImageAttachment"
+            type="button"
+            role="menuitem"
+            @click="downloadMessageImage(contextMessage, contextImageAttachment)"
+          >
+            <span aria-hidden="true">↓</span><strong>Скачать изображение</strong>
           </button>
           <button type="button" role="menuitem" @click="startMessageSelection(contextMessage)">
             <span aria-hidden="true">◉</span><strong>Выбрать</strong>

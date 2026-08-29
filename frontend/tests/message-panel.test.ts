@@ -1,4 +1,4 @@
-import { mount, type VueWrapper } from '@vue/test-utils'
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { defineComponent, h, KeepAlive, nextTick, ref } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -378,6 +378,170 @@ describe('message panel', () => {
 
     wrapper.unmount()
     vi.useRealTimers()
+  })
+
+  it('copies and downloads the exact image selected from the message context menu', async () => {
+    vi.useFakeTimers()
+    const first = {
+      attachmentId: 'photo-1',
+      kind: 'image' as const,
+      name: 'first.png',
+      contentType: 'image/png',
+      byteSize: 5,
+    }
+    const second = {
+      attachmentId: 'photo-2',
+      kind: 'image' as const,
+      name: 'second.jpg',
+      contentType: 'image/jpeg',
+      byteSize: 6,
+    }
+    const message = {
+      messageId: 'message-image-actions',
+      clientMessageId: 'client-image-actions',
+      conversationId: 'conversation-1',
+      senderUserId: 'bob-id',
+      senderDeviceId: 'bob-device',
+      protocolVersion: 2,
+      cryptoGenerationId: 'generation-1',
+      cryptoEpoch: 1,
+      sequence: 1,
+      createdAt: '2026-08-30T12:00:01Z',
+      expiresAt: '2026-09-30T12:00:00Z',
+      ciphertextBase64: 'b3BhcXVl',
+      deletionReason: null,
+      deletedAt: null,
+      contentState: 'available' as const,
+      displayBody: '',
+      displayAttachments: [first, second],
+      contentSecure: true,
+    }
+    const firstBlob = new Blob(['first'], { type: first.contentType })
+    const secondBlob = new Blob(['second'], { type: second.contentType })
+    const loadAttachment = vi.fn(async (_conversationId, attachment) => (
+      attachment.attachmentId === first.attachmentId ? firstBlob : secondBlob
+    ))
+    const copyImage = vi.fn(async (value: Blob | Promise<Blob>) => {
+      expect(await value).toBe(secondBlob)
+      return true
+    })
+    const createObjectUrlDescriptor = Object.getOwnPropertyDescriptor(URL, 'createObjectURL')
+    const revokeObjectUrlDescriptor = Object.getOwnPropertyDescriptor(URL, 'revokeObjectURL')
+    const createObjectURL = vi.fn(() => 'blob:download-second')
+    const revokeObjectURL = vi.fn()
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: createObjectURL,
+    })
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      configurable: true,
+      value: revokeObjectURL,
+    })
+    let clickedDownload = ''
+    const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(function (this: HTMLAnchorElement) {
+        clickedDownload = this.download
+      })
+
+    try {
+      const wrapper = mount(MessagePanel, {
+        props: {
+          conversation,
+          messages: [message],
+          actorUserId: 'alice-id',
+          sending: false,
+          protectionSecure: true,
+          protectionLabel: 'E2EE',
+          sendMessage: vi.fn(),
+          loadAttachment,
+          copyImage,
+          deleteMessage: vi.fn(),
+          deletingMessageId: null,
+          typingActorIds: [],
+          onlineActorIds: [],
+          deliveryStates: [],
+          connectionState: 'connected',
+          setTyping: vi.fn(),
+        },
+        global: {
+          stubs: {
+            MessageAttachments: {
+              props: ['attachments'],
+              template: `<div class="fake-image-gallery">
+                <button
+                  v-for="attachment in attachments"
+                  :key="attachment.attachmentId"
+                  class="fake-image"
+                  :data-attachment-id="attachment.attachmentId"
+                  type="button"
+                >{{ attachment.name }}</button>
+              </div>`,
+            },
+          },
+        },
+      })
+      const bubble = wrapper.get('[data-message-id="message-image-actions"]')
+
+      await bubble.trigger('contextmenu')
+      expect(wrapper.get('.message-context-menu').text()).not.toContain('Копировать изображение')
+
+      await wrapper.get('[data-attachment-id="photo-2"]').trigger('contextmenu', {
+        clientX: 120,
+        clientY: 140,
+      })
+      expect(wrapper.get('.message-context-menu').text()).toContain('Копировать изображение')
+      expect(wrapper.get('.message-context-menu').text()).toContain('Скачать изображение')
+      const copyButton = wrapper.findAll('.context-message-actions button')
+        .find(button => button.text().includes('Копировать изображение'))
+      expect(copyButton).toBeDefined()
+      await copyButton?.trigger('click')
+      await flushPromises()
+
+      expect(loadAttachment).toHaveBeenLastCalledWith(
+        'conversation-1',
+        second,
+        message.expiresAt,
+      )
+      expect(copyImage).toHaveBeenCalledOnce()
+      expect(wrapper.get('.message-action-toast').text()).toBe('Изображение скопировано')
+
+      await wrapper.get('[data-attachment-id="photo-2"]').trigger('contextmenu')
+      copyImage.mockResolvedValueOnce(false)
+      const failingCopyButton = wrapper.findAll('.context-message-actions button')
+        .find(button => button.text().includes('Копировать изображение'))
+      await failingCopyButton?.trigger('click')
+      await flushPromises()
+      expect(wrapper.get('.message-action-toast').text())
+        .toBe('Не удалось скопировать изображение')
+      expect(wrapper.find('.message-context-menu').exists()).toBe(true)
+
+      const downloadButton = wrapper.findAll('.context-message-actions button')
+        .find(button => button.text().includes('Скачать изображение'))
+      expect(downloadButton).toBeDefined()
+      await downloadButton?.trigger('click')
+      await flushPromises()
+
+      expect(createObjectURL).toHaveBeenCalledWith(secondBlob)
+      expect(anchorClick).toHaveBeenCalledOnce()
+      expect(clickedDownload).toBe('second.jpg')
+      expect(wrapper.get('.message-action-toast').text()).toBe('Скачивание началось')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(revokeObjectURL).toHaveBeenCalledWith('blob:download-second')
+      wrapper.unmount()
+    } finally {
+      anchorClick.mockRestore()
+      if (createObjectUrlDescriptor) {
+        Object.defineProperty(URL, 'createObjectURL', createObjectUrlDescriptor)
+      } else {
+        Reflect.deleteProperty(URL, 'createObjectURL')
+      }
+      if (revokeObjectUrlDescriptor) {
+        Object.defineProperty(URL, 'revokeObjectURL', revokeObjectUrlDescriptor)
+      } else {
+        Reflect.deleteProperty(URL, 'revokeObjectURL')
+      }
+      vi.useRealTimers()
+    }
   })
 
   it('keeps the context menu open and reports clipboard failure', async () => {

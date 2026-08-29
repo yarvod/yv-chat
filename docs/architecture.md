@@ -381,6 +381,12 @@ component helpers. Для них допустимы маленькие ports, п
 не являются secrets и могут храниться в `localStorage`; auth credentials,
 passwords, activation/reset tokens и crypto material там запрещены.
 
+Копирование изображения также проходит через clipboard port: presentation передаёт
+pending blob из существующего authorized attachment-loading boundary, чтобы browser
+мог вызвать `Clipboard.write()` в пределах user activation. Infrastructure локально
+создаёт portable PNG representation для non-PNG media; plaintext не отправляется на
+server и не сохраняется как новый cache или durable state.
+
 Device label вычисляется автоматически и остаётся только best-effort metadata:
 browser family + OS family + device class, bounded до API limit. User-Agent и
 Client Hints не дают authorization claims и не являются доказательством модели

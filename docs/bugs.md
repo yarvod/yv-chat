@@ -4,6 +4,27 @@
 
 ## Active
 
+### BUG-127 — В контекстном меню изображения нельзя было скопировать или скачать фото
+
+- Статус: `fixed locally` (`WP-138`).
+- Severity: `medium media UX`.
+- Reproduction: открыть загруженное фото в timeline и нажать по нему правой кнопкой
+  мыши на macOS либо сделать long-press на touch-устройстве.
+- Фактическое поведение: приложение перехватывает browser context menu общим меню
+  сообщения, но показывает только reply/reaction/text/pin/delete actions. Системный
+  browser пункт для внутреннего `blob:` URL не создаёт пригодное изображение в
+  clipboard, а download action для карточки отсутствует.
+- Ожидаемое поведение: меню знает exact image attachment и позволяет скопировать его
+  как совместимое clipboard image либо скачать под исходным display name, не обходя
+  authorization, TTL, local cache и direct attachment decryption boundaries.
+- Исправление: `data-attachment-id` выбранной карточки входит в transient context-menu
+  state; UI вызывает существующий authorized `loadAttachment`, browser clipboard port
+  принимает pending blob и локально создаёт PNG representation, а download отзывает
+  временный object URL после запуска.
+- Проверка: exact multi-image context regression, clipboard success/failure,
+  filename/download/revoke regression и browser adapter tests; полный frontend suite
+  `436 passed`, lint, typecheck и production build зелёные.
+
 ### BUG-126 — Empty target не запускал вторую половину QR history union
 
 - Статус: `fixed and production deployed` (`WP-136`, `365e4dd`, workflow

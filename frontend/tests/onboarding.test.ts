@@ -48,7 +48,7 @@ describe('closed onboarding UI', () => {
         createRegistrationInvitation: { execute: createRegistrationInvitation },
         revokeRegistrationInvitation: { execute: vi.fn() },
         buildInvitationLink: { execute: buildInvitationLink },
-        clipboard: { writeText: vi.fn() },
+    clipboard: { writeText: vi.fn(), writeImage: vi.fn() },
         haptics: { perform: vi.fn() },
       },
     }))
@@ -96,7 +96,7 @@ describe('closed onboarding UI', () => {
         listRegistrationInvitations: { execute: listInvitations },
         createRegistrationInvitation: { execute: vi.fn() },
         revokeRegistrationInvitation: { execute: revokeInvitation },
-        clipboard: { writeText: vi.fn() },
+    clipboard: { writeText: vi.fn(), writeImage: vi.fn() },
         haptics: { perform: vi.fn() },
       },
     }))
@@ -165,7 +165,7 @@ describe('closed onboarding UI', () => {
         buildPasswordResetLink: {
           execute: (secret: string) => `https://chat.example/reset-password#token=${secret}`,
         },
-        clipboard: { writeText: vi.fn() },
+    clipboard: { writeText: vi.fn(), writeImage: vi.fn() },
         haptics: { perform: vi.fn() },
       },
     }))

@@ -1,70 +1,71 @@
 # Текущий workplan
 
-## WP-137 — Демонстрация экрана в WebRTC-звонке
+## WP-138 — Копирование и скачивание изображения из контекстного меню
 
-Статус: **completed and production deployed; physical two-device acceptance pending**
-Backlog: `BL-084`
+Статус: **completed locally**
+Bug: `BUG-127`
 
-Цель: участник действующего 1:1 звонка может по явному нажатию открыть системный
-browser picker, выбрать отдельный монитор, всё содержимое экрана, окно или вкладку
-и передать изображение собеседнику через существующий MLS-authenticated WebRTC
-media path.
+Цель: правый клик или long-press по конкретной карточке изображения в timeline
+открывает существующее меню сообщения с рабочими действиями «Копировать изображение»
+и «Скачать изображение».
 
 ### Scope
 
-- capability-aware кнопка «Показать экран» в fullscreen call UI;
-- системный `getDisplayMedia()` picker без client-side перечисления мониторов;
-- browser hint включает monitor surfaces и source switching, не ограничивая выбор;
-- замена существующего video sender track без нового signaling или renegotiation;
-- detail-oriented capture до 2560×1440, 15 fps target и sender cap 1.8 Mbit/s;
-- явный локальный preview и статус активной демонстрации;
-- остановка из UI и из browser/system sharing indicator;
-- автоматическое восстановление камеры, если она была включена до демонстрации;
-- cleanup capture track при hangup/error/reset и отсутствие влияния на audio track;
-- disabled capability UX на платформах без screen-capture API.
+- определить exact image attachment по DOM target, не смешивая несколько фото одного
+  сообщения;
+- добавить image-only действия в существующее desktop/mobile context menu;
+- копировать загруженный attachment blob через browser Clipboard API;
+- передавать в clipboard PNG representation для JPEG/WebP/GIF/AVIF совместимости;
+- сохранять user activation, передавая pending blob в `ClipboardItem` до завершения
+  чтения/конвертации;
+- скачивать exact blob с исходным безопасным display name;
+- показать понятный success/failure toast и не закрывать меню при ошибке.
 
 ### Security и privacy
 
-- browser/OS остаётся единственным владельцем списка экранов и разрешения;
-- приложение не получает изображение до явного выбора пользователя;
-- screen media идёт тем же DTLS-SRTP direct/TURN transport и не проходит через
-  FastAPI/WebSocket, не сохраняется и не логируется;
-- signaling schema, MLS call identity binding и session credentials не меняются;
-- захват не начинается автоматически и всегда прекращается при terminal cleanup.
+- действия доступны только для `contentState=available` и уже авторизованного
+  attachment exact conversation;
+- direct media продолжает загружаться и расшифровываться через существующий
+  `loadAttachment` boundary; server не получает plaintext или file key;
+- object URL остаётся transient и отзывается после запуска скачивания;
+- clipboard остаётся browser capability за application port, без browser API внутри
+  crypto/storage application flow.
 
 ### Tests
 
-- camera → selected screen → system stop → restored camera;
-- picker cancellation сохраняет текущую камеру и аудиозвонок;
-- screen constraints, `detail` content hint и resolution-priority sender parameters;
-- fullscreen и compact UI, unsupported capability, non-mirrored screen preview;
-- frontend full suite, lint, typecheck и production build;
-- local browser shell smoke без console errors.
+- exact right-click image показывает оба image action, а клик по остальной карточке — нет;
+- copy получает exact pending blob и сообщает успех/ошибку;
+- download создаёт transient anchor с исходным именем и отзывает object URL;
+- browser clipboard вызывает `write()` до завершения pending load и нормализует
+  non-PNG image в PNG;
+- frontend tests, lint, typecheck и production build.
 
 ### Exclusions
 
-- одновременная передача камеры и экрана двумя отдельными video tracks;
-- server-side recording, screenshots или media proxy;
-- собственный список мониторов вместо защищённого system picker;
-- обещание screen capture в iOS/Android WebView, где platform API его не даёт;
-- system audio sharing: текущий slice передаёт microphone audio и screen video.
+- копирование video/file как изображения;
+- изменение media TTL/cache/E2EE contracts;
+- отдельное системное меню macOS или native share sheet;
+- server-side преобразование изображения.
+
+### Definition of Done
+
+- действия работают для обычного фото и sticker attachment в desktop menu и mobile
+  long-press sheet;
+- clipboard/download failures не приводят к unhandled rejection;
+- регрессии context menu, image viewer и attachment loading покрыты тестами;
+- документация дефекта и итог проверок обновлены.
 
 ### Result
 
-- screen share использует negotiated video transceiver и `replaceTrack()`, поэтому
-  собеседник получает поток без нового trust/signaling lifecycle;
-- системный picker предлагает доступные browser/OS поверхности, включая весь экран
-  и конкретный монитор там, где это поддерживает desktop browser;
-- при активной демонстрации camera track освобождается, локальный preview не
-  зеркалится, UI явно показывает состояние; после browser/system stop камера
-  безопасно запрашивается заново только если была включена до share;
-- `68/68` frontend files и `433/433` tests проходят; ESLint, Nuxt typecheck,
-  production/PWA build, Compose config и `git diff --check` зелёные;
-- локальная production-сборка отрисована в in-app browser без console errors;
-  permission picker и packet delivery между двумя физическими устройствами остаются
-  physical acceptance, потому что browser automation не должна принимать
-  screen-capture permission за пользователя;
-- production rollout `3c0d3a781adaa8695b4522697f40bcc82fb23181` / workflow
-  `33268526660` успешен: frontend, API и cleanup используют immutable image tag
-  `sha-3c0d3a781adaa8695b4522697f40bcc82fb23181`, публичные origins и health endpoints
-  отвечают `200`, TLS verification проходит.
+- context menu связывает действие с exact `data-attachment-id`, поэтому gallery из
+  нескольких фото копирует и скачивает именно выбранную карточку; обычный right-click
+  по bubble не показывает нерелевантные image actions;
+- pending authorized/decrypted blob передаётся в `ClipboardItem` немедленно, а
+  JPEG/WebP/GIF/AVIF локально приводятся к portable `image/png`; PNG не перекодируется;
+- download использует исходный validated display name и отзывает transient object URL;
+- copy/load/download failure оставляет меню открытым и показывает понятный toast;
+- `69/69` frontend test files и `436/436` tests проходят; ESLint, Nuxt typecheck,
+  production/PWA build и `git diff --check` зелёные;
+- локальный Nuxt shell открыт во встроенном браузере без console errors; exact
+  authenticated timeline visual acceptance не выполнялся, потому что локальный backend
+  остановлен, а component regressions покрывают desktop context target и action surface.
