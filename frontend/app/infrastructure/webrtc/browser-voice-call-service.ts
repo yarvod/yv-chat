@@ -28,7 +28,19 @@ interface AudioOutputMediaDevices extends MediaDevices {
   selectAudioOutput?: () => Promise<MediaDeviceInfo>
 }
 
+interface ScreenCaptureOptions {
+  video: boolean | (MediaTrackConstraints & { displaySurface?: 'monitor' | 'window' | 'browser' })
+  audio: boolean
+  monitorTypeSurfaces?: 'include' | 'exclude'
+  surfaceSwitching?: 'include' | 'exclude'
+}
+
+interface ScreenCaptureMediaDevices {
+  getDisplayMedia?: (constraints?: ScreenCaptureOptions) => Promise<MediaStream>
+}
+
 const VIDEO_MAX_BITRATE = 1_200_000
+const SCREEN_SHARE_MAX_BITRATE = 1_800_000
 const CALL_CONNECTION_TIMEOUT_MS = 30_000
 const CALL_RECONNECT_TIMEOUT_MS = 15_000
 const MAX_BUFFERED_ICE_CANDIDATES = 64
@@ -64,6 +76,8 @@ const IDLE_STATE: VoiceCallState = {
   cameraEnabled: false,
   cameraBusy: false,
   cameraFacingMode: 'user',
+  screenShareSupported: false,
+  screenSharing: false,
   remoteVideoEnabled: false,
 }
 
@@ -83,6 +97,8 @@ export class BrowserVoiceCallService {
   private remoteAudio: HTMLAudioElement | null = null
   private remoteMediaStream: MediaStream | null = null
   private cameraStream: MediaStream | null = null
+  private screenStream: MediaStream | null = null
+  private restoreCameraAfterScreenShare = false
   private videoSender: RTCRtpSender | null = null
   private localVideoElement: HTMLVideoElement | null = null
   private remoteVideoElement: HTMLVideoElement | null = null
@@ -150,6 +166,8 @@ export class BrowserVoiceCallService {
       cameraEnabled: false,
       cameraBusy: false,
       cameraFacingMode: 'user',
+      screenShareSupported: false,
+      screenSharing: false,
       remoteVideoEnabled: false,
     })
     try {
@@ -285,6 +303,7 @@ export class BrowserVoiceCallService {
 
   toggleCamera(): Promise<void> {
     if (this.cameraOperation) return this.cameraOperation
+    if (this.state.screenSharing) return Promise.resolve()
     const operation = this.state.cameraEnabled
       ? this.disableCamera()
       : this.enableCamera(this.state.cameraFacingMode)
@@ -296,11 +315,23 @@ export class BrowserVoiceCallService {
   }
 
   switchCamera(): Promise<void> {
-    if (this.cameraOperation || !this.state.cameraEnabled) {
+    if (this.cameraOperation || !this.state.cameraEnabled || this.state.screenSharing) {
       return this.cameraOperation ?? Promise.resolve()
     }
     const facingMode = this.state.cameraFacingMode === 'user' ? 'environment' : 'user'
     const operation = this.enableCamera(facingMode)
+    const token = ++this.cameraOperationToken
+    this.cameraOperation = operation.finally(() => {
+      if (this.cameraOperationToken === token) this.cameraOperation = null
+    })
+    return this.cameraOperation
+  }
+
+  toggleScreenShare(): Promise<void> {
+    if (this.cameraOperation) return this.cameraOperation
+    const operation = this.state.screenSharing
+      ? this.stopScreenShare(true)
+      : this.startScreenShare()
     const token = ++this.cameraOperationToken
     this.cameraOperation = operation.finally(() => {
       if (this.cameraOperationToken === token) this.cameraOperation = null
@@ -322,7 +353,7 @@ export class BrowserVoiceCallService {
     this.localVideoElement = local
     this.remoteVideoElement = remote
     this.attachRemoteVideoListeners()
-    this.attachStream(local, this.cameraStream)
+    this.attachStream(local, this.screenStream ?? this.cameraStream)
     this.attachStream(remote, this.remoteMediaStream)
   }
 
@@ -475,6 +506,9 @@ export class BrowserVoiceCallService {
       cameraEnabled: false,
       cameraBusy: false,
       cameraFacingMode: 'user',
+      screenShareSupported: typeof (navigator.mediaDevices as ScreenCaptureMediaDevices | undefined)
+        ?.getDisplayMedia === 'function',
+      screenSharing: false,
       remoteVideoEnabled: false,
         identityVerified: true,
         verificationCode: null,
@@ -589,6 +623,9 @@ export class BrowserVoiceCallService {
       cameraEnabled: false,
       cameraBusy: false,
       cameraFacingMode: 'user',
+      screenShareSupported: this.videoSender !== null
+        && typeof (navigator.mediaDevices as ScreenCaptureMediaDevices).getDisplayMedia === 'function',
+      screenSharing: false,
       remoteVideoEnabled: false,
     })
     this.remoteMediaStream = new MediaStream()
@@ -661,18 +698,23 @@ export class BrowserVoiceCallService {
     ))
     if (!transceiver) {
       this.videoSender = null
-      this.update({ ...this.state, cameraSupported: false })
+      this.update({ ...this.state, cameraSupported: false, screenShareSupported: false })
       return
     }
     try {
       transceiver.direction = 'sendrecv'
     } catch {
       this.videoSender = null
-      this.update({ ...this.state, cameraSupported: false })
+      this.update({ ...this.state, cameraSupported: false, screenShareSupported: false })
       return
     }
     this.videoSender = transceiver.sender
-    this.update({ ...this.state, cameraSupported: true })
+    this.update({
+      ...this.state,
+      cameraSupported: true,
+      screenShareSupported: typeof (navigator.mediaDevices as ScreenCaptureMediaDevices)
+        .getDisplayMedia === 'function',
+    })
   }
 
   private async flushCandidates(): Promise<void> {
@@ -738,7 +780,7 @@ export class BrowserVoiceCallService {
         return
       }
       await sender.replaceTrack(track)
-      await this.limitVideoSender(sender)
+      await this.limitVideoSender(sender, 'camera')
       if (this.peer !== peer || this.videoSender !== sender) {
         for (const item of stream.getTracks()) item.stop()
         return
@@ -787,14 +829,136 @@ export class BrowserVoiceCallService {
     void this.updateNativeVideo(false)
   }
 
-  private async limitVideoSender(sender: RTCRtpSender): Promise<void> {
+  private async startScreenShare(): Promise<void> {
+    const peer = this.peer
+    const sender = this.videoSender
+    const mediaDevices = navigator.mediaDevices as ScreenCaptureMediaDevices | undefined
+    if (
+      !peer || !sender || !this.state.identityVerified
+      || !['connecting', 'active'].includes(this.state.phase)
+      || typeof mediaDevices?.getDisplayMedia !== 'function'
+    ) return
+    this.update({
+      ...this.state,
+      cameraBusy: true,
+      notice: 'Выберите монитор, окно или вкладку в системном окне…',
+    })
+    let stream: MediaStream | null = null
+    try {
+      stream = await mediaDevices.getDisplayMedia({
+        audio: false,
+        monitorTypeSurfaces: 'include',
+        surfaceSwitching: 'include',
+        video: {
+          displaySurface: 'monitor',
+          width: { ideal: 1_920, max: 2_560 },
+          height: { ideal: 1_080, max: 1_440 },
+          frameRate: { ideal: 15, max: 30 },
+        },
+      })
+      const track = stream.getVideoTracks()[0]
+      if (!track) throw new Error('screen track unavailable')
+      try {
+        track.contentHint = 'detail'
+      } catch {
+        // Some otherwise compatible WebViews expose a read-only property.
+      }
+      if (this.peer !== peer || this.videoSender !== sender) {
+        for (const item of stream.getTracks()) item.stop()
+        return
+      }
+      await sender.replaceTrack(track)
+      await this.limitVideoSender(sender, 'screen')
+      if (this.peer !== peer || this.videoSender !== sender) {
+        for (const item of stream.getTracks()) item.stop()
+        return
+      }
+      const previousCamera = this.cameraStream
+      this.restoreCameraAfterScreenShare = this.state.cameraEnabled
+      this.cameraStream = null
+      this.screenStream = stream
+      stream = null
+      track.addEventListener('ended', this.handleScreenShareEnded, { once: true })
+      for (const item of previousCamera?.getTracks() ?? []) item.stop()
+      this.attachStream(this.localVideoElement, this.screenStream)
+      this.update({
+        ...this.state,
+        cameraEnabled: false,
+        cameraBusy: false,
+        screenSharing: true,
+        notice: null,
+      })
+      void this.updateNativeVideo(true)
+    } catch (error) {
+      for (const item of stream?.getTracks() ?? []) item.stop()
+      if (this.peer !== peer) return
+      const cancelled = error instanceof DOMException && (
+        error.name === 'NotAllowedError' || error.name === 'AbortError'
+      )
+      this.update({
+        ...this.state,
+        cameraBusy: false,
+        notice: cancelled
+          ? 'Демонстрация экрана не начата'
+          : 'Не удалось показать экран — звонок продолжается',
+      })
+    }
+  }
+
+  private async stopScreenShare(restoreCamera: boolean): Promise<void> {
+    const peer = this.peer
+    const sender = this.videoSender
+    const stream = this.screenStream
+    const shouldRestoreCamera = restoreCamera && this.restoreCameraAfterScreenShare
+    this.restoreCameraAfterScreenShare = false
+    this.screenStream = null
+    this.update({ ...this.state, cameraBusy: true })
+    for (const track of stream?.getVideoTracks() ?? []) {
+      track.removeEventListener('ended', this.handleScreenShareEnded)
+    }
+    try {
+      await sender?.replaceTrack(null)
+    } catch {
+      // Stopping the captured track below is the privacy-preserving fallback.
+    }
+    for (const track of stream?.getTracks() ?? []) track.stop()
+    this.attachStream(this.localVideoElement, null)
+    if (this.peer !== peer) return
+    this.update({
+      ...this.state,
+      cameraBusy: false,
+      screenSharing: false,
+      notice: null,
+    })
+    if (shouldRestoreCamera) {
+      await this.enableCamera(this.state.cameraFacingMode)
+      return
+    }
+    void this.updateNativeVideo(false)
+  }
+
+  private readonly handleScreenShareEnded = (): void => {
+    if (!this.state.screenSharing || this.cameraOperation) return
+    const operation = this.stopScreenShare(true)
+    const token = ++this.cameraOperationToken
+    this.cameraOperation = operation.finally(() => {
+      if (this.cameraOperationToken === token) this.cameraOperation = null
+    })
+  }
+
+  private async limitVideoSender(
+    sender: RTCRtpSender,
+    source: 'camera' | 'screen',
+  ): Promise<void> {
     try {
       const parameters = sender.getParameters()
       parameters.encodings ??= []
       if (parameters.encodings.length === 0) parameters.encodings.push({})
-      parameters.encodings[0]!.maxBitrate = VIDEO_MAX_BITRATE
-      parameters.encodings[0]!.maxFramerate = 30
-      parameters.degradationPreference = 'balanced'
+      parameters.encodings[0]!.maxBitrate = source === 'screen'
+        ? SCREEN_SHARE_MAX_BITRATE
+        : VIDEO_MAX_BITRATE
+      parameters.encodings[0]!.maxFramerate = source === 'screen' ? 15 : 30
+      parameters.degradationPreference = source === 'screen' ? 'maintain-resolution' : 'balanced'
       await sender.setParameters(parameters)
     } catch {
       // Browser congestion control remains active when explicit caps are unsupported.
@@ -899,6 +1063,7 @@ export class BrowserVoiceCallService {
       startedAt: null,
       cameraEnabled: false,
       cameraBusy: false,
+      screenSharing: false,
       remoteVideoEnabled: false,
     })
   }
@@ -913,6 +1078,7 @@ export class BrowserVoiceCallService {
       startedAt: null,
       cameraEnabled: false,
       cameraBusy: false,
+      screenSharing: false,
       remoteVideoEnabled: false,
     })
   }
@@ -928,6 +1094,12 @@ export class BrowserVoiceCallService {
     this.localStream = null
     for (const track of this.cameraStream?.getTracks() ?? []) track.stop()
     this.cameraStream = null
+    for (const track of this.screenStream?.getVideoTracks() ?? []) {
+      track.removeEventListener('ended', this.handleScreenShareEnded)
+    }
+    for (const track of this.screenStream?.getTracks() ?? []) track.stop()
+    this.screenStream = null
+    this.restoreCameraAfterScreenShare = false
     this.videoSender = null
     this.cameraOperationToken += 1
     this.cameraOperation = null
@@ -1082,6 +1254,7 @@ export class BrowserVoiceCallService {
     if (!this.nativeCallAudio || !this.nativeAudioActive) return
     const enabled = this.state.phase === 'active'
       && !this.state.cameraEnabled
+      && !this.state.screenSharing
       && !this.state.remoteVideoEnabled
       && this.state.selectedAudioOutputId !== 'native:speaker'
     await this.nativeCallAudio.setProximity(enabled).catch(() => undefined)

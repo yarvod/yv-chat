@@ -19,6 +19,7 @@ export type AppIconName =
   | 'phone'
   | 'phone-off'
   | 'search'
+  | 'screen-share'
   | 'send'
   | 'speaker'
   | 'settings'

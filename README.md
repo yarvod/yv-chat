@@ -60,6 +60,10 @@ accept/reject, mute, duration, hangup, локальный ringtone/ringback и �
 или duration. Browser PWA не может гарантировать custom background ringtone,
 разговорный динамик или автоматическое гашение экрана по датчику приближения там,
 где OS не предоставляет эти возможности web-приложению; для них нужен native wrapper.
+В desktop browser во время звонка можно через системный picker показать весь экран,
+конкретный монитор, окно или вкладку. Демонстрация заменяет camera track в том же
+DTLS-SRTP WebRTC соединении, не записывается сервером и прекращается из UI, системного
+sharing indicator или вместе со звонком; platform без `getDisplayMedia()` её не обещает.
 Публичный coturn принимает обычный STUN для NAT discovery, но TURN relay требует
 короткоживущую HMAC-учётку authenticated пользователя и ограничен allocation,
 bandwidth, relay-port и unauthenticated-response квотами.

@@ -46,9 +46,9 @@ controls. Encrypted OPFS cache, byte-bounded eviction и safe device clear уж�
 
 ### P3 — после стабильного messaging/E2EE
 
-`BL-034` → `BL-035` → `BL-078` → `BL-036`: signaling, audio, authenticated call
-identity, затем video calls. Эти задачи не должны вытеснять recovery, backup, local
-storage или attachment security.
+`BL-034` → `BL-035` → `BL-078` → `BL-036` → `BL-084`: signaling, audio,
+authenticated call identity, video calls, затем screen sharing. Эти задачи не должны
+вытеснять recovery, backup, local storage или attachment security.
 
 ## Frontend application и administration
 
@@ -725,6 +725,29 @@ sender negotiated remote-offer video transceiver до signed answer, а fullscre
 переключается между `cover` и `contain` по реальному aspect ratio. Frontend checks
 и полный CI зелёные; production rollout `ec96762` / workflow `32313296867` успешен,
 физическая packet-delivery проверка phone ↔ desktop остаётся acceptance шагом.
+
+### BL-084 — Демонстрация экрана в звонках
+
+Статус: **implemented locally; production rollout and physical two-device acceptance
+pending** (`WP-137`).
+
+Результат: участник 1:1 звонка по явному действию открывает защищённый системный
+picker и выбирает весь экран/монитор, окно или вкладку. Выбранный track заменяет
+camera track в уже согласованном MLS-authenticated WebRTC video transceiver без
+server media path, записи или нового signaling lifecycle.
+
+- [x] capability-aware fullscreen control и active-share indicator;
+- [x] system-owned monitor/window/tab selection через `getDisplayMedia()`;
+- [x] monitor surfaces и поддерживаемое browser-ом переключение source во время share;
+- [x] detail-oriented 1440p ceiling, 15 fps target и 1.8 Mbit/s sender cap;
+- [x] остановка из UI или browser indicator, terminal cleanup и camera restore;
+- [x] unit/component tests для permission cancellation, transitions и UI;
+- [ ] production rollout и physical desktop ↔ second-device packet acceptance.
+
+Web-приложение намеренно не перечисляет мониторы само: доступные поверхности и
+окончательный выбор принадлежат browser/OS permission UI. Платформы без
+`getDisplayMedia()` показывают control disabled; native WebView support не обещается.
+System audio не входит в этот slice, microphone audio продолжает идти отдельно.
 
 ## Completed
 

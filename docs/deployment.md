@@ -270,11 +270,12 @@ Browser cookies, Service Worker, IndexedDB and E2EE device state remain origin-s
 signing in on the second domain creates a separate browser session/device and does not
 copy local crypto state from the first domain.
 
-`Permissions-Policy` allows `camera` and `microphone` only for the top-level
-same-origin PWA because group video notes call `getUserMedia` after an explicit user
-gesture. Both capabilities remain unavailable to cross-origin content; geolocation
-remains disabled. Setting either capture capability to an empty allowlist blocks the
-browser permission prompt entirely; this is part of manual ingress acceptance, not an
+`Permissions-Policy` allows `camera`, `microphone` and `display-capture` only for the
+top-level same-origin PWA because group video notes call `getUserMedia`, while call
+screen sharing calls `getDisplayMedia`, after an explicit user gesture. All three
+capabilities remain unavailable to cross-origin content; geolocation remains disabled.
+Setting a required capture capability to an empty allowlist blocks the browser
+permission prompt entirely; this is part of manual ingress acceptance, not an
 application deploy check.
 
 Never run Certbot/Nginx in the yv-chat production Compose. Never edit neighboring

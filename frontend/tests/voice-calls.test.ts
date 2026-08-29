@@ -762,6 +762,172 @@ describe('browser voice calls', () => {
     expect(stream.track.stop).toHaveBeenCalledOnce()
   })
 
+  it('shares a system-selected monitor in detail mode and restores the camera on stop', async () => {
+    const front = new FakeStream([new FakeTrack('video')])
+    const restored = new FakeStream([new FakeTrack('video')])
+    const screen = new FakeStream([new FakeTrack('video')])
+    let cameraRequest = 0
+    const getUserMedia = vi.fn(async (constraints: MediaStreamConstraints) => {
+      if (constraints.video === false) return stream as unknown as MediaStream
+      return [front, restored][cameraRequest++] as unknown as MediaStream
+    })
+    const getDisplayMedia = vi.fn(async () => screen as unknown as MediaStream)
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: { getUserMedia, getDisplayMedia },
+    })
+    const service = new BrowserVoiceCallService(
+      signaling, config, fakeIdentity(), ALICE_USER, ALICE_DEVICE,
+    )
+    let latest = null
+    service.subscribe(state => { latest = state })
+    await service.start(CONVERSATION, BOB_USER)
+    const offer = signals.find(signal => signal.type === 'call_offer')!
+    await service.apply({
+      type: 'call_answer',
+      version: 2,
+      eventId: 'event',
+      conversationId: CONVERSATION,
+      callId: offer.call_id,
+      actorUserId: BOB_USER,
+      actorDeviceId: BOB_DEVICE,
+      sdp: 'answer-sdp',
+      candidate: null,
+      reason: null,
+      identitySignature: '07'.repeat(64),
+    })
+    const localVideo = {
+      srcObject: null,
+      play: vi.fn(async () => undefined),
+    } as unknown as HTMLVideoElement
+    service.attachVideoElements(localVideo, null)
+    await service.toggleCamera()
+
+    await service.toggleScreenShare()
+
+    const peer = FakePeerConnection.instances[0]!
+    expect(getDisplayMedia).toHaveBeenCalledWith({
+      audio: false,
+      monitorTypeSurfaces: 'include',
+      surfaceSwitching: 'include',
+      video: {
+        displaySurface: 'monitor',
+        width: { ideal: 1_920, max: 2_560 },
+        height: { ideal: 1_080, max: 1_440 },
+        frameRate: { ideal: 15, max: 30 },
+      },
+    })
+    expect(screen.track.contentHint).toBe('detail')
+    expect(peer.videoSender.replaceTrack).toHaveBeenLastCalledWith(screen.track)
+    expect(peer.videoSender.setParameters).toHaveBeenLastCalledWith({
+      encodings: [{ maxBitrate: 1_800_000, maxFramerate: 15 }],
+      degradationPreference: 'maintain-resolution',
+    })
+    expect(front.track.stop).toHaveBeenCalledOnce()
+    expect(localVideo.srcObject).toBe(screen)
+    expect(latest).toMatchObject({
+      cameraEnabled: false,
+      screenShareSupported: true,
+      screenSharing: true,
+    })
+
+    screen.track.dispatchEvent(new Event('ended'))
+
+    await vi.waitFor(() => expect(latest).toMatchObject({
+      cameraEnabled: true,
+      cameraBusy: false,
+      screenSharing: false,
+    }))
+    expect(screen.track.stop).toHaveBeenCalledOnce()
+    expect(peer.videoSender.replaceTrack).toHaveBeenLastCalledWith(restored.track)
+    expect(localVideo.srcObject).toBe(restored)
+    service.hangup()
+  })
+
+  it('keeps the current camera when the screen picker is cancelled', async () => {
+    const camera = new FakeStream([new FakeTrack('video')])
+    const getUserMedia = vi.fn(async (constraints: MediaStreamConstraints) => (
+      constraints.video === false ? stream : camera
+    ) as unknown as MediaStream)
+    const getDisplayMedia = vi.fn(async () => {
+      throw new DOMException('cancelled', 'AbortError')
+    })
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: { getUserMedia, getDisplayMedia },
+    })
+    const service = new BrowserVoiceCallService(
+      signaling, config, fakeIdentity(), ALICE_USER, ALICE_DEVICE,
+    )
+    let latest = null
+    service.subscribe(state => { latest = state })
+    await service.start(CONVERSATION, BOB_USER)
+    const offer = signals.find(signal => signal.type === 'call_offer')!
+    await service.apply({
+      type: 'call_answer',
+      version: 2,
+      eventId: 'event',
+      conversationId: CONVERSATION,
+      callId: offer.call_id,
+      actorUserId: BOB_USER,
+      actorDeviceId: BOB_DEVICE,
+      sdp: 'answer-sdp',
+      candidate: null,
+      reason: null,
+      identitySignature: '07'.repeat(64),
+    })
+    await service.toggleCamera()
+
+    await service.toggleScreenShare()
+
+    expect(camera.track.stop).not.toHaveBeenCalled()
+    expect(FakePeerConnection.instances[0]?.videoSender.replaceTrack)
+      .toHaveBeenLastCalledWith(camera.track)
+    expect(latest).toMatchObject({
+      cameraEnabled: true,
+      cameraBusy: false,
+      screenSharing: false,
+      notice: 'Демонстрация экрана не начата',
+    })
+    service.hangup()
+  })
+
+  it('stops screen capture immediately when the call ends', async () => {
+    const screen = new FakeStream([new FakeTrack('video')])
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn(async () => stream),
+        getDisplayMedia: vi.fn(async () => screen),
+      },
+    })
+    const service = new BrowserVoiceCallService(
+      signaling, config, fakeIdentity(), ALICE_USER, ALICE_DEVICE,
+    )
+    await service.start(CONVERSATION, BOB_USER)
+    const offer = signals.find(signal => signal.type === 'call_offer')!
+    await service.apply({
+      type: 'call_answer',
+      version: 2,
+      eventId: 'event',
+      conversationId: CONVERSATION,
+      callId: offer.call_id,
+      actorUserId: BOB_USER,
+      actorDeviceId: BOB_DEVICE,
+      sdp: 'answer-sdp',
+      candidate: null,
+      reason: null,
+      identitySignature: '07'.repeat(64),
+    })
+    await service.toggleScreenShare()
+
+    service.hangup()
+
+    expect(screen.track.stop).toHaveBeenCalledOnce()
+    expect(stream.track.stop).toHaveBeenCalledOnce()
+    expect(FakePeerConnection.instances[0]?.close).toHaveBeenCalledOnce()
+  })
+
   it('derives remote video visibility from the authenticated WebRTC track', async () => {
     const service = new BrowserVoiceCallService(
       signaling, config, fakeIdentity(), ALICE_USER, ALICE_DEVICE,

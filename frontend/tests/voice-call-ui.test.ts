@@ -26,6 +26,8 @@ function callState(overrides: Partial<VoiceCallState> = {}): VoiceCallState {
     cameraEnabled: false,
     cameraBusy: false,
     cameraFacingMode: 'user',
+    screenShareSupported: false,
+    screenSharing: false,
     remoteVideoEnabled: false,
     ...overrides,
   }
@@ -37,6 +39,7 @@ const actions = () => ({
   hangup: vi.fn(),
   toggleMute: vi.fn(),
   toggleCamera: vi.fn().mockResolvedValue(undefined),
+  toggleScreenShare: vi.fn().mockResolvedValue(undefined),
   resumeAudio: vi.fn(),
 })
 
@@ -187,6 +190,49 @@ describe('voice call presentation', () => {
     expect(video.switchCamera).toHaveBeenCalledOnce()
     wrapper.unmount()
     expect(video.attachVideoElements).toHaveBeenLastCalledWith(null, null)
+  })
+
+  it('clearly marks screen sharing without mirroring the local preview', async () => {
+    const handlers = actions()
+    const wrapper = mount(VoiceCallOverlay, {
+      props: {
+        state: callState({ screenShareSupported: true, screenSharing: true }),
+        peerName: 'Алиса',
+        minimize: vi.fn(),
+        dismiss: vi.fn(),
+        selectAudioOutput: vi.fn().mockResolvedValue(undefined),
+        requestAudioOutput: vi.fn().mockResolvedValue(undefined),
+        ...videoActions(),
+        ...handlers,
+      },
+    })
+
+    expect(wrapper.text()).toContain('Вы показываете экран')
+    expect(wrapper.get('.voice-call__local-video').classes())
+      .toContain('voice-call__local-video--screen')
+    expect(wrapper.get('.voice-call__local-video').classes())
+      .not.toContain('voice-call__local-video--mirrored')
+    await wrapper.get('[aria-label="Остановить демонстрацию экрана"]').trigger('click')
+    expect(handlers.toggleScreenShare).toHaveBeenCalledOnce()
+    wrapper.unmount()
+  })
+
+  it('disables screen sharing when the system capture picker is unavailable', () => {
+    const wrapper = mount(VoiceCallOverlay, {
+      props: {
+        state: callState({ screenShareSupported: false }),
+        peerName: 'Алиса',
+        minimize: vi.fn(),
+        dismiss: vi.fn(),
+        selectAudioOutput: vi.fn().mockResolvedValue(undefined),
+        requestAudioOutput: vi.fn().mockResolvedValue(undefined),
+        ...videoActions(),
+        ...actions(),
+      },
+    })
+
+    expect(wrapper.get('[aria-label="Показать экран"]').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
   })
 
   it('contains strongly mismatched portrait video and covers matching landscape video', async () => {

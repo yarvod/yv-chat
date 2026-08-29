@@ -1937,6 +1937,25 @@ Remote media заполняет viewport через `cover` при близко�
 обрезалось на landscape screen и наоборот. Local camera остаётся corner PiP, а
 audio-output selector открывается только явным user action.
 
+`WP-137` добавляет screen capture как ещё один локальный источник уже согласованного
+video sender. Только явное нажатие вызывает `getDisplayMedia()`; browser/OS picker
+владеет перечислением и выбором всего экрана, конкретного монитора, окна или вкладки.
+Приложение не получает права заранее и не подменяет picker собственным списком.
+Выбранный track получает `contentHint=detail`, target 15 fps, ceiling 2560×1440 и
+sender cap 1.8 Mbit/s с `maintain-resolution`, чтобы при ограниченном TURN budget
+сохранять читаемость текста раньше плавности анимации. Capture заменяет camera track
+через `RTCRtpSender.replaceTrack()` без renegotiation и без изменения подписанного
+SDP/DTLS identity binding.
+
+При начале share предыдущая camera capture освобождается. Если камера была включена,
+ее intent запоминается только в памяти и после UI stop либо browser `ended` camera
+запрашивается заново; отмена picker не выключает действующую камеру. Любой
+hangup/error/reset останавливает screen track и очищает listener. Screen bytes идут
+только через WebRTC DTLS-SRTP direct/TURN media plane: FastAPI/WebSocket не получает,
+не пишет и не логирует изображение. System audio capture и одновременные отдельные
+camera+screen tracks не входят в этот slice. На platform без `getDisplayMedia()`
+capability остаётся disabled, а native WebView screen capture не обещается.
+
 ## 15. Security и trust boundaries
 
 Никогда не логировать passwords, activation/session credentials, Authorization headers, private keys, plaintext messages или decrypted attachments. Structured logs используют opaque IDs, sizes и event types.

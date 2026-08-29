@@ -71,6 +71,8 @@ function callsState() {
     cameraEnabled: false,
     cameraBusy: false,
     cameraFacingMode: 'user' as const,
+    screenShareSupported: false,
+    screenSharing: false,
     remoteVideoEnabled: false,
   }
 }
@@ -288,6 +290,7 @@ onBeforeUnmount(() => {
       :hangup="calls.hangup.bind(calls)"
       :toggle-mute="calls.toggleMute.bind(calls)"
       :toggle-camera="calls.toggleCamera.bind(calls)"
+      :toggle-screen-share="calls.toggleScreenShare.bind(calls)"
       :resume-audio="calls.resumeAudio.bind(calls)"
     />
     <VoiceCallOverlay
@@ -300,6 +303,7 @@ onBeforeUnmount(() => {
       :toggle-mute="calls.toggleMute.bind(calls)"
       :toggle-camera="calls.toggleCamera.bind(calls)"
       :switch-camera="calls.switchCamera.bind(calls)"
+      :toggle-screen-share="calls.toggleScreenShare.bind(calls)"
       :attach-video-elements="calls.attachVideoElements.bind(calls)"
       :select-audio-output="calls.selectAudioOutput.bind(calls)"
       :request-audio-output="calls.requestAudioOutput.bind(calls)"

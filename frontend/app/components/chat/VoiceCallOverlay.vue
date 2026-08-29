@@ -15,6 +15,7 @@ const props = defineProps<{
   toggleMute: () => void
   toggleCamera: () => Promise<void>
   switchCamera: () => Promise<void>
+  toggleScreenShare: () => Promise<void>
   attachVideoElements: (
     local: HTMLVideoElement | null,
     remote: HTMLVideoElement | null,
@@ -141,10 +142,13 @@ function outputIcon(kind: VoiceCallAudioOutput['kind']): AppIconName {
         <small>{{ state.phase === 'connecting' ? 'Устанавливаем защищённое видео…' : 'Камера собеседника выключена' }}</small>
       </div>
       <video
-        v-if="state.cameraEnabled"
+        v-if="state.cameraEnabled || state.screenSharing"
         ref="localVideo"
         class="voice-call__local-video"
-        :class="{ 'voice-call__local-video--mirrored': state.cameraFacingMode === 'user' }"
+        :class="{
+          'voice-call__local-video--mirrored': state.cameraEnabled && state.cameraFacingMode === 'user',
+          'voice-call__local-video--screen': state.screenSharing,
+        }"
         autoplay
         muted
         playsinline
@@ -170,6 +174,9 @@ function outputIcon(kind: VoiceCallAudioOutput['kind']): AppIconName {
         </span>
         <span v-if="state.verificationCode" class="voice-call__verification">
           Код сверки: {{ state.verificationCode }}
+        </span>
+        <span v-if="state.screenSharing" class="voice-call__sharing-status">
+          Вы показываете экран
         </span>
       </div>
     </header>
@@ -237,11 +244,22 @@ function outputIcon(kind: VoiceCallAudioOutput['kind']): AppIconName {
         class="voice-call__action"
         :class="{ 'voice-call__action--muted': !state.cameraEnabled }"
         type="button"
-        :disabled="!state.cameraSupported || state.cameraBusy || !state.identityVerified"
+        :disabled="!state.cameraSupported || state.cameraBusy || !state.identityVerified || state.screenSharing"
         :aria-label="state.cameraEnabled ? 'Выключить камеру' : 'Включить камеру'"
         @click="toggleCamera"
       >
         <AppIcon :name="state.cameraEnabled ? 'camera' : 'camera-off'" />
+      </button>
+      <button
+        class="voice-call__action"
+        :class="{ 'voice-call__action--sharing': state.screenSharing }"
+        type="button"
+        :disabled="!state.screenShareSupported || state.cameraBusy || !state.identityVerified"
+        :aria-label="state.screenSharing ? 'Остановить демонстрацию экрана' : 'Показать экран'"
+        :aria-pressed="state.screenSharing"
+        @click="toggleScreenShare"
+      >
+        <AppIcon name="screen-share" />
       </button>
       <button
         v-if="state.cameraEnabled"

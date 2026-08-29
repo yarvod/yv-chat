@@ -96,6 +96,10 @@ defineProps<{ name: AppIconName }>()
       <rect x="3" y="5" width="18" height="14" rx="3" />
       <path d="M9 9 7 11l2 2M15 13l2-2-2-2M7 11h10" />
     </template>
+    <template v-else-if="name === 'screen-share'">
+      <rect x="3" y="4" width="18" height="13" rx="2.5" />
+      <path d="M8 21h8M12 17v4M8.5 11.5 12 8l3.5 3.5M12 8v6" />
+    </template>
     <template v-else-if="name === 'microphone'">
       <rect x="9" y="2" width="6" height="12" rx="3" /><path d="M5 10a7 7 0 0 0 14 0M12 17v5M8 22h8" />
     </template>

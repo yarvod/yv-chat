@@ -14,6 +14,7 @@ const props = defineProps<{
   hangup: () => void
   toggleMute: () => void
   toggleCamera: () => Promise<void>
+  toggleScreenShare: () => Promise<void>
   resumeAudio: () => void
 }>()
 
@@ -42,7 +43,7 @@ const status = computed(() => voiceCallStatus(props.state, now.value))
       </span>
       <span class="voice-call-mini__copy">
         <strong>{{ peerName }}</strong>
-        <small aria-live="polite">{{ status }}</small>
+        <small aria-live="polite">{{ status }}{{ state.screenSharing ? ' · Вы показываете экран' : '' }}</small>
       </span>
       <AppIcon name="expand" />
     </button>
@@ -67,10 +68,20 @@ const status = computed(() => voiceCallStatus(props.state, now.value))
     </div>
     <div v-else class="voice-call-mini__actions">
       <button
+        v-if="state.screenSharing"
+        class="voice-call-mini__action voice-call-mini__action--sharing"
+        type="button"
+        :disabled="state.cameraBusy"
+        aria-label="Остановить демонстрацию экрана"
+        @click="toggleScreenShare"
+      >
+        <AppIcon name="screen-share" />
+      </button>
+      <button
         class="voice-call-mini__action"
         :class="{ 'voice-call-mini__action--muted': !state.cameraEnabled }"
         type="button"
-        :disabled="!state.cameraSupported || state.cameraBusy || !state.identityVerified"
+        :disabled="!state.cameraSupported || state.cameraBusy || !state.identityVerified || state.screenSharing"
         :aria-label="state.cameraEnabled ? 'Выключить камеру' : 'Включить камеру'"
         @click="toggleCamera"
       >

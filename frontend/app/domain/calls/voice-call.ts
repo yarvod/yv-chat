@@ -44,5 +44,7 @@ export interface VoiceCallState {
   cameraEnabled: boolean
   cameraBusy: boolean
   cameraFacingMode: 'user' | 'environment'
+  screenShareSupported: boolean
+  screenSharing: boolean
   remoteVideoEnabled: boolean
 }
