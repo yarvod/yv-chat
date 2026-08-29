@@ -945,6 +945,65 @@ describe('message panel', () => {
     }])
   })
 
+  it('keeps the original photo for upload while rendering only a bounded thumbnail', async () => {
+    const createObjectURL = vi.fn((blob: Blob) => (
+      blob instanceof File ? `blob:original-${blob.name}` : 'blob:thumbnail'
+    ))
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: createObjectURL,
+    })
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() })
+    const thumbnailBody = new Blob(['small'], { type: 'image/png' })
+    const createImageThumbnail = vi.fn().mockResolvedValue({
+      body: thumbnailBody,
+      pixelWidth: 4_032,
+      pixelHeight: 3_024,
+    })
+    const sendMessage = vi.fn().mockResolvedValue(true)
+    const wrapper = mount(MessagePanel, {
+      props: {
+        conversation: { ...conversation, conversationType: 'group', title: 'Team' },
+        messages: [],
+        actorUserId: 'alice-id',
+        sending: false,
+        protectionSecure: false,
+        protectionLabel: 'Группа без E2EE',
+        sendMessage,
+        createImageThumbnail,
+        deleteMessage: vi.fn(),
+        deletingMessageId: null,
+        typingActorIds: [],
+        onlineActorIds: [],
+        deliveryStates: [],
+        connectionState: 'connected',
+        setTyping: vi.fn(),
+      },
+    })
+    const photo = new File(['full-resolution'], 'camera.jpg', { type: 'image/jpeg' })
+    const input = wrapper.get<HTMLInputElement>('input[data-picker="media"]')
+    Object.defineProperty(input.element, 'files', { configurable: true, value: [photo] })
+    await input.trigger('change')
+    await flushPromises()
+
+    expect(createImageThumbnail).toHaveBeenCalledWith(photo, 160)
+    await vi.waitFor(() => {
+      expect(wrapper.get('.composer-attachment img').attributes('src')).toBe('blob:thumbnail')
+    })
+    expect(createObjectURL).toHaveBeenCalledOnce()
+    expect(createObjectURL).toHaveBeenCalledWith(thumbnailBody)
+    expect(createObjectURL).not.toHaveBeenCalledWith(photo)
+    await wrapper.get('form').trigger('submit')
+    expect(sendMessage).toHaveBeenCalledWith('', [{
+      name: 'camera.jpg',
+      type: 'image/jpeg',
+      size: photo.size,
+      body: photo,
+      pixelWidth: 4_032,
+      pixelHeight: 3_024,
+    }])
+  })
+
   it('adds clipboard and drag-drop files in order without intercepting ordinary text paste', async () => {
     Object.defineProperty(URL, 'createObjectURL', {
       configurable: true,
@@ -1742,6 +1801,113 @@ describe('message panel', () => {
       offset: 210,
       atLatest: false,
     }))
+  })
+
+  it('renders a compact image reply and re-focuses the same target on every click', async () => {
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: vi.fn(() => 'blob:reply-thumbnail'),
+    })
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() })
+    const image = {
+      attachmentId: 'reply-photo',
+      kind: 'image' as const,
+      name: 'cat.jpg',
+      contentType: 'image/jpeg',
+      byteSize: 5,
+    }
+    const target = {
+      messageId: 'reply-target',
+      clientMessageId: 'reply-target-client',
+      conversationId: 'conversation-1',
+      senderUserId: 'bob-id',
+      senderDeviceId: 'bob-device',
+      protocolVersion: 2,
+      cryptoGenerationId: 'generation-1',
+      cryptoEpoch: 1,
+      sequence: 1,
+      createdAt: '2026-08-30T12:00:00Z',
+      expiresAt: '2026-09-30T12:00:00Z',
+      ciphertextBase64: 'b3BhcXVl',
+      deletionReason: null,
+      deletedAt: null,
+      contentState: 'available' as const,
+      displayBody: 'Кот на диване',
+      displayAttachments: [image],
+      contentSecure: true,
+    }
+    const reply = {
+      ...target,
+      messageId: 'reply-message',
+      clientMessageId: 'reply-client',
+      senderUserId: 'alice-id',
+      senderDeviceId: 'alice-device',
+      sequence: 2,
+      createdAt: '2026-08-30T12:01:00Z',
+      displayBody: 'Согласна',
+      displayAttachments: [],
+      replyToMessageId: target.messageId,
+    }
+    const openMessage = vi.fn().mockResolvedValue(undefined)
+    const loadAttachment = vi.fn().mockResolvedValue(
+      new Blob(['photo'], { type: image.contentType }),
+    )
+    const createImageThumbnail = vi.fn().mockResolvedValue({
+      body: new Blob(['small'], { type: 'image/png' }),
+      pixelWidth: 800,
+      pixelHeight: 600,
+    })
+    const wrapper = mount(MessagePanel, {
+      props: {
+        conversation,
+        messages: [target, reply],
+        actorUserId: 'alice-id',
+        sending: false,
+        protectionSecure: true,
+        protectionLabel: 'E2EE',
+        sendMessage: vi.fn(),
+        openMessage,
+        loadAttachment,
+        createImageThumbnail,
+        deleteMessage: vi.fn(),
+        deletingMessageId: null,
+        typingActorIds: [],
+        onlineActorIds: [],
+        deliveryStates: [],
+        connectionState: 'connected',
+        setTyping: vi.fn(),
+      },
+    })
+    const timeline = wrapper.get('.message-timeline').element as HTMLElement
+    const targetBubble = wrapper.get('[data-message-id="reply-target"]').element as HTMLElement
+    Object.defineProperties(timeline, {
+      clientHeight: { configurable: true, value: 400 },
+      scrollTop: { configurable: true, value: 600, writable: true },
+      getBoundingClientRect: {
+        configurable: true,
+        value: () => ({ top: 100, bottom: 500, height: 400, left: 0, right: 300, width: 300, x: 0, y: 100, toJSON() {} }),
+      },
+    })
+    Object.defineProperty(targetBubble, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({ top: 310, bottom: 350, height: 40, left: 0, right: 200, width: 200, x: 0, y: 310, toJSON() {} }),
+    })
+    await flushPromises()
+
+    const preview = wrapper.get('[data-message-id="reply-message"] .message-reply-preview')
+    expect(preview.classes()).toContain('message-reply-preview--media')
+    expect(preview.find('.message-reply-thumbnail').exists()).toBe(true)
+    expect(preview.text()).toContain('Bob')
+    expect(preview.text()).toContain('Кот на диване')
+
+    await preview.trigger('click')
+    expect(timeline.scrollTop).toBe(630)
+    await preview.trigger('click')
+    expect(timeline.scrollTop).toBe(660)
+    expect(openMessage).toHaveBeenCalledTimes(2)
+    expect(openMessage).toHaveBeenNthCalledWith(1, target.messageId)
+    expect(openMessage).toHaveBeenNthCalledWith(2, target.messageId)
+    expect(wrapper.get('[data-message-id="reply-target"]').classes()).toContain('targeted')
   })
 
   it('keeps a 1000-message live tail across real settings KeepAlive deactivation', async () => {

@@ -380,6 +380,7 @@ onBeforeUnmount(() => {
         :pinning-message-id="messenger.state.pinningMessageId"
         :copy-text="copyMessageText"
         :copy-image="copyMessageImage"
+        :create-image-thumbnail="$frontend.imageThumbnail.create.bind($frontend.imageThumbnail)"
         :connection-state="connectionState"
         :set-typing="typing.setLocal.bind(typing)"
         :viewport-anchor="messenger.activeViewportAnchor.value"

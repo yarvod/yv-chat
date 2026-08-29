@@ -71,6 +71,7 @@ import { BrowserDeviceInfo } from '../infrastructure/browser/device-info'
 import { BrowserDevicePairingSecretStore } from '../infrastructure/browser/device-pairing-secrets'
 import { parseTrustedDevicePairingOrigins } from '../infrastructure/browser/device-pairing-origins'
 import { BrowserHaptics } from '../infrastructure/browser/haptics'
+import { BrowserImageThumbnail } from '../infrastructure/browser/image-thumbnail'
 import { CapacitorHaptics } from '../infrastructure/capacitor/capacitor-haptics'
 import { CapacitorPushAdapter } from '../infrastructure/capacitor/capacitor-push'
 import { CapacitorCallAudio } from '../infrastructure/capacitor/capacitor-call-audio'
@@ -315,6 +316,7 @@ export default defineNuxtPlugin(nuxtApp => {
         haptics,
         themePreferences,
         clipboard: new BrowserClipboard(),
+        imageThumbnail: new BrowserImageThumbnail(),
         clientIdGenerator,
         loadCurrentAccount: new LoadCurrentAccount(authGateway),
         login: new Login(authGateway, deviceInfo, haptics),

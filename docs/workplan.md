@@ -1,71 +1,66 @@
 # Текущий workplan
 
-## WP-138 — Копирование и скачивание изображения из контекстного меню
+## WP-139 — Лёгкие image previews и повторная навигация по reply
 
 Статус: **completed locally**
-Bug: `BUG-127`
+Bugs: `BUG-128`, `BUG-129`
 
-Цель: правый клик или long-press по конкретной карточке изображения в timeline
-открывает существующее меню сообщения с рабочими действиями «Копировать изображение»
-и «Скачать изображение».
+Цель: прикреплённое фото не вызывает лаги при наборе текста, а reply остаётся
+компактным, показывает квадратный thumbnail исходной картинки и при каждом клике
+переходит к исходному сообщению.
 
 ### Scope
 
-- определить exact image attachment по DOM target, не смешивая несколько фото одного
-  сообщения;
-- добавить image-only действия в существующее desktop/mobile context menu;
-- копировать загруженный attachment blob через browser Clipboard API;
-- передавать в clipboard PNG representation для JPEG/WebP/GIF/AVIF совместимости;
-- сохранять user activation, передавая pending blob в `ClipboardItem` до завершения
-  чтения/конвертации;
-- скачивать exact blob с исходным безопасным display name;
-- показать понятный success/failure toast и не закрывать меню при ошибке.
+- заменить полноразмерный image blob в composer на bounded локальный thumbnail;
+- сохранить original file отдельно для upload и exact original pixel dimensions;
+- добавить lazy квадратный thumbnail первой картинки в reply preview;
+- загружать direct thumbnail только через существующий authorized/decryption boundary;
+- сделать переход к reply target императивно повторяемым, даже если route query уже
+  содержит тот же `messageId`;
+- сохранить bounded target-window loading для сообщения вне текущего DOM.
 
 ### Security и privacy
 
-- действия доступны только для `contentState=available` и уже авторизованного
-  attachment exact conversation;
-- direct media продолжает загружаться и расшифровываться через существующий
-  `loadAttachment` boundary; server не получает plaintext или file key;
-- object URL остаётся transient и отзывается после запуска скачивания;
-- clipboard остаётся browser capability за application port, без browser API внутри
-  crypto/storage application flow.
+- thumbnail создаётся только client-side из уже разрешённого plaintext blob;
+- original file, direct file key и ciphertext contracts не меняются;
+- thumbnail не пишется на server, в localStorage или отдельный durable cache;
+- object URLs отзываются при удалении attachment/unmount;
+- unavailable/deleted reply не пытается читать ciphertext или media secret.
 
 ### Tests
 
-- exact right-click image показывает оба image action, а клик по остальной карточке — нет;
-- copy получает exact pending blob и сообщает успех/ошибку;
-- download создаёт transient anchor с исходным именем и отзывает object URL;
-- browser clipboard вызывает `write()` до завершения pending load и нормализует
-  non-PNG image в PNG;
-- frontend tests, lint, typecheck и production build.
+- composer использует bounded preview blob, upload продолжает получать original File;
+- reply image рендерит квадратный thumbnail и текст/caption;
+- два последовательных клика по одному reply дважды центрируют и подсвечивают target;
+- thumbnail loader lazy, failure-safe и отзываeт URL;
+- frontend full suite, lint, typecheck и production build.
 
 ### Exclusions
 
-- копирование video/file как изображения;
-- изменение media TTL/cache/E2EE contracts;
-- отдельное системное меню macOS или native share sheet;
-- server-side преобразование изображения.
+- server-side thumbnails или изменение media schema;
+- persistent thumbnail cache;
+- video frame extraction для reply;
+- изменение reply protocol payload.
 
 ### Definition of Done
 
-- действия работают для обычного фото и sticker attachment в desktop menu и mobile
-  long-press sheet;
-- clipboard/download failures не приводят к unhandled rejection;
-- регрессии context menu, image viewer и attachment loading покрыты тестами;
-- документация дефекта и итог проверок обновлены.
+- набор текста с прикреплённым большим фото не держит full-resolution preview в DOM;
+- reply с картинкой остаётся компактным и не раздувает bubble;
+- повторный клик работает без искусственного route nonce;
+- проверки и документация обновлены.
 
 ### Result
 
-- context menu связывает действие с exact `data-attachment-id`, поэтому gallery из
-  нескольких фото копирует и скачивает именно выбранную карточку; обычный right-click
-  по bubble не показывает нерелевантные image actions;
-- pending authorized/decrypted blob передаётся в `ClipboardItem` немедленно, а
-  JPEG/WebP/GIF/AVIF локально приводятся к portable `image/png`; PNG не перекодируется;
-- download использует исходный validated display name и отзывает transient object URL;
-- copy/load/download failure оставляет меню открытым и показывает понятный toast;
-- `69/69` frontend test files и `436/436` tests проходят; ESLint, Nuxt typecheck,
-  production/PWA build и `git diff --check` зелёные;
-- локальный Nuxt shell открыт во встроенном браузере без console errors; exact
-  authenticated timeline visual acceptance не выполнялся, потому что локальный backend
-  остановлен, а component regressions покрывают desktop context target и action surface.
+- composer немедленно добавляет original File как upload source, а browser adapter
+  асинхронно создаёт отдельный PNG thumbnail с maximum edge 160 px и освобождает
+  full-resolution bitmap; original dimensions сохраняются отдельно;
+- reply preview отображается перед собственным content, использует квадрат 40×40 и
+  лениво создаёт максимум 96 px thumbnail только около viewport;
+- direct reply thumbnail проходит через обычный authorized download/decryption flow;
+  transient object URL отзывается на remove/unmount и не становится durable cache;
+- `revealMessage()` при каждом действии заново вызывает target-window loader, затем
+  императивно центрирует и подсвечивает exact DOM row, поэтому неизменившийся route
+  query больше не блокирует повторный клик;
+- map сообщений устраняет повторный линейный поиск reply target для каждого bubble;
+- `71/71` frontend test files и `441/441` tests проходят; ESLint, Nuxt typecheck,
+  production/PWA build и `git diff --check` зелёные.

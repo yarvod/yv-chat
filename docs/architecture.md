@@ -1450,6 +1450,15 @@ Blob скачивается без выхода из приложения. Compo
 `accept="image/*,video/*"` и unrestricted file picker: конкретный системный UI
 галереи остаётся ответственностью OS/browser.
 
+Original image File остаётся upload source и не используется как уменьшенный DOM
+preview. App-scoped `ImageThumbnailPort` один раз декодирует его, сохраняет original
+pixel dimensions для message metadata, рисует локальный PNG maximum edge 160 px и
+немедленно освобождает full-resolution bitmap. Reply на доступное image message
+лениво проходит через тот же adapter с maximum edge 96 px только около viewport и
+показывает compact 40×40 crop. Direct blob до этого получается через обычный
+authorized client-side decrypt boundary. Оба thumbnail transient: server/persistent
+cache/schema не меняются, object URL отзывается при remove/unmount.
+
 `WP-073` добавляет `video_note` как presentation metadata поверх того же group v1
 `video` attachment, не как новый storage/media kind. Старый клиент игнорирует
 необязательные metadata и показывает обычное видео. Browser adapter после user

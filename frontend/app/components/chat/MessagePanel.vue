@@ -12,6 +12,7 @@ import {
 
 import type { TimelineMessage } from '../../application/messaging/timeline-message'
 import type { MessageInteractionContext } from '../../application/messaging/text-message-content'
+import type { ImageThumbnail } from '../../application/ports/image-thumbnail'
 import type { GroupAttachmentSource } from '../../application/messaging/upload-group-attachment'
 import type {
   RecordedVideoNote,
@@ -44,6 +45,7 @@ import {
 import AppIcon from '../ui/AppIcon.vue'
 import MessageAttachments from './MessageAttachments.vue'
 import MessageText from './MessageText.vue'
+import ReplyImageThumbnail from './ReplyImageThumbnail.vue'
 import CallHistoryMessage from './CallHistoryMessage.vue'
 import VideoNoteCapture from './VideoNoteCapture.vue'
 
@@ -91,6 +93,7 @@ const props = withDefaults(defineProps<{
   pinningMessageId?: string | null
   copyText?: (value: string) => Promise<boolean>
   copyImage?: (value: Blob | Promise<Blob>) => Promise<boolean>
+  createImageThumbnail?: (source: Blob, maximumEdge: number) => Promise<ImageThumbnail>
   connectionState: RealtimeConnectionState
   setTyping: (conversationId: string, active: boolean) => void
   viewportAnchor?: ConversationViewportAnchor | null
@@ -130,6 +133,11 @@ const props = withDefaults(defineProps<{
     }
     return false
   },
+  createImageThumbnail: async (source: Blob) => ({
+    body: source,
+    pixelWidth: 0,
+    pixelHeight: 0,
+  }),
   viewportAnchor: null,
   targetMessageId: null,
   saveViewport: async () => undefined,
@@ -160,6 +168,7 @@ const fileInput = ref<HTMLInputElement | null>(null)
 const attachmentPicker = ref<HTMLElement | null>(null)
 const contextMenuElement = ref<HTMLElement | null>(null)
 interface SelectedAttachment {
+  localId: number
   file: File
   kind: 'image' | 'video' | 'file'
   previewUrl: string | null
@@ -191,6 +200,7 @@ let messageActionNoticeTimer: ReturnType<typeof setTimeout> | null = null
 let suppressedMessageClickTimer: ReturnType<typeof setTimeout> | null = null
 let suppressedMessageClickId: string | null = null
 let reactionBurstTimer: ReturnType<typeof setTimeout> | null = null
+let nextSelectedAttachmentId = 0
 interface MessageContextMenuState {
   messageId: string
   imageAttachmentId: string | null
@@ -334,6 +344,9 @@ const timelineItems = computed(() => props.conversation
       props.actorUserId,
     )
   : [])
+const messagesById = computed(() => new Map(
+  props.messages.map(message => [message.messageId, message] as const),
+))
 
 const typingLabel = computed(() => {
   const names = props.typingActorIds
@@ -417,7 +430,12 @@ function replyPreview(message: TimelineMessage | null): string {
 
 function repliedMessage(message: TimelineMessage): TimelineMessage | null {
   if (!message.replyToMessageId) return null
-  return props.messages.find(item => item.messageId === message.replyToMessageId) ?? null
+  return messagesById.value.get(message.replyToMessageId) ?? null
+}
+
+function replyImageAttachment(message: TimelineMessage | null): MessageAttachment | null {
+  if (!message || message.contentState !== 'available') return null
+  return message.displayAttachments?.find(attachment => attachment.kind === 'image') ?? null
 }
 
 function mentionedUserIds(): string[] {
@@ -460,7 +478,7 @@ async function runSearch(): Promise<void> {
     searchResults.value = await props.searchMessages(query)
     searchResultIndex.value = Math.max(0, searchResults.value.length - 1)
     const result = searchResults.value[searchResultIndex.value]
-    if (result) await props.openMessage(result.messageId)
+    if (result) await revealMessage(result.messageId)
   } finally {
     searching.value = false
   }
@@ -472,7 +490,7 @@ async function moveSearch(direction: -1 | 1): Promise<void> {
     searchResultIndex.value + direction + searchResults.value.length
   ) % searchResults.value.length
   const result = searchResults.value[searchResultIndex.value]
-  if (result) await props.openMessage(result.messageId)
+  if (result) await revealMessage(result.messageId)
 }
 
 function closeSearch(): void {
@@ -542,7 +560,7 @@ function movePinned(delta: number): void {
 }
 
 async function openPinned(): Promise<void> {
-  if (activePin.value) await props.openMessage(activePin.value.messageId)
+  if (activePin.value) await revealMessage(activePin.value.messageId)
 }
 
 async function changePin(messageId: string, active = !isPinned(messageId)): Promise<boolean> {
@@ -974,7 +992,10 @@ async function confirmDelete(messageId: string): Promise<void> {
 }
 
 async function submit(): Promise<void> {
-  if (props.sending || (draft.value.trim().length === 0 && selectedAttachments.value.length === 0)) return
+  if (
+    props.sending
+    || (draft.value.trim().length === 0 && selectedAttachments.value.length === 0)
+  ) return
   const value = draft.value
   const attachments = selectedAttachments.value.map(({
     file,
@@ -1049,24 +1070,42 @@ function attachmentName(file: File): string {
   return extension ? `Вставленное изображение.${extension}` : 'Вставленный файл'
 }
 
-function rememberAttachmentDimensions(index: number, event: Event): void {
+function rememberVideoAttachmentDimensions(index: number, event: Event): void {
   const item = selectedAttachments.value[index]
-  if (!item || item.kind === 'file') return
-  const dimensions = item.kind === 'image'
-    ? {
-        width: (event.currentTarget as HTMLImageElement).naturalWidth,
-        height: (event.currentTarget as HTMLImageElement).naturalHeight,
-      }
-    : {
-        width: (event.currentTarget as HTMLVideoElement).videoWidth,
-        height: (event.currentTarget as HTMLVideoElement).videoHeight,
-      }
-  const pixelWidth = dimensions.width
-  const pixelHeight = dimensions.height
+  if (!item || item.kind !== 'video') return
+  const video = event.currentTarget as HTMLVideoElement
+  const pixelWidth = video.videoWidth
+  const pixelHeight = video.videoHeight
   if (!validAttachmentDimensions(item.kind, pixelWidth, pixelHeight)) return
   selectedAttachments.value = selectedAttachments.value.map((candidate, candidateIndex) => (
     candidateIndex === index ? { ...candidate, pixelWidth, pixelHeight } : candidate
   ))
+}
+
+async function prepareImageAttachmentPreview(item: SelectedAttachment): Promise<void> {
+  try {
+    const thumbnail = await props.createImageThumbnail(item.file, 160)
+    if (!selectedAttachments.value.some(candidate => candidate.localId === item.localId)) return
+    const previewUrl = URL.createObjectURL(thumbnail.body)
+    const dimensions = validAttachmentDimensions(
+      'image',
+      thumbnail.pixelWidth,
+      thumbnail.pixelHeight,
+    )
+      ? { pixelWidth: thumbnail.pixelWidth, pixelHeight: thumbnail.pixelHeight }
+      : {}
+    selectedAttachments.value = selectedAttachments.value.map(candidate => (
+      candidate.localId === item.localId
+        ? {
+            ...candidate,
+            previewUrl,
+            ...dimensions,
+          }
+        : candidate
+    ))
+  } catch {
+    // Upload stays available with a lightweight placeholder when previewing fails.
+  }
 }
 
 function addAttachments(
@@ -1105,18 +1144,20 @@ function addAttachments(
       return false
     }
   }
-  selectedAttachments.value = [
-    ...selectedAttachments.value,
-    ...files.map(file => {
-      const kind = attachmentKindFor(file.type)
-      return {
-        file,
-        kind,
-        previewUrl: kind === 'file' ? null : URL.createObjectURL(file),
-        ...(presentation ? { presentation } : {}),
-      }
-    }),
-  ]
+  const prepared = files.map(file => {
+    const kind = attachmentKindFor(file.type)
+    return {
+      localId: ++nextSelectedAttachmentId,
+      file,
+      kind,
+      previewUrl: kind === 'video' ? URL.createObjectURL(file) : null,
+      ...(presentation ? { presentation } : {}),
+    } satisfies SelectedAttachment
+  })
+  selectedAttachments.value = [...selectedAttachments.value, ...prepared]
+  for (const item of prepared) {
+    if (item.kind === 'image') void prepareImageAttachmentPreview(item)
+  }
   return true
 }
 
@@ -1316,6 +1357,34 @@ function releaseLayoutAnchor(): void {
   layoutAnchorExpiresAt = 0
 }
 
+function focusTimelineMessage(messageId: string): boolean {
+  const container = timeline.value
+  const target = messageElement(messageId)
+  if (!container || !target || container.clientHeight <= 0) return false
+  const centeredOffset = Math.max(
+    12,
+    (container.clientHeight - target.getBoundingClientRect().height) / 2,
+  )
+  alignMessage(messageId, centeredOffset)
+  lockLayoutAnchor(messageId, centeredOffset)
+  highlightedMessageId.value = messageId
+  if (highlightTimer) clearTimeout(highlightTimer)
+  highlightTimer = setTimeout(() => {
+    highlightedMessageId.value = null
+  }, 1_800)
+  restorationPending.value = false
+  scheduleViewportSave()
+  return true
+}
+
+async function revealMessage(messageId: string): Promise<void> {
+  restorationPending.value = true
+  await props.openMessage(messageId)
+  await nextTick()
+  if (focusTimelineMessage(messageId)) return
+  await restoreViewport(false)
+}
+
 async function restoreViewport(waitForRender = true): Promise<void> {
   if (!restorationPending.value) return
   if (waitForRender) await nextTick()
@@ -1327,20 +1396,7 @@ async function restoreViewport(waitForRender = true): Promise<void> {
   }
   const targetMessageId = props.targetMessageId
   if (targetMessageId) {
-    const target = messageElement(targetMessageId)
-    if (target) {
-      const centeredOffset = Math.max(12, (container.clientHeight - target.getBoundingClientRect().height) / 2)
-      alignMessage(targetMessageId, centeredOffset)
-      lockLayoutAnchor(targetMessageId, centeredOffset)
-      highlightedMessageId.value = targetMessageId
-      if (highlightTimer) clearTimeout(highlightTimer)
-      highlightTimer = setTimeout(() => {
-        highlightedMessageId.value = null
-      }, 1_800)
-      restorationPending.value = false
-      scheduleViewportSave()
-      return
-    }
+    if (focusTimelineMessage(targetMessageId)) return
     return
   }
   const anchor = props.viewportAnchor
@@ -1789,6 +1845,28 @@ onBeforeUnmount(() => {
             aria-hidden="true"
           >{{ isMessageSelected(item.message.messageId) ? '✓' : '' }}</span>
           <strong v-if="item.showSender">{{ senderName(item.message) }}</strong>
+          <button
+            v-if="item.message.replyToMessageId"
+            class="message-reply-preview"
+            :class="{
+              'message-reply-preview--media': Boolean(replyImageAttachment(repliedMessage(item.message))),
+            }"
+            type="button"
+            @click="revealMessage(item.message.replyToMessageId)"
+          >
+            <ReplyImageThumbnail
+              v-if="replyImageAttachment(repliedMessage(item.message))"
+              :conversation-id="item.message.conversationId"
+              :expires-at="repliedMessage(item.message)?.expiresAt ?? item.message.expiresAt"
+              :attachment="replyImageAttachment(repliedMessage(item.message))!"
+              :load-attachment="loadAttachment"
+              :create-thumbnail="createImageThumbnail"
+            />
+            <span class="message-reply-preview__copy">
+              <strong>{{ repliedMessage(item.message) ? senderName(repliedMessage(item.message)!) : 'Ответ' }}</strong>
+              <span>{{ replyPreview(repliedMessage(item.message)) }}</span>
+            </span>
+          </button>
           <MessageAttachments
             v-if="item.message.contentState === 'available' && (item.message.displayAttachments?.length ?? 0) > 0"
             :conversation-id="item.message.conversationId"
@@ -1796,15 +1874,6 @@ onBeforeUnmount(() => {
             :expires-at="item.message.expiresAt"
             :load-attachment="loadAttachment"
           />
-          <button
-            v-if="item.message.replyToMessageId"
-            class="message-reply-preview"
-            type="button"
-            @click="openMessage(item.message.replyToMessageId)"
-          >
-            <strong>{{ repliedMessage(item.message) ? senderName(repliedMessage(item.message)!) : 'Ответ' }}</strong>
-            <span>{{ replyPreview(repliedMessage(item.message)) }}</span>
-          </button>
           <CallHistoryMessage
             v-if="item.message.contentState === 'available' && item.message.call"
             :call="item.message.call"
@@ -1919,7 +1988,7 @@ onBeforeUnmount(() => {
         <div class="composer-attachments__strip">
           <div
             v-for="(item, index) in selectedAttachments"
-            :key="`${attachmentName(item.file)}-${item.file.lastModified}-${index}`"
+            :key="item.localId"
             class="composer-attachment"
             :class="{ 'composer-attachment--sticker': item.presentation === 'sticker' }"
           >
@@ -1927,7 +1996,6 @@ onBeforeUnmount(() => {
               v-if="item.previewUrl && item.kind === 'image'"
               :src="item.previewUrl"
               :alt="`Предпросмотр ${attachmentName(item.file)}`"
-              @load="rememberAttachmentDimensions(index, $event)"
             >
             <video
               v-else-if="item.previewUrl && item.kind === 'video'"
@@ -1936,7 +2004,7 @@ onBeforeUnmount(() => {
               playsinline
               preload="metadata"
               :aria-label="`Предпросмотр ${attachmentName(item.file)}`"
-              @loadedmetadata="rememberAttachmentDimensions(index, $event)"
+              @loadedmetadata="rememberVideoAttachmentDimensions(index, $event)"
             />
             <span v-else class="composer-attachment__icon"><AppIcon name="attachment" /></span>
             <span class="composer-attachment__copy">

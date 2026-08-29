@@ -319,8 +319,12 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .mention { padding: 1px 3px; border-radius: 5px; color: var(--primary); background: color-mix(in srgb, var(--primary) 12%, transparent); font-weight: 750; }
 .mention--own { color: var(--primary-strong); background: color-mix(in srgb, var(--primary) 22%, transparent); }
 .message-reply-preview { display: grid; width: 100%; grid-template-columns: 1fr; gap: 2px; margin: 1px 0 6px; padding: 5px 8px; overflow: hidden; border: 0; border-left: 3px solid var(--primary); border-radius: 4px 8px 8px 4px; color: var(--text); background: color-mix(in srgb, var(--primary) 8%, transparent); text-align: left; }
-.message-reply-preview strong { margin: 0; }
-.message-reply-preview span { overflow: hidden; color: var(--muted); font-size: .72rem; text-overflow: ellipsis; white-space: nowrap; }
+.message-reply-preview--media { grid-template-columns: 40px minmax(0, 1fr); align-items: center; gap: 7px; padding: 4px 7px; }
+.message-reply-thumbnail { display: block; width: 40px; height: 40px; overflow: hidden; border-radius: 7px; background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 18%, var(--field)), var(--field)); }
+.message-reply-thumbnail img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.message-reply-preview__copy { display: grid; min-width: 0; gap: 1px; overflow: hidden; }
+.message-reply-preview__copy strong { overflow: hidden; margin: 0; color: var(--primary); font-size: .75rem; text-overflow: ellipsis; white-space: nowrap; }
+.message-reply-preview__copy > span { overflow: hidden; color: var(--muted); font-size: .72rem; text-overflow: ellipsis; white-space: nowrap; }
 .message-meta { display: flex !important; align-items: center; justify-content: flex-end; gap: 4px; min-height: 12px; margin-top: 3px !important; color: var(--muted); text-align: right; font-size: .65rem !important; font-variant-numeric: tabular-nums; }
 .delivery-state { color: var(--primary); letter-spacing: -.18em; }
 .message-tombstone { color: var(--muted); font-style: italic; }

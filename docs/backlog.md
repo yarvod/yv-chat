@@ -849,6 +849,18 @@ Frontend `407 passed`, lint/typecheck и production/PWA build зелёные.
 Production runtime smoke-check: exact immutable tag, healthy frontend/API/PostgreSQL,
 HTTPS/health `200`, expected unauthenticated WebSocket `403`, valid unchanged Nginx.
 
+### BL-FIX-059 — Лёгкие image previews и повторная reply-навигация
+
+Статус: **completed locally** (`WP-139`).
+
+Composer сохраняет original File только как upload source и показывает отдельный
+client-side PNG maximum edge 160 px; full decode bitmap освобождается сразу после
+resize. Image reply получает lazy 96 px thumbnail в компактном 40×40 preview без
+server thumbnail/cache/schema. Каждый клик по reply после bounded target-window load
+явно центрирует и подсвечивает target, поэтому одинаковый route query больше не
+превращает повторный переход в no-op. Frontend `441 passed`, lint, typecheck и
+production/PWA build зелёные.
+
 ### BL-FIX-058 — Retry-safe history relay и bounded iOS date-pill shadow
 
 Статус: **completed and production deployed** (`WP-129`, `9d08b10`, workflow

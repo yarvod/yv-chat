@@ -4,6 +4,40 @@
 
 ## Active
 
+### BUG-129 — Повторный клик по reply не возвращал к исходному сообщению
+
+- Статус: `fixed locally` (`WP-139`).
+- Severity: `medium navigation reliability`.
+- Reproduction: нажать reply preview, затем прокрутить timeline и нажать тот же reply
+  повторно.
+- Фактическое поведение: первый клик записывал target `messageId` в route query;
+  повторный `replace` тем же query не менял computed prop, поэтому viewport watcher
+  не запускался повторно.
+- Ожидаемое поведение: каждый клик загружает target window при необходимости,
+  центрирует exact row и повторяет highlight независимо от текущего URL.
+- Исправление: общий `revealMessage()` сначала выполняет существующий bounded
+  target-window callback, затем при каждом вызове императивно центрирует и повторно
+  подсвечивает exact row; route query остаётся deep-link state, а не event trigger.
+- Проверка: два последовательных клика по одному image reply дважды вызывают loader и
+  дважды меняют viewport position; target остаётся highlighted.
+
+### BUG-128 — Full-resolution preview и timeline patch вызывали лаги при наборе текста
+
+- Статус: `fixed locally` (`WP-139`).
+- Severity: `high composer performance`.
+- Reproduction: прикрепить большое фото в длинном чате и продолжить быстро печатать.
+- Фактическое поведение: composer держал original image blob в 48×48 DOM preview;
+  декодированная full-resolution bitmap продолжала занимать memory/GPU resources во
+  время набора текста, хотя UI показывал только маленький квадрат.
+- Ожидаемое поведение: original File остаётся только upload source, UI использует
+  bounded thumbnail с сохранёнными отдельно original pixel dimensions.
+- Исправление: app-scoped browser adapter создаёт PNG maximum edge 160 px, закрывает
+  decode bitmap и отдаёт original dimensions отдельно; composer никогда не создаёт
+  object URL из original image File. Reply использует lazy 96 px вариант того же
+  adapter и compact 40×40 surface.
+- Проверка: original 4032×3024 File остаётся exact upload body, DOM получает отдельный
+  thumbnail blob; adapter bounds/release и lazy reply URL revoke покрыты тестами.
+
 ### BUG-127 — В контекстном меню изображения нельзя было скопировать или скачать фото
 
 - Статус: `fixed locally` (`WP-138`).
