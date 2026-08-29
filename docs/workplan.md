@@ -2,7 +2,7 @@
 
 ## WP-139 — Лёгкие image previews и повторная навигация по reply
 
-Статус: **completed locally**
+Статус: **completed and production deployed**
 Bugs: `BUG-128`, `BUG-129`
 
 Цель: прикреплённое фото не вызывает лаги при наборе текста, а reply остаётся
@@ -64,3 +64,8 @@ Bugs: `BUG-128`, `BUG-129`
 - map сообщений устраняет повторный линейный поиск reply target для каждого bubble;
 - `71/71` frontend test files и `441/441` tests проходят; ESLint, Nuxt typecheck,
   production/PWA build и `git diff --check` зелёные.
+- production rollout коммита `b536c77` выполнен workflow `33281342997`; отдельный
+  CI workflow `33281342979` зелёный, immutable tag
+  `sha-b536c7714f1887915a81179efc6bfc7665c90013` активен;
+- `chat.yoowee.ru`, `chat.yoowee.com.de` и оба `/api/v1/health` вернули HTTP `200`
+  с успешной TLS-проверкой.

@@ -751,6 +751,31 @@ System audio не входит в этот slice, microphone audio продол�
 
 ## Completed
 
+### BL-FIX-067 — Лёгкие image previews и повторная reply-навигация
+
+Статус: **completed and production deployed** (`WP-139`, `b536c77`, workflow
+`33281342997`).
+
+Composer сохраняет original File только как upload source и показывает отдельный
+client-side PNG maximum edge 160 px; full decode bitmap освобождается сразу после
+resize. Image reply получает lazy 96 px thumbnail в компактном 40×40 preview без
+server thumbnail/cache/schema. Каждый клик по reply после bounded target-window load
+явно центрирует и подсвечивает target, поэтому одинаковый route query больше не
+превращает повторный переход в no-op. Frontend `441 passed`, lint, typecheck и
+production/PWA build зелёные; оба public origin и health вернули HTTP `200`.
+
+### BL-FIX-066 — Copy/download actions для image card
+
+Статус: **completed and production deployed** (`WP-138`, `381a397`, rollout
+`b536c77`, workflow `33281342997`).
+
+Контекстное меню сохраняет exact attachment выбранной карточки и предлагает
+«Копировать изображение» и «Скачать». Обе операции используют существующий
+authorized attachment loader; clipboard получает совместимый PNG, download сохраняет
+исходный display name и отзывает временный object URL. Multi-image, clipboard,
+download и revoke regressions проходят; исправление доставлено тем же immutable
+production rollout, оба public origin и health вернули HTTP `200`.
+
 ### BL-FIX-065 — Asymmetric empty-target QR history sync
 
 Статус: **completed and production deployed** (`WP-136`, `365e4dd`, workflow
@@ -848,18 +873,6 @@ bounded device history relay pace-ит два peers ниже существую�
 Frontend `407 passed`, lint/typecheck и production/PWA build зелёные.
 Production runtime smoke-check: exact immutable tag, healthy frontend/API/PostgreSQL,
 HTTPS/health `200`, expected unauthenticated WebSocket `403`, valid unchanged Nginx.
-
-### BL-FIX-059 — Лёгкие image previews и повторная reply-навигация
-
-Статус: **completed locally** (`WP-139`).
-
-Composer сохраняет original File только как upload source и показывает отдельный
-client-side PNG maximum edge 160 px; full decode bitmap освобождается сразу после
-resize. Image reply получает lazy 96 px thumbnail в компактном 40×40 preview без
-server thumbnail/cache/schema. Каждый клик по reply после bounded target-window load
-явно центрирует и подсвечивает target, поэтому одинаковый route query больше не
-превращает повторный переход в no-op. Frontend `441 passed`, lint, typecheck и
-production/PWA build зелёные.
 
 ### BL-FIX-058 — Retry-safe history relay и bounded iOS date-pill shadow
 

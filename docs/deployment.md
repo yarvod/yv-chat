@@ -11,7 +11,22 @@ not be replaced with the broader JavaScript `unsafe-eval`. Without it, public
 crypto assets still return HTTP 200 but device provisioning stops before the
 `PUT /api/v1/devices/current/crypto-identity` registration request.
 
-## Latest rollout — WP-137 screen sharing
+## Latest rollout — WP-138/WP-139 image actions, previews and reply navigation
+
+- Commits: `381a397746817d877315c4b70dfb339c3633c1c8` and
+  `b536c7714f1887915a81179efc6bfc7665c90013`.
+- Production workflow: `33281342997` (success); CI workflow: `33281342979`
+  (backend/frontend/crypto/Compose success).
+- Deployed image tag: `sha-b536c7714f1887915a81179efc6bfc7665c90013` on frontend,
+  API and cleanup; rollout health checks passed.
+- Public acceptance: both origins and `/api/v1/health` returned `200` with successful
+  TLS verification.
+- User-facing acceptance: the image card menu now exposes exact-image copy/download;
+  composer and reply previews are bounded thumbnails, and repeat reply navigation is
+  imperative. Final macOS clipboard and perceived-latency checks remain user-device
+  acceptance because they require the native clipboard and a real large photo.
+
+## Prior rollout — WP-137 screen sharing
 
 - Commit: `3c0d3a781adaa8695b4522697f40bcc82fb23181`.
 - Production workflow: `33268526660` (success); CI workflow: `33268526683`

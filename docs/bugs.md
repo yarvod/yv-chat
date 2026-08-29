@@ -6,7 +6,8 @@
 
 ### BUG-129 — Повторный клик по reply не возвращал к исходному сообщению
 
-- Статус: `fixed locally` (`WP-139`).
+- Статус: `fixed and production deployed` (`WP-139`, `b536c77`, workflow
+  `33281342997`).
 - Severity: `medium navigation reliability`.
 - Reproduction: нажать reply preview, затем прокрутить timeline и нажать тот же reply
   повторно.
@@ -23,7 +24,8 @@
 
 ### BUG-128 — Full-resolution preview и timeline patch вызывали лаги при наборе текста
 
-- Статус: `fixed locally` (`WP-139`).
+- Статус: `fixed and production deployed` (`WP-139`, `b536c77`, workflow
+  `33281342997`).
 - Severity: `high composer performance`.
 - Reproduction: прикрепить большое фото в длинном чате и продолжить быстро печатать.
 - Фактическое поведение: composer держал original image blob в 48×48 DOM preview;
@@ -40,7 +42,8 @@
 
 ### BUG-127 — В контекстном меню изображения нельзя было скопировать или скачать фото
 
-- Статус: `fixed locally` (`WP-138`).
+- Статус: `fixed and production deployed` (`WP-138`, `381a397`, rollout
+  `b536c77`, workflow `33281342997`).
 - Severity: `medium media UX`.
 - Reproduction: открыть загруженное фото в timeline и нажать по нему правой кнопкой
   мыши на macOS либо сделать long-press на touch-устройстве.
