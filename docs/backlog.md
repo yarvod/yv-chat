@@ -728,8 +728,7 @@ sender negotiated remote-offer video transceiver до signed answer, а fullscre
 
 ### BL-084 — Демонстрация экрана в звонках
 
-Статус: **implemented locally; production rollout and physical two-device acceptance
-pending** (`WP-137`).
+Статус: **production deployed; physical two-device acceptance pending** (`WP-137`).
 
 Результат: участник 1:1 звонка по явному действию открывает защищённый системный
 picker и выбирает весь экран/монитор, окно или вкладку. Выбранный track заменяет
@@ -742,7 +741,8 @@ server media path, записи или нового signaling lifecycle.
 - [x] detail-oriented 1440p ceiling, 15 fps target и 1.8 Mbit/s sender cap;
 - [x] остановка из UI или browser indicator, terminal cleanup и camera restore;
 - [x] unit/component tests для permission cancellation, transitions и UI;
-- [ ] production rollout и physical desktop ↔ second-device packet acceptance.
+- [x] production rollout (`3c0d3a7`, workflow `33268526660`);
+- [ ] physical desktop ↔ second-device packet acceptance.
 
 Web-приложение намеренно не перечисляет мониторы само: доступные поверхности и
 окончательный выбор принадлежат browser/OS permission UI. Платформы без

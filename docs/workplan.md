@@ -2,7 +2,7 @@
 
 ## WP-137 — Демонстрация экрана в WebRTC-звонке
 
-Статус: **completed locally; production rollout and physical two-device acceptance pending**
+Статус: **completed and production deployed; physical two-device acceptance pending**
 Backlog: `BL-084`
 
 Цель: участник действующего 1:1 звонка может по явному нажатию открыть системный
@@ -62,5 +62,9 @@ media path.
   production/PWA build, Compose config и `git diff --check` зелёные;
 - локальная production-сборка отрисована в in-app browser без console errors;
   permission picker и packet delivery между двумя физическими устройствами остаются
-  production/physical acceptance, потому что browser automation не должна принимать
-  screen-capture permission за пользователя.
+  physical acceptance, потому что browser automation не должна принимать
+  screen-capture permission за пользователя;
+- production rollout `3c0d3a781adaa8695b4522697f40bcc82fb23181` / workflow
+  `33268526660` успешен: frontend, API и cleanup используют immutable image tag
+  `sha-3c0d3a781adaa8695b4522697f40bcc82fb23181`, публичные origins и health endpoints
+  отвечают `200`, TLS verification проходит.

@@ -11,7 +11,21 @@ not be replaced with the broader JavaScript `unsafe-eval`. Without it, public
 crypto assets still return HTTP 200 but device provisioning stops before the
 `PUT /api/v1/devices/current/crypto-identity` registration request.
 
-## Latest rollout — WP-132 KeepAlive viewport reactivation
+## Latest rollout — WP-137 screen sharing
+
+- Commit: `3c0d3a781adaa8695b4522697f40bcc82fb23181`.
+- Production workflow: `33268526660` (success); CI workflow: `33268526683`
+  (backend/frontend/crypto/Compose success).
+- Deployed image tag: `sha-3c0d3a781adaa8695b4522697f40bcc82fb23181` on frontend,
+  API and cleanup; frontend/API/PostgreSQL reported healthy.
+- Public acceptance: both origins and `/api/v1/health` returned `200`, TLS
+  verification passed, and unauthenticated `/api/v1/calls/config` returned the
+  expected `401`.
+- Physical desktop ↔ second-device screen packet acceptance remains user-bound:
+  the browser/system picker requires a real user choice and automation must not
+  grant screen-capture permission on the user's behalf.
+
+## Prior rollout — WP-132 KeepAlive viewport reactivation
 
 - Commit: `5f6643d23e2ada5831cffc0959e3df58045c34a4`.
 - Production workflow: `32987332840` (manual dispatch success). GitHub did not
