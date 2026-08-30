@@ -6,7 +6,8 @@
 
 ### BUG-130 — Одновременный screen share создавал рекурсивный «зеркальный коридор»
 
-- Статус: `fixed locally` (`WP-140`).
+- Статус: `fixed and production deployed` (`WP-140`, `e2246c7`, workflow
+  `33337315506`).
 - Severity: `high call usability`.
 - Reproduction: начать демонстрацию всего экрана у обоих участников 1:1 звонка,
   оставив fullscreen call surface видимым на захватываемых мониторах.

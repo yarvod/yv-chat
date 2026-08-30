@@ -728,8 +728,8 @@ sender negotiated remote-offer video transceiver до signed answer, а fullscre
 
 ### BL-084 — Демонстрация экрана в звонках
 
-Статус: **production deployed; anti-recursion fix completed locally; physical
-two-device acceptance pending** (`WP-137`, `WP-140`).
+Статус: **production deployed; physical two-device acceptance pending** (`WP-137`,
+`WP-140`).
 
 Результат: участник 1:1 звонка по явному действию открывает защищённый системный
 picker и выбирает весь экран/монитор, окно или вкладку. Выбранный track заменяет
@@ -744,6 +744,7 @@ server media path, записи или нового signaling lifecycle.
 - [x] остановка из UI или browser indicator, terminal cleanup и camera restore;
 - [x] unit/component tests для permission cancellation, transitions и UI;
 - [x] production rollout (`3c0d3a7`, workflow `33268526660`);
+- [x] anti-recursion rollout (`e2246c7`, workflow `33337315506`);
 - [ ] physical desktop ↔ second-device packet acceptance.
 
 Web-приложение намеренно не перечисляет мониторы само: доступные поверхности и
@@ -760,6 +761,7 @@ System audio не входит в этот slice, microphone audio продол�
 и не разрешать последующее source switching. Независимо от поддержки этих hints,
 локально sharing client перестаёт рисовать remote video и local screen preview до
 остановки share, сохраняя сам remote stream, audio, controls и camera restore.
+Исправление production deployed (`e2246c7`, workflow `33337315506`).
 
 ### BL-FIX-067 — Лёгкие image previews и повторная reply-навигация
 

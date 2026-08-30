@@ -2,7 +2,7 @@
 
 ## WP-140 — Защита демонстрации экрана от рекурсивного захвата
 
-Статус: **completed locally**
+Статус: **completed and production deployed**
 Bugs: `BUG-130`
 
 Цель: демонстрация всего монитора или окна звонка не должна создавать «зеркальный
@@ -61,3 +61,7 @@ Bugs: `BUG-130`
 - остановка из UI/system indicator сохраняет прежний camera restore и WebRTC cleanup;
 - full `71/71` frontend test files и `441/441` tests, ESLint, Nuxt typecheck и
   production/PWA build проходят.
+- production rollout коммита `e2246c7` выполнен workflow `33337315506`; отдельный
+  CI workflow `33337315513` зелёный, immutable tag
+  `sha-e2246c7c92e75dc11ba3ec8282e8f44ebfe34b67` активен;
+- `chat.yoowee.ru`, `chat.yoowee.com.de` и оба `/api/v1/health` вернули HTTP `200`.
