@@ -1971,6 +1971,15 @@ hangup/error/reset останавливает screen track и очищает lis
 camera+screen tracks не входят в этот slice. На platform без `getDisplayMedia()`
 capability остаётся disabled, а native WebView screen capture не обещается.
 
+`WP-140` добавляет обязательный local anti-recursion invariant. Перед заменой sender
+track sharing client перестаёт рисовать remote video в call surface и никогда не
+присоединяет screen stream к local preview element; remote stream при этом остаётся
+подключённым и audio не меняется. Поэтому захваченный monitor/window не содержит
+screen-derived call video даже при одновременном share обоих участников. Picker
+получает `selfBrowserSurface=exclude` и `surfaceSwitching=exclude`, но эти значения —
+только browser preferences и не считаются единственной защитой: user agent вправе их
+игнорировать. После stop обычный remote video rendering и camera restore возвращаются.
+
 ## 15. Security и trust boundaries
 
 Никогда не логировать passwords, activation/session credentials, Authorization headers, private keys, plaintext messages или decrypted attachments. Structured logs используют opaque IDs, sizes и event types.

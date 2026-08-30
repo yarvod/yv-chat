@@ -32,6 +32,7 @@ interface ScreenCaptureOptions {
   video: boolean | (MediaTrackConstraints & { displaySurface?: 'monitor' | 'window' | 'browser' })
   audio: boolean
   monitorTypeSurfaces?: 'include' | 'exclude'
+  selfBrowserSurface?: 'include' | 'exclude'
   surfaceSwitching?: 'include' | 'exclude'
 }
 
@@ -353,7 +354,7 @@ export class BrowserVoiceCallService {
     this.localVideoElement = local
     this.remoteVideoElement = remote
     this.attachRemoteVideoListeners()
-    this.attachStream(local, this.screenStream ?? this.cameraStream)
+    this.attachStream(local, this.cameraStream)
     this.attachStream(remote, this.remoteMediaStream)
   }
 
@@ -848,7 +849,8 @@ export class BrowserVoiceCallService {
       stream = await mediaDevices.getDisplayMedia({
         audio: false,
         monitorTypeSurfaces: 'include',
-        surfaceSwitching: 'include',
+        selfBrowserSurface: 'exclude',
+        surfaceSwitching: 'exclude',
         video: {
           displaySurface: 'monitor',
           width: { ideal: 1_920, max: 2_560 },
@@ -867,6 +869,7 @@ export class BrowserVoiceCallService {
         for (const item of stream.getTracks()) item.stop()
         return
       }
+      this.update({ ...this.state, screenSharing: true })
       await sender.replaceTrack(track)
       await this.limitVideoSender(sender, 'screen')
       if (this.peer !== peer || this.videoSender !== sender) {
@@ -880,7 +883,7 @@ export class BrowserVoiceCallService {
       stream = null
       track.addEventListener('ended', this.handleScreenShareEnded, { once: true })
       for (const item of previousCamera?.getTracks() ?? []) item.stop()
-      this.attachStream(this.localVideoElement, this.screenStream)
+      this.attachStream(this.localVideoElement, null)
       this.update({
         ...this.state,
         cameraEnabled: false,
@@ -898,6 +901,7 @@ export class BrowserVoiceCallService {
       this.update({
         ...this.state,
         cameraBusy: false,
+        screenSharing: false,
         notice: cancelled
           ? 'Демонстрация экрана не начата'
           : 'Не удалось показать экран — звонок продолжается',

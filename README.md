@@ -64,6 +64,9 @@ accept/reject, mute, duration, hangup, локальный ringtone/ringback и �
 конкретный монитор, окно или вкладку. Демонстрация заменяет camera track в том же
 DTLS-SRTP WebRTC соединении, не записывается сервером и прекращается из UI, системного
 sharing indicator или вместе со звонком; platform без `getDisplayMedia()` её не обещает.
+Пока пользователь показывает экран, call surface локально скрывает remote video и не
+рисует preview захваченного экрана, чтобы захват окна/монитора не создавал рекурсивный
+«зеркальный коридор», в том числе при одновременной демонстрации обоих участников.
 Публичный coturn принимает обычный STUN для NAT discovery, но TURN relay требует
 короткоживущую HMAC-учётку authenticated пользователя и ограничен allocation,
 bandwidth, relay-port и unauthenticated-response квотами.

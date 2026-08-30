@@ -4,6 +4,23 @@
 
 ## Active
 
+### BUG-130 — Одновременный screen share создавал рекурсивный «зеркальный коридор»
+
+- Статус: `fixed locally` (`WP-140`).
+- Severity: `high call usability`.
+- Reproduction: начать демонстрацию всего экрана у обоих участников 1:1 звонка,
+  оставив fullscreen call surface видимым на захватываемых мониторах.
+- Фактическое поведение: local screen preview захватывал сам себя, а remote screen
+  каждого участника содержал video другого, поэтому кадры рекурсивно усиливались.
+- Ожидаемое поведение: call surface не рисует screen-derived video, пока передаёт
+  собственный screen track, и не предлагает текущую вкладку как capture source там,
+  где browser поддерживает соответствующую preference.
+- Исправление: picker получает `selfBrowserSurface=exclude` и отключённое source
+  switching; после выбора source remote video остаётся подключённым, но скрывается до
+  остановки share, local screen preview не создаётся, UI показывает guard message.
+- Проверка: component test подтверждает suppressed remote/local video; WebRTC test
+  проверяет picker preferences, отсутствие local screen preview и camera restore.
+
 ### BUG-129 — Повторный клик по reply не возвращал к исходному сообщению
 
 - Статус: `fixed and production deployed` (`WP-139`, `b536c77`, workflow

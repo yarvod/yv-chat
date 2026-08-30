@@ -728,7 +728,8 @@ sender negotiated remote-offer video transceiver до signed answer, а fullscre
 
 ### BL-084 — Демонстрация экрана в звонках
 
-Статус: **production deployed; physical two-device acceptance pending** (`WP-137`).
+Статус: **production deployed; anti-recursion fix completed locally; physical
+two-device acceptance pending** (`WP-137`, `WP-140`).
 
 Результат: участник 1:1 звонка по явному действию открывает защищённый системный
 picker и выбирает весь экран/монитор, окно или вкладку. Выбранный track заменяет
@@ -737,7 +738,8 @@ server media path, записи или нового signaling lifecycle.
 
 - [x] capability-aware fullscreen control и active-share indicator;
 - [x] system-owned monitor/window/tab selection через `getDisplayMedia()`;
-- [x] monitor surfaces и поддерживаемое browser-ом переключение source во время share;
+- [x] monitor surfaces через системный picker;
+- [x] anti-recursion guard, исключение current tab и запрет source switching;
 - [x] detail-oriented 1440p ceiling, 15 fps target и 1.8 Mbit/s sender cap;
 - [x] остановка из UI или browser indicator, terminal cleanup и camera restore;
 - [x] unit/component tests для permission cancellation, transitions и UI;
@@ -750,6 +752,14 @@ Web-приложение намеренно не перечисляет мони
 System audio не входит в этот slice, microphone audio продолжает идти отдельно.
 
 ## Completed
+
+### BL-FIX-068 — Защита screen share от рекурсивного захвата
+
+`WP-140` устраняет рекурсивный «зеркальный коридор» при захвате call surface и
+одновременном screen share. Browser получает preference не предлагать текущую вкладку
+и не разрешать последующее source switching. Независимо от поддержки этих hints,
+локально sharing client перестаёт рисовать remote video и local screen preview до
+остановки share, сохраняя сам remote stream, audio, controls и camera restore.
 
 ### BL-FIX-067 — Лёгкие image previews и повторная reply-навигация
 

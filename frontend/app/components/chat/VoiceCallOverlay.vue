@@ -32,6 +32,9 @@ const localVideo = ref<HTMLVideoElement | null>(null)
 const remoteVideo = ref<HTMLVideoElement | null>(null)
 const remoteVideoContained = ref(false)
 const audioRoutingOpen = ref(false)
+const remoteVideoVisible = computed(() => (
+  props.state.remoteVideoEnabled && !props.state.screenSharing
+))
 const timer = setInterval(() => { now.value = Date.now() }, 1_000)
 const stopVideoAttachment = watch(
   [localVideo, remoteVideo],
@@ -39,7 +42,7 @@ const stopVideoAttachment = watch(
   { flush: 'post', immediate: true },
 )
 const stopRemoteFitWatch = watch(
-  [remoteVideo, () => props.state.remoteVideoEnabled],
+  [remoteVideo, remoteVideoVisible],
   () => syncRemoteVideoFit(),
   { flush: 'post' },
 )
@@ -70,7 +73,7 @@ function syncRemoteVideoFit(): void {
   const video = remoteVideo.value
   if (
     !video
-    || !props.state.remoteVideoEnabled
+    || !remoteVideoVisible.value
     || video.videoWidth <= 0
     || video.videoHeight <= 0
     || video.clientWidth <= 0
@@ -120,7 +123,7 @@ function outputIcon(kind: VoiceCallAudioOutput['kind']): AppIconName {
 <template>
   <aside
     class="voice-call"
-    :class="{ 'voice-call--remote-video': state.remoteVideoEnabled }"
+    :class="{ 'voice-call--remote-video': remoteVideoVisible }"
     role="dialog"
     aria-modal="true"
     aria-label="Аудио- или видеозвонок"
@@ -130,25 +133,31 @@ function outputIcon(kind: VoiceCallAudioOutput['kind']): AppIconName {
       <video
         ref="remoteVideo"
         class="voice-call__remote-video"
-        :class="{ 'voice-call__remote-video--contained': remoteVideoContained }"
+        :class="{
+          'voice-call__remote-video--contained': remoteVideoContained,
+          'voice-call__remote-video--suppressed': state.screenSharing,
+        }"
+        :aria-hidden="!remoteVideoVisible"
         autoplay
         muted
         playsinline
         @loadedmetadata="syncRemoteVideoFit"
         @resize="syncRemoteVideoFit"
       />
-      <div v-if="!state.remoteVideoEnabled" class="voice-call__video-placeholder">
+      <div v-if="!remoteVideoVisible" class="voice-call__video-placeholder">
         <span>{{ peerName.slice(0, 1).toUpperCase() }}</span>
-        <small>{{ state.phase === 'connecting' ? 'Устанавливаем защищённое видео…' : 'Камера собеседника выключена' }}</small>
+        <small v-if="state.screenSharing">
+          Видео собеседника скрыто, чтобы демонстрация экрана не зацикливалась
+        </small>
+        <small v-else>
+          {{ state.phase === 'connecting' ? 'Устанавливаем защищённое видео…' : 'Камера собеседника выключена' }}
+        </small>
       </div>
       <video
-        v-if="state.cameraEnabled || state.screenSharing"
+        v-if="state.cameraEnabled && !state.screenSharing"
         ref="localVideo"
         class="voice-call__local-video"
-        :class="{
-          'voice-call__local-video--mirrored': state.cameraEnabled && state.cameraFacingMode === 'user',
-          'voice-call__local-video--screen': state.screenSharing,
-        }"
+        :class="{ 'voice-call__local-video--mirrored': state.cameraFacingMode === 'user' }"
         autoplay
         muted
         playsinline

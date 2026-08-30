@@ -803,13 +803,17 @@ describe('browser voice calls', () => {
     service.attachVideoElements(localVideo, null)
     await service.toggleCamera()
 
+    const peer = FakePeerConnection.instances[0]!
+    peer.videoSender.replaceTrack.mockImplementationOnce(async () => {
+      expect(latest).toMatchObject({ screenSharing: true })
+    })
     await service.toggleScreenShare()
 
-    const peer = FakePeerConnection.instances[0]!
     expect(getDisplayMedia).toHaveBeenCalledWith({
       audio: false,
       monitorTypeSurfaces: 'include',
-      surfaceSwitching: 'include',
+      selfBrowserSurface: 'exclude',
+      surfaceSwitching: 'exclude',
       video: {
         displaySurface: 'monitor',
         width: { ideal: 1_920, max: 2_560 },
@@ -824,7 +828,7 @@ describe('browser voice calls', () => {
       degradationPreference: 'maintain-resolution',
     })
     expect(front.track.stop).toHaveBeenCalledOnce()
-    expect(localVideo.srcObject).toBe(screen)
+    expect(localVideo.srcObject).toBeNull()
     expect(latest).toMatchObject({
       cameraEnabled: false,
       screenShareSupported: true,

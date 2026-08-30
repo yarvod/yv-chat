@@ -192,11 +192,15 @@ describe('voice call presentation', () => {
     expect(video.attachVideoElements).toHaveBeenLastCalledWith(null, null)
   })
 
-  it('clearly marks screen sharing without mirroring the local preview', async () => {
+  it('suppresses call video while sharing to prevent recursive capture', async () => {
     const handlers = actions()
     const wrapper = mount(VoiceCallOverlay, {
       props: {
-        state: callState({ screenShareSupported: true, screenSharing: true }),
+        state: callState({
+          screenShareSupported: true,
+          screenSharing: true,
+          remoteVideoEnabled: true,
+        }),
         peerName: 'Алиса',
         minimize: vi.fn(),
         dismiss: vi.fn(),
@@ -208,12 +212,20 @@ describe('voice call presentation', () => {
     })
 
     expect(wrapper.text()).toContain('Вы показываете экран')
-    expect(wrapper.get('.voice-call__local-video').classes())
-      .toContain('voice-call__local-video--screen')
-    expect(wrapper.get('.voice-call__local-video').classes())
-      .not.toContain('voice-call__local-video--mirrored')
+    expect(wrapper.text()).toContain('Видео собеседника скрыто')
+    expect(wrapper.find('.voice-call__local-video').exists()).toBe(false)
+    expect(wrapper.get('.voice-call__remote-video').classes())
+      .toContain('voice-call__remote-video--suppressed')
+    expect(wrapper.get('.voice-call__remote-video').attributes('aria-hidden')).toBe('true')
     await wrapper.get('[aria-label="Остановить демонстрацию экрана"]').trigger('click')
     expect(handlers.toggleScreenShare).toHaveBeenCalledOnce()
+    await wrapper.setProps({
+      state: callState({ screenShareSupported: true, remoteVideoEnabled: true }),
+    })
+    expect(wrapper.find('.voice-call__video-placeholder').exists()).toBe(false)
+    expect(wrapper.get('.voice-call__remote-video').classes())
+      .not.toContain('voice-call__remote-video--suppressed')
+    expect(wrapper.get('.voice-call__remote-video').attributes('aria-hidden')).toBe('false')
     wrapper.unmount()
   })
 
