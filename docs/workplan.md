@@ -1,84 +1,78 @@
 # Текущий workplan
 
-## WP-141 — Музыкальный плеер и плейлист аудио в PWA
+## WP-142 — Синхронизация и глобальная доступность аудиоплеера
 
-Статус: **production deployed**
-Backlog: `BL-085`
+Статус: **completed locally**
+Backlog: `BL-FIX-069`
+Bug: `BUG-131`
 
-Цель: аудиофайлы в сообщениях должны воспроизводиться внутри PWA как музыка, а не
-только скачиваться. Пользователь получает один аккуратный плеер текущего чата,
-последовательный плейлист, компактную панель и полноэкранный мобильный режим.
+Цель: каждая play/pause-кнопка аудиосообщения и compact/fullscreen player должны
+показывать одно фактическое состояние HTML audio element. Compact bar продолжает
+работать поверх остальных authenticated страниц PWA, а touch UI не сохраняет
+desktop hover после tap.
 
 ### Scope
 
-- распознавать поддерживаемые audio MIME types и безопасный bounded набор audio
-  extensions среди существующих `file` attachments;
-- показывать аудиофайл в timeline отдельной музыкальной карточкой с play action;
-- собирать плейлист из локально расшифрованного media index текущего conversation;
-- держать один устойчивый HTML audio element при переключении compact/fullscreen UI;
-- добавить play/pause, previous/next, seek, repeat, playback-rate и track queue;
-- дать полноэкранный responsive player с safe-area и сворачиванием обратно в chat;
-- интегрировать Media Session metadata/actions там, где browser/PWA это поддерживает;
-- добавить audio в intentional system media picker composer-а.
+- поднять единственный audio player из chat workspace в persistent app layout;
+- хранить player source/request/playback projection в typed presentation controller;
+- оставить текущий track и позицию при переходе из чата в Settings/Admin и обратно;
+- синхронизировать play/pause icon, aria-label и status exact активной timeline/media
+  карточки с compact/fullscreen player;
+- определять toggle по фактическому `HTMLAudioElement.paused/ended`, сохраняя позицию
+  при pause/resume и загружая заново только другой/error track;
+- ограничить player hover styles устройствами с fine pointer и добавить bounded
+  touch active feedback без sticky highlight.
 
 ### Security и privacy
 
-- server media kind, upload/download, authorization, TTL и quota contracts не
-  меняются: audio остаётся существующим opaque `file` attachment;
-- direct filename/MIME/body получают только после MLS decrypt на client;
-- playlist строится только из уже authorized/decrypted conversation history;
-- object URLs создаются локально, отзываются при смене track/chat и не логируются;
-- unsupported/expired audio имеет recoverable state и не обходит download gateway.
+- server upload/download, E2EE, authorization, TTL и quota contracts не меняются;
+- controller хранит только уже расшифрованный in-memory playlist текущей установки;
+- переход между страницами не сохраняет playlist в storage и не раскрывает metadata;
+- logout/layout unmount, explicit close и active call по-прежнему
+  останавливают playback и отзывают object URL.
 
 ### Tests
 
-- audio MIME/extension detection не принимает похожие произвольные документы;
-- playlist сохраняет server sequence order и sender/chat metadata;
-- timeline audio card запускает внешний chat player вместо download;
-- player загружает exact attachment, переключает tracks, seek/repeat/rate и cleanup;
-- compact/fullscreen/minimize/close UI и mobile-safe controls;
-- Media Session capability fallback не ломает browser без API;
-- frontend tests, lint, typecheck и production/PWA build.
+- active message card меняет play ↔ pause вместе с реальными media events;
+- повторный click active card и compact control ставит pause, resume продолжает
+  текущую позицию без `loadAttachment` и нового object URL;
+- app-layout host переживает route slot changes и показывает compact bar вне `/chat`;
+- другой track переключается один раз, close/unmount освобождает URL;
+- hover правила player доступны только `(hover: hover) and (pointer: fine)`;
+- frontend tests, lint, Nuxt typecheck и production/PWA build;
+- Docker Browser acceptance на desktop и 390×844 mobile viewport.
 
 ### Exclusions
 
-- streaming server endpoint, transcoding, waveform generation или server metadata
-  extraction;
-- отдельный глобальный музыкальный каталог между всеми chats;
-- server-side album art/ID3 parsing и изменение E2EE content schema;
-- обещание background playback там, где iOS/Android/browser прекращает PWA runtime;
-- увеличение действующего 25 MiB generic-file limit.
+- общий музыкальный каталог между чатами или persisted playlist;
+- background execution guarantees поверх ограничений browser/OS;
+- server streaming/transcoding/waveform/ID3 changes;
+- изменение поведения calls, media encryption или attachment schema.
 
 ### Definition of Done
 
-- аудио запускается одним нажатием внутри timeline без скачивания;
-- compact player продолжает тот же track после fullscreen/minimize;
-- next/previous работают по audio playlist exact current conversation;
-- смена conversation или close останавливает playback и освобождает object URL;
-- desktop/mobile layout и automated frontend checks проходят.
+- кнопка exact активного аудиосообщения и обе player surfaces показывают одинаковый
+  play/pause state;
+- pause/resume не сбрасывает currentTime, новый track начинает собственное playback;
+- compact bar видим и управляем в списке/другом чате/Settings/Admin до close, logout
+  или call;
+- mobile tap не оставляет hover highlight;
+- автоматические проверки и реальный Docker browser smoke проходят.
 
 ### Result
 
-- `audio/*`, `application/ogg` и bounded extension fallback получают отдельную
-  timeline card, а composer media picker принимает audio без нового server kind;
-- playlist собирается oldest-to-newest из authorized media index exact current
-  conversation и использует только локально расшифрованные display metadata;
-- один HTML audio element переживает compact/fullscreen/minimize, поддерживает
-  seek, previous/next, repeat-one/all, playback rate и recoverable load/play errors;
-- fullscreen queue адаптирована для desktop и 390×844 mobile viewport, включая
-  safe-area header, touch controls и swipe-down minimize;
-- Media Session изолирован application port + browser adapter; metadata, position,
-  системные controls и unsupported fallback покрыты тестами;
-- close, смена conversation, active call и component unmount останавливают playback,
-  отменяют pending load и отзывают object URL;
-- `73/73` frontend test files и `447/447` tests, ESLint, Nuxt typecheck и
-  production/PWA build проходят; desktop/mobile browser QA не показала console errors.
-
-### Production rollout
-
-- feature commit `460e4702cf6166006c66be44dfbef1bcb86f6c77`;
-- production workflow `33437977509` и CI workflow `33437977497` завершились
-  успешно;
-- immutable image tag `sha-460e4702cf6166006c66be44dfbef1bcb86f6c77`;
-- обе production PWA и оба `/api/v1/health` отвечают `200`, TLS verification
-  проходит.
+- typed app-layout controller хранит только in-memory source/request/playback и
+  монтирует единственный HTML audio element над authenticated route content;
+- active timeline/media card получает exact track state: `Пауза` + две полоски при
+  playback, `Продолжить` + треугольник после pause;
+- compact/fullscreen/card toggle использует фактические `paused/ended`; pause/resume
+  сохраняет `currentTime` и не вызывает повторный attachment load;
+- player продолжает работать при переходе чат → список/другой чат → Settings/Admin,
+  а explicit close, call, logout/layout unmount сохраняют cleanup;
+- player hover rules ограничены fine pointer media query; touch controls используют
+  transient `:active`, `touch-action: manipulation` и отключённый tap highlight;
+- `74/74` frontend test files и `450/450` tests, ESLint, Nuxt typecheck и
+  production/PWA build проходят;
+- Docker Browser acceptance: desktop pause/resume и Settings persistence; mobile
+  390×844 list/Settings persistence, exact-width compact bar, fullscreen viewport,
+  отсутствие horizontal overflow и console warnings/errors.

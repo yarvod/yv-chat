@@ -56,8 +56,15 @@ describe('conversation audio player', () => {
       value: vi.fn(),
     })
     vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => undefined)
-    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined)
-    vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined)
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(function () {
+      Object.defineProperty(this, 'paused', { configurable: true, value: false })
+      this.dispatchEvent(new Event('play'))
+      return Promise.resolve()
+    })
+    vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(function () {
+      Object.defineProperty(this, 'paused', { configurable: true, value: true })
+      this.dispatchEvent(new Event('pause'))
+    })
   })
 
   afterEach(() => vi.restoreAllMocks())
@@ -102,8 +109,24 @@ describe('conversation audio player', () => {
     })
     await audio.trigger('loadedmetadata')
     await audio.trigger('timeupdate')
-    await audio.trigger('play')
     expect(wrapper.get('.conversation-audio-player__copy').text()).toContain('0:35 / 3:00')
+    expect(wrapper.get('.conversation-audio-player__play').attributes('aria-label')).toBe('Пауза')
+
+    await wrapper.get('.conversation-audio-player__play').trigger('click')
+    expect(wrapper.get('.conversation-audio-player__play').attributes('aria-label'))
+      .toBe('Воспроизвести')
+    expect(audio.element.currentTime).toBe(35)
+
+    await wrapper.get('.conversation-audio-player__play').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('.conversation-audio-player__play').attributes('aria-label')).toBe('Пауза')
+    expect(audio.element.currentTime).toBe(35)
+    expect(loadAttachment).toHaveBeenCalledTimes(1)
+    expect(wrapper.emitted('playbackChange')?.at(-1)).toEqual([{
+      activeTrackId: first.trackId,
+      phase: 'ready',
+      playing: true,
+    }])
 
     await wrapper.get('[aria-label="Открыть плеер на весь экран"]').trigger('click')
     expect(wrapper.get('[role="dialog"]').text()).toContain('Плейлист этого чата')

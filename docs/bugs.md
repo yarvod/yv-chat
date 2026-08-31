@@ -4,6 +4,34 @@
 
 ## Active
 
+### BUG-131 — Аудиокарточка рассинхронизирована с player, bar исчезает вне чата
+
+- Статус: `fixed locally` (`WP-142`).
+- Severity: `high media usability`.
+- Reproduction: запустить WAV из timeline, сравнить icon карточки и compact bar,
+  нажать карточку повторно, затем перейти из `/chat` в `/settings`; отдельно tap-нуть
+  player control на mobile/coarse pointer.
+- Фактическое поведение: карточка всегда показывает треугольник и текст «слушать»;
+  toggle опирается на отложенный Vue flag вместо фактического media element; player
+  смонтирован внутри chat page и полностью исчезает на другой app page; безусловные
+  `:hover` правила могут оставаться активными после touch tap.
+- Ожидаемое поведение: exact active card, compact и fullscreen controls используют
+  один playback projection; pause/resume сохраняет позицию; app-level compact bar
+  остаётся над authenticated route; hover применяется только к mouse/fine pointer.
+- Docker Browser evidence: при активном WAV compact button имел `Пауза`, message
+  button продолжал иметь `Слушать QA long tone.wav`; после `/settings` DOM содержал
+  `0` player и `0` audio elements.
+- Причина: `ConversationAudioPlayer` был локальным child `ChatWorkspace`, а
+  `MessageAttachments` не получал playback projection; hover применялся без проверки
+  pointer capability.
+- Исправление: player поднят в persistent app layout через typed controller; media
+  events публикуют active track/phase/playing, exact cards получают projection, а
+  toggle читает `HTMLAudioElement.paused/ended`. Source текущей композиции не
+  заменяется при навигации к списку, другому чату или app page.
+- Проверка: `450` frontend tests, lint, typecheck, production build и реальный Docker
+  Browser desktop/mobile smoke; card/bar/fullscreen состояния совпадают, currentTime
+  сохраняется, player остаётся в Settings, ошибок console нет.
+
 ### BUG-130 — Одновременный screen share создавал рекурсивный «зеркальный коридор»
 
 - Статус: `fixed and production deployed` (`WP-140`, `e2246c7`, workflow

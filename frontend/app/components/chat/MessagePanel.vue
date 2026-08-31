@@ -102,6 +102,8 @@ const props = withDefaults(defineProps<{
   videoNoteRecorder?: VideoNoteRecorder
   startCall?: (conversationId: string) => Promise<void>
   haptic?: (intent: HapticIntent) => void
+  activeAudioTrackId?: string | null
+  audioPlaying?: boolean
 }>(), {
   historyHasMore: false,
   historyHasNewer: false,
@@ -144,6 +146,8 @@ const props = withDefaults(defineProps<{
   videoNoteRecorder: undefined,
   startCall: async () => undefined,
   haptic: () => undefined,
+  activeAudioTrackId: null,
+  audioPlaying: false,
 })
 const emit = defineEmits<{
   back: []
@@ -1874,9 +1878,12 @@ onBeforeUnmount(() => {
           <MessageAttachments
             v-if="item.message.contentState === 'available' && (item.message.displayAttachments?.length ?? 0) > 0"
             :conversation-id="item.message.conversationId"
+            :message-id="item.message.messageId"
             :attachments="item.message.displayAttachments ?? []"
             :expires-at="item.message.expiresAt"
             :load-attachment="loadAttachment"
+            :active-audio-track-id="activeAudioTrackId"
+            :audio-playing="audioPlaying"
             @play-audio="emit('playAudio', item.message, $event)"
           />
           <CallHistoryMessage

@@ -11,8 +11,9 @@ interface MediaState {
   url?: string
 }
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   conversationId: string
+  messageId?: string
   expiresAt: string
   attachments: readonly MessageAttachment[]
   loadAttachment: (
@@ -20,7 +21,13 @@ const props = defineProps<{
     attachment: MessageAttachment,
     expiresAt: string,
   ) => Promise<Blob>
-}>()
+  activeAudioTrackId?: string | null
+  audioPlaying?: boolean
+}>(), {
+  messageId: undefined,
+  activeAudioTrackId: null,
+  audioPlaying: false,
+})
 const emit = defineEmits<{ playAudio: [attachment: MessageAttachment] }>()
 
 const mediaStates = ref(new Map<string, MediaState>())
@@ -81,6 +88,26 @@ function playbackFailed(attachmentId: string): boolean {
 
 function markPlaybackFailure(attachmentId: string): void {
   playbackFailures.value = new Set(playbackFailures.value).add(attachmentId)
+}
+
+function audioTrackId(attachment: MessageAttachment): string | null {
+  return props.messageId ? `${props.messageId}:${attachment.attachmentId}` : null
+}
+
+function audioActive(attachment: MessageAttachment): boolean {
+  const trackId = audioTrackId(attachment)
+  return trackId !== null && trackId === props.activeAudioTrackId
+}
+
+function audioIsPlaying(attachment: MessageAttachment): boolean {
+  return audioActive(attachment) && props.audioPlaying
+}
+
+function audioActionLabel(attachment: MessageAttachment): string {
+  if (!audioActive(attachment)) return `Слушать ${attachment.name}`
+  return audioIsPlaying(attachment)
+    ? `Пауза ${attachment.name}`
+    : `Продолжить ${attachment.name}`
 }
 
 function videoNoteStyle(attachmentId: string): Record<string, string> {
@@ -658,16 +685,26 @@ onBeforeUnmount(() => {
       <button
         v-else-if="isAudioAttachment(attachment)"
         class="message-audio"
+        :class="{
+          'message-audio--active': audioActive(attachment),
+          'message-audio--playing': audioIsPlaying(attachment),
+        }"
         type="button"
-        :aria-label="`Слушать ${attachment.name}`"
+        :aria-label="audioActionLabel(attachment)"
+        :aria-pressed="audioActive(attachment) ? audioIsPlaying(attachment) : undefined"
         @click="emit('playAudio', attachment)"
       >
         <span class="message-audio__art"><AppIcon name="music" /></span>
         <span class="message-audio__copy">
           <strong>{{ attachment.name }}</strong>
-          <small>{{ formatBytes(attachment.byteSize) }} · слушать в плеере</small>
+          <small>
+            {{ formatBytes(attachment.byteSize) }} ·
+            {{ audioIsPlaying(attachment) ? 'играет' : audioActive(attachment) ? 'на паузе' : 'слушать в плеере' }}
+          </small>
         </span>
-        <span class="message-audio__play" aria-hidden="true"><AppIcon name="play" /></span>
+        <span class="message-audio__play" aria-hidden="true">
+          <AppIcon :name="audioIsPlaying(attachment) ? 'pause' : 'play'" />
+        </span>
       </button>
 
       <button

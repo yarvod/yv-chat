@@ -4,18 +4,17 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { ConversationAudioTrack } from '../../application/messaging/conversation-audio'
 import type { AudioMediaSession } from '../../application/ports/audio-media-session'
 import type { MessageAttachment } from '../../domain/messaging/models'
+import type {
+  ConversationAudioPlayback,
+  ConversationAudioPlayRequest,
+} from '../../presentation/composables/useConversationAudioPlayer'
 import AppIcon from '../ui/AppIcon.vue'
-
-interface AudioPlayRequest {
-  trackId: string
-  nonce: number
-}
 
 const props = defineProps<{
   conversationId: string
   conversationTitle: string
   tracks: readonly ConversationAudioTrack[]
-  request: AudioPlayRequest | null
+  request: ConversationAudioPlayRequest | null
   loadAttachment: (
     conversationId: string,
     attachment: MessageAttachment,
@@ -23,7 +22,10 @@ const props = defineProps<{
   ) => Promise<Blob>
   mediaSession: AudioMediaSession
 }>()
-const emit = defineEmits<{ close: [] }>()
+const emit = defineEmits<{
+  close: []
+  playbackChange: [playback: ConversationAudioPlayback]
+}>()
 
 type RepeatMode = 'off' | 'all' | 'one'
 
@@ -159,23 +161,23 @@ async function loadTrack(trackId: string, autoplay = true): Promise<void> {
   }
 }
 
-async function handleRequest(request: AudioPlayRequest): Promise<void> {
+async function handleRequest(request: ConversationAudioPlayRequest): Promise<void> {
   await nextTick()
   if (request.trackId !== activeTrackId.value || phase.value === 'error') {
     await loadTrack(request.trackId)
     return
   }
-  if (playing.value) audio.value?.pause()
-  else await playCurrent()
+  await togglePlayback()
 }
 
 async function togglePlayback(): Promise<void> {
-  if (!activeTrack.value) return
+  const element = audio.value
+  if (!activeTrack.value || !element || phase.value === 'loading') return
   if (phase.value === 'error') {
     await loadTrack(activeTrack.value.trackId)
     return
   }
-  if (playing.value) audio.value?.pause()
+  if (!element.paused && !element.ended) element.pause()
   else await playCurrent()
 }
 
@@ -296,6 +298,16 @@ function seekTo(seconds: number): void {
 watch(
   () => props.request,
   request => { if (request) void handleRequest(request) },
+  { immediate: true },
+)
+
+watch(
+  [activeTrackId, phase, playing],
+  () => emit('playbackChange', {
+    activeTrackId: activeTrackId.value,
+    phase: phase.value,
+    playing: playing.value,
+  }),
   { immediate: true },
 )
 

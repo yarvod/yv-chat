@@ -754,6 +754,16 @@ System audio не входит в этот slice, microphone audio продол�
 
 ## Completed
 
+### BL-FIX-069 — Синхронизация и persistent app-level audio player
+
+Статус: **completed locally** (`WP-142`, `BUG-131`).
+
+Timeline audio card, compact bar и fullscreen player отражают одно фактическое
+playback state; pause/resume не перезагружает active track и сохраняет позицию.
+Compact bar живёт в authenticated app layout и остаётся доступен в списке, другом
+чате и Settings/Admin. Touch hover ограничен fine pointer; 450 tests и реальный
+Docker Browser desktop/mobile acceptance проходят.
+
 ### BL-085 — Музыкальный плеер и плейлист аудио в PWA
 
 Статус: **production deployed** (`WP-141`, commit `460e470`, workflow

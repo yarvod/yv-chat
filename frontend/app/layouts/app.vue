@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, provide, ref, watch } from 'vue'
 
 import DeviceReenrollmentForm from '../components/auth/DeviceReenrollmentForm.vue'
+import ConversationAudioPlayer from '../components/chat/ConversationAudioPlayer.vue'
 import AppIcon from '../components/ui/AppIcon.vue'
 import BrandMark from '../components/ui/BrandMark.vue'
 import ConnectionStatus from '../components/ui/ConnectionStatus.vue'
@@ -16,9 +17,17 @@ import {
   useDeviceCryptoLifecycle,
 } from '../presentation/composables/useDeviceCryptoLifecycle'
 import { usePreferences } from '../presentation/composables/usePreferences'
+import {
+  conversationAudioPlayerKey,
+  createConversationAudioPlayerController,
+} from '../presentation/composables/useConversationAudioPlayer'
 
 const auth = useAuth()
 const { $frontend } = useNuxtApp()
+const audioPlayer = createConversationAudioPlayerController()
+const audioSource = audioPlayer.source
+const audioRequest = audioPlayer.request
+provide(conversationAudioPlayerKey, audioPlayer)
 const deviceCrypto = useDeviceCryptoLifecycle(auth.user)
 const reenrollmentVisible = ref(false)
 const reenrollmentBusy = ref(false)
@@ -132,7 +141,21 @@ async function enrollReplacementDevice(password: string): Promise<void> {
         </NuxtLink>
       </nav>
     </aside>
-    <section class="product-content"><slot /></section>
+    <section class="product-content">
+      <ConversationAudioPlayer
+        v-if="audioSource"
+        :key="audioSource.conversationId"
+        :conversation-id="audioSource.conversationId"
+        :conversation-title="audioSource.conversationTitle"
+        :tracks="audioSource.tracks"
+        :request="audioRequest"
+        :load-attachment="audioSource.loadAttachment"
+        :media-session="$frontend.audioMediaSession"
+        @close="audioPlayer.close"
+        @playback-change="audioPlayer.reportPlayback"
+      />
+      <div class="product-route-content"><slot /></div>
+    </section>
     <nav class="mobile-tabs" aria-label="Основная навигация">
       <NuxtLink
         v-for="item in items"

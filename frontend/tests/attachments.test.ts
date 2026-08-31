@@ -385,13 +385,34 @@ describe('message attachment rendering', () => {
     }
     const loadAttachment = vi.fn()
     const wrapper = mount(MessageAttachments, {
-      props: { conversationId: 'conversation-1', expiresAt, attachments: [audio], loadAttachment },
+      props: {
+        conversationId: 'conversation-1',
+        messageId: 'message-1',
+        expiresAt,
+        attachments: [audio],
+        loadAttachment,
+      },
     })
 
     expect(wrapper.text()).toContain('слушать в плеере')
+    expect(wrapper.get('.message-audio').attributes('aria-label')).toBe('Слушать song.mp3')
     await wrapper.get('.message-audio').trigger('click')
     expect(wrapper.emitted('playAudio')).toEqual([[audio]])
     expect(loadAttachment).not.toHaveBeenCalled()
+
+    await wrapper.setProps({
+      activeAudioTrackId: 'message-1:audio-1',
+      audioPlaying: true,
+    })
+    expect(wrapper.get('.message-audio').classes()).toContain('message-audio--playing')
+    expect(wrapper.get('.message-audio').attributes('aria-label')).toBe('Пауза song.mp3')
+    expect(wrapper.get('.message-audio').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.text()).toContain('играет')
+
+    await wrapper.setProps({ audioPlaying: false })
+    expect(wrapper.get('.message-audio').attributes('aria-label')).toBe('Продолжить song.mp3')
+    expect(wrapper.get('.message-audio').attributes('aria-pressed')).toBe('false')
+    expect(wrapper.text()).toContain('на паузе')
   })
 
   it('keeps one aspect-ratio box before and after cached media becomes ready', async () => {

@@ -13,7 +13,7 @@ import MessageAttachments from './MessageAttachments.vue'
 
 type DetailsTab = 'media' | 'files' | 'members'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   conversation: Conversation
   directory: readonly DirectoryUser[]
   actorUserId: string
@@ -34,7 +34,12 @@ const props = defineProps<{
   addMember: (userId: string) => Promise<boolean>
   removeMember: (userId: string) => Promise<boolean>
   leaveGroup: () => Promise<boolean>
-}>()
+  activeAudioTrackId?: string | null
+  audioPlaying?: boolean
+}>(), {
+  activeAudioTrackId: null,
+  audioPlaying: false,
+})
 const emit = defineEmits<{
   close: []
   left: []
@@ -271,9 +276,12 @@ async function leave(): Promise<void> {
             >
               <MessageAttachments
                 :conversation-id="conversation.conversationId"
+                :message-id="item.messageId"
                 :expires-at="item.expiresAt"
                 :attachments="[item.attachment]"
                 :load-attachment="loadAttachment"
+                :active-audio-track-id="activeAudioTrackId"
+                :audio-playing="audioPlaying"
                 @play-audio="emit('playAudio', item, $event)"
               />
               <div class="conversation-media-meta">

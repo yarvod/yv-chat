@@ -176,7 +176,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .rail-link:hover { color: var(--text); background: var(--surface-hover); transform: translateY(-1px); }
 .rail-link.active { color: var(--primary); background: color-mix(in srgb, var(--primary) 13%, transparent); }
 .page-avatar { display: grid; width: 44px; height: 44px; place-items: center; border: 0; border-radius: 15px; color: var(--primary-ink); background: var(--primary); font-weight: 850; }
-.product-content { grid-row: 1; min-width: 0; min-height: 0; height: 100%; overflow: auto; overscroll-behavior: contain; background-color: var(--bg); }
+.product-content { grid-row: 1; display: flex; min-width: 0; min-height: 0; height: 100%; flex-direction: column; overflow: hidden; background-color: var(--bg); }
+.product-route-content { min-width: 0; min-height: 0; flex: 1; overflow: auto; overscroll-behavior: contain; }
 .mobile-tabs { display: none; }
 
 /* Messenger */
@@ -489,7 +490,9 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .message-file > span:last-child { display: grid; min-width: 0; gap: 2px; }
 .message-file strong { overflow: hidden; margin: 0; color: inherit; text-overflow: ellipsis; white-space: nowrap; }
 .message-file small { color: var(--muted); font-size: .7rem; }
-.message-audio { position: relative; display: grid; min-width: min(330px, 68vw); grid-column: 1 / -1; grid-template-columns: 48px minmax(0, 1fr) 36px; align-items: center; gap: 10px; padding: 8px 9px; overflow: hidden; border: 0; border-radius: 14px; color: inherit; background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 13%, transparent), color-mix(in srgb, var(--secondary) 7%, transparent)); text-align: left; cursor: pointer; }
+.message-audio { position: relative; display: grid; min-width: min(330px, 68vw); grid-column: 1 / -1; grid-template-columns: 48px minmax(0, 1fr) 36px; align-items: center; gap: 10px; padding: 8px 9px; overflow: hidden; border: 0; border-radius: 14px; color: inherit; background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 13%, transparent), color-mix(in srgb, var(--secondary) 7%, transparent)); text-align: left; cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; transition: background .15s ease, box-shadow .15s ease, transform .1s ease; }
+.message-audio:active { transform: scale(.985); }
+.message-audio--active { background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 20%, transparent), color-mix(in srgb, var(--secondary) 11%, transparent)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 28%, transparent); }
 .message-audio::after { position: absolute; right: 0; bottom: 0; left: 0; height: 2px; content: ''; background: color-mix(in srgb, var(--primary) 20%, transparent); }
 .message-audio__art { display: grid; width: 48px; height: 48px; place-items: center; border-radius: 14px; color: white; background: linear-gradient(145deg, var(--primary), var(--primary-strong)); box-shadow: 0 7px 18px color-mix(in srgb, var(--primary) 25%, transparent); }
 .message-audio__art .app-icon { width: 24px; height: 24px; }
@@ -498,6 +501,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .message-audio__copy small { color: var(--muted); font-size: .7rem; }
 .message-audio__play { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 50%; color: var(--primary); background: var(--surface-solid); }
 .message-audio__play .app-icon { width: 16px; height: 16px; margin-left: 2px; }
+.message-audio--playing .message-audio__play .app-icon { margin-left: 0; }
 .attachment-unavailable { display: grid; min-height: 90px; place-items: center; gap: 7px; padding: 10px; border-radius: 10px; color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, transparent); text-align: center; font-size: .78rem; }
 .attachment-unavailable button { min-height: 30px; padding: 3px 10px; border: 1px solid currentcolor; border-radius: 999px; color: inherit; background: transparent; }
 .media-viewer { position: fixed; z-index: 120; inset: 0; display: grid; grid-template-columns: minmax(44px, 1fr) minmax(0, 12fr) minmax(44px, 1fr); grid-template-rows: minmax(52px, auto) minmax(0, 1fr) minmax(48px, auto); align-items: center; gap: 10px; padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)); overflow: hidden; touch-action: pan-y; background: rgb(5 7 13 / 94%); backdrop-filter: blur(18px); }
@@ -520,6 +524,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .conversation-audio-player { position: relative; z-index: 14; display: grid; min-width: 0; min-height: 64px; flex: none; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 9px; padding: 7px 9px 8px 12px; border-bottom: 1px solid color-mix(in srgb, var(--primary) 30%, var(--border)); background: color-mix(in srgb, var(--surface-solid) 96%, var(--primary) 4%); box-shadow: 0 7px 22px rgb(8 12 20 / 10%); }
 .conversation-audio-player > audio { display: none; }
 .conversation-audio-player button { border: 0; color: inherit; background: transparent; }
+.conversation-audio-player button, .audio-player-fullscreen button { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
 .conversation-audio-player__play { display: grid; width: 42px; height: 42px; place-items: center; padding: 0; border-radius: 50% !important; color: white !important; background: linear-gradient(145deg, var(--primary), var(--primary-strong)) !important; box-shadow: 0 7px 18px color-mix(in srgb, var(--primary) 28%, transparent); }
 .conversation-audio-player__play:disabled { opacity: .78; }
 .conversation-audio-player__play .app-icon { width: 19px; height: 19px; }
@@ -530,7 +535,6 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .conversation-audio-player__copy small { color: var(--muted); font-size: .68rem; font-variant-numeric: tabular-nums; }
 .conversation-audio-player__quick-controls { display: flex; align-items: center; gap: 1px; }
 .conversation-audio-player__quick-controls button { display: grid; width: 36px; height: 36px; place-items: center; padding: 0; border-radius: 50%; color: var(--muted); }
-.conversation-audio-player__quick-controls button:hover { color: var(--primary); background: var(--surface-hover); }
 .conversation-audio-player__quick-controls .app-icon { width: 18px; height: 18px; }
 .conversation-audio-player__progress { position: absolute; right: 0; bottom: 0; left: 0; width: 0; height: 2px; background: linear-gradient(90deg, var(--primary), var(--secondary)); transition: width .15s linear; }
 .audio-player-fullscreen { position: fixed; z-index: 160; inset: 0; display: grid; min-width: 0; min-height: 0; grid-template-columns: minmax(0, 1fr) minmax(300px, 380px); grid-template-rows: auto minmax(0, 1fr); color: var(--text); background: radial-gradient(circle at 26% 28%, color-mix(in srgb, var(--primary) 24%, transparent), transparent 38%), radial-gradient(circle at 74% 72%, color-mix(in srgb, var(--secondary) 17%, transparent), transparent 42%), var(--bg); }
@@ -557,7 +561,6 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .audio-player-fullscreen__seek > span { display: flex; justify-content: space-between; color: var(--muted); font-size: .68rem; font-variant-numeric: tabular-nums; }
 .audio-player-fullscreen__controls { display: grid; grid-template-columns: 46px 54px 76px 54px 46px; align-items: center; gap: clamp(5px, 2vw, 16px); }
 .audio-player-fullscreen__controls > button { position: relative; display: grid; width: 50px; height: 50px; place-items: center; padding: 0; border: 0; border-radius: 50%; color: var(--text); background: transparent; }
-.audio-player-fullscreen__controls > button:hover { background: var(--surface-hover); }
 .audio-player-fullscreen__controls .app-icon { width: 24px; height: 24px; }
 .audio-player-fullscreen__controls .audio-player-fullscreen__play { width: 74px; height: 74px; color: white; background: linear-gradient(145deg, var(--primary), var(--primary-strong)); box-shadow: 0 12px 34px color-mix(in srgb, var(--primary) 34%, transparent); }
 .audio-player-fullscreen__play .app-icon { width: 29px; height: 29px; }
@@ -570,7 +573,6 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .audio-player-queue > header > span { color: var(--primary); }
 .audio-player-queue > header .app-icon { width: 20px; height: 20px; }
 .audio-player-queue > button { display: grid; width: 100%; grid-template-columns: 38px minmax(0, 1fr); align-items: center; gap: 10px; min-height: 58px; padding: 7px 9px; border: 0; border-radius: 14px; color: var(--text); background: transparent; text-align: left; }
-.audio-player-queue > button:hover { background: var(--surface-hover); }
 .audio-player-queue > button.active { color: var(--primary); background: color-mix(in srgb, var(--primary) 12%, transparent); }
 .audio-player-queue > button > span:last-child { display: grid; min-width: 0; gap: 3px; }
 .audio-player-queue > button strong, .audio-player-queue > button small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -578,6 +580,11 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .audio-player-queue__index { display: grid; width: 36px; height: 36px; place-items: center; border-radius: 11px; color: var(--muted); background: var(--field); font-size: .72rem; font-weight: 820; }
 .audio-player-queue button.active .audio-player-queue__index { color: white; background: var(--primary); }
 .audio-player-queue__index .app-icon { width: 17px; height: 17px; }
+@media (hover: hover) and (pointer: fine) {
+  .conversation-audio-player__quick-controls button:hover { color: var(--primary); background: var(--surface-hover); }
+  .audio-player-fullscreen__controls > button:hover { background: var(--surface-hover); }
+  .audio-player-queue > button:hover { background: var(--surface-hover); }
+}
 .audio-player-fullscreen-enter-active, .audio-player-fullscreen-leave-active { transition: opacity .2s ease, transform .22s ease; }
 .audio-player-fullscreen-enter-from, .audio-player-fullscreen-leave-to { opacity: 0; transform: translateY(14px); }
 .outbox-attachment { display: flex; align-items: center; gap: 7px; margin-bottom: 4px; color: var(--primary); font-size: .8rem; }

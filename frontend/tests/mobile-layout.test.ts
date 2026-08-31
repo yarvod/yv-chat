@@ -12,6 +12,32 @@ describe('mobile application shell', () => {
     expect(page).toMatch(/definePageMeta\(\{[^}]*layout: 'app'[^}]*middleware: 'auth'[^}]*keepalive: true/)
   })
 
+  it('hosts one audio player above persistent authenticated route content', () => {
+    const layout = readFileSync(resolve(process.cwd(), 'app/layouts/app.vue'), 'utf8')
+    const workspace = readFileSync(resolve(process.cwd(), 'app/components/chat/ChatWorkspace.vue'), 'utf8')
+    const css = readFileSync(resolve(process.cwd(), 'app/assets/main.css'), 'utf8')
+
+    expect(layout).toContain('provide(conversationAudioPlayerKey, audioPlayer)')
+    expect(layout).toMatch(/<section class="product-content">[\s\S]*<ConversationAudioPlayer[\s\S]*<div class="product-route-content"><slot \/><\/div>/)
+    expect(css).toMatch(/\.product-content \{[^}]*display: flex;[^}]*flex-direction: column;[^}]*overflow: hidden;/)
+    expect(css).toMatch(/\.product-route-content \{[^}]*flex: 1;[^}]*overflow: auto;/)
+    expect(workspace).not.toMatch(/watch\(\s*\(\) => messenger\.state\.activeConversationId,\s*\(\) => closeAudioPlayer\(\)/)
+  })
+
+  it('keeps audio hover feedback mouse-only and touch feedback transient', () => {
+    const css = readFileSync(resolve(process.cwd(), 'app/assets/main.css'), 'utf8')
+    const finePointer = css.slice(
+      css.indexOf('@media (hover: hover) and (pointer: fine) {\n  .conversation-audio-player'),
+      css.indexOf('.audio-player-fullscreen-enter-active'),
+    )
+
+    expect(css).toMatch(/\.message-audio \{[^}]*touch-action: manipulation;[^}]*-webkit-tap-highlight-color: transparent;/)
+    expect(css).toMatch(/\.message-audio:active \{[^}]*transform: scale\(\.985\);/)
+    expect(finePointer).toContain('.conversation-audio-player__quick-controls button:hover')
+    expect(finePointer).toContain('.audio-player-fullscreen__controls > button:hover')
+    expect(finePointer).toContain('.audio-player-queue > button:hover')
+  })
+
   it('positions restored history instantly before revealing the timeline', () => {
     const css = readFileSync(resolve(process.cwd(), 'app/assets/main.css'), 'utf8')
     expect(css).not.toMatch(/\.message-timeline \{[^}]*scroll-behavior:\s*smooth/)
