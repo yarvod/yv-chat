@@ -2,7 +2,7 @@
 
 ## WP-141 — Музыкальный плеер и плейлист аудио в PWA
 
-Статус: **completed locally**
+Статус: **production deployed**
 Backlog: `BL-085`
 
 Цель: аудиофайлы в сообщениях должны воспроизводиться внутри PWA как музыка, а не
@@ -73,3 +73,12 @@ Backlog: `BL-085`
   отменяют pending load и отзывают object URL;
 - `73/73` frontend test files и `447/447` tests, ESLint, Nuxt typecheck и
   production/PWA build проходят; desktop/mobile browser QA не показала console errors.
+
+### Production rollout
+
+- feature commit `460e4702cf6166006c66be44dfbef1bcb86f6c77`;
+- production workflow `33437977509` и CI workflow `33437977497` завершились
+  успешно;
+- immutable image tag `sha-460e4702cf6166006c66be44dfbef1bcb86f6c77`;
+- обе production PWA и оба `/api/v1/health` отвечают `200`, TLS verification
+  проходит.

@@ -11,7 +11,20 @@ not be replaced with the broader JavaScript `unsafe-eval`. Without it, public
 crypto assets still return HTTP 200 but device provisioning stops before the
 `PUT /api/v1/devices/current/crypto-identity` registration request.
 
-## Latest rollout — WP-140 screen-share anti-recursion guard
+## Latest rollout — WP-141 conversation audio player
+
+- Commit: `460e4702cf6166006c66be44dfbef1bcb86f6c77`.
+- Production workflow: `33437977509` (success); CI workflow: `33437977497`
+  (success).
+- Deployed image tag: `sha-460e4702cf6166006c66be44dfbef1bcb86f6c77` on frontend,
+  API and cleanup; fresh-database migrations, repository verification, dependency
+  audit, image builds and isolated rollout health checks passed.
+- Public acceptance: both origins and `/api/v1/health` returned `200` with
+  successful TLS verification.
+- Automated user-facing acceptance covers desktop and 390×844 mobile layouts;
+  final PWA background/media-notification behavior remains browser/OS-dependent.
+
+## Prior rollout — WP-140 screen-share anti-recursion guard
 
 - Commit: `e2246c7c92e75dc11ba3ec8282e8f44ebfe34b67`.
 - Production workflow: `33337315506` (success); CI workflow: `33337315513`
