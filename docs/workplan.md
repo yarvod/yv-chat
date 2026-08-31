@@ -1,67 +1,75 @@
 # Текущий workplan
 
-## WP-140 — Защита демонстрации экрана от рекурсивного захвата
+## WP-141 — Музыкальный плеер и плейлист аудио в PWA
 
-Статус: **completed and production deployed**
-Bugs: `BUG-130`
+Статус: **completed locally**
+Backlog: `BL-085`
 
-Цель: демонстрация всего монитора или окна звонка не должна создавать «зеркальный
-коридор», в том числе когда оба участника одновременно показывают экран.
+Цель: аудиофайлы в сообщениях должны воспроизводиться внутри PWA как музыка, а не
+только скачиваться. Пользователь получает один аккуратный плеер текущего чата,
+последовательный плейлист, компактную панель и полноэкранный мобильный режим.
 
 ### Scope
 
-- попросить browser/OS picker не предлагать текущую вкладку приложения;
-- запретить динамическое переключение share на текущую вкладку после выбора;
-- до передачи первого screen frame убрать remote video из локально рисуемого окна;
-- не показывать локальный screen preview внутри захватываемого call surface;
-- сохранить получение remote WebRTC stream, audio, controls и camera restore;
-- явно объяснить в UI, почему видео временно скрыто.
+- распознавать поддерживаемые audio MIME types и безопасный bounded набор audio
+  extensions среди существующих `file` attachments;
+- показывать аудиофайл в timeline отдельной музыкальной карточкой с play action;
+- собирать плейлист из локально расшифрованного media index текущего conversation;
+- держать один устойчивый HTML audio element при переключении compact/fullscreen UI;
+- добавить play/pause, previous/next, seek, repeat, playback-rate и track queue;
+- дать полноэкранный responsive player с safe-area и сворачиванием обратно в chat;
+- интегрировать Media Session metadata/actions там, где browser/PWA это поддерживает;
+- добавить audio в intentional system media picker composer-а.
 
 ### Security и privacy
 
-- browser/OS остаётся владельцем выбора monitor/window/tab и может игнорировать
-  preference hints;
-- screen bytes по-прежнему идут только через существующий DTLS-SRTP media plane;
-- новый signaling/server state, запись кадров и анализ содержимого экрана не
-  добавляются;
-- защита работает локально даже при одновременном share обоих участников.
+- server media kind, upload/download, authorization, TTL и quota contracts не
+  меняются: audio остаётся существующим opaque `file` attachment;
+- direct filename/MIME/body получают только после MLS decrypt на client;
+- playlist строится только из уже authorized/decrypted conversation history;
+- object URLs создаются локально, отзываются при смене track/chat и не логируются;
+- unsupported/expired audio имеет recoverable state и не обходит download gateway.
 
 ### Tests
 
-- picker получает `selfBrowserSurface: exclude` и отключённый surface switching;
-- remote video element остаётся подключённым, но не рисуется во время local share;
-- local screen stream не присоединяется к call preview;
-- UI показывает anti-recursion placeholder и возвращает обычный video mode после
-  остановки share;
-- frontend tests, lint, typecheck и production build.
+- audio MIME/extension detection не принимает похожие произвольные документы;
+- playlist сохраняет server sequence order и sender/chat metadata;
+- timeline audio card запускает внешний chat player вместо download;
+- player загружает exact attachment, переключает tracks, seek/repeat/rate и cleanup;
+- compact/fullscreen/minimize/close UI и mobile-safe controls;
+- Media Session capability fallback не ломает browser без API;
+- frontend tests, lint, typecheck и production/PWA build.
 
 ### Exclusions
 
-- собственный список доступных экранов вместо системного picker;
-- распознавание содержимого захваченных кадров;
-- новый call signaling event только для координации share ownership;
-- одновременный camera + screen track.
+- streaming server endpoint, transcoding, waveform generation или server metadata
+  extraction;
+- отдельный глобальный музыкальный каталог между всеми chats;
+- server-side album art/ID3 parsing и изменение E2EE content schema;
+- обещание background playback там, где iOS/Android/browser прекращает PWA runtime;
+- увеличение действующего 25 MiB generic-file limit.
 
 ### Definition of Done
 
-- окно звонка не рисует screen-derived video, пока само передаёт screen track;
-- два одновременно sharing клиента не усиливают изображение друг друга;
-- audio/call lifecycle и camera restore не регрессируют;
-- проверки и документация обновлены.
+- аудио запускается одним нажатием внутри timeline без скачивания;
+- compact player продолжает тот же track после fullscreen/minimize;
+- next/previous работают по audio playlist exact current conversation;
+- смена conversation или close останавливает playback и освобождает object URL;
+- desktop/mobile layout и automated frontend checks проходят.
 
 ### Result
 
-- `getDisplayMedia()` получает стандартный `selfBrowserSurface: exclude`, а
-  динамическое переключение source отключено, чтобы browser не предлагал текущую
-  вкладку как capture target;
-- сразу после выбора source и до `replaceTrack()` UI включает локальный
-  anti-recursion guard: remote video продолжает приниматься, но не рисуется;
-- screen stream больше не присоединяется к local preview element, а вместо call
-  video пользователь видит понятное объяснение до остановки share;
-- остановка из UI/system indicator сохраняет прежний camera restore и WebRTC cleanup;
-- full `71/71` frontend test files и `441/441` tests, ESLint, Nuxt typecheck и
-  production/PWA build проходят.
-- production rollout коммита `e2246c7` выполнен workflow `33337315506`; отдельный
-  CI workflow `33337315513` зелёный, immutable tag
-  `sha-e2246c7c92e75dc11ba3ec8282e8f44ebfe34b67` активен;
-- `chat.yoowee.ru`, `chat.yoowee.com.de` и оба `/api/v1/health` вернули HTTP `200`.
+- `audio/*`, `application/ogg` и bounded extension fallback получают отдельную
+  timeline card, а composer media picker принимает audio без нового server kind;
+- playlist собирается oldest-to-newest из authorized media index exact current
+  conversation и использует только локально расшифрованные display metadata;
+- один HTML audio element переживает compact/fullscreen/minimize, поддерживает
+  seek, previous/next, repeat-one/all, playback rate и recoverable load/play errors;
+- fullscreen queue адаптирована для desktop и 390×844 mobile viewport, включая
+  safe-area header, touch controls и swipe-down minimize;
+- Media Session изолирован application port + browser adapter; metadata, position,
+  системные controls и unsupported fallback покрыты тестами;
+- close, смена conversation, active call и component unmount останавливают playback,
+  отменяют pending load и отзывают object URL;
+- `73/73` frontend test files и `447/447` tests, ESLint, Nuxt typecheck и
+  production/PWA build проходят; desktop/mobile browser QA не показала console errors.

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
+import { isAudioAttachment } from '../../application/messaging/conversation-audio'
 import type { MessageAttachment } from '../../domain/messaging/models'
 import AppIcon from '../ui/AppIcon.vue'
 
@@ -20,6 +21,7 @@ const props = defineProps<{
     expiresAt: string,
   ) => Promise<Blob>
 }>()
+const emit = defineEmits<{ playAudio: [attachment: MessageAttachment] }>()
 
 const mediaStates = ref(new Map<string, MediaState>())
 const playbackFailures = ref(new Set<string>())
@@ -652,6 +654,21 @@ onBeforeUnmount(() => {
           <button type="button" @click="load(attachment)">Повторить</button>
         </div>
       </div>
+
+      <button
+        v-else-if="isAudioAttachment(attachment)"
+        class="message-audio"
+        type="button"
+        :aria-label="`Слушать ${attachment.name}`"
+        @click="emit('playAudio', attachment)"
+      >
+        <span class="message-audio__art"><AppIcon name="music" /></span>
+        <span class="message-audio__copy">
+          <strong>{{ attachment.name }}</strong>
+          <small>{{ formatBytes(attachment.byteSize) }} · слушать в плеере</small>
+        </span>
+        <span class="message-audio__play" aria-hidden="true"><AppIcon name="play" /></span>
+      </button>
 
       <button
         v-else

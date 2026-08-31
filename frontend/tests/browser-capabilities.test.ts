@@ -7,6 +7,7 @@ import { BrowserHaptics } from '../app/infrastructure/browser/haptics'
 import { BrowserLocation } from '../app/infrastructure/browser/browser-location'
 import { BrowserStoragePersistence } from '../app/infrastructure/browser/storage-persistence'
 import { BrowserThemePreferences } from '../app/infrastructure/browser/theme-preferences'
+import { BrowserAudioMediaSession } from '../app/infrastructure/browser/audio-media-session'
 
 beforeEach(() => localStorage.clear())
 
@@ -103,5 +104,55 @@ describe('browser capability adapters', () => {
       persist: vi.fn(async () => false),
     }).request()).resolves.toBe('denied')
     await expect(new BrowserStoragePersistence(undefined).request()).resolves.toBe('unsupported')
+  })
+
+  it('maps audio player controls to Media Session with an unsupported-browser fallback', () => {
+    const handlers = new Map<MediaSessionAction, MediaSessionActionHandler | null>()
+    const mediaSession = {
+      metadata: null,
+      playbackState: 'none',
+      setPositionState: vi.fn(),
+      setActionHandler: vi.fn((action, handler) => handlers.set(action, handler)),
+    } as unknown as MediaSession
+    const metadata = { title: 'Track' } as MediaMetadata
+    const adapter = new BrowserAudioMediaSession(
+      { mediaSession } as Navigator,
+      vi.fn(() => metadata),
+    )
+    const controls = {
+      play: vi.fn(),
+      pause: vi.fn(),
+      previous: vi.fn(),
+      next: vi.fn(),
+      seekBackward: vi.fn(),
+      seekForward: vi.fn(),
+      seekTo: vi.fn(),
+    }
+
+    adapter.setMetadata({ title: 'Track', artist: 'User', album: 'Chat' })
+    adapter.setPlaybackState('playing')
+    adapter.setPosition({ duration: 120, playbackRate: 1, position: 15 })
+    const remove = adapter.setControls(controls)
+    handlers.get('play')?.({ action: 'play' })
+    handlers.get('seekforward')?.({ action: 'seekforward', seekOffset: 12 })
+
+    expect(mediaSession.metadata).toBe(metadata)
+    expect(mediaSession.playbackState).toBe('playing')
+    expect(mediaSession.setPositionState).toHaveBeenCalledWith({
+      duration: 120,
+      playbackRate: 1,
+      position: 15,
+    })
+    expect(controls.play).toHaveBeenCalledOnce()
+    expect(controls.seekForward).toHaveBeenCalledWith(12)
+    remove()
+    expect(mediaSession.setActionHandler).toHaveBeenLastCalledWith('seekto', null)
+    adapter.clear()
+    expect(mediaSession.metadata).toBeNull()
+    expect(mediaSession.playbackState).toBe('none')
+
+    const unsupported = new BrowserAudioMediaSession({} as Navigator, null)
+    expect(() => unsupported.setPlaybackState('playing')).not.toThrow()
+    expect(unsupported.setControls(controls)).toBeTypeOf('function')
   })
 })

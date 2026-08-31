@@ -43,6 +43,33 @@ defineProps<{ name: AppIconName }>()
       <circle cx="8.5" cy="9" r="1.5" />
       <path d="m4.5 17 4.7-4.8 3.3 3.1 2.2-2.2 4.8 4.9" />
     </template>
+    <template v-else-if="name === 'music'">
+      <path d="M9 18V5l10-2v13" />
+      <ellipse cx="6" cy="18" rx="3" ry="2.4" />
+      <ellipse cx="16" cy="16" rx="3" ry="2.4" />
+      <path d="M9 9l10-2" />
+    </template>
+    <template v-else-if="name === 'play'">
+      <path d="m8 5 11 7-11 7Z" fill="currentColor" stroke="none" />
+    </template>
+    <template v-else-if="name === 'pause'">
+      <path d="M8 5v14M16 5v14" stroke-width="2.8" />
+    </template>
+    <template v-else-if="name === 'previous'">
+      <path d="M6 5v14M18 6l-9 6 9 6Z" fill="currentColor" stroke="none" />
+    </template>
+    <template v-else-if="name === 'next'">
+      <path d="M18 5v14M6 6l9 6-9 6Z" fill="currentColor" stroke="none" />
+    </template>
+    <template v-else-if="name === 'repeat'">
+      <path d="m17 2 4 4-4 4" />
+      <path d="M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4" />
+      <path d="M21 13v2a3 3 0 0 1-3 3H3" />
+    </template>
+    <template v-else-if="name === 'list'">
+      <path d="M9 6h12M9 12h12M9 18h12" />
+      <path d="M4 6h.01M4 12h.01M4 18h.01" stroke-width="3" />
+    </template>
     <template v-else-if="name === 'pin'">
       <path d="m14 4 6 6-3 1-4 4-1 5-2.5-5.5L4 12l5-1 4-4Z" />
       <path d="m9.5 14.5-5 5" />

@@ -754,6 +754,19 @@ System audio не входит в этот slice, microphone audio продол�
 
 ## Completed
 
+### BL-085 — Музыкальный плеер и плейлист аудио в PWA
+
+Статус: **completed locally** (`WP-141`).
+
+Существующие audio attachments воспроизводятся внутри timeline через единый
+conversation-scoped player. Compact панель сохраняет текущий track и progress,
+полноэкранный responsive режим даёт queue, seek, previous/next, repeat и playback
+rate, а browser adapter добавляет Media Session controls при поддержке platform.
+Плейлист строится только из authorized и локально расшифрованного media index;
+server upload/storage/E2EE/TTL contracts, quota и generic-file limit не изменены.
+Desktop и mobile 390×844 browser acceptance, `447` frontend tests, lint, Nuxt
+typecheck и production/PWA build проходят.
+
 ### BL-FIX-068 — Защита screen share от рекурсивного захвата
 
 `WP-140` устраняет рекурсивный «зеркальный коридор» при захвате call surface и

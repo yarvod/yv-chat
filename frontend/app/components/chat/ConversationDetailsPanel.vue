@@ -35,7 +35,11 @@ const props = defineProps<{
   removeMember: (userId: string) => Promise<boolean>
   leaveGroup: () => Promise<boolean>
 }>()
-const emit = defineEmits<{ close: []; left: [] }>()
+const emit = defineEmits<{
+  close: []
+  left: []
+  playAudio: [item: ConversationMediaItem, attachment: MessageAttachment]
+}>()
 
 const title = ref(props.conversation.title ?? '')
 const activeTab = ref<DetailsTab>('media')
@@ -270,6 +274,7 @@ async function leave(): Promise<void> {
                 :expires-at="item.expiresAt"
                 :attachments="[item.attachment]"
                 :load-attachment="loadAttachment"
+                @play-audio="emit('playAudio', item, $event)"
               />
               <div class="conversation-media-meta">
                 <span>

@@ -29,6 +29,12 @@ browser может предоставить меньше quota или удали
 upload; original filename/MIME/kind/size и file key доставляются только внутри MLS
 v2 content. Сервер хранит `application/octet-stream` ciphertext и opaque routing
 metadata, а расшифровка выполняется локально после authenticated download.
+Аудиофайлы отображаются отдельной музыкальной карточкой и воспроизводятся одним
+conversation-scoped HTML audio player: compact панель остаётся над чатом, fullscreen
+mobile/desktop surface содержит seek, previous/next, repeat, скорость и плейлист
+локально расшифрованных композиций текущего чата. Media Session добавляет системные
+PWA controls там, где platform их поддерживает; close, смена чата или начало звонка
+останавливают playback и освобождают локальный object URL.
 Composer также записывает компактные видеокружки: hold/release отправляет,
 swipe-left отменяет, swipe-up фиксирует запись, locked mode позволяет переключить
 камеру. Запись ограничена 60 секундами и 8 MiB; bounded target profile использует

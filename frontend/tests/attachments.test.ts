@@ -375,6 +375,25 @@ describe('group attachment download use case', () => {
 })
 
 describe('message attachment rendering', () => {
+  it('opens an audio file in the conversation player instead of downloading it', async () => {
+    const audio = {
+      attachmentId: 'audio-1',
+      kind: 'file' as const,
+      name: 'song.mp3',
+      contentType: 'audio/mpeg',
+      byteSize: 2048,
+    }
+    const loadAttachment = vi.fn()
+    const wrapper = mount(MessageAttachments, {
+      props: { conversationId: 'conversation-1', expiresAt, attachments: [audio], loadAttachment },
+    })
+
+    expect(wrapper.text()).toContain('слушать в плеере')
+    await wrapper.get('.message-audio').trigger('click')
+    expect(wrapper.emitted('playAudio')).toEqual([[audio]])
+    expect(loadAttachment).not.toHaveBeenCalled()
+  })
+
   it('keeps one aspect-ratio box before and after cached media becomes ready', async () => {
     let resolveLoad: ((blob: Blob) => void) | null = null
     const measured = { ...attachment, pixelWidth: 1_920, pixelHeight: 1_080 }

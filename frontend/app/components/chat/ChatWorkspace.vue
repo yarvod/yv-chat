@@ -3,6 +3,14 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { useMessenger } from '../../composables/useMessenger'
 import type { CurrentAccount } from '../../domain/accounts/account'
+import type { MessageAttachment } from '../../domain/messaging/models'
+import type { TimelineMessage } from '../../application/messaging/timeline-message'
+import type { ConversationMediaItem } from '../../application/messaging/conversation-media'
+import { conversationMediaItems } from '../../application/messaging/conversation-media'
+import {
+  conversationAudioTracks,
+  isAudioAttachment,
+} from '../../application/messaging/conversation-audio'
 import type { TypingIndicator } from '../../application/messaging/typing-indicator-service'
 import type { PresenceIndicator } from '../../application/messaging/presence-indicator-service'
 import type { RealtimeConnectionState } from '../../application/messaging/realtime-sync-service'
@@ -16,6 +24,7 @@ import MessagePanel from './MessagePanel.vue'
 import VoiceCallOverlay from './VoiceCallOverlay.vue'
 import VoiceCallMiniBar from './VoiceCallMiniBar.vue'
 import ConversationDetailsPanel from './ConversationDetailsPanel.vue'
+import ConversationAudioPlayer from './ConversationAudioPlayer.vue'
 
 const props = defineProps<{ user: CurrentAccount }>()
 const emit = defineEmits<{ sessionExpired: [] }>()
@@ -41,6 +50,8 @@ const connectionState = ref<RealtimeConnectionState>('connecting')
 const callState = ref<VoiceCallState>(callsState())
 const callMinimized = ref(false)
 const conversationDetailsOpen = ref(false)
+const audioPlayerVisible = ref(false)
+const audioPlayRequest = ref<{ trackId: string, nonce: number } | null>(null)
 const openingConversationId = ref<string | null>(null)
 const mobilePane = computed<'list' | 'conversation'>(() => (
   selectedConversationId(route.query.conversation) || openingConversationId.value
@@ -52,6 +63,7 @@ let unsubscribeTyping: (() => void) | null = null
 let unsubscribePresence: (() => void) | null = null
 let unsubscribeCalls: (() => void) | null = null
 let routeSelectionReady = false
+let audioPlayRequestNonce = 0
 
 function callsState() {
   return {
@@ -99,6 +111,21 @@ const callCanMinimize = computed(() => (
   || callState.value.phase === 'connecting'
   || callState.value.phase === 'active'
 ))
+const audioTracks = computed(() => {
+  const conversation = messenger.activeConversation.value
+  if (!conversation) return []
+  const source = messenger.state.mediaItems.length > 0
+    ? messenger.state.mediaItems
+    : conversationMediaItems(messenger.state.messages)
+  return conversationAudioTracks(source, conversation)
+})
+const audioConversationTitle = computed(() => {
+  const conversation = messenger.activeConversation.value
+  if (!conversation) return 'Чат'
+  if (conversation.conversationType === 'group') return conversation.title ?? 'Группа'
+  return conversation.members.find(member => member.userId !== props.user.userId)?.displayName
+    ?? 'Личный чат'
+})
 
 function minimizeCall(): void {
   if (!callCanMinimize.value) return
@@ -109,6 +136,29 @@ function minimizeCall(): void {
 function expandCall(): void {
   callMinimized.value = false
   $frontend.haptics.perform('selection')
+}
+
+function openAudioTrack(messageId: string, attachment: MessageAttachment): void {
+  if (!isAudioAttachment(attachment)) return
+  const trackId = `${messageId}:${attachment.attachmentId}`
+  if (!audioTracks.value.some(track => track.trackId === trackId)) return
+  audioPlayerVisible.value = true
+  audioPlayRequest.value = { trackId, nonce: ++audioPlayRequestNonce }
+  void messenger.loadActiveConversationMedia()
+  $frontend.haptics.perform('selection')
+}
+
+function playTimelineAudio(message: TimelineMessage, attachment: MessageAttachment): void {
+  openAudioTrack(message.messageId, attachment)
+}
+
+function playCatalogAudio(item: ConversationMediaItem, attachment: MessageAttachment): void {
+  openAudioTrack(item.messageId, attachment)
+}
+
+function closeAudioPlayer(): void {
+  audioPlayerVisible.value = false
+  audioPlayRequest.value = null
 }
 
 const activeTypingActorIds = computed(() => typingIndicators.value
@@ -263,10 +313,16 @@ watch(
 watch(
   () => callState.value.phase,
   phase => {
+    if (phase !== 'idle' && phase !== 'ended' && phase !== 'error') closeAudioPlayer()
     if (phase === 'idle' || phase === 'ended' || phase === 'error') {
       callMinimized.value = false
     }
   },
+)
+
+watch(
+  () => messenger.state.activeConversationId,
+  () => closeAudioPlayer(),
 )
 
 onBeforeUnmount(() => {
@@ -344,6 +400,17 @@ onBeforeUnmount(() => {
         {{ workspaceNotice }}
         <button v-if="messenger.state.phase === 'offline'" type="button" @click="messenger.poll">Повторить</button>
       </p>
+      <ConversationAudioPlayer
+        v-if="audioPlayerVisible && messenger.activeConversation.value"
+        :key="messenger.activeConversation.value.conversationId"
+        :conversation-id="messenger.activeConversation.value.conversationId"
+        :conversation-title="audioConversationTitle"
+        :tracks="audioTracks"
+        :request="audioPlayRequest"
+        :load-attachment="messenger.loadAttachment"
+        :media-session="$frontend.audioMediaSession"
+        @close="closeAudioPlayer"
+      />
       <MessagePanel
         :conversation="messenger.activeConversation.value"
         :messages="messenger.state.messages"
@@ -391,6 +458,7 @@ onBeforeUnmount(() => {
         :haptic="$frontend.haptics.perform.bind($frontend.haptics)"
         @back="closeConversation"
         @details="conversationDetailsOpen = true"
+        @play-audio="playTimelineAudio"
       />
       <ConversationDetailsPanel
         v-if="conversationDetailsOpen && messenger.activeConversation.value"
@@ -411,6 +479,7 @@ onBeforeUnmount(() => {
         :remove-member="messenger.removeActiveGroupMember"
         :leave-group="leaveGroup"
         @close="conversationDetailsOpen = false"
+        @play-audio="playCatalogAudio"
       />
     </div>
   </section>

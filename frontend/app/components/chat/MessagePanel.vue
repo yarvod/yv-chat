@@ -145,7 +145,11 @@ const props = withDefaults(defineProps<{
   startCall: async () => undefined,
   haptic: () => undefined,
 })
-const emit = defineEmits<{ back: []; details: [] }>()
+const emit = defineEmits<{
+  back: []
+  details: []
+  playAudio: [message: TimelineMessage, attachment: MessageAttachment]
+}>()
 
 const draft = ref('')
 const replyingTo = ref<TimelineMessage | null>(null)
@@ -1873,6 +1877,7 @@ onBeforeUnmount(() => {
             :attachments="item.message.displayAttachments ?? []"
             :expires-at="item.message.expiresAt"
             :load-attachment="loadAttachment"
+            @play-audio="emit('playAudio', item.message, $event)"
           />
           <CallHistoryMessage
             v-if="item.message.contentState === 'available' && item.message.call"
@@ -2062,7 +2067,7 @@ onBeforeUnmount(() => {
           data-picker="media"
           type="file"
           multiple
-          accept="image/*,video/*"
+          accept="image/*,video/*,audio/*"
           :disabled="!attachmentsAllowed || sending"
           @change="chooseAttachment"
         >
@@ -2086,7 +2091,7 @@ onBeforeUnmount(() => {
           <div v-if="attachmentMenuOpen" id="attachment-picker-menu" class="attachment-picker-menu">
             <button type="button" @click="openAttachmentPicker('media')">
               <AppIcon name="media" />
-              <span><strong>Фото или видео</strong><small>Открыть системную галерею</small></span>
+              <span><strong>Фото, видео или аудио</strong><small>Открыть системную медиатеку</small></span>
             </button>
             <button type="button" @click="openAttachmentPicker('sticker')">
               <span class="attachment-picker-menu__emoji" aria-hidden="true">✦</span>
