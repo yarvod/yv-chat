@@ -6,7 +6,8 @@
 
 ### BUG-131 — Аудиокарточка рассинхронизирована с player, bar исчезает вне чата
 
-- Статус: `fixed locally` (`WP-142`).
+- Статус: `fixed and production deployed` (`WP-142`, `35ae4af`, workflow
+  `33444841533`; CI `33444841531`).
 - Severity: `high media usability`.
 - Reproduction: запустить WAV из timeline, сравнить icon карточки и compact bar,
   нажать карточку повторно, затем перейти из `/chat` в `/settings`; отдельно tap-нуть

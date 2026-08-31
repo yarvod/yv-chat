@@ -11,7 +11,20 @@ not be replaced with the broader JavaScript `unsafe-eval`. Without it, public
 crypto assets still return HTTP 200 but device provisioning stops before the
 `PUT /api/v1/devices/current/crypto-identity` registration request.
 
-## Latest rollout — WP-141 conversation audio player
+## Latest rollout — WP-142 persistent synchronized audio controls
+
+- Commit: `35ae4af55954dd7e956b96c79e90dc98894db7b5`.
+- Production workflow: `33444841533` (success); CI workflow: `33444841531`
+  (success).
+- Deployed image tag: `sha-35ae4af55954dd7e956b96c79e90dc98894db7b5` on frontend,
+  API and cleanup; fresh-database migrations, repository verification, dependency
+  audit, immutable image builds and isolated rollout health checks passed.
+- Public acceptance: both origins and `/api/v1/health` returned `200` with
+  successful TLS verification.
+- Automated Docker Browser acceptance covered synchronized card/compact/fullscreen
+  pause-resume, route persistence and 390×844 mobile touch/overflow behavior.
+
+## Prior rollout — WP-141 conversation audio player
 
 - Commit: `460e4702cf6166006c66be44dfbef1bcb86f6c77`.
 - Production workflow: `33437977509` (success); CI workflow: `33437977497`

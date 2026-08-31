@@ -2,7 +2,7 @@
 
 ## WP-142 — Синхронизация и глобальная доступность аудиоплеера
 
-Статус: **completed locally**
+Статус: **production deployed**
 Backlog: `BL-FIX-069`
 Bug: `BUG-131`
 
@@ -76,3 +76,7 @@ desktop hover после tap.
 - Docker Browser acceptance: desktop pause/resume и Settings persistence; mobile
   390×844 list/Settings persistence, exact-width compact bar, fullscreen viewport,
   отсутствие horizontal overflow и console warnings/errors.
+- production commit `35ae4af55954dd7e956b96c79e90dc98894db7b5` развернут
+  workflow `33444841533`; отдельный CI `33444841531` прошёл полностью;
+- оба production origin и их `/api/v1/health` вернули HTTP `200` с успешной TLS
+  verification после rollout.

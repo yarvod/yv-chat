@@ -756,7 +756,8 @@ System audio не входит в этот slice, microphone audio продол�
 
 ### BL-FIX-069 — Синхронизация и persistent app-level audio player
 
-Статус: **completed locally** (`WP-142`, `BUG-131`).
+Статус: **production deployed** (`WP-142`, `BUG-131`, commit `35ae4af`,
+workflow `33444841533`; CI `33444841531`).
 
 Timeline audio card, compact bar и fullscreen player отражают одно фактическое
 playback state; pause/resume не перезагружает active track и сохраняет позицию.
