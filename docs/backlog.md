@@ -52,6 +52,17 @@ authenticated call identity, video calls, затем screen sharing. Эти за
 
 ## Frontend application и administration
 
+### BL-FIX-071 — Encrypted direct-photo previews переживают restart
+
+Статус: **implemented and locally verified** (`WP-144`, `BUG-134`).
+
+- direct thumbnail после client-side attachment decrypt сохраняется только как
+  AES-GCM encrypted `timeline-preview-v1` device-cache variant;
+- новый application instance читает маленький preview до original ciphertext и не
+  повторяет attachment decrypt/image resize для уже показанной фотографии;
+- серия из 50 direct-фото после reload обслуживается preview cache без server reads;
+- preview остаётся bounded, TTL/LRU/clear-aware и никогда не хранится plaintext.
+
 ### BL-FIX-070 — Нативный и производительный photo flow
 
 Статус: **production deployed** (`WP-143`, `BUG-132`, commit `67abecb`, workflow
@@ -59,8 +70,9 @@ authenticated call identity, video calls, затем screen sharing. Эти за
 
 - timeline использует bounded client-side thumbnails вместо одновременного DOM decode
   десятков full-resolution фотографий;
-- group thumbnails повторно используются из encrypted device cache после reload,
-  direct persistent cache остаётся ciphertext-only;
+- group thumbnails повторно используются из encrypted device cache после reload;
+  direct original cache остаётся server ciphertext, а отдельный device-encrypted
+  direct thumbnail добавлен последующим `BL-FIX-071`;
 - тяжёлая preview generation имеет bounded concurrency, а full resolution читается
   только по явному open/download;
 - fullscreen pinch zoom следует centroid жеста, controls и system Back закрывают viewer

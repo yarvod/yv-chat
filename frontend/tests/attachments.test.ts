@@ -9,6 +9,7 @@ import { UploadGroupAttachment } from '../app/application/messaging/upload-group
 import { DownloadGroupAttachment } from '../app/application/messaging/download-group-attachment'
 import { DirectAttachmentSecrets } from '../app/application/messaging/direct-message-content'
 import type { AttachmentGateway } from '../app/application/ports/attachment-gateway'
+import type { MediaCacheScope } from '../app/application/ports/media-cache'
 import MessageAttachments from '../app/components/chat/MessageAttachments.vue'
 
 const attachment = {
@@ -399,7 +400,7 @@ describe('group attachment download use case', () => {
     expect(thumbnail.create).toHaveBeenCalledTimes(50)
   })
 
-  it('keeps a direct-message preview out of the persistent cache', async () => {
+  it('reuses an encrypted direct-message preview after application reload', async () => {
     const secrets = new DirectAttachmentSecrets()
     secrets.register('conversation-1', attachment.attachmentId, {
       clientAttachmentId: 'client-attachment-1',
@@ -407,11 +408,12 @@ describe('group attachment download use case', () => {
       nonceBase64: btoa('\0'.repeat(12)),
       ciphertextByteSize: attachment.byteSize + 16,
     })
+    let storedPreview: Blob | null = null
     const cache = {
       load: vi.fn().mockResolvedValue(null),
       store: vi.fn().mockResolvedValue(undefined),
-      loadPreview: vi.fn().mockResolvedValue(null),
-      storePreview: vi.fn().mockResolvedValue(undefined),
+      loadPreview: vi.fn(async () => storedPreview),
+      storePreview: vi.fn(async (_scope, value: Blob) => { storedPreview = value }),
       remove: vi.fn(),
       inspect: vi.fn(),
       clear: vi.fn(),
@@ -438,10 +440,89 @@ describe('group attachment download use case', () => {
     await expect(useCase.executePreview(
       'user-1', 'device-1', 'conversation-1', attachment, expiresAt,
     )).resolves.toBe(preview)
+    const afterReload = new DownloadGroupAttachment(
+      gateway, cache, 1024, () => Date.parse('2026-08-13T11:59:00Z'),
+      cipher, secrets, thumbnail,
+    )
+    await expect(afterReload.executePreview(
+      'user-1', 'device-1', 'conversation-1', attachment, expiresAt,
+    )).resolves.toBe(preview)
 
-    expect(cache.loadPreview).not.toHaveBeenCalled()
-    expect(cache.storePreview).not.toHaveBeenCalled()
+    expect(cache.loadPreview).toHaveBeenCalledTimes(2)
+    expect(cache.storePreview).toHaveBeenCalledOnce()
     expect(cache.store).toHaveBeenCalledOnce()
+    expect(gateway.download).toHaveBeenCalledOnce()
+    expect(cipher.decrypt).toHaveBeenCalledOnce()
+    expect(thumbnail.create).toHaveBeenCalledOnce()
+  })
+
+  it('reopens a 50-photo direct timeline entirely from encrypted preview cache', async () => {
+    const items = Array.from({ length: 50 }, (_, index) => ({
+      ...attachment,
+      attachmentId: `direct-photo-${index}`,
+    }))
+    const secrets = new DirectAttachmentSecrets()
+    for (const item of items) {
+      secrets.register('conversation-1', item.attachmentId, {
+        clientAttachmentId: `client-${item.attachmentId}`,
+        keyBase64: btoa('\0'.repeat(32)),
+        nonceBase64: btoa('\0'.repeat(12)),
+        ciphertextByteSize: item.byteSize + 16,
+      })
+    }
+    const storedPreviews = new Map<string, Blob>()
+    const cache = {
+      load: vi.fn().mockResolvedValue(null),
+      store: vi.fn().mockResolvedValue(undefined),
+      loadPreview: vi.fn(async (scope: MediaCacheScope) => (
+        storedPreviews.get(scope.attachment.attachmentId) ?? null
+      )),
+      storePreview: vi.fn(async (scope: MediaCacheScope, value: Blob) => {
+        storedPreviews.set(scope.attachment.attachmentId, value)
+      }),
+      remove: vi.fn(),
+      inspect: vi.fn(),
+      clear: vi.fn(),
+      close: vi.fn(),
+    }
+    const gateway: AttachmentGateway = {
+      upload: vi.fn(),
+      download: vi.fn().mockResolvedValue(new Blob(
+        ['x'.repeat(attachment.byteSize + 16)],
+        { type: 'application/octet-stream' },
+      )),
+    }
+    const plaintext = new Blob(['x'.repeat(attachment.byteSize)], { type: 'image/png' })
+    const cipher = { encrypt: vi.fn(), decrypt: vi.fn().mockResolvedValue(plaintext) }
+    const thumbnail = {
+      create: vi.fn().mockResolvedValue({
+        body: new Blob(['preview'], { type: 'image/png' }),
+        pixelWidth: 800,
+        pixelHeight: 600,
+      }),
+    }
+    const first = new DownloadGroupAttachment(
+      gateway, cache, 1024 * 1024, () => Date.parse('2026-08-13T11:59:00Z'),
+      cipher, secrets, thumbnail,
+    )
+    await Promise.all(items.map(item => first.executePreview(
+      'user-1', 'device-1', 'conversation-1', item, expiresAt,
+    )))
+
+    const afterReload = new DownloadGroupAttachment(
+      gateway, cache, 1024 * 1024, () => Date.parse('2026-08-13T11:59:00Z'),
+      cipher, secrets, thumbnail,
+    )
+    await Promise.all(items.map(item => afterReload.executePreview(
+      'user-1', 'device-1', 'conversation-1', item, expiresAt,
+    )))
+
+    expect(storedPreviews).toHaveLength(50)
+    expect(cache.loadPreview).toHaveBeenCalledTimes(100)
+    expect(cache.storePreview).toHaveBeenCalledTimes(50)
+    expect(gateway.download).toHaveBeenCalledTimes(50)
+    expect(cipher.decrypt).toHaveBeenCalledTimes(50)
+    expect(thumbnail.create).toHaveBeenCalledTimes(50)
   })
 
   it('never serves an expired attachment from the hot cache', async () => {

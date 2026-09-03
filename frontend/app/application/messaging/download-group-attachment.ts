@@ -164,13 +164,7 @@ export class DownloadGroupAttachment {
     attachment: MessageAttachment,
     generation: number,
   ): Promise<Blob> {
-    const direct = Boolean(this.directSecrets?.get(
-      scope.conversationId,
-      attachment.attachmentId,
-    ))
-    const cached = direct
-      ? null
-      : await this.cache?.loadPreview(scope).catch(() => null)
+    const cached = await this.cache?.loadPreview(scope).catch(() => null)
     const cacheKey = this.cacheKey(scope, 'timeline-preview-v1')
     if (cached && this.validPreview(cached)) {
       if (this.generationIsCurrent(scope, generation)) this.remember(cacheKey, cached)
@@ -192,7 +186,7 @@ export class DownloadGroupAttachment {
     if (!this.validPreview(preview)) throw new TypeError('invalid image preview')
     if (this.generationIsCurrent(scope, generation)) {
       this.remember(cacheKey, preview)
-      if (!direct) await this.cache?.storePreview(scope, preview).catch(() => undefined)
+      await this.cache?.storePreview(scope, preview).catch(() => undefined)
     }
     return preview
   }

@@ -4,6 +4,39 @@
 
 ## Active
 
+### BUG-135 — Local Compose rebuild оставляет Nginx со старым адресом API
+
+- Статус: `open`, обнаружен во время Docker smoke `WP-144`.
+- Severity: `development/deployment reliability`.
+- Reproduction: при уже запущенном локальном stack выполнить
+  `docker compose up -d --build --wait`; Compose пересоздаёт `api`, но оставляет
+  `nginx` running.
+- Фактическое поведение: Nginx продолжает обращаться к прежнему container IP и
+  возвращает `502`, хотя новый API container healthy; `docker compose restart nginx`
+  восстанавливает proxy и `/api/v1/health` возвращает `200`.
+- Ожидаемое поведение: rebuild/up восстанавливает работоспособный ingress без ручного
+  перезапуска Nginx.
+
+### BUG-134 — Direct-фото заново показывают loaders после перезапуска приложения
+
+- Статус: `fixed and locally verified` (`WP-144`).
+- Severity: `high mobile media performance/usability`.
+- Reproduction: открыть серию фотографий в личном MLS-чате, закрыть приложение и
+  снова открыть тот же timeline.
+- Фактическое поведение: original direct ciphertext уже находится в device cache, но
+  thumbnail жил только в hot RAM; новый application instance для каждой фотографии
+  снова выполнял OPFS/IndexedDB read, AES attachment decrypt и PNG generation через
+  очередь максимум из двух jobs, поэтому loaders висели последовательно.
+- Ожидаемое поведение: после первого успешного показа маленький thumbnail хранится
+  только как device-key encrypted cache variant и на reload читается без original
+  decrypt/decode или server request.
+- Исправление: direct и group используют один зашифрованный `timeline-preview-v1`
+  variant; direct original cache по-прежнему содержит server ciphertext, plaintext
+  preview на диск не записывается.
+- Проверка: regression до исправления видел `0` preview-cache reads; после исправления
+  single reload и серия из 50 direct-фото проходят из encrypted preview cache без
+  дополнительных gateway/decrypt/thumbnail calls.
+
 ### BUG-133 — Production gate блокировали уязвимые транзитивные frontend-зависимости
 
 - Статус: `fixed and production deployed` (`WP-143`, `67abecb`, workflow

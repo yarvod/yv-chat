@@ -1497,14 +1497,16 @@ A → B → A; он очищается при messenger unmount/logout. Local ca
 key; direct v2 cache принимает только уже client-encrypted ciphertext и расшифровывает
 его в application memory после чтения.
 
-`WP-143` добавляет отдельный `timeline-preview-v1` cache variant для group image.
+`WP-143` добавляет отдельный `timeline-preview-v1` cache variant для image.
 Preview шифруется тем же non-extractable device cache key, имеет собственный opaque
 storage key и AAD, включающий original attachment metadata, expiry, variant, preview
 размер/MIME и chunk index. Он учитывается в том же 2 GiB LRU и удаляется общим
-device-cache clear. Direct image preview не записывается в persistent cache: bounded
-hot memory может держать его до messenger dispose, а persistent direct entry остаётся
-исключительно server ciphertext. Full-resolution URL создаётся отдельно только в
-viewer/download path. Fullscreen viewer кладёт transient same-URL history entry,
+device-cache clear. `WP-144` расширяет encrypted variant на direct image после
+client-side attachment decrypt: OPFS/IndexedDB содержит только device-key AES-GCM
+ciphertext, а отдельная original direct entry остаётся исключительно server
+attachment ciphertext. После restart preview читается до original и не требует
+повторного attachment decrypt/image resize. Full-resolution URL создаётся отдельно
+только в viewer/download path. Fullscreen viewer кладёт transient same-URL history entry,
 поэтому browser/Android Back сначала закрывает viewer; pinch сохраняет content point
 под текущим centroid, а transformed image не перекрывает controls.
 

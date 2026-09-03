@@ -108,7 +108,7 @@ describe('encrypted device media cache', () => {
   })
 
   it('stores a timeline preview as a separate authenticated cache variant', async () => {
-    const cache = new EncryptedMediaCache(
+    let cache = new EncryptedMediaCache(
       indexedDb,
       webcrypto.subtle as unknown as SubtleCrypto,
       array => webcrypto.getRandomValues(array),
@@ -125,11 +125,36 @@ describe('encrypted device media cache', () => {
 
     await expect(cache.load(item).then(blob => blob?.text())).resolves.toBe('full-photo')
     await expect(cache.loadPreview(item).then(blob => blob?.text())).resolves.toBe('small-photo')
+    cache.close()
+    cache = new EncryptedMediaCache(
+      indexedDb,
+      webcrypto.subtle as unknown as SubtleCrypto,
+      array => webcrypto.getRandomValues(array),
+      null,
+      1024,
+      () => now,
+    )
+    await expect(cache.loadPreview(item).then(blob => blob?.text())).resolves.toBe('small-photo')
     await expect(cache.inspect(userId, deviceId)).resolves.toEqual({
       usedBytes: original.size + preview.size,
       entryCount: 2,
       limitBytes: 1024,
     })
+
+    const database = await requestResult(indexedDb.open('yv-chat-media-cache-v1', 1))
+    const transaction = database.transaction(['entries', 'fallback_blobs'], 'readonly')
+    const completed = transactionDone(transaction)
+    const entries = await requestResult(transaction.objectStore('entries').getAll()) as Array<{
+      objectName: string
+      variant?: string
+    }>
+    const previewEntry = entries.find(entry => entry.variant === 'timeline-preview-v1')
+    const encrypted = await requestResult(
+      transaction.objectStore('fallback_blobs').get(previewEntry?.objectName),
+    ) as { encryptedBytes: ArrayBuffer }
+    await completed
+    database.close()
+    expect(new TextDecoder().decode(encrypted.encryptedBytes)).not.toContain('small-photo')
   })
 
   it('evicts least-recently-used entries within the configured per-device budget', async () => {
