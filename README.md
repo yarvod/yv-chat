@@ -24,7 +24,10 @@ v2 без fallback, group — только synthetic v1. Synthetic v1 — UTF-8/
 server TTL. Поддерживаемые видео воспроизводятся внутри PWA, остальные форматы
 безопасно скачиваются. Уже открытые group media сохраняются локально в отдельном
 AES-GCM encrypted OPFS/IndexedDB cache с LRU ceiling 2 GiB на установку устройства;
-browser может предоставить меньше quota или удалить evictable cache. Вложения в
+browser может предоставить меньше quota или удалить evictable cache. Timeline для
+group photos повторно использует отдельные encrypted bounded thumbnails, поэтому после
+первого открытия не декодирует десятки full-resolution файлов заново; original
+читается только для fullscreen/скачивания. Вложения в
 личных MLS-чатах шифруются client-side отдельным random AES-256-GCM key/nonce до
 upload; original filename/MIME/kind/size и file key доставляются только внутри MLS
 v2 content. Сервер хранит `application/octet-stream` ciphertext и opaque routing

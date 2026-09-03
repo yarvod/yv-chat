@@ -29,6 +29,11 @@ const props = withDefaults(defineProps<{
     attachment: MessageAttachment,
     expiresAt: string,
   ) => Promise<Blob>
+  loadAttachmentPreview?: (
+    conversationId: string,
+    attachment: MessageAttachment,
+    expiresAt: string,
+  ) => Promise<Blob>
   openMessage: (messageId: string) => Promise<void>
   renameGroup: (title: string) => Promise<boolean>
   addMember: (userId: string) => Promise<boolean>
@@ -37,6 +42,7 @@ const props = withDefaults(defineProps<{
   activeAudioTrackId?: string | null
   audioPlaying?: boolean
 }>(), {
+  loadAttachmentPreview: undefined,
   activeAudioTrackId: null,
   audioPlaying: false,
 })
@@ -280,6 +286,7 @@ async function leave(): Promise<void> {
                 :expires-at="item.expiresAt"
                 :attachments="[item.attachment]"
                 :load-attachment="loadAttachment"
+                :load-attachment-preview="loadAttachmentPreview ?? loadAttachment"
                 :active-audio-track-id="activeAudioTrackId"
                 :audio-playing="audioPlaying"
                 @play-audio="emit('playAudio', item, $event)"

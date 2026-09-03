@@ -2,15 +2,23 @@ import type { MessageAttachment } from '../../domain/messaging/models'
 import type { AttachmentGateway } from '../ports/attachment-gateway'
 import type { MediaCache, MediaCacheScope } from '../ports/media-cache'
 import type { AttachmentCipher } from '../ports/attachment-cipher'
+import type { ImageThumbnailPort } from '../ports/image-thumbnail'
 import type { DirectAttachmentSecrets } from './direct-message-content'
 
 import { maximumAttachmentBytes } from './group-attachment-policy'
 
 export class DownloadGroupAttachment {
   private readonly pending = new Map<string, Promise<Blob>>()
+  private readonly previewPending = new Map<string, Promise<Blob>>()
   private readonly hot = new Map<string, Blob>()
   private readonly ownerGenerations = new Map<string, number>()
+  private readonly previewQueue: Array<{
+    run: () => Promise<Blob>
+    resolve: (blob: Blob) => void
+    reject: (reason?: unknown) => void
+  }> = []
   private hotBytes = 0
+  private activePreviewJobs = 0
 
   constructor(
     private readonly gateway: AttachmentGateway,
@@ -19,7 +27,13 @@ export class DownloadGroupAttachment {
     private readonly now: () => number = Date.now,
     private readonly cipher?: AttachmentCipher,
     private readonly directSecrets?: DirectAttachmentSecrets,
-  ) {}
+    private readonly thumbnail?: ImageThumbnailPort,
+    private readonly maxPreviewJobs = 2,
+  ) {
+    if (!Number.isInteger(maxPreviewJobs) || maxPreviewJobs < 1 || maxPreviewJobs > 4) {
+      throw new TypeError('invalid preview concurrency')
+    }
+  }
 
   async execute(
     ownerUserId: string,
@@ -41,13 +55,13 @@ export class DownloadGroupAttachment {
           byteSize: secret.ciphertextByteSize,
         }
       : attachment
-    const scope: MediaCacheScope = {
+    const scope = this.scope(
       ownerUserId,
       ownerDeviceId,
       conversationId,
-      attachment: cachedAttachment,
+      cachedAttachment,
       expiresAt,
-    }
+    )
     const cacheKey = this.cacheKey(scope)
     const hot = this.hot.get(cacheKey)
     if (hot && this.notExpired(expiresAt) && this.validBlob(hot, cachedAttachment)) {
@@ -65,6 +79,53 @@ export class DownloadGroupAttachment {
     const request = this.load(scope, generation).finally(() => this.pending.delete(cacheKey))
     this.pending.set(cacheKey, request)
     return await this.decryptIfNeeded(conversationId, attachment, await request)
+  }
+
+  async executePreview(
+    ownerUserId: string,
+    ownerDeviceId: string,
+    conversationId: string,
+    attachment: MessageAttachment,
+    expiresAt: string,
+  ): Promise<Blob> {
+    if (!ownerUserId || !ownerDeviceId || !conversationId || !attachment.attachmentId) {
+      throw new TypeError('invalid attachment scope')
+    }
+    if (attachment.kind !== 'image') {
+      return await this.execute(
+        ownerUserId,
+        ownerDeviceId,
+        conversationId,
+        attachment,
+        expiresAt,
+      )
+    }
+    if (!this.thumbnail) throw new TypeError('image thumbnail unavailable')
+    const scope = this.scope(
+      ownerUserId,
+      ownerDeviceId,
+      conversationId,
+      attachment,
+      expiresAt,
+    )
+    const cacheKey = this.cacheKey(scope, 'timeline-preview-v1')
+    const hot = this.hot.get(cacheKey)
+    if (hot && this.notExpired(expiresAt) && this.validPreview(hot)) {
+      this.hot.delete(cacheKey)
+      this.hot.set(cacheKey, hot)
+      return hot
+    }
+    if (hot) {
+      this.hot.delete(cacheKey)
+      this.hotBytes -= hot.size
+    }
+    const running = this.previewPending.get(cacheKey)
+    if (running) return await running
+    const generation = this.ownerGeneration(ownerUserId, ownerDeviceId)
+    const request = this.loadPreview(scope, attachment, generation)
+      .finally(() => this.previewPending.delete(cacheKey))
+    this.previewPending.set(cacheKey, request)
+    return await request
   }
 
   clearMemory(ownerUserId: string, ownerDeviceId: string): void {
@@ -98,6 +159,44 @@ export class DownloadGroupAttachment {
     return blob
   }
 
+  private async loadPreview(
+    scope: MediaCacheScope,
+    attachment: MessageAttachment,
+    generation: number,
+  ): Promise<Blob> {
+    const direct = Boolean(this.directSecrets?.get(
+      scope.conversationId,
+      attachment.attachmentId,
+    ))
+    const cached = direct
+      ? null
+      : await this.cache?.loadPreview(scope).catch(() => null)
+    const cacheKey = this.cacheKey(scope, 'timeline-preview-v1')
+    if (cached && this.validPreview(cached)) {
+      if (this.generationIsCurrent(scope, generation)) this.remember(cacheKey, cached)
+      return cached
+    }
+    const preview = await this.schedulePreview(async () => {
+      if (!this.generationIsCurrent(scope, generation)) {
+        throw new TypeError('image preview invalidated')
+      }
+      const source = await this.execute(
+        scope.ownerUserId,
+        scope.ownerDeviceId,
+        scope.conversationId,
+        attachment,
+        scope.expiresAt,
+      )
+      return (await this.thumbnail!.create(source, 512)).body
+    })
+    if (!this.validPreview(preview)) throw new TypeError('invalid image preview')
+    if (this.generationIsCurrent(scope, generation)) {
+      this.remember(cacheKey, preview)
+      if (!direct) await this.cache?.storePreview(scope, preview).catch(() => undefined)
+    }
+    return preview
+  }
+
   private validBlob(blob: Blob, attachment: MessageAttachment): boolean {
     return blob.size > 0
       && blob.size <= maximumAttachmentBytes(attachment.kind)
@@ -113,10 +212,11 @@ export class DownloadGroupAttachment {
     }
   }
 
-  private cacheKey(scope: MediaCacheScope): string {
+  private cacheKey(scope: MediaCacheScope, variant?: string): string {
     return `${scope.ownerUserId}:${scope.ownerDeviceId}:${scope.conversationId}`
       + `:${scope.attachment.attachmentId}:${scope.attachment.kind}`
       + `:${scope.attachment.contentType}:${scope.attachment.byteSize}:${scope.expiresAt}`
+      + (variant ? `:${variant}` : '')
   }
 
   private notExpired(expiresAt: string): boolean {
@@ -148,6 +248,41 @@ export class DownloadGroupAttachment {
       if (!oldest) break
       this.hot.delete(oldest[0])
       this.hotBytes -= oldest[1].size
+    }
+  }
+
+  private validPreview(blob: Blob): boolean {
+    return blob.size > 0 && blob.size <= 2 * 1024 * 1024 && blob.type === 'image/png'
+  }
+
+  private scope(
+    ownerUserId: string,
+    ownerDeviceId: string,
+    conversationId: string,
+    attachment: MessageAttachment,
+    expiresAt: string,
+  ): MediaCacheScope {
+    return { ownerUserId, ownerDeviceId, conversationId, attachment, expiresAt }
+  }
+
+  private schedulePreview(run: () => Promise<Blob>): Promise<Blob> {
+    return new Promise<Blob>((resolve, reject) => {
+      this.previewQueue.push({ run, resolve, reject })
+      this.drainPreviewQueue()
+    })
+  }
+
+  private drainPreviewQueue(): void {
+    while (this.activePreviewJobs < this.maxPreviewJobs) {
+      const job = this.previewQueue.shift()
+      if (!job) return
+      this.activePreviewJobs += 1
+      void job.run()
+        .then(job.resolve, job.reject)
+        .finally(() => {
+          this.activePreviewJobs -= 1
+          this.drainPreviewQueue()
+        })
     }
   }
 

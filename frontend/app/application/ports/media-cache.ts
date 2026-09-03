@@ -19,6 +19,8 @@ export interface MediaCacheStatistics {
 export interface MediaCache {
   load(scope: MediaCacheScope): Promise<Blob | null>
   store(scope: MediaCacheScope, blob: Blob): Promise<void>
+  loadPreview(scope: MediaCacheScope): Promise<Blob | null>
+  storePreview(scope: MediaCacheScope, blob: Blob): Promise<void>
   remove(scope: MediaCacheScope): Promise<void>
   inspect(ownerUserId: string, ownerDeviceId: string): Promise<MediaCacheStatistics>
   clear(ownerUserId: string, ownerDeviceId: string): Promise<MediaCacheStatistics>

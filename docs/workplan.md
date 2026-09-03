@@ -1,82 +1,76 @@
 # Текущий workplan
 
-## WP-142 — Синхронизация и глобальная доступность аудиоплеера
+## WP-143 — Нативный и производительный photo flow
 
-Статус: **production deployed**
-Backlog: `BL-FIX-069`
-Bug: `BUG-131`
+Статус: **implemented and locally verified**
+Backlog: `BL-FIX-070`
+Bug: `BUG-132`
 
-Цель: каждая play/pause-кнопка аудиосообщения и compact/fullscreen player должны
-показывать одно фактическое состояние HTML audio element. Compact bar продолжает
-работать поверх остальных authenticated страниц PWA, а touch UI не сохраняет
-desktop hover после tap.
+Цель: длинные серии фотографий не должны декодировать полноразмерные изображения
+в timeline или заново читать original media после каждого remount/reload. Photo
+viewer должен масштабировать изображение вокруг точки жеста и всегда закрываться
+крестиком, Escape и системным Back, а мобильный media action должен открывать
+системный photo/video picker вместо общего файлового chooser.
 
 ### Scope
 
-- поднять единственный audio player из chat workspace в persistent app layout;
-- хранить player source/request/playback projection в typed presentation controller;
-- оставить текущий track и позицию при переходе из чата в Settings/Admin и обратно;
-- синхронизировать play/pause icon, aria-label и status exact активной timeline/media
-  карточки с compact/fullscreen player;
-- определять toggle по фактическому `HTMLAudioElement.paused/ended`, сохраняя позицию
-  при pause/resume и загружая заново только другой/error track;
-- ограничить player hover styles устройствами с fine pointer и добавить bounded
-  touch active feedback без sticky highlight.
+- создавать bounded 512 px timeline thumbnail только после попадания карточки около
+  viewport и ограничивать тяжёлую генерацию двумя параллельными jobs;
+- хранить group thumbnail как отдельный AES-GCM encrypted вариант в существующем
+  device media cache; direct thumbnail оставлять только в bounded hot memory, чтобы
+  persistent direct cache продолжал хранить исключительно ciphertext;
+- читать full-resolution Blob только при fullscreen/open/download/video flow;
+- добавить browser-native lazy/async image decoding и уменьшить preload margin;
+- вычислять pinch zoom относительно текущего centroid с одновременным two-finger pan;
+- держать viewer controls поверх transformed image и закрывать viewer независимо от
+  zoom через close/backdrop/Escape/browser-or-system Back;
+- вернуть media input к exact `accept="image/*,video/*"`; audio остаётся доступным
+  через unrestricted file action.
 
 ### Security и privacy
 
-- server upload/download, E2EE, authorization, TTL и quota contracts не меняются;
-- controller хранит только уже расшифрованный in-memory playlist текущей установки;
-- переход между страницами не сохраняет playlist в storage и не раскрывает metadata;
-- logout/layout unmount, explicit close и active call по-прежнему
-  останавливают playback и отзывают object URL.
+- server upload/download, membership, TTL, quota и direct MLS contracts не меняются;
+- group thumbnail шифруется тем же non-extractable per-user-device cache key и
+  привязывается AAD к original attachment metadata, expiry и variant;
+- direct preview не записывается в persistent cache, OPFS или IndexedDB;
+- full-resolution object URLs остаются transient и отзываются при removal/unmount.
 
 ### Tests
 
-- active message card меняет play ↔ pause вместе с реальными media events;
-- повторный click active card и compact control ставит pause, resume продолжает
-  текущую позицию без `loadAttachment` и нового object URL;
-- app-layout host переживает route slot changes и показывает compact bar вне `/chat`;
-- другой track переключается один раз, close/unmount освобождает URL;
-- hover правила player доступны только `(hover: hover) and (pointer: fine)`;
+- persistent group thumbnail переживает новый download use-case instance и не читает
+  original cache/server повторно; direct preview не persist-ится;
+- несколько preview misses coalesce-ятся и не запускают больше двух thumbnail jobs;
+- timeline использует preview URL, viewer переключается на full-resolution URL;
+- pinch сохраняет изображение под изменяющимся centroid, close работает при zoom > 1,
+  Back закрывает viewer без выхода из чата;
+- media input содержит exact photo/video accept без audio;
 - frontend tests, lint, Nuxt typecheck и production/PWA build;
-- Docker Browser acceptance на desktop и 390×844 mobile viewport.
+- Docker Browser acceptance на desktop и mobile viewport с network/performance smoke.
 
 ### Exclusions
 
-- общий музыкальный каталог между чатами или persisted playlist;
-- background execution guarantees поверх ограничений browser/OS;
-- server streaming/transcoding/waveform/ID3 changes;
-- изменение поведения calls, media encryption или attachment schema.
+- server-side thumbnailing/transcoding или plaintext direct media на сервере;
+- изменение attachment/message schema, E2EE protocol, TTL или quota;
+- native-only Android/iOS photo library plugin;
+- виртуализация всей message timeline.
 
 ### Definition of Done
 
-- кнопка exact активного аудиосообщения и обе player surfaces показывают одинаковый
-  play/pause state;
-- pause/resume не сбрасывает currentTime, новый track начинает собственное playback;
-- compact bar видим и управляем в списке/другом чате/Settings/Admin до close, logout
-  или call;
-- mobile tap не оставляет hover highlight;
-- автоматические проверки и реальный Docker browser smoke проходят.
+- повторное открытие group photo timeline использует маленький encrypted local
+  thumbnail и не декодирует/читает original до явного fullscreen;
+- серия media сообщений не создаёт unbounded concurrent decode work;
+- pinch focal point, close controls и system Back ведут себя предсказуемо при любом zoom;
+- Android-compatible media picker снова ограничен photo/video;
+- relevant automated checks и Docker Browser acceptance зелёные;
+- workplan, backlog и bug record синхронизированы, diff проверен и feature commit создан.
 
-### Result
+### Verification
 
-- typed app-layout controller хранит только in-memory source/request/playback и
-  монтирует единственный HTML audio element над authenticated route content;
-- active timeline/media card получает exact track state: `Пауза` + две полоски при
-  playback, `Продолжить` + треугольник после pause;
-- compact/fullscreen/card toggle использует фактические `paused/ended`; pause/resume
-  сохраняет `currentTime` и не вызывает повторный attachment load;
-- player продолжает работать при переходе чат → список/другой чат → Settings/Admin,
-  а explicit close, call, logout/layout unmount сохраняют cleanup;
-- player hover rules ограничены fine pointer media query; touch controls используют
-  transient `:active`, `touch-action: manipulation` и отключённый tap highlight;
-- `74/74` frontend test files и `450/450` tests, ESLint, Nuxt typecheck и
-  production/PWA build проходят;
-- Docker Browser acceptance: desktop pause/resume и Settings persistence; mobile
-  390×844 list/Settings persistence, exact-width compact bar, fullscreen viewport,
-  отсутствие horizontal overflow и console warnings/errors.
-- production commit `35ae4af55954dd7e956b96c79e90dc98894db7b5` развернут
-  workflow `33444841533`; отдельный CI `33444841531` прошёл полностью;
-- оба production origin и их `/api/v1/health` вернули HTTP `200` с успешной TLS
-  verification после rollout.
+- `454` frontend tests passed, включая encrypted preview variant, reload reuse,
+  direct ciphertext-only persistence, 50-image/two-job concurrency, focal pinch,
+  zoomed close и browser Back regressions;
+- ESLint, Nuxt typecheck и production/PWA build прошли;
+- `docker compose config` прошёл, integrated stack собран и healthy, локальный
+  `/api/v1/health` ответил `200`;
+- Docker Browser acceptance: desktop authenticated chat и mobile `390×844`, exact
+  `image/*,video/*`, gallery label, zero horizontal overflow и zero console errors.

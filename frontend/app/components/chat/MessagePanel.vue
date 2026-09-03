@@ -78,6 +78,11 @@ const props = withDefaults(defineProps<{
     attachment: MessageAttachment,
     expiresAt: string,
   ) => Promise<Blob>
+  loadAttachmentPreview?: (
+    conversationId: string,
+    attachment: MessageAttachment,
+    expiresAt: string,
+  ) => Promise<Blob>
   retryOutgoing?: (clientMessageId: string) => Promise<boolean>
   loadOlder?: () => Promise<void>
   returnToLatest?: () => Promise<void>
@@ -119,6 +124,7 @@ const props = withDefaults(defineProps<{
   loadOlder: async () => undefined,
   returnToLatest: async () => undefined,
   loadAttachment: async () => { throw new TypeError('attachment download unavailable') },
+  loadAttachmentPreview: undefined,
   searchMessages: async () => [],
   openMessage: async () => undefined,
   reactionSummaries: () => [],
@@ -1882,6 +1888,7 @@ onBeforeUnmount(() => {
             :attachments="item.message.displayAttachments ?? []"
             :expires-at="item.message.expiresAt"
             :load-attachment="loadAttachment"
+            :load-attachment-preview="loadAttachmentPreview ?? loadAttachment"
             :active-audio-track-id="activeAudioTrackId"
             :audio-playing="audioPlaying"
             @play-audio="emit('playAudio', item.message, $event)"
@@ -2074,7 +2081,7 @@ onBeforeUnmount(() => {
           data-picker="media"
           type="file"
           multiple
-          accept="image/*,video/*,audio/*"
+          accept="image/*,video/*"
           :disabled="!attachmentsAllowed || sending"
           @change="chooseAttachment"
         >
@@ -2098,7 +2105,7 @@ onBeforeUnmount(() => {
           <div v-if="attachmentMenuOpen" id="attachment-picker-menu" class="attachment-picker-menu">
             <button type="button" @click="openAttachmentPicker('media')">
               <AppIcon name="media" />
-              <span><strong>Фото, видео или аудио</strong><small>Открыть системную медиатеку</small></span>
+              <span><strong>Фото или видео</strong><small>Открыть системную галерею</small></span>
             </button>
             <button type="button" @click="openAttachmentPicker('sticker')">
               <span class="attachment-picker-menu__emoji" aria-hidden="true">✦</span>

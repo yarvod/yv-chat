@@ -188,6 +188,7 @@ export default defineNuxtPlugin(nuxtApp => {
   const mediaCache = new EncryptedMediaCache()
   const directAttachmentSecrets = new DirectAttachmentSecrets()
   const attachmentCipher = new WebCryptoAttachmentCipher()
+  const imageThumbnail = new BrowserImageThumbnail()
   const downloadGroupAttachment = new DownloadGroupAttachment(
     attachmentGateway,
     mediaCache,
@@ -195,6 +196,7 @@ export default defineNuxtPlugin(nuxtApp => {
     Date.now,
     attachmentCipher,
     directAttachmentSecrets,
+    imageThumbnail,
   )
   const conversationCryptoState = new IndexedDbConversationCryptoState()
   const closeLocalStores = (): void => {
@@ -317,7 +319,7 @@ export default defineNuxtPlugin(nuxtApp => {
         haptics,
         themePreferences,
         clipboard: new BrowserClipboard(),
-        imageThumbnail: new BrowserImageThumbnail(),
+        imageThumbnail,
         audioMediaSession: new BrowserAudioMediaSession(),
         clientIdGenerator,
         loadCurrentAccount: new LoadCurrentAccount(authGateway),

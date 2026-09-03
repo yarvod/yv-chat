@@ -16,7 +16,9 @@ const CHUNK_BYTES = 1024 * 1024
 const TAG_BYTES = 16
 const NONCE_BYTES = 8
 const MAX_ATTACHMENT_BYTES = 100 * 1024 * 1024
+const MAX_PREVIEW_BYTES = 2 * 1024 * 1024
 const OPFS_DIRECTORY = 'yv-chat-media-cache-v1'
+const TIMELINE_PREVIEW_VARIANT = 'timeline-preview-v1'
 
 type StorageBackend = 'opfs' | 'indexeddb'
 
@@ -40,6 +42,8 @@ interface MediaCacheEntryRecord {
   expiresAt: number
   createdAt: number
   lastAccessedAt: number
+  variant?: typeof TIMELINE_PREVIEW_VARIANT
+  contentType?: string
 }
 
 interface FallbackBlobRecord {
@@ -100,6 +104,8 @@ function validEntry(record: MediaCacheEntryRecord, scopeHash: string, storageKey
     && Number.isFinite(record.expiresAt)
     && Number.isFinite(record.createdAt)
     && Number.isFinite(record.lastAccessedAt)
+    && (record.variant === undefined || record.variant === TIMELINE_PREVIEW_VARIANT)
+    && (record.contentType === undefined || record.contentType.length > 0)
 }
 
 function hex(bytes: Uint8Array): string {
@@ -135,17 +141,33 @@ export class EncryptedMediaCache implements MediaCache {
   }
 
   async load(scope: MediaCacheScope): Promise<Blob | null> {
+    return await this.loadVariant(scope)
+  }
+
+  async loadPreview(scope: MediaCacheScope): Promise<Blob | null> {
+    if (scope.attachment.kind !== 'image') throw new TypeError('invalid media preview scope')
+    return await this.loadVariant(scope, TIMELINE_PREVIEW_VARIANT)
+  }
+
+  private async loadVariant(
+    scope: MediaCacheScope,
+    variant?: typeof TIMELINE_PREVIEW_VARIANT,
+  ): Promise<Blob | null> {
     if (!validScope(scope)) throw new TypeError('invalid media cache scope')
     const [ownerScopeHash, storageKey] = await Promise.all([
       this.ownerScopeHash(scope.ownerUserId, scope.ownerDeviceId),
-      this.storageKey(scope),
+      this.storageKey(scope, variant),
     ])
     const database = await this.open()
     const entry = await this.loadEntry(database, storageKey)
     if (!entry) return null
     if (
       !validEntry(entry, ownerScopeHash, storageKey)
-      || entry.plaintextByteSize !== scope.attachment.byteSize
+      || entry.variant !== variant
+      || (variant === undefined && entry.plaintextByteSize !== scope.attachment.byteSize)
+      || (variant === TIMELINE_PREVIEW_VARIANT && (
+        entry.plaintextByteSize > MAX_PREVIEW_BYTES || entry.contentType !== 'image/png'
+      ))
       || entry.expiresAt !== Date.parse(scope.expiresAt)
       || entry.expiresAt <= this.now()
     ) {
@@ -176,11 +198,30 @@ export class EncryptedMediaCache implements MediaCache {
     if (!validScope(scope) || blob.size !== scope.attachment.byteSize) {
       throw new TypeError('invalid media cache value')
     }
+    await this.storeVariant(scope, blob)
+  }
+
+  async storePreview(scope: MediaCacheScope, blob: Blob): Promise<void> {
+    if (
+      !validScope(scope)
+      || scope.attachment.kind !== 'image'
+      || blob.size <= 0
+      || blob.size > MAX_PREVIEW_BYTES
+      || blob.type !== 'image/png'
+    ) throw new TypeError('invalid media preview value')
+    await this.storeVariant(scope, blob, TIMELINE_PREVIEW_VARIANT)
+  }
+
+  private async storeVariant(
+    scope: MediaCacheScope,
+    blob: Blob,
+    variant?: typeof TIMELINE_PREVIEW_VARIANT,
+  ): Promise<void> {
     if (Date.parse(scope.expiresAt) <= this.now()) return
     const [database, ownerScopeHash, storageKey] = await Promise.all([
       this.open(),
       this.ownerScopeHash(scope.ownerUserId, scope.ownerDeviceId),
-      this.storageKey(scope),
+      this.storageKey(scope, variant),
     ])
     const generation = this.ownerGeneration(ownerScopeHash)
     const key = await this.ensureKey(database, ownerScopeHash)
@@ -189,7 +230,15 @@ export class EncryptedMediaCache implements MediaCache {
     const previous = await this.loadEntry(database, storageKey)
     let persisted: { backend: StorageBackend, encryptedByteSize: number } | null = null
     try {
-      persisted = await this.writeObject(database, scope, key, nonce, objectName, blob)
+      persisted = await this.writeObject(
+        database,
+        scope,
+        key,
+        nonce,
+        objectName,
+        blob,
+        variant,
+      )
       const timestamp = this.now()
       const entry: MediaCacheEntryRecord = {
         storageKey,
@@ -205,6 +254,7 @@ export class EncryptedMediaCache implements MediaCache {
         expiresAt: Date.parse(scope.expiresAt),
         createdAt: timestamp,
         lastAccessedAt: timestamp,
+        ...(variant ? { variant, contentType: blob.type } : {}),
       }
       if (this.ownerGeneration(ownerScopeHash) !== generation) {
         await this.deleteObject(entry).catch(() => undefined)
@@ -282,20 +332,33 @@ export class EncryptedMediaCache implements MediaCache {
     return this.digest(`yv-chat-media-owner|${ownerUserId}|${ownerDeviceId}`)
   }
 
-  private storageKey(scope: MediaCacheScope): Promise<string> {
+  private storageKey(
+    scope: MediaCacheScope,
+    variant?: typeof TIMELINE_PREVIEW_VARIANT,
+  ): Promise<string> {
     return this.digest(
       `yv-chat-media-entry|${scope.ownerUserId}|${scope.ownerDeviceId}`
-      + `|${scope.conversationId}|${scope.attachment.attachmentId}`,
+      + `|${scope.conversationId}|${scope.attachment.attachmentId}`
+      + (variant ? `|${variant}` : ''),
     )
   }
 
-  private additionalData(scope: MediaCacheScope, chunkIndex: number): Uint8Array<ArrayBuffer> {
-    return this.encoder.encode(
+  private additionalData(
+    scope: MediaCacheScope,
+    chunkIndex: number,
+    variant?: typeof TIMELINE_PREVIEW_VARIANT,
+    storedByteSize?: number,
+    contentType?: string,
+  ): Uint8Array<ArrayBuffer> {
+    const original = (
       `yv-chat-media-cache|${ENTRY_SCHEMA_VERSION}|${scope.ownerUserId}`
       + `|${scope.ownerDeviceId}|${scope.conversationId}|${scope.attachment.attachmentId}`
       + `|${scope.attachment.kind}|${scope.attachment.contentType}`
-      + `|${scope.attachment.byteSize}|${scope.expiresAt}|${chunkIndex}`,
+      + `|${scope.attachment.byteSize}|${scope.expiresAt}|${chunkIndex}`
     )
+    return this.encoder.encode(variant
+      ? `${original}|${variant}|${storedByteSize}|${contentType}`
+      : original)
   }
 
   private chunkIv(nonce: Uint8Array, chunkIndex: number): Uint8Array<ArrayBuffer> {
@@ -370,6 +433,7 @@ export class EncryptedMediaCache implements MediaCache {
     nonce: Uint8Array,
     objectName: string,
     blob: Blob,
+    variant?: typeof TIMELINE_PREVIEW_VARIANT,
   ): Promise<{ backend: StorageBackend, encryptedByteSize: number }> {
     if (this.opfsRoot) {
       try {
@@ -383,7 +447,13 @@ export class EncryptedMediaCache implements MediaCache {
             const ciphertext = await this.subtle.encrypt({
               name: 'AES-GCM',
               iv: this.chunkIv(nonce, index),
-              additionalData: this.additionalData(scope, index),
+              additionalData: this.additionalData(
+                scope,
+                index,
+                variant,
+                blob.size,
+                blob.type,
+              ),
             }, key, plaintext)
             await writable.write(ciphertext)
             encryptedByteSize += ciphertext.byteLength
@@ -406,7 +476,7 @@ export class EncryptedMediaCache implements MediaCache {
       const ciphertext = await this.subtle.encrypt({
         name: 'AES-GCM',
         iv: this.chunkIv(nonce, index),
-        additionalData: this.additionalData(scope, index),
+        additionalData: this.additionalData(scope, index, variant, blob.size, blob.type),
       }, key, plaintext)
       parts.push(ciphertext)
       encryptedByteSize += ciphertext.byteLength
@@ -459,7 +529,13 @@ export class EncryptedMediaCache implements MediaCache {
       const plaintext = await this.subtle.decrypt({
         name: 'AES-GCM',
         iv: this.chunkIv(new Uint8Array(entry.nonce), index),
-        additionalData: this.additionalData(scope, index),
+        additionalData: this.additionalData(
+          scope,
+          index,
+          entry.variant,
+          entry.plaintextByteSize,
+          entry.contentType,
+        ),
       }, key, chunk)
       if (plaintext.byteLength !== plaintextBytes) throw new TypeError('corrupt media chunk')
       parts.push(plaintext)
@@ -469,7 +545,7 @@ export class EncryptedMediaCache implements MediaCache {
     if (remaining !== 0 || encryptedOffset !== encrypted.size) {
       throw new TypeError('corrupt media size')
     }
-    return new Blob(parts, { type: responseContentType(scope) })
+    return new Blob(parts, { type: entry.contentType ?? responseContentType(scope) })
   }
 
   private async touch(entry: MediaCacheEntryRecord): Promise<void> {

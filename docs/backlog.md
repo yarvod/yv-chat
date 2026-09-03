@@ -52,6 +52,21 @@ authenticated call identity, video calls, затем screen sharing. Эти за
 
 ## Frontend application и administration
 
+### BL-FIX-070 — Нативный и производительный photo flow
+
+Статус: **implemented and locally verified** (`WP-143`, `BUG-132`).
+
+- timeline использует bounded client-side thumbnails вместо одновременного DOM decode
+  десятков full-resolution фотографий;
+- group thumbnails повторно используются из encrypted device cache после reload,
+  direct persistent cache остаётся ciphertext-only;
+- тяжёлая preview generation имеет bounded concurrency, а full resolution читается
+  только по явному open/download;
+- fullscreen pinch zoom следует centroid жеста, controls и system Back закрывают viewer
+  при любом масштабе;
+- mobile media action вызывает exact photo/video picker, arbitrary/audio files остаются
+  в отдельном unrestricted file action.
+
 ### BL-079 — Capacitor native clients
 
 Статус: **platform foundation, native push and foreground native call audio completed

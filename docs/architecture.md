@@ -1444,9 +1444,11 @@ bounded `uploadedBytes/totalBytes`, composable агрегирует sequential b
 conversation/attachment metadata и bounded byte size, а presentation создаёт только
 краткоживущий Blob URL. Image/video
 URL лениво создаётся около viewport, отзывается при удалении/unmount и открывается во
-встроенном fullscreen viewer с keyboard/swipe navigation; видео использует native
-browser controls, а unsupported codec получает безопасный download fallback. File
-Blob скачивается без выхода из приложения. Composer разделяет media picker с
+встроенном fullscreen viewer с keyboard/swipe navigation; для image timeline получает
+bounded 512 px preview, а full-resolution Blob читается только по явному open/download.
+Тяжёлая client-side preview generation ограничена двумя concurrent jobs. Видео
+использует native browser controls, а unsupported codec получает безопасный download
+fallback. File Blob скачивается без выхода из приложения. Composer разделяет media picker с
 `accept="image/*,video/*"` и unrestricted file picker: конкретный системный UI
 галереи остаётся ответственностью OS/browser.
 
@@ -1494,6 +1496,17 @@ A → B → A; он очищается при messenger unmount/logout. Local ca
 и не продлевает server TTL. Group v1 original bytes защищаются device-local cache
 key; direct v2 cache принимает только уже client-encrypted ciphertext и расшифровывает
 его в application memory после чтения.
+
+`WP-143` добавляет отдельный `timeline-preview-v1` cache variant для group image.
+Preview шифруется тем же non-extractable device cache key, имеет собственный opaque
+storage key и AAD, включающий original attachment metadata, expiry, variant, preview
+размер/MIME и chunk index. Он учитывается в том же 2 GiB LRU и удаляется общим
+device-cache clear. Direct image preview не записывается в persistent cache: bounded
+hot memory может держать его до messenger dispose, а persistent direct entry остаётся
+исключительно server ciphertext. Full-resolution URL создаётся отдельно только в
+viewer/download path. Fullscreen viewer кладёт transient same-URL history entry,
+поэтому browser/Android Back сначала закрывает viewer; pinch сохраняет content point
+под текущим centroid, а transformed image не перекрывает controls.
 
 `WP-072` добавляет settings operations поверх того же `MediaCache` port: inspect
 возвращает только aggregate plaintext byte count, entry count и application ceiling,

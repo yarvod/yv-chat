@@ -15,6 +15,8 @@ describe('device storage settings', () => {
     const cache = {
       load: vi.fn(),
       store: vi.fn(),
+      loadPreview: vi.fn(),
+      storePreview: vi.fn(),
       remove: vi.fn(),
       inspect: vi.fn(),
       clear: vi.fn(async () => {

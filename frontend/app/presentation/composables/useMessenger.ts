@@ -1263,6 +1263,26 @@ export function useMessenger(
     }
   }
 
+  async function loadAttachmentPreview(
+    conversationId: string,
+    attachment: MessageAttachment,
+    expiresAt: string,
+  ): Promise<Blob> {
+    if (!downloadGroupAttachment) throw new TypeError('attachment preview unavailable')
+    try {
+      return await downloadGroupAttachment.executePreview(
+        actorUserId,
+        actorDeviceId,
+        conversationId,
+        attachment,
+        expiresAt,
+      )
+    } catch (error) {
+      if (error instanceof ApplicationError && error.status === 401) onUnauthorized()
+      throw error
+    }
+  }
+
   async function retryOutgoing(clientMessageId: string): Promise<boolean> {
     try {
       return await outbox.retry(clientMessageId)
@@ -1502,6 +1522,7 @@ export function useMessenger(
     send,
     recordCallSummary,
     loadAttachment,
+    loadAttachmentPreview,
     retryOutgoing,
     searchActiveConversation,
     loadActiveConversationMedia,

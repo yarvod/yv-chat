@@ -7,6 +7,7 @@ import {
 } from '../app/application/messaging/group-message-content'
 import { UploadGroupAttachment } from '../app/application/messaging/upload-group-attachment'
 import { DownloadGroupAttachment } from '../app/application/messaging/download-group-attachment'
+import { DirectAttachmentSecrets } from '../app/application/messaging/direct-message-content'
 import type { AttachmentGateway } from '../app/application/ports/attachment-gateway'
 import MessageAttachments from '../app/components/chat/MessageAttachments.vue'
 
@@ -282,6 +283,8 @@ describe('group attachment download use case', () => {
     const cache = {
       load: vi.fn().mockResolvedValue(null),
       store: vi.fn().mockResolvedValue(undefined),
+      loadPreview: vi.fn().mockResolvedValue(null),
+      storePreview: vi.fn().mockResolvedValue(undefined),
       remove: vi.fn().mockResolvedValue(undefined),
       inspect: vi.fn().mockResolvedValue({ usedBytes: 0, entryCount: 0, limitBytes: 1024 }),
       clear: vi.fn().mockResolvedValue({ usedBytes: 0, entryCount: 0, limitBytes: 1024 }),
@@ -314,6 +317,133 @@ describe('group attachment download use case', () => {
     expect(gateway.download).toHaveBeenCalledOnce()
   })
 
+  it('persists a bounded group timeline preview and reuses it without reading the original', async () => {
+    const body = new Blob(['x'.repeat(attachment.byteSize)], { type: attachment.contentType })
+    const preview = new Blob(['small-preview'], { type: 'image/png' })
+    let storedPreview: Blob | null = null
+    const gateway: AttachmentGateway = {
+      upload: vi.fn(),
+      download: vi.fn().mockResolvedValue(body),
+    }
+    const cache = {
+      load: vi.fn().mockResolvedValue(null),
+      store: vi.fn().mockResolvedValue(undefined),
+      loadPreview: vi.fn(async () => storedPreview),
+      storePreview: vi.fn(async (_scope, value: Blob) => { storedPreview = value }),
+      remove: vi.fn().mockResolvedValue(undefined),
+      inspect: vi.fn(),
+      clear: vi.fn(),
+      close: vi.fn(),
+    }
+    const thumbnail = {
+      create: vi.fn().mockResolvedValue({ body: preview, pixelWidth: 4_032, pixelHeight: 3_024 }),
+    }
+    const first = new DownloadGroupAttachment(
+      gateway, cache, 1024, () => Date.parse('2026-08-13T11:59:00Z'),
+      undefined, undefined, thumbnail,
+    )
+
+    await expect(first.executePreview(
+      'user-1', 'device-1', 'conversation-1', attachment, expiresAt,
+    )).resolves.toBe(preview)
+    const afterReload = new DownloadGroupAttachment(
+      gateway, cache, 1024, () => Date.parse('2026-08-13T11:59:00Z'),
+      undefined, undefined, thumbnail,
+    )
+    await expect(afterReload.executePreview(
+      'user-1', 'device-1', 'conversation-1', attachment, expiresAt,
+    )).resolves.toBe(preview)
+
+    expect(gateway.download).toHaveBeenCalledOnce()
+    expect(thumbnail.create).toHaveBeenCalledOnce()
+    expect(cache.storePreview).toHaveBeenCalledOnce()
+    expect(cache.loadPreview).toHaveBeenCalledTimes(2)
+  })
+
+  it('bounds concurrent full-image decode work for a long photo series', async () => {
+    let active = 0
+    let maximumActive = 0
+    const gateway: AttachmentGateway = {
+      upload: vi.fn(),
+      download: vi.fn(async () => (
+        new Blob(['x'.repeat(attachment.byteSize)], { type: attachment.contentType })
+      )),
+    }
+    const thumbnail = {
+      create: vi.fn(async () => {
+        active += 1
+        maximumActive = Math.max(maximumActive, active)
+        await new Promise(resolve => setTimeout(resolve, 5))
+        active -= 1
+        return {
+          body: new Blob(['preview'], { type: 'image/png' }),
+          pixelWidth: 1_920,
+          pixelHeight: 1_080,
+        }
+      }),
+    }
+    const useCase = new DownloadGroupAttachment(
+      gateway, undefined, 1024, () => Date.parse('2026-08-13T11:59:00Z'),
+      undefined, undefined, thumbnail, 2,
+    )
+    const items = Array.from({ length: 50 }, (_, index) => ({
+      ...attachment,
+      attachmentId: `photo-${index}`,
+    }))
+
+    await Promise.all(items.map(item => useCase.executePreview(
+      'user-1', 'device-1', 'conversation-1', item, expiresAt,
+    )))
+
+    expect(maximumActive).toBe(2)
+    expect(thumbnail.create).toHaveBeenCalledTimes(50)
+  })
+
+  it('keeps a direct-message preview out of the persistent cache', async () => {
+    const secrets = new DirectAttachmentSecrets()
+    secrets.register('conversation-1', attachment.attachmentId, {
+      clientAttachmentId: 'client-attachment-1',
+      keyBase64: btoa('\0'.repeat(32)),
+      nonceBase64: btoa('\0'.repeat(12)),
+      ciphertextByteSize: attachment.byteSize + 16,
+    })
+    const cache = {
+      load: vi.fn().mockResolvedValue(null),
+      store: vi.fn().mockResolvedValue(undefined),
+      loadPreview: vi.fn().mockResolvedValue(null),
+      storePreview: vi.fn().mockResolvedValue(undefined),
+      remove: vi.fn(),
+      inspect: vi.fn(),
+      clear: vi.fn(),
+      close: vi.fn(),
+    }
+    const gateway: AttachmentGateway = {
+      upload: vi.fn(),
+      download: vi.fn().mockResolvedValue(new Blob(
+        ['x'.repeat(attachment.byteSize + 16)],
+        { type: 'application/octet-stream' },
+      )),
+    }
+    const plaintext = new Blob(['x'.repeat(attachment.byteSize)], { type: 'image/png' })
+    const cipher = { encrypt: vi.fn(), decrypt: vi.fn().mockResolvedValue(plaintext) }
+    const preview = new Blob(['preview'], { type: 'image/png' })
+    const thumbnail = {
+      create: vi.fn().mockResolvedValue({ body: preview, pixelWidth: 800, pixelHeight: 600 }),
+    }
+    const useCase = new DownloadGroupAttachment(
+      gateway, cache, 1024, () => Date.parse('2026-08-13T11:59:00Z'),
+      cipher, secrets, thumbnail,
+    )
+
+    await expect(useCase.executePreview(
+      'user-1', 'device-1', 'conversation-1', attachment, expiresAt,
+    )).resolves.toBe(preview)
+
+    expect(cache.loadPreview).not.toHaveBeenCalled()
+    expect(cache.storePreview).not.toHaveBeenCalled()
+    expect(cache.store).toHaveBeenCalledOnce()
+  })
+
   it('never serves an expired attachment from the hot cache', async () => {
     const body = new Blob(['photo'], { type: 'image/png' })
     const gateway: AttachmentGateway = {
@@ -323,6 +453,8 @@ describe('group attachment download use case', () => {
     const cache = {
       load: vi.fn().mockResolvedValue(null),
       store: vi.fn().mockResolvedValue(undefined),
+      loadPreview: vi.fn().mockResolvedValue(null),
+      storePreview: vi.fn().mockResolvedValue(undefined),
       remove: vi.fn().mockResolvedValue(undefined),
       inspect: vi.fn().mockResolvedValue({ usedBytes: 0, entryCount: 0, limitBytes: 1024 }),
       clear: vi.fn().mockResolvedValue({ usedBytes: 0, entryCount: 0, limitBytes: 1024 }),
@@ -354,6 +486,8 @@ describe('group attachment download use case', () => {
     const cache = {
       load: vi.fn().mockResolvedValue(null),
       store: vi.fn().mockResolvedValue(undefined),
+      loadPreview: vi.fn().mockResolvedValue(null),
+      storePreview: vi.fn().mockResolvedValue(undefined),
       remove: vi.fn().mockResolvedValue(undefined),
       inspect: vi.fn().mockResolvedValue({ usedBytes: 0, entryCount: 0, limitBytes: 1024 }),
       clear: vi.fn().mockResolvedValue({ usedBytes: 0, entryCount: 0, limitBytes: 1024 }),
@@ -520,22 +654,34 @@ describe('message attachment rendering', () => {
     const loadAttachment = vi.fn(async (_conversationId, item) => (
       new Blob(['x'.repeat(item.byteSize)], { type: item.contentType })
     ))
+    const loadAttachmentPreview = vi.fn(async () => (
+      new Blob(['small-preview'], { type: 'image/png' })
+    ))
     const wrapper = mount(MessageAttachments, {
       props: {
         conversationId: 'conversation-1',
         expiresAt,
         attachments: [attachment, second],
         loadAttachment,
+        loadAttachmentPreview,
       },
       global: { stubs: { Teleport: true } },
     })
     await flushPromises()
 
-    expect(loadAttachment).toHaveBeenCalledWith('conversation-1', attachment, expiresAt)
-    expect(wrapper.get('.message-photo img').attributes('src')).toBe('blob:test-321')
+    expect(loadAttachment).not.toHaveBeenCalled()
+    expect(loadAttachmentPreview).toHaveBeenCalledWith('conversation-1', attachment, expiresAt)
+    expect(wrapper.get('.message-photo img').attributes('src')).toBe('blob:test-13')
+    expect(wrapper.get('.message-photo img').attributes()).toMatchObject({
+      loading: 'lazy',
+      decoding: 'async',
+    })
     expect(wrapper.find('a[target="_blank"]').exists()).toBe(false)
     await wrapper.findAll('.message-photo')[0]?.trigger('click')
     expect(wrapper.get('[role="dialog"]').text()).toContain('1 / 2')
+    await flushPromises()
+    expect(loadAttachment).toHaveBeenCalledWith('conversation-1', attachment, expiresAt)
+    expect(wrapper.get('.media-viewer__image').attributes('src')).toBe('blob:test-321')
     expect(wrapper.get('[role="dialog"]').text()).toContain('100%')
     await wrapper.get('.media-viewer__image').trigger('dblclick')
     expect(wrapper.get('[role="dialog"]').text()).toContain('250%')
@@ -544,6 +690,17 @@ describe('message attachment rendering', () => {
     await wrapper.get('.media-viewer__image').trigger('dblclick')
     expect(wrapper.get('[role="dialog"]').text()).toContain('100%')
     const viewerImage = wrapper.get('.media-viewer__image').element
+    vi.spyOn(viewerImage, 'getBoundingClientRect').mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 300,
+      bottom: 400,
+      width: 300,
+      height: 400,
+      toJSON: () => ({}),
+    })
     dispatchTouch(viewerImage, 'touchstart', [
       { clientX: 50, clientY: 100 },
       { clientX: 150, clientY: 100 },
@@ -554,10 +711,18 @@ describe('message attachment rendering', () => {
     ])
     await wrapper.vm.$nextTick()
     expect(wrapper.get('[role="dialog"]').text()).toContain('200%')
+    expect(wrapper.get('.media-viewer__image').attributes('style'))
+      .toContain('translate3d(50px, 100px, 0) scale(2)')
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
     await flushPromises()
     expect(wrapper.get('[role="dialog"]').text()).toContain('2 / 2')
     await wrapper.get('.media-viewer__close').trigger('click')
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+
+    await wrapper.findAll('.message-photo')[0]?.trigger('click')
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(true)
+    window.dispatchEvent(new PopStateEvent('popstate'))
+    await wrapper.vm.$nextTick()
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
   })
 
@@ -697,7 +862,7 @@ describe('message attachment rendering', () => {
 
       observe(target: Element): void {
         this.targets.add(target)
-        if (this.options?.rootMargin === '500px 0px') {
+        if (this.options?.rootMargin === '120px 0px') {
           this.callback(
             [{ isIntersecting: true, target } as IntersectionObserverEntry],
             this as never,
@@ -814,6 +979,6 @@ describe('message attachment rendering', () => {
     await wrapper.get('.message-photo').trigger('click')
     expect(wrapper.get('[role="dialog"]').text()).toContain('2 / 2')
     await wrapper.get('.attachment-unavailable button').trigger('click')
-    expect(loadAttachment).toHaveBeenCalledTimes(3)
+    expect(loadAttachment).toHaveBeenCalledTimes(4)
   })
 })

@@ -107,6 +107,31 @@ describe('encrypted device media cache', () => {
     expect(new TextDecoder().decode(encrypted.encryptedBytes)).not.toContain('private group photo')
   })
 
+  it('stores a timeline preview as a separate authenticated cache variant', async () => {
+    const cache = new EncryptedMediaCache(
+      indexedDb,
+      webcrypto.subtle as unknown as SubtleCrypto,
+      array => webcrypto.getRandomValues(array),
+      null,
+      1024,
+      () => now,
+    )
+    const original = new Blob(['full-photo'], { type: 'image/png' })
+    const preview = new Blob(['small-photo'], { type: 'image/png' })
+    const item = scope('preview-attachment', original.size)
+
+    await cache.store(item, original)
+    await cache.storePreview(item, preview)
+
+    await expect(cache.load(item).then(blob => blob?.text())).resolves.toBe('full-photo')
+    await expect(cache.loadPreview(item).then(blob => blob?.text())).resolves.toBe('small-photo')
+    await expect(cache.inspect(userId, deviceId)).resolves.toEqual({
+      usedBytes: original.size + preview.size,
+      entryCount: 2,
+      limitBytes: 1024,
+    })
+  })
+
   it('evicts least-recently-used entries within the configured per-device budget', async () => {
     let clock = now
     const cache = new EncryptedMediaCache(

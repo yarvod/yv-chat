@@ -7,8 +7,8 @@ import AppIcon from '../ui/AppIcon.vue'
 
 interface MediaState {
   phase: 'loading' | 'ready' | 'unavailable'
-  blob?: Blob
-  url?: string
+  previewUrl?: string
+  fullUrl?: string
 }
 
 const props = withDefaults(defineProps<{
@@ -21,10 +21,16 @@ const props = withDefaults(defineProps<{
     attachment: MessageAttachment,
     expiresAt: string,
   ) => Promise<Blob>
+  loadAttachmentPreview?: (
+    conversationId: string,
+    attachment: MessageAttachment,
+    expiresAt: string,
+  ) => Promise<Blob>
   activeAudioTrackId?: string | null
   audioPlaying?: boolean
 }>(), {
   messageId: undefined,
+  loadAttachmentPreview: undefined,
   activeAudioTrackId: null,
   audioPlaying: false,
 })
@@ -39,11 +45,14 @@ const expandedVideoNoteId = ref<string | null>(null)
 const galleryRoot = ref<HTMLElement | null>(null)
 const viewerRoot = ref<HTMLElement | null>(null)
 const viewerImage = ref<HTMLImageElement | null>(null)
+const viewerCloseButton = ref<HTMLButtonElement | null>(null)
 const activeMediaIndex = ref<number | null>(null)
 const imageZoom = ref(1)
 const imagePanX = ref(0)
 const imagePanY = ref(0)
-const pending = new Map<string, Promise<MediaState>>()
+const imageGestureActive = ref(false)
+const pendingFull = new Map<string, Promise<MediaState>>()
+const pendingPreview = new Map<string, Promise<MediaState>>()
 const visibleVideoNoteIds = new Set<string>()
 let mediaObserver: IntersectionObserver | null = null
 let videoNoteObserver: IntersectionObserver | null = null
@@ -51,9 +60,16 @@ let touchStartX: number | null = null
 let touchStartY: number | null = null
 let pinchStartDistance: number | null = null
 let pinchStartZoom = 1
+let pinchBaseCenterX = 0
+let pinchBaseCenterY = 0
+let pinchAnchorX = 0
+let pinchAnchorY = 0
 let panStartX = 0
 let panStartY = 0
 let disposed = false
+let viewerHistoryToken: string | null = null
+let viewerHistorySequence = 0
+let focusBeforeViewer: HTMLElement | null = null
 
 const mediaAttachments = computed(() => (
   props.attachments.filter(item => item.kind === 'image' || item.kind === 'video')
@@ -216,18 +232,29 @@ function finishVideoNotePlayback(attachmentId: string, event: Event): void {
 
 async function load(attachment: MessageAttachment): Promise<MediaState> {
   const existing = stateFor(attachment.attachmentId)
-  if (existing?.phase === 'ready') return existing
-  const running = pending.get(attachment.attachmentId)
+  if (existing?.fullUrl) return existing
+  const running = pendingFull.get(attachment.attachmentId)
   if (running) return await running
-  setState(attachment.attachmentId, { phase: 'loading' })
+  setState(attachment.attachmentId, {
+    ...existing,
+    phase: existing?.previewUrl ? 'ready' : 'loading',
+  })
   const request = props.loadAttachment(props.conversationId, attachment, props.expiresAt)
     .then(blob => {
       const url = URL.createObjectURL(blob)
-      if (disposed) {
+      if (disposed || !props.attachments.some(item => (
+        item.attachmentId === attachment.attachmentId
+      ))) {
         URL.revokeObjectURL(url)
         return { phase: 'unavailable' as const }
       }
-      const state = { phase: 'ready' as const, blob, url }
+      const previous = stateFor(attachment.attachmentId)
+      const state = {
+        ...previous,
+        phase: 'ready' as const,
+        previewUrl: previous?.previewUrl ?? url,
+        fullUrl: url,
+      }
       setState(attachment.attachmentId, state)
       if (attachment.presentation === 'video_note') {
         void nextTick().then(() => syncVideoNotePlayback(attachment.attachmentId))
@@ -235,12 +262,49 @@ async function load(attachment: MessageAttachment): Promise<MediaState> {
       return state
     })
     .catch(() => {
+      const previous = stateFor(attachment.attachmentId)
+      const state = previous?.previewUrl
+        ? { ...previous, phase: 'ready' as const }
+        : { phase: 'unavailable' as const }
+      setState(attachment.attachmentId, state)
+      return state
+    })
+    .finally(() => pendingFull.delete(attachment.attachmentId))
+  pendingFull.set(attachment.attachmentId, request)
+  return await request
+}
+
+async function loadPreview(attachment: MessageAttachment): Promise<MediaState> {
+  const existing = stateFor(attachment.attachmentId)
+  if (existing?.previewUrl) return existing
+  const running = pendingPreview.get(attachment.attachmentId)
+  if (running) return await running
+  setState(attachment.attachmentId, { ...existing, phase: 'loading' })
+  const loader = props.loadAttachmentPreview ?? props.loadAttachment
+  const request = loader(props.conversationId, attachment, props.expiresAt)
+    .then(blob => {
+      const url = URL.createObjectURL(blob)
+      if (disposed || !props.attachments.some(item => (
+        item.attachmentId === attachment.attachmentId
+      ))) {
+        URL.revokeObjectURL(url)
+        return { phase: 'unavailable' as const }
+      }
+      const state = {
+        ...stateFor(attachment.attachmentId),
+        phase: 'ready' as const,
+        previewUrl: url,
+      }
+      setState(attachment.attachmentId, state)
+      return state
+    })
+    .catch(() => {
       const state = { phase: 'unavailable' as const }
       setState(attachment.attachmentId, state)
       return state
     })
-    .finally(() => pending.delete(attachment.attachmentId))
-  pending.set(attachment.attachmentId, request)
+    .finally(() => pendingPreview.delete(attachment.attachmentId))
+  pendingPreview.set(attachment.attachmentId, request)
   return await request
 }
 
@@ -251,18 +315,34 @@ function pauseViewerVideo(): void {
 }
 
 async function openMedia(attachment: MessageAttachment): Promise<void> {
-  const state = await load(attachment)
+  const state = attachment.kind === 'image'
+    ? await loadPreview(attachment)
+    : await load(attachment)
   if (state.phase !== 'ready') return
   const index = mediaAttachments.value.findIndex(item => (
     item.attachmentId === attachment.attachmentId
   ))
-  if (index >= 0) activeMediaIndex.value = index
+  if (index < 0) return
+  const openingViewer = activeMediaIndex.value === null
+  activeMediaIndex.value = index
+  if (openingViewer) activateViewer()
+  if (attachment.kind === 'image' && !state.fullUrl) void load(attachment)
 }
 
-function closeViewer(): void {
+function dismissViewer(syncHistory: boolean): void {
   pauseViewerVideo()
   resetImageTransform()
   activeMediaIndex.value = null
+  document.body.classList.remove('media-viewer-open')
+  const token = viewerHistoryToken
+  viewerHistoryToken = null
+  if (syncHistory && token && viewerHistoryStateToken() === token) history.back()
+  focusBeforeViewer?.focus({ preventScroll: true })
+  focusBeforeViewer = null
+}
+
+function closeViewer(): void {
+  dismissViewer(true)
 }
 
 function resetImageTransform(): void {
@@ -272,6 +352,7 @@ function resetImageTransform(): void {
   touchStartX = null
   touchStartY = null
   pinchStartDistance = null
+  imageGestureActive.value = false
 }
 
 function setImageZoom(value: number): void {
@@ -282,8 +363,12 @@ function setImageZoom(value: number): void {
   }
 }
 
-function toggleImageZoom(): void {
-  setImageZoom(imageZoom.value > 1 ? 1 : 2.5)
+function toggleImageZoom(event: MouseEvent): void {
+  if (imageZoom.value > 1) {
+    setImageZoom(1)
+    return
+  }
+  zoomImageAround(2.5, event.clientX, event.clientY)
 }
 
 function imageTransformStyle(): Record<string, string> {
@@ -311,6 +396,27 @@ function handleViewerKeydown(event: KeyboardEvent): void {
   else if (event.key === 'ArrowRight') void moveViewer(1)
 }
 
+function viewerHistoryStateToken(): string | null {
+  const state = history.state as { yvChatMediaViewer?: unknown } | null
+  return typeof state?.yvChatMediaViewer === 'string' ? state.yvChatMediaViewer : null
+}
+
+function activateViewer(): void {
+  focusBeforeViewer = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  viewerHistorySequence += 1
+  viewerHistoryToken = `${props.messageId ?? 'media'}-${viewerHistorySequence}`
+  const current = history.state
+  const state = typeof current === 'object' && current !== null ? current : {}
+  history.pushState({ ...state, yvChatMediaViewer: viewerHistoryToken }, '')
+  document.body.classList.add('media-viewer-open')
+  void nextTick(() => viewerCloseButton.value?.focus({ preventScroll: true }))
+}
+
+function handleViewerPopState(): void {
+  if (activeMediaIndex.value === null || !viewerHistoryToken) return
+  dismissViewer(false)
+}
+
 function handleViewerTouchStart(event: TouchEvent): void {
   touchStartX = event.changedTouches[0]?.clientX ?? null
 }
@@ -329,6 +435,40 @@ function touchDistance(first: Touch, second: Touch): number {
   return Math.hypot(second.clientX - first.clientX, second.clientY - first.clientY)
 }
 
+function touchCenter(first: Touch, second: Touch): { x: number, y: number } {
+  return {
+    x: (first.clientX + second.clientX) / 2,
+    y: (first.clientY + second.clientY) / 2,
+  }
+}
+
+function imageLayoutCenter(): { x: number, y: number } | null {
+  const image = viewerImage.value
+  if (!image) return null
+  const rect = image.getBoundingClientRect()
+  return {
+    x: rect.left + rect.width / 2 - imagePanX.value,
+    y: rect.top + rect.height / 2 - imagePanY.value,
+  }
+}
+
+function zoomImageAround(value: number, clientX: number, clientY: number): void {
+  const center = imageLayoutCenter()
+  if (!center) {
+    setImageZoom(value)
+    return
+  }
+  const zoom = Math.max(1, Math.min(5, value))
+  const ratio = zoom / imageZoom.value
+  imagePanX.value = clientX - center.x - ratio * (clientX - center.x - imagePanX.value)
+  imagePanY.value = clientY - center.y - ratio * (clientY - center.y - imagePanY.value)
+  imageZoom.value = zoom
+  if (zoom === 1) {
+    imagePanX.value = 0
+    imagePanY.value = 0
+  }
+}
+
 function handleImageTouchStart(event: TouchEvent): void {
   if (event.touches.length === 2) {
     const first = event.touches[0]
@@ -336,6 +476,14 @@ function handleImageTouchStart(event: TouchEvent): void {
     if (!first || !second) return
     pinchStartDistance = touchDistance(first, second)
     pinchStartZoom = imageZoom.value
+    const center = touchCenter(first, second)
+    const layoutCenter = imageLayoutCenter()
+    if (!layoutCenter) return
+    pinchBaseCenterX = layoutCenter.x
+    pinchBaseCenterY = layoutCenter.y
+    pinchAnchorX = (center.x - layoutCenter.x - imagePanX.value) / imageZoom.value
+    pinchAnchorY = (center.y - layoutCenter.y - imagePanY.value) / imageZoom.value
+    imageGestureActive.value = true
     return
   }
   const touch = event.touches[0]
@@ -351,7 +499,18 @@ function handleImageTouchMove(event: TouchEvent): void {
     const first = event.touches[0]
     const second = event.touches[1]
     if (!first || !second) return
-    setImageZoom(pinchStartZoom * touchDistance(first, second) / pinchStartDistance)
+    const center = touchCenter(first, second)
+    const zoom = Math.max(1, Math.min(
+      5,
+      pinchStartZoom * touchDistance(first, second) / pinchStartDistance,
+    ))
+    imageZoom.value = zoom
+    imagePanX.value = center.x - pinchBaseCenterX - pinchAnchorX * zoom
+    imagePanY.value = center.y - pinchBaseCenterY - pinchAnchorY * zoom
+    if (zoom === 1) {
+      imagePanX.value = 0
+      imagePanY.value = 0
+    }
     return
   }
   const touch = event.touches[0]
@@ -361,11 +520,24 @@ function handleImageTouchMove(event: TouchEvent): void {
 }
 
 function handleImageTouchEnd(event: TouchEvent): void {
-  if (event.touches.length > 0) return
+  if (event.touches.length === 1) {
+    const touch = event.touches[0]
+    pinchStartDistance = null
+    imageGestureActive.value = false
+    if (touch) {
+      touchStartX = touch.clientX
+      touchStartY = touch.clientY
+      panStartX = imagePanX.value
+      panStartY = imagePanY.value
+    }
+    return
+  }
+  if (event.touches.length > 1) return
   const end = event.changedTouches[0]
   const startX = touchStartX
   const startY = touchStartY
   pinchStartDistance = null
+  imageGestureActive.value = false
   touchStartX = null
   touchStartY = null
   if (!end || startX === null || startY === null || imageZoom.value > 1) return
@@ -378,14 +550,14 @@ function handleImageTouchEnd(event: TouchEvent): void {
 
 function handleImageWheel(event: WheelEvent): void {
   const direction = event.deltaY < 0 ? 0.25 : -0.25
-  setImageZoom(imageZoom.value + direction)
+  zoomImageAround(imageZoom.value + direction, event.clientX, event.clientY)
 }
 
 async function downloadFile(attachment: MessageAttachment): Promise<void> {
   const state = await load(attachment)
-  if (state.phase !== 'ready' || !state.url) return
+  if (state.phase !== 'ready' || !state.fullUrl) return
   const anchor = document.createElement('a')
-  anchor.href = state.url
+  anchor.href = state.fullUrl
   anchor.download = attachment.name
   anchor.style.display = 'none'
   document.body.append(anchor)
@@ -405,7 +577,9 @@ function observeVisibleMedia(): void {
   const root = galleryRoot.value
   if (!root) return
   if (!('IntersectionObserver' in window)) {
-    for (const attachment of mediaAttachments.value) void load(attachment)
+    for (const attachment of mediaAttachments.value) {
+      void (attachment.kind === 'image' ? loadPreview(attachment) : load(attachment))
+    }
     return
   }
   mediaObserver = new IntersectionObserver(entries => {
@@ -413,10 +587,12 @@ function observeVisibleMedia(): void {
       if (!entry.isIntersecting) continue
       const attachmentId = (entry.target as HTMLElement).dataset.attachmentId
       const attachment = mediaAttachments.value.find(item => item.attachmentId === attachmentId)
-      if (attachment) void load(attachment)
+      if (attachment) {
+        void (attachment.kind === 'image' ? loadPreview(attachment) : load(attachment))
+      }
       mediaObserver?.unobserve(entry.target)
     }
-  }, { rootMargin: '500px 0px' })
+  }, { rootMargin: '120px 0px' })
   for (const element of root.querySelectorAll<HTMLElement>('[data-attachment-id]')) {
     mediaObserver.observe(element)
   }
@@ -453,7 +629,8 @@ watch(
     const nextStates = new Map(mediaStates.value)
     for (const [attachmentId, state] of nextStates) {
       if (currentIds.has(attachmentId)) continue
-      if (state.url) URL.revokeObjectURL(state.url)
+      if (state.previewUrl) URL.revokeObjectURL(state.previewUrl)
+      if (state.fullUrl && state.fullUrl !== state.previewUrl) URL.revokeObjectURL(state.fullUrl)
       nextStates.delete(attachmentId)
     }
     mediaStates.value = nextStates
@@ -482,6 +659,7 @@ watch(
 onMounted(() => {
   observeVisibleMedia()
   observeVideoNotePlayback()
+  window.addEventListener('popstate', handleViewerPopState)
 })
 
 watch(activeMediaIndex, (current, previous) => {
@@ -496,10 +674,13 @@ onBeforeUnmount(() => {
   videoNoteObserver?.disconnect()
   visibleVideoNoteIds.clear()
   window.removeEventListener('keydown', handleViewerKeydown)
+  window.removeEventListener('popstate', handleViewerPopState)
+  document.body.classList.remove('media-viewer-open')
   pauseViewerVideo()
   for (const video of galleryRoot.value?.querySelectorAll('video') ?? []) video.pause()
   for (const state of mediaStates.value.values()) {
-    if (state.url) URL.revokeObjectURL(state.url)
+    if (state.previewUrl) URL.revokeObjectURL(state.previewUrl)
+    if (state.fullUrl && state.fullUrl !== state.previewUrl) URL.revokeObjectURL(state.fullUrl)
   }
 })
 </script>
@@ -526,7 +707,12 @@ onBeforeUnmount(() => {
           :aria-label="`Открыть стикер ${attachment.name}`"
           @click="openMedia(attachment)"
         >
-          <img :src="stateFor(attachment.attachmentId)?.url" :alt="attachment.name">
+          <img
+            :src="stateFor(attachment.attachmentId)?.previewUrl"
+            :alt="attachment.name"
+            loading="lazy"
+            decoding="async"
+          >
           <span class="message-sticker__badge">{{ attachment.contentType === 'image/gif' ? 'GIF' : 'СТИКЕР' }}</span>
         </button>
         <div
@@ -556,7 +742,12 @@ onBeforeUnmount(() => {
           :aria-label="`Открыть изображение ${attachment.name}`"
           @click="openMedia(attachment)"
         >
-          <img :src="stateFor(attachment.attachmentId)?.url" :alt="attachment.name">
+          <img
+            :src="stateFor(attachment.attachmentId)?.previewUrl"
+            :alt="attachment.name"
+            loading="lazy"
+            decoding="async"
+          >
           <span v-if="attachment.contentType === 'image/gif'" class="message-gif-badge">GIF</span>
         </button>
         <div
@@ -597,7 +788,7 @@ onBeforeUnmount(() => {
           >
             <span class="message-video-note__inner">
               <video
-                :src="stateFor(attachment.attachmentId)?.url"
+                :src="stateFor(attachment.attachmentId)?.fullUrl"
                 muted
                 loop
                 playsinline
@@ -651,7 +842,7 @@ onBeforeUnmount(() => {
           <template v-else>
             <video
               class="message-video"
-              :src="stateFor(attachment.attachmentId)?.url"
+              :src="stateFor(attachment.attachmentId)?.fullUrl"
               controls
               playsinline
               preload="metadata"
@@ -742,7 +933,14 @@ onBeforeUnmount(() => {
         @touchstart.passive="handleViewerTouchStart"
         @touchend.passive="handleViewerTouchEnd"
       >
-        <button class="media-viewer__close" type="button" aria-label="Закрыть" @click="closeViewer">
+        <button
+          ref="viewerCloseButton"
+          class="media-viewer__close"
+          type="button"
+          aria-label="Закрыть"
+          @pointerdown.stop
+          @click.stop="closeViewer"
+        >
           <AppIcon name="close" />
         </button>
         <button
@@ -758,9 +956,11 @@ onBeforeUnmount(() => {
           v-if="activeMedia.kind === 'image'"
           ref="viewerImage"
           class="media-viewer__image"
-          :src="stateFor(activeMedia.attachmentId)?.url"
+          :class="{ 'is-gesturing': imageGestureActive }"
+          :src="stateFor(activeMedia.attachmentId)?.fullUrl ?? stateFor(activeMedia.attachmentId)?.previewUrl"
           :alt="activeMedia.name"
           :style="imageTransformStyle()"
+          decoding="async"
           @click.stop
           @dblclick.stop="toggleImageZoom"
           @wheel.stop.prevent="handleImageWheel"
@@ -777,7 +977,7 @@ onBeforeUnmount(() => {
         <video
           v-else
           :key="activeMedia.attachmentId"
-          :src="stateFor(activeMedia.attachmentId)?.url"
+          :src="stateFor(activeMedia.attachmentId)?.fullUrl"
           controls
           autoplay
           playsinline

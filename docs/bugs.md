@@ -4,6 +4,27 @@
 
 ## Active
 
+### BUG-132 — Серии фото перегружают timeline, viewer и Android media picker
+
+- Статус: `fixed and locally verified` (`WP-143`).
+- Severity: `high mobile media usability/performance`.
+- Reproduction: открыть чат с несколькими сообщениями суммарно около 50 фото,
+  перезапустить приложение, открыть изображение, pinch-ить не от центра и нажать
+  close/системный Back; отдельно выбрать composer action «Фото или видео» на Android.
+- Фактическое поведение: timeline создаёт full-resolution Blob URL для каждой
+  появившейся рядом карточки и после remount снова проходит original load/decode;
+  pinch меняет scale вокруг fixed center; transformed image может перекрыть close;
+  history Back не знает о viewer; `accept` с audio отправляет Android в общий chooser.
+- Ожидаемое поведение: timeline использует bounded encrypted local thumbnails и
+  ограниченную decode concurrency; viewer zoom следует centroid и всегда закрывается;
+  media action открывает системный photo/video picker.
+- Причина: preview/full media не разделены, gesture model хранит только distance,
+  controls не имеют гарантированного stacking layer, viewer не создаёт history entry,
+  а media input смешивает photo/video с audio.
+- Проверка: `454` frontend tests, lint, typecheck, production build, Compose config,
+  healthy Docker stack и Browser acceptance на desktop/mobile `390×844`; picker
+  exact, horizontal overflow `0`, console errors отсутствуют.
+
 ### BUG-131 — Аудиокарточка рассинхронизирована с player, bar исчезает вне чата
 
 - Статус: `fixed and production deployed` (`WP-142`, `35ae4af`, workflow
