@@ -54,7 +54,8 @@ authenticated call identity, video calls, затем screen sharing. Эти за
 
 ### BL-FIX-070 — Нативный и производительный photo flow
 
-Статус: **implemented and locally verified** (`WP-143`, `BUG-132`).
+Статус: **production deployed** (`WP-143`, `BUG-132`, commit `67abecb`, workflow
+`33751357406`; CI `33751357577`).
 
 - timeline использует bounded client-side thumbnails вместо одновременного DOM decode
   десятков full-resolution фотографий;

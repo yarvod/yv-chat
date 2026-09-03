@@ -2,7 +2,7 @@
 
 ## WP-143 — Нативный и производительный photo flow
 
-Статус: **implemented and locally verified**
+Статус: **production deployed**
 Backlog: `BL-FIX-070`
 Bug: `BUG-132`
 
@@ -77,3 +77,8 @@ viewer должен масштабировать изображение вокр
 - После первого production push новый dependency audit заблокировал rollout до
   выкладки; транзитивные `@xmldom/xmldom` и `fast-uri` обновлены до исправленных
   версий, чистый `npm ci` и полный frontend gate повторно прошли (`BUG-133`).
+- production commit `67abecb797b8b450e8fb340abb8f21faa55a0704` развернут
+  workflow `33751357406`; отдельный CI `33751357577` прошёл полностью;
+- оба production origin и их `/api/v1/health` вернули HTTP `200` с успешной TLS
+  verification; unauthenticated WebSocket handshake достиг API и вернул ожидаемый
+  `403`, а свежий PWA bundle открыл login shell без console errors.

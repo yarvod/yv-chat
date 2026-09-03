@@ -11,7 +11,24 @@ not be replaced with the broader JavaScript `unsafe-eval`. Without it, public
 crypto assets still return HTTP 200 but device provisioning stops before the
 `PUT /api/v1/devices/current/crypto-identity` registration request.
 
-## Latest rollout — WP-142 persistent synchronized audio controls
+## Latest rollout — WP-143 native and performant photo flow
+
+- Commit: `67abecb797b8b450e8fb340abb8f21faa55a0704` (photo implementation
+  `bf2c7208410107b77f3995ba7e99fa2fdab76de8`).
+- Production workflow: `33751357406` (success); CI workflow: `33751357577`
+  (success). Initial runs `33751001341`/`33751001315` stopped before rollout when
+  newly published advisories rejected two locked transitive dependencies.
+- Deployed image tag: `sha-67abecb797b8b450e8fb340abb8f21faa55a0704` on frontend,
+  API and cleanup; fresh-database migrations, full repository verification, clean
+  dependency audit, immutable image builds and isolated rollout health checks passed.
+- Public acceptance: both origins and `/api/v1/health` returned `200` with successful
+  TLS verification; unauthenticated WebSocket upgrade returned expected `403`.
+- Browser acceptance loaded the fresh PWA bundle and login shell without console
+  errors. Authenticated desktop/mobile Docker Browser acceptance for 50-photo bounded
+  preview concurrency, focal pinch, close/Back and exact gallery picker ran before
+  rollout.
+
+## Prior rollout — WP-142 persistent synchronized audio controls
 
 - Commit: `35ae4af55954dd7e956b96c79e90dc98894db7b5`.
 - Production workflow: `33444841533` (success); CI workflow: `33444841531`

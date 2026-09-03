@@ -6,7 +6,8 @@
 
 ### BUG-133 — Production gate блокировали уязвимые транзитивные frontend-зависимости
 
-- Статус: `fixed and locally verified` (rollout `WP-143`).
+- Статус: `fixed and production deployed` (`WP-143`, `67abecb`, workflow
+  `33751357406`; CI `33751357577`).
 - Severity: `high release/security gate`.
 - Reproduction: запустить `npm audit --audit-level=high` с lockfile из commit
   `bf2c720`; audit отклоняет `fast-uri 3.1.5` и дополнительно сообщает advisory для
@@ -21,7 +22,8 @@
 
 ### BUG-132 — Серии фото перегружают timeline, viewer и Android media picker
 
-- Статус: `fixed and locally verified` (`WP-143`).
+- Статус: `fixed and production deployed` (`WP-143`, `67abecb`, workflow
+  `33751357406`; CI `33751357577`).
 - Severity: `high mobile media usability/performance`.
 - Reproduction: открыть чат с несколькими сообщениями суммарно около 50 фото,
   перезапустить приложение, открыть изображение, pinch-ить не от центра и нажать
