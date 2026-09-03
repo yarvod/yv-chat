@@ -2,7 +2,8 @@
 
 ## WP-144 — Durable encrypted previews для фото в личных чатах
 
-Статус: **implemented and locally verified**
+Статус: **production deployed** (`03f946d`, workflow `33763879833`; CI
+`33763879822`)
 Backlog: `BL-FIX-071`
 Bug: `BUG-134`
 
@@ -65,4 +66,8 @@ Bug: `BUG-134`
   `/api/v1/health` вернул `{"status":"ok"}`);
 - Browser smoke после PWA update и повторного reload direct-чата — direct route и
   active sync восстановились, console errors отсутствуют; локальный direct fixture
-  пуст, поэтому 50-photo reload покрыт автоматизированным cache/use-case regression.
+  пуст, поэтому 50-photo reload покрыт автоматизированным cache/use-case regression;
+- GitHub CI `33763879822` и production deployment `33763879833` завершились
+  успешно для immutable commit `03f946d5d8365add8136236160e4f928c305aecd`;
+- post-rollout HTTPS health на `chat.yoowee.ru` и `chat.yoowee.com.de` вернул
+  `{"status":"ok"}`, чистая production UI-сессия открыла `/login` без console errors.

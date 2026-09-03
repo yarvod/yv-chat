@@ -54,7 +54,8 @@ authenticated call identity, video calls, затем screen sharing. Эти за
 
 ### BL-FIX-071 — Encrypted direct-photo previews переживают restart
 
-Статус: **implemented and locally verified** (`WP-144`, `BUG-134`).
+Статус: **production deployed** (`WP-144`, `BUG-134`, `03f946d`, workflow
+`33763879833`; CI `33763879822`).
 
 - direct thumbnail после client-side attachment decrypt сохраняется только как
   AES-GCM encrypted `timeline-preview-v1` device-cache variant;

@@ -19,7 +19,8 @@
 
 ### BUG-134 — Direct-фото заново показывают loaders после перезапуска приложения
 
-- Статус: `fixed and locally verified` (`WP-144`).
+- Статус: `fixed and production deployed` (`WP-144`, `03f946d`, workflow
+  `33763879833`; CI `33763879822`).
 - Severity: `high mobile media performance/usability`.
 - Reproduction: открыть серию фотографий в личном MLS-чате, закрыть приложение и
   снова открыть тот же timeline.
