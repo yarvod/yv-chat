@@ -4,6 +4,21 @@
 
 ## Active
 
+### BUG-133 — Production gate блокировали уязвимые транзитивные frontend-зависимости
+
+- Статус: `fixed and locally verified` (rollout `WP-143`).
+- Severity: `high release/security gate`.
+- Reproduction: запустить `npm audit --audit-level=high` с lockfile из commit
+  `bf2c720`; audit отклоняет `fast-uri 3.1.5` и дополнительно сообщает advisory для
+  `@xmldom/xmldom 0.9.11`.
+- Причина: новые GitHub advisories появились после предыдущего production rollout,
+  а транзитивные версии оставались закреплены в воспроизводимом lockfile через
+  `workbox-build -> ajv` и `@capacitor/cli -> plist`.
+- Исправление: package lock минимально обновлён до `fast-uri 3.1.7` и
+  `@xmldom/xmldom 0.9.12` без изменения прямых dependencies или application code.
+- Проверка: чистый `npm ci`, audit с `0 vulnerabilities`, `454` frontend tests,
+  lint, typecheck и production/PWA build прошли.
+
 ### BUG-132 — Серии фото перегружают timeline, viewer и Android media picker
 
 - Статус: `fixed and locally verified` (`WP-143`).

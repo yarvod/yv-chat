@@ -74,3 +74,6 @@ viewer должен масштабировать изображение вокр
   `/api/v1/health` ответил `200`;
 - Docker Browser acceptance: desktop authenticated chat и mobile `390×844`, exact
   `image/*,video/*`, gallery label, zero horizontal overflow и zero console errors.
+- После первого production push новый dependency audit заблокировал rollout до
+  выкладки; транзитивные `@xmldom/xmldom` и `fast-uri` обновлены до исправленных
+  версий, чистый `npm ci` и полный frontend gate повторно прошли (`BUG-133`).
