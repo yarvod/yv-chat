@@ -52,6 +52,18 @@ authenticated call identity, video calls, затем screen sharing. Эти за
 
 ## Frontend application и administration
 
+### BL-FIX-072 — Web Push открывает входящий звонок без teardown
+
+Статус: **completed locally** (`WP-145`, `BUG-136`).
+
+- живой background PWA client получает validated notification target через
+  `postMessage` и делает SPA navigation без document reload;
+- одноразовый `MessageChannel` подтверждает, что Nuxt listener принял route, поэтому
+  pending incoming call не проходит через `calls.dispose()`/`call_rejected`;
+- unresponsive/discarded client сохраняет bounded hard-navigation/open-window
+  fallback для настоящего cold start;
+- push остаётся privacy-safe: только opaque UUID routing IDs, без SDP/ICE/content.
+
 ### BL-FIX-071 — Encrypted direct-photo previews переживают restart
 
 Статус: **production deployed** (`WP-144`, `BUG-134`, `03f946d`, workflow

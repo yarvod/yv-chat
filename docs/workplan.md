@@ -1,73 +1,71 @@
 # Текущий workplan
 
-## WP-144 — Durable encrypted previews для фото в личных чатах
+## WP-145 — Ответ на звонок после открытия Web Push
 
-Статус: **production deployed** (`03f946d`, workflow `33763879833`; CI
-`33763879822`)
-Backlog: `BL-FIX-071`
-Bug: `BUG-134`
+Статус: **completed locally**
+Backlog: `BL-FIX-072`
+Bug: `BUG-136`
 
-Цель: уже открытые фотографии direct MLS-чата после закрытия и повторного запуска
-приложения должны сразу читаться из маленького локального preview cache, а не снова
-проходить ciphertext read, attachment decrypt и thumbnail generation.
+Цель: нажатие на уведомление о входящем звонке не должно перезагружать уже живую
+PWA и превращать lifecycle cleanup в явный `call_rejected`.
 
 ### Scope
 
-- сохранять `timeline-preview-v1` direct thumbnail через существующий
-  `EncryptedMediaCache` после локальной MLS-authorized расшифровки original;
-- при следующем application instance сначала читать encrypted preview и не запускать
-  original OPFS read, attachment decrypt, server download или image resize;
-- сохранить общий 2 GiB LRU, server expiry, owner user/device binding и общий clear;
-- проверить повторный запуск на серии из 50 direct-фотографий.
+- передавать validated notification target живому window client через
+  `postMessage` до любой hard navigation;
+- подтверждать получение одноразовым `MessageChannel`, чтобы service worker мог
+  отличить живой Nuxt listener от выгруженного или старого client;
+- выполнять SPA `navigateTo` без размонтирования `ChatWorkspace` и потери pending
+  WebRTC offer/candidates;
+- сохранить bounded hard-navigation fallback для discarded/unresponsive client и
+  `openWindow` для полного cold start.
 
 ### Security и privacy
 
-- preview никогда не отправляется на server и не хранится plaintext в OPFS/IndexedDB;
-- cache шифрует thumbnail non-extractable per-user-device AES-256-GCM key с AAD по
-  owner/device/conversation/attachment metadata, expiry, variant, size и MIME;
-- server original остаётся application/octet-stream direct ciphertext; attachment key
-  и decrypted full-resolution Blob существуют только внутри client boundary;
-- logout/device clear удаляет preview вместе с остальным device media cache.
+- notification payload по-прежнему содержит только opaque UUID routing IDs без
+  SDP, ICE, имени пользователя или message content;
+- page-side handler принимает только exact typed message с валидными UUID;
+- acknowledgement не содержит account, conversation, call или message data;
+- серверная MLS-аутентификация offer/answer, WebSocket Origin/session checks и
+  call snapshot не меняются.
 
 ### Tests
 
-- direct preview переживает новый download use-case/application instance;
-- 50 direct photos после reload дают 50 encrypted preview hits без дополнительных
-  gateway download, attachment decrypt или thumbnail generation;
-- persistent preview bytes не содержат plaintext и читаются новым cache instance;
-- полный frontend test/lint/typecheck/build gate и Docker smoke.
+- живой background client подтверждает notification navigation и не вызывает
+  `WindowClient.navigate()`;
+- не отвечающий client после bounded timeout использует exact hard-navigation URL;
+- discarded client открывает и фокусирует новое scoped window;
+- page handler отклоняет malformed message, вызывает SPA navigation для valid target
+  и отправляет exact acknowledgement;
+- существующие WebRTC, realtime, native/web push и route suites остаются зелёными.
 
 ### Exclusions
 
-- plaintext direct preview persistence;
-- server-side thumbnailing, direct media decrypt или изменение MLS envelope;
-- изменение attachment API, TTL, quota или IndexedDB schema version.
+- изменение SDP/ICE/DTLS/MLS call protocol;
+- CallKit, PushKit, Android Telecom или новое native notification action;
+- хранение звонков либо signaling в PostgreSQL;
+- production rollout и проверка физического Android/iOS устройства.
 
 ### Definition of Done
 
-- после первого успешного показа direct-фотографии следующий app start использует
-  encrypted bounded thumbnail;
-- длинная direct photo timeline не показывает последовательную очередь повторной
-  decrypt/decode работы;
-- security invariants, automated checks, Docker smoke и tracking docs зелёные;
-- focused commit создан и готов к production rollout.
+- notification click не уничтожает pending incoming call в живой PWA;
+- cold/discarded client по-прежнему попадает в exact conversation;
+- frontend tests, lint, typecheck, production build и Docker Browser smoke зелёные;
+- focused commit создан и готов к отдельному rollout.
 
 ### Verification
 
-- regression сначала воспроизвёл `0` persistent preview reads для direct reload;
-- после исправления targeted direct/media-cache suite: `29/29` tests passed;
-- 50-photo reload regression подтверждает отсутствие повторных gateway/decrypt/resize;
-- новый cache instance расшифровывает preview, raw persisted bytes не содержат
-  thumbnail plaintext;
-- полный frontend suite: `74` test files, `455/455` tests passed;
+- regression подтвердил прежний порядок `focus -> navigate -> postMessage`, при
+  котором `ChatWorkspace` вызывал `calls.dispose()` и отправлял `call_rejected`;
+- после исправления live-client test подтверждает только `focus -> postMessage`,
+  без document teardown;
+- no-ack и discarded-client fallbacks проверены отдельно;
+- targeted frontend call/realtime/push suite: `39/39` tests passed;
+- полный frontend suite: `74` test files, `457/457` tests passed;
 - `npm run lint`, `npm run typecheck`, `npm run build` — passed;
-- `npm audit --audit-level=high` — `0` vulnerabilities;
-- Docker production build и health smoke — passed (`5` сервисов healthy/running,
-  `/api/v1/health` вернул `{"status":"ok"}`);
-- Browser smoke после PWA update и повторного reload direct-чата — direct route и
-  active sync восстановились, console errors отсутствуют; локальный direct fixture
-  пуст, поэтому 50-photo reload покрыт автоматизированным cache/use-case regression;
-- GitHub CI `33763879822` и production deployment `33763879833` завершились
-  успешно для immutable commit `03f946d5d8365add8136236160e4f928c305aecd`;
-- post-rollout HTTPS health на `chat.yoowee.ru` и `chat.yoowee.com.de` вернул
-  `{"status":"ok"}`, чистая production UI-сессия открыла `/login` без console errors.
+- backend call/realtime suite: `17/17` tests passed;
+- Docker frontend image rebuilt, все `5` сервисов healthy/running,
+  `/api/v1/health` и `/sw-push.js` вернули `200`;
+- встроенный Browser открыл пересобранную PWA с active sync без console errors;
+  настоящий microphone/WebRTC media path в Browser sandbox недоступен, поэтому
+  physical native/PWA notification acceptance остаётся rollout gate.

@@ -9,6 +9,9 @@ export function selectedMessageId(queryValue: unknown): string | null {
 }
 
 const notificationUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
+export const notificationNavigationAcknowledgement = {
+  type: 'yv-notification-navigation-ack',
+} as const
 
 export type NotificationNavigationTarget = PushNavigationTarget
 
@@ -46,4 +49,15 @@ export function notificationNavigationTarget(value: unknown): NotificationNaviga
     conversationId: candidate.conversationId,
     ...(typeof candidate.messageId === 'string' ? { messageId: candidate.messageId } : {}),
   }
+}
+
+export function handleNotificationNavigation(
+  event: Pick<MessageEvent<unknown>, 'data' | 'ports'>,
+  navigate: (target: NotificationNavigationTarget) => void,
+): boolean {
+  const target = notificationNavigationTarget(event.data)
+  if (!target) return false
+  navigate(target)
+  event.ports[0]?.postMessage(notificationNavigationAcknowledgement)
+  return true
 }

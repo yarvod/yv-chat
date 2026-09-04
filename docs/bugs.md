@@ -4,6 +4,26 @@
 
 ## Active
 
+### BUG-136 — Открытие уведомления отклоняет уже полученный входящий звонок
+
+- Статус: `fixed locally` (`WP-145`).
+- Severity: `high call reliability`.
+- Reproduction: оставить PWA на `/chat` в background, получить `call_offer` и Web
+  Push, затем нажать уведомление.
+- Фактическое поведение: service worker сначала выполнял
+  `WindowClient.navigate()`, document teardown размонтировал `ChatWorkspace`, а
+  `calls.dispose()` для phase `incoming` отправлял `call_rejected`; после reload
+  server call snapshot уже был пуст.
+- Ожидаемое поведение: живой client фокусируется и выполняет in-app route navigation,
+  сохраняя pending offer/candidates и возможность ответить; hard navigation нужна
+  только для выгруженного client.
+- Исправление: service worker сначала отправляет validated route через одноразовый
+  `MessageChannel`; Nuxt handler запускает `navigateTo` и отвечает opaque ACK.
+  Отсутствие ACK в течение двух секунд включает прежний exact-URL fallback.
+- Проверка: live/no-ack/discarded worker tests, page ACK validation, полный frontend
+  suite `457/457`, lint, typecheck, production build, backend call/realtime
+  `17/17`, healthy Docker stack и Browser smoke без console errors.
+
 ### BUG-135 — Local Compose rebuild оставляет Nginx со старым адресом API
 
 - Статус: `open`, обнаружен во время Docker smoke `WP-144`.

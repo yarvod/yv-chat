@@ -1,7 +1,9 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
+  handleNotificationNavigation,
   nativeNavigationTarget,
+  notificationNavigationAcknowledgement,
   notificationNavigationTarget,
   selectedConversationId,
   selectedMessageId,
@@ -39,6 +41,27 @@ describe('conversation route state', () => {
       conversationId,
       messageId,
     })).toBeNull()
+  })
+
+  it('acknowledges a valid in-app notification route after handing it to navigation', () => {
+    const conversationId = 'd2e0a3c9-3dcc-4737-a7c9-1fbffd28c84e'
+    const messageId = '7befbd28-1b77-48ee-8b6c-6f279fc1b92e'
+    const navigate = vi.fn()
+    const postMessage = vi.fn()
+
+    expect(handleNotificationNavigation({
+      data: { type: 'yv-notification-navigation', conversationId, messageId },
+      ports: [{ postMessage } as unknown as MessagePort],
+    }, navigate)).toBe(true)
+    expect(navigate).toHaveBeenCalledWith({ conversationId, messageId })
+    expect(postMessage).toHaveBeenCalledWith(notificationNavigationAcknowledgement)
+
+    expect(handleNotificationNavigation({
+      data: { type: 'unexpected', conversationId },
+      ports: [{ postMessage } as unknown as MessagePort],
+    }, navigate)).toBe(false)
+    expect(navigate).toHaveBeenCalledTimes(1)
+    expect(postMessage).toHaveBeenCalledTimes(1)
   })
 
   it('accepts only the bounded native deep-link route', () => {

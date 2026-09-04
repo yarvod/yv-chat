@@ -22,10 +22,32 @@ interface NotificationClickEventLike extends ExtendableEventLike {
 
 type EventHandler = (event: unknown) => void
 
+class FakeMessagePort {
+  onmessage: ((event: { data: unknown }) => void) | null = null
+  peer: FakeMessagePort | null = null
+
+  postMessage(value: unknown): void {
+    this.peer?.onmessage?.({ data: value })
+  }
+
+  close(): void {}
+}
+
+class FakeMessageChannel {
+  readonly port1 = new FakeMessagePort()
+  readonly port2 = new FakeMessagePort()
+
+  constructor() {
+    this.port1.peer = this.port2
+    this.port2.peer = this.port1
+  }
+}
+
 function harness(options: {
   visible?: boolean
   duplicate?: boolean
   staleClient?: boolean
+  acknowledgeNavigation?: boolean
 } = {}) {
   const listeners = new Map<string, EventHandler>()
   const notifications: { title: string, options: Record<string, unknown> }[] = []
@@ -47,9 +69,12 @@ function harness(options: {
       if (options.staleClient) throw new Error('discarded task')
       return windowClient
     },
-    postMessage(value: unknown): void {
+    postMessage(value: unknown, transfer: FakeMessagePort[] = []): void {
       actions.push('postMessage')
       messages.push(value)
+      if (options.acknowledgeNavigation !== false) {
+        transfer[0]?.postMessage({ type: 'yv-notification-navigation-ack' })
+      }
     },
   }
   const worker = {
@@ -71,7 +96,12 @@ function harness(options: {
   }
   runInNewContext(
     readFileSync(new URL('../public/sw-push.js', import.meta.url), 'utf8'),
-    { self: worker },
+    {
+      self: worker,
+      MessageChannel: FakeMessageChannel,
+      setTimeout: (callback: () => void) => setTimeout(callback, 0),
+      clearTimeout,
+    },
   )
   return {
     listeners,
@@ -144,7 +174,7 @@ describe('privacy-safe push service worker', () => {
     expect(duplicate.notifications).toEqual([])
   })
 
-  it('rejects malformed payload and opens the exact conversation on click', async () => {
+  it('routes a notification through a live app without tearing down its call state', async () => {
     const target = harness({ visible: false })
     await dispatchPush(target, { ...PAYLOAD, message_id: 'not-a-uuid' })
     expect(target.notifications).toEqual([])
@@ -162,16 +192,35 @@ describe('privacy-safe push service worker', () => {
     }
     target.listeners.get('notificationclick')?.(event)
     await pending
-    expect(target.navigations).toEqual([
-      `/chat?conversation=${PAYLOAD.conversation_id}&message=${PAYLOAD.message_id}`,
-    ])
+    expect(target.navigations).toEqual([])
     expect(target.focused()).toBe(1)
-    expect(target.actions).toEqual(['focus', 'navigate', 'postMessage'])
+    expect(target.actions).toEqual(['focus', 'postMessage'])
     expect(target.messages).toEqual([{
       type: 'yv-notification-navigation',
       conversationId: PAYLOAD.conversation_id,
       messageId: PAYLOAD.message_id,
     }])
+  })
+
+  it('falls back to exact hard navigation when a focused client does not acknowledge', async () => {
+    const target = harness({ visible: false, acknowledgeNavigation: false })
+    let pending = Promise.resolve()
+    const event: NotificationClickEventLike = {
+      notification: {
+        data: {
+          conversationId: PAYLOAD.conversation_id,
+          messageId: PAYLOAD.message_id,
+        },
+        close() {},
+      },
+      waitUntil(promise) { pending = promise },
+    }
+    target.listeners.get('notificationclick')?.(event)
+    await pending
+    expect(target.navigations).toEqual([
+      `/chat?conversation=${PAYLOAD.conversation_id}&message=${PAYLOAD.message_id}`,
+    ])
+    expect(target.actions).toEqual(['focus', 'postMessage', 'navigate'])
   })
 
   it('opens and focuses a fresh window when Android reports a discarded task', async () => {

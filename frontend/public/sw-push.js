@@ -1,4 +1,33 @@
 const YV_PUSH_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
+const YV_NOTIFICATION_NAVIGATION_ACK = 'yv-notification-navigation-ack'
+const YV_NOTIFICATION_NAVIGATION_ACK_TIMEOUT_MS = 2_000
+
+function yvPostNavigation(client, navigation) {
+  if (typeof MessageChannel !== 'function') return Promise.resolve(false)
+  return new Promise(resolve => {
+    const channel = new MessageChannel()
+    let settled = false
+    const finish = acknowledged => {
+      if (settled) return
+      settled = true
+      clearTimeout(timeout)
+      channel.port1.close()
+      resolve(acknowledged)
+    }
+    const timeout = setTimeout(
+      () => finish(false),
+      YV_NOTIFICATION_NAVIGATION_ACK_TIMEOUT_MS,
+    )
+    channel.port1.onmessage = event => {
+      finish(event.data?.type === YV_NOTIFICATION_NAVIGATION_ACK)
+    }
+    try {
+      client.postMessage(navigation, [channel.port2])
+    } catch {
+      finish(false)
+    }
+  })
+}
 
 function yvPushPayload(value) {
   if (
@@ -71,11 +100,13 @@ self.addEventListener('notificationclick', event => {
     for (const existing of windows) {
       try {
         // Android may return a discarded task from matchAll(). Focusing first
-        // gives the OS a chance to restore it before route navigation.
+        // gives the OS a chance to restore it before in-app route navigation.
         const focused = await existing.focus()
+        if (await yvPostNavigation(focused, navigation)) return
+        // A discarded or older client may not have a live message listener.
+        // Hard navigation is only the fallback because it tears down active calls.
         const navigated = 'navigate' in focused ? await focused.navigate(target) : null
         if (navigated === null) throw new Error('window client navigation was rejected')
-        navigated.postMessage?.(navigation)
         return
       } catch {
         // Try another live task before opening a new scoped window.
@@ -84,8 +115,7 @@ self.addEventListener('notificationclick', event => {
     const opened = await self.clients.openWindow(target)
     if (opened) {
       try {
-        const focused = await opened.focus()
-        focused.postMessage?.(navigation)
+        await opened.focus()
       } catch {
         // openWindow already initiated the cold-start navigation.
       }
