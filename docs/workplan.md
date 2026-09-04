@@ -2,7 +2,8 @@
 
 ## WP-145 — Ответ на звонок после открытия Web Push
 
-Статус: **completed locally**
+Статус: **production deployed** (`37fb89f`, workflow `33907283441`; CI
+`33907283494`)
 Backlog: `BL-FIX-072`
 Bug: `BUG-136`
 
@@ -69,3 +70,7 @@ PWA и превращать lifecycle cleanup в явный `call_rejected`.
 - встроенный Browser открыл пересобранную PWA с active sync без console errors;
   настоящий microphone/WebRTC media path в Browser sandbox недоступен, поэтому
   physical native/PWA notification acceptance остаётся rollout gate.
+- GitHub CI `33907283494` и production deployment `33907283441` завершились
+  успешно для immutable commit `37fb89fb2e4f5c0bbfc7b803b950549f8c71c779`;
+- оба production origin вернули frontend/health HTTP `200` и отдают новый
+  `sw-push.js` с `yvPostNavigation`/opaque acknowledgement protocol.

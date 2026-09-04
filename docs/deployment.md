@@ -11,7 +11,22 @@ not be replaced with the broader JavaScript `unsafe-eval`. Without it, public
 crypto assets still return HTTP 200 but device provisioning stops before the
 `PUT /api/v1/devices/current/crypto-identity` registration request.
 
-## Latest rollout — WP-143 native and performant photo flow
+## Latest rollout — WP-145 incoming-call notification resume
+
+- Commit: `37fb89fb2e4f5c0bbfc7b803b950549f8c71c779`.
+- Production workflow: `33907283441` (success); CI workflow: `33907283494`
+  (success).
+- Deployed image tag: `sha-37fb89fb2e4f5c0bbfc7b803b950549f8c71c779` on frontend,
+  API and cleanup; repository verification, immutable image builds, migrations and
+  isolated rollout health checks passed.
+- Public acceptance: both origins returned frontend and `/api/v1/health` HTTP `200`
+  with successful TLS verification and serve the new `sw-push.js` live-client ACK
+  navigation path.
+- Automated acceptance covers live-client SPA navigation without document teardown,
+  bounded no-ACK fallback and discarded-client cold start. Physical PWA/native
+  notification-to-WebRTC media acceptance remains device-bound.
+
+## Prior rollout — WP-143 native and performant photo flow
 
 - Commit: `67abecb797b8b450e8fb340abb8f21faa55a0704` (photo implementation
   `bf2c7208410107b77f3995ba7e99fa2fdab76de8`).

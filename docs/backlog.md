@@ -54,7 +54,8 @@ authenticated call identity, video calls, затем screen sharing. Эти за
 
 ### BL-FIX-072 — Web Push открывает входящий звонок без teardown
 
-Статус: **completed locally** (`WP-145`, `BUG-136`).
+Статус: **production deployed** (`WP-145`, `BUG-136`, `37fb89f`, workflow
+`33907283441`; CI `33907283494`).
 
 - живой background PWA client получает validated notification target через
   `postMessage` и делает SPA navigation без document reload;

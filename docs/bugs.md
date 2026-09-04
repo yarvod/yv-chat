@@ -6,7 +6,8 @@
 
 ### BUG-136 — Открытие уведомления отклоняет уже полученный входящий звонок
 
-- Статус: `fixed locally` (`WP-145`).
+- Статус: `fixed and production deployed` (`WP-145`, `37fb89f`, workflow
+  `33907283441`; CI `33907283494`).
 - Severity: `high call reliability`.
 - Reproduction: оставить PWA на `/chat` в background, получить `call_offer` и Web
   Push, затем нажать уведомление.
@@ -22,7 +23,8 @@
   Отсутствие ACK в течение двух секунд включает прежний exact-URL fallback.
 - Проверка: live/no-ack/discarded worker tests, page ACK validation, полный frontend
   suite `457/457`, lint, typecheck, production build, backend call/realtime
-  `17/17`, healthy Docker stack и Browser smoke без console errors.
+  `17/17`, healthy Docker stack, Browser smoke без console errors и оба production
+  origin с новым service worker вернули frontend/health HTTP `200`.
 
 ### BUG-135 — Local Compose rebuild оставляет Nginx со старым адресом API
 
