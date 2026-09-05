@@ -130,6 +130,7 @@ function parseDeliveryState(value: unknown): ParticipantDeliveryState {
     conversationId: requiredString(item, 'conversationId'),
     userId: requiredString(item, 'userId'),
     deliveredSequence: safeSequence(item, 'deliveredSequence'),
+    readSequence: item.readSequence === undefined ? 0 : safeSequence(item, 'readSequence'),
   }
 }
 

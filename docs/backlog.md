@@ -796,6 +796,16 @@ System audio не входит в этот slice, microphone audio продол�
 
 ## Completed
 
+### BL-FIX-073 — Мобильный возврат и своевременное прочтение
+
+Статус: **completed locally; physical gesture acceptance pending** (`WP-146`, `BUG-137`, `BUG-138`).
+
+- History получает переход до смены списка на чат; Back/Forward сохраняют route.
+- Read следует видимым сообщениям активного timeline, а не загруженному tail.
+- Sender различает delivery/read; receipt snapshot и sync восстанавливают состояние.
+- Docker mobile browser acceptance, negative viewport/authorization и regression tests.
+
+
 ### BL-FIX-069 — Синхронизация и persistent app-level audio player
 
 Статус: **production deployed** (`WP-142`, `BUG-131`, commit `35ae4af`,

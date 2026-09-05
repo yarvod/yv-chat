@@ -38,6 +38,7 @@ import type {
 } from '../../domain/messaging/models'
 import { buildTimelineLayout } from '../../presentation/chat/timeline-layout'
 import { selectedMessageCopyText } from '../../presentation/chat/selected-message-copy'
+import { useVisibleMessageRead } from '../../presentation/composables/useVisibleMessageRead'
 import {
   ALL_REACTIONS,
   QUICK_REACTIONS,
@@ -109,6 +110,8 @@ const props = withDefaults(defineProps<{
   haptic?: (intent: HapticIntent) => void
   activeAudioTrackId?: string | null
   audioPlaying?: boolean
+  readEnabled?: boolean
+  markVisibleRead?: (conversationId: string, sequence: number) => Promise<boolean>
 }>(), {
   historyHasMore: false,
   historyHasNewer: false,
@@ -154,6 +157,8 @@ const props = withDefaults(defineProps<{
   haptic: () => undefined,
   activeAudioTrackId: null,
   audioPlaying: false,
+  readEnabled: false,
+  markVisibleRead: async () => false,
 })
 const emit = defineEmits<{
   back: []
@@ -208,6 +213,14 @@ let composerFocused = false
 let followComposerResize = false
 let layoutAnchor: { messageId: string, offset: number } | null = null
 let layoutAnchorExpiresAt = 0
+
+useVisibleMessageRead(
+  timeline,
+  () => props.conversation?.conversationId ?? null,
+  () => props.messages,
+  () => props.readEnabled && !restorationPending.value,
+  (conversationId, sequence) => props.markVisibleRead(conversationId, sequence),
+)
 let attachmentDragDepth = 0
 let longPressTimer: ReturnType<typeof setTimeout> | null = null
 let messageActionNoticeTimer: ReturnType<typeof setTimeout> | null = null
@@ -530,6 +543,14 @@ function deliveryLabel(message: TimelineMessage): string | null {
       && state.deliveredSequence >= message.sequence
     ))
   )).length
+  const read = recipients.filter(member => props.deliveryStates.some(state => (
+    state.conversationId === message.conversationId
+    && state.userId === member.userId
+    && (state.readSequence ?? 0) >= message.sequence
+  ))).length
+  if (read > 0) return props.conversation.conversationType === 'direct'
+    ? 'Прочитано'
+    : `Прочитано: ${read}/${recipients.length}`
   if (props.conversation.conversationType === 'direct') {
     return delivered > 0 ? 'Доставлено' : 'Отправлено'
   }
@@ -1927,7 +1948,7 @@ onBeforeUnmount(() => {
             <time :datetime="item.message.createdAt">
               {{ new Date(item.message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
             </time>
-            <span v-if="deliveryLabel(item.message)" class="delivery-state" :title="deliveryLabel(item.message) ?? undefined">
+            <span v-if="deliveryLabel(item.message)" class="delivery-state" :class="{ 'delivery-state--read': deliveryLabel(item.message)?.startsWith('Прочитано') }" :title="deliveryLabel(item.message) ?? undefined">
               <span aria-hidden="true">{{ deliveryLabel(item.message) === 'Отправлено' ? '✓' : '✓✓' }}</span>
               <span class="sr-only">{{ deliveryLabel(item.message) }}</span>
             </span>

@@ -1526,8 +1526,24 @@ class FakeConversationDeliveryStateRepository:
                 continue
             key = (state.conversation_id, device.user_id)
             sequences[key] = max(sequences.get(key, 0), state.last_delivered_sequence)
+        reads: dict[tuple[UUID, UUID], int] = {}
+        for read_state in self._state.read_states.values():
+            conversation = self._state.conversations.get(read_state.conversation_id)
+            if (
+                read_state.conversation_id in conversation_ids
+                and conversation is not None
+                and conversation.active_member(read_state.user_id) is not None
+            ):
+                key = (read_state.conversation_id, read_state.user_id)
+                reads[key] = read_state.last_read_sequence
+                sequences.setdefault(key, 0)
         return [
-            ParticipantDeliverySummary(conversation_id, user_id, sequence)
+            ParticipantDeliverySummary(
+                conversation_id,
+                user_id,
+                max(sequence, reads.get((conversation_id, user_id), 0)),
+                reads.get((conversation_id, user_id), 0),
+            )
             for (conversation_id, user_id), sequence in sorted(
                 sequences.items(), key=lambda item: (item[0][0].int, item[0][1].int)
             )

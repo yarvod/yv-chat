@@ -12,6 +12,7 @@ class ParticipantDeliverySummary:
     conversation_id: UUID
     user_id: UUID
     delivered_sequence: int
+    read_sequence: int = 0
 
 
 class ConversationDeliveryStateRepository(Protocol):

@@ -244,7 +244,7 @@ describe('messaging boundaries', () => {
     }])).toThrow(ApplicationError)
   })
 
-  it('parses positive delivery summaries and rejects zero cursors', () => {
+  it('parses delivery/read summaries and rejects negative cursors', () => {
     expect(parseParticipantDeliveryStates([{
       conversation_id: 'conversation-1',
       user_id: 'bob-id',
@@ -253,11 +253,12 @@ describe('messaging boundaries', () => {
       conversationId: 'conversation-1',
       userId: 'bob-id',
       deliveredSequence: 4,
+      readSequence: 0,
     }])
     expect(() => parseParticipantDeliveryStates([{
       conversation_id: 'conversation-1',
       user_id: 'bob-id',
-      delivered_sequence: 0,
+      delivered_sequence: -1,
     }])).toThrow(ApplicationError)
   })
 

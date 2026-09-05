@@ -9,12 +9,19 @@ function positiveInteger(value: Record<string, unknown>, key: string): number {
   return parsed
 }
 
+function nonnegativeInteger(value: Record<string, unknown>, key: string): number {
+  const parsed = integerField(value, key)
+  if (parsed < 0) throw new ApplicationError(200, 'invalid-response', `invalid ${key}`)
+  return parsed
+}
+
 export function parseParticipantDeliveryState(value: unknown): ParticipantDeliveryState {
   const item = record(value)
   return {
     conversationId: stringField(item, 'conversation_id'),
     userId: stringField(item, 'user_id'),
     deliveredSequence: positiveInteger(item, 'delivered_sequence'),
+    readSequence: item.read_sequence === undefined ? 0 : nonnegativeInteger(item, 'read_sequence'),
   }
 }
 

@@ -4,6 +4,28 @@
 
 ## Active
 
+### BUG-137 — Back preview захватывает открываемый чат вместо списка
+
+Статус: **fixed locally; physical gesture acceptance pending** (`WP-146`).
+Воспроизведение: mobile `/chat` → tap conversation → system edge Back.
+До `navigateTo` workspace устанавливает conversation pane и ждёт загрузку history;
+history entry списка уже показывает чат. Скриншот пользователя показывает дубликат.
+Исправление: history commit выполняется до смены pane. Browser Back/Forward
+проверены локально; точная OS animation требует устройства.
+
+### BUG-138 — Read привязан к загрузке tail, sender показывает только delivery
+
+Статус: **fixed locally** (`WP-146`).
+Воспроизведение: оставить timeline прокрученным вверх либо открыть Settings и получить
+новое сообщение. Load/poll отправляет последний загруженный sequence при visible document,
+без проверки focus, pane и viewport. Частичный read безусловно обнуляет unread count.
+Отдельно sender bubble вообще не использует read receipts — только delivery aggregates.
+
+Исправление: viewport observer подтверждает
+только visible available sequence, а sender использует persisted participant read cursor.
+Browser подтвердил offscreen/read-on-scroll и read label после reload; focus/background
+проверены component tests, physical OS gesture/focus остаётся acceptance gate.
+
 ### BUG-136 — Открытие уведомления отклоняет уже полученный входящий звонок
 
 - Статус: `fixed and production deployed` (`WP-145`, `37fb89f`, workflow

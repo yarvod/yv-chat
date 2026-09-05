@@ -1433,6 +1433,17 @@ describe('message panel', () => {
       }],
     })
     expect(wrapper.text()).toContain('Доставлено')
+    expect(wrapper.find('.delivery-state--read').exists()).toBe(false)
+    await wrapper.setProps({
+      deliveryStates: [{
+        conversationId: 'conversation-1', userId: 'bob-id', deliveredSequence: 3, readSequence: 3,
+      }],
+    })
+    expect(wrapper.text()).toContain('Прочитано')
+    expect(wrapper.get('.delivery-state--read').attributes('title')).toBe('Прочитано')
+    await wrapper.setProps({ conversation: { ...conversation, conversationType: 'group', title: 'QA' } })
+    expect(wrapper.text()).toContain('Прочитано: 1/1')
+    wrapper.unmount()
   })
 
   it('requires explicit confirmation and renders a tombstone without decoding', async () => {

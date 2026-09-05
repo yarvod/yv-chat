@@ -54,11 +54,10 @@ const callMinimized = ref(false)
 const conversationDetailsOpen = ref(false)
 const openingConversationId = ref<string | null>(null)
 const mobilePane = computed<'list' | 'conversation'>(() => (
-  selectedConversationId(route.query.conversation) || openingConversationId.value
+  selectedConversationId(route.query.conversation)
     ? 'conversation'
     : 'list'
 ))
-let unsubscribeVisibility: (() => void) | null = null
 let unsubscribeTyping: (() => void) | null = null
 let unsubscribePresence: (() => void) | null = null
 let unsubscribeCalls: (() => void) | null = null
@@ -209,7 +208,8 @@ async function selectConversation(conversationId: string): Promise<void> {
   conversationDetailsOpen.value = false
   openingConversationId.value = conversationId
   try {
-    await messenger.selectConversation(conversationId)
+    // Commit history while the outgoing list is still on screen. Native back
+    // previews may capture that surface at pushState time.
     await navigateTo(
       { path: '/chat', query: { conversation: conversationId } },
       { replace: selectedConversationId(route.query.conversation) !== null },
@@ -293,9 +293,6 @@ onMounted(async () => {
     presenceIndicators.value = indicators
   })
   unsubscribeCalls = calls.subscribe(state => { callState.value = state })
-  unsubscribeVisibility = $frontend.pageVisibility.subscribe(() => {
-    void messenger.markActiveRead()
-  })
   realtime.start(
     messenger.poll,
     () => emit('sessionExpired'),
@@ -350,7 +347,6 @@ onBeforeUnmount(() => {
   presence.clear()
   realtime.stop()
   calls.dispose()
-  unsubscribeVisibility?.()
 })
 </script>
 
@@ -459,6 +455,8 @@ onBeforeUnmount(() => {
         :viewport-anchor="messenger.activeViewportAnchor.value"
         :target-message-id="targetMessageId"
         :save-viewport="messenger.rememberViewport"
+        :read-enabled="route.path === '/chat' && !conversationDetailsOpen && (callState.phase === 'idle' || callState.phase === 'ended' || callMinimized)"
+        :mark-visible-read="messenger.markVisibleRead"
         :video-note-recorder="$frontend.videoNoteRecorder"
         :start-call="startCall"
         :haptic="$frontend.haptics.perform.bind($frontend.haptics)"

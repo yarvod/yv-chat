@@ -866,6 +866,7 @@ async def test_delivery_state_transport_is_device_scoped_and_requires_csrf() -> 
                 "conversation_id": str(conversation.id),
                 "user_id": str(alice.id),
                 "delivered_sequence": 1,
+                "read_sequence": 0,
             }
         ]
 

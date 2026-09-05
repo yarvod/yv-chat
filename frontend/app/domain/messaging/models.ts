@@ -112,6 +112,8 @@ export interface ParticipantDeliveryState {
   conversationId: string
   userId: string
   deliveredSequence: number
+  /** Absent in encrypted snapshots written before participant read receipts. */
+  readSequence?: number
 }
 
 export type SyncEventType =

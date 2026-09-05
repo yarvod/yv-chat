@@ -36,6 +36,7 @@ class ParticipantDeliveryStateResponse(BaseModel):
     conversation_id: UUID
     user_id: UUID
     delivered_sequence: int
+    read_sequence: int
 
 
 class MarkConversationDeliveredRequest(BaseModel):

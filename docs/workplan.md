@@ -1,76 +1,72 @@
 # Текущий workplan
 
-## WP-145 — Ответ на звонок после открытия Web Push
+## WP-146 — Мобильный возврат и прочтение видимых сообщений
 
-Статус: **production deployed** (`37fb89f`, workflow `33907283441`; CI
-`33907283494`)
-Backlog: `BL-FIX-072`
-Bug: `BUG-136`
+Статус: **completed locally; physical gesture acceptance pending**
+Backlog: `BL-FIX-073`
+Bugs: `BUG-137`, `BUG-138`
 
-Цель: нажатие на уведомление о входящем звонке не должно перезагружать уже живую
-PWA и превращать lifecycle cleanup в явный `call_rejected`.
+Цель: history transition сохраняет список до открытия чата; read cursor продвигается
+по реально показанному сообщению в активном окне, а отправитель видит прочтение.
 
-### Scope
+### Scope и шаги
 
-- передавать validated notification target живому window client через
-  `postMessage` до любой hard navigation;
-- подтверждать получение одноразовым `MessageChannel`, чтобы service worker мог
-  отличить живой Nuxt listener от выгруженного или старого client;
-- выполнять SPA `navigateTo` без размонтирования `ChatWorkspace` и потери pending
-  WebRTC offer/candidates;
-- сохранить bounded hard-navigation fallback для discarded/unresponsive client и
-  `openWindow` для полного cold start.
+1. Записать route до смены mobile pane и загрузки conversation; проверить Back/Forward.
+2. Наблюдать timeline после render/restoration, при scroll/resize/focus, исключить
+   hidden, inactive, detached и перекрытые страницы.
+3. Отправлять exact visible sequence с дедупликацией и retry; исключить auto-read
+   загруженного tail и ложное обнуление unread при частичном просмотре.
+4. Добавить read sequence из существующей таблицы в participant receipt response,
+   восстановление через sync/reload и отдельное отображение прочтения.
+5. Запустить Docker stack и проверить mobile browser, выполнить regression checks.
 
-### Security и privacy
+### Security и архитектура
 
-- notification payload по-прежнему содержит только opaque UUID routing IDs без
-  SDP, ICE, имени пользователя или message content;
-- page-side handler принимает только exact typed message с валидными UUID;
-- acknowledgement не содержит account, conversation, call или message data;
-- серверная MLS-аутентификация offer/answer, WebSocket Origin/session checks и
-  call snapshot не меняются.
+- Только существующие opaque conversation/user IDs и sequence; plaintext/keys не
+  добавляются в transport, persistence или logs.
+- Membership authorization, CSRF/session/Origin и monotonic server cursors сохраняются.
+- Read и delivery остаются разными состояниями; read cursor общий для user, delivery
+  учитывает действующие устройства. Schema и crypto protocol не меняются.
+- Серверный cursor означает «прочитано по sequence включительно»; не вводится новая
+  таблица индивидуальных просмотренных сообщений.
 
-### Tests
+### Tests и Definition of Done
 
-- живой background client подтверждает notification navigation и не вызывает
-  `WindowClient.navigate()`;
-- не отвечающий client после bounded timeout использует exact hard-navigation URL;
-- discarded client открывает и фокусирует новое scoped window;
-- page handler отклоняет malformed message, вызывает SPA navigation для valid target
-  и отправляет exact acknowledgement;
-- существующие WebRTC, realtime, native/web push и route suites остаются зелёными.
+- Нет read на load/poll без viewport report, в фоне, скрытом pane или до restoration.
+- Scroll/focus/new render дают read без ожидания 30-second fallback; частичный viewport
+  не подтверждает невидимый tail, ошибки допускают retry, cursor не регрессирует.
+- Read receipt обновляет sender UI и восстанавливается после reload/catch-up;
+  non-member не видит чужие receipts.
+- Frontend tests/lint/typecheck/build, backend relevant tests/lint/types,
+  PostgreSQL query verification и Compose config проходят.
+- Документы обновлены; focused local commit создан.
 
 ### Exclusions
 
-- изменение SDP/ICE/DTLS/MLS call protocol;
-- CallKit, PushKit, Android Telecom или новое native notification action;
-- хранение звонков либо signaling в PostgreSQL;
-- production rollout и проверка физического Android/iOS устройства.
-
-### Definition of Done
-
-- notification click не уничтожает pending incoming call в живой PWA;
-- cold/discarded client по-прежнему попадает в exact conversation;
-- frontend tests, lint, typecheck, production build и Docker Browser smoke зелёные;
-- focused commit создан и готов к отдельному rollout.
+- Production deployment, Android/iOS release, физический OS gesture emulator.
+- Изменения E2EE, retention, session policy и схемы БД.
 
 ### Verification
 
-- regression подтвердил прежний порядок `focus -> navigate -> postMessage`, при
-  котором `ChatWorkspace` вызывал `calls.dispose()` и отправлял `call_rejected`;
-- после исправления live-client test подтверждает только `focus -> postMessage`,
-  без document teardown;
-- no-ack и discarded-client fallbacks проверены отдельно;
-- targeted frontend call/realtime/push suite: `39/39` tests passed;
-- полный frontend suite: `74` test files, `457/457` tests passed;
-- `npm run lint`, `npm run typecheck`, `npm run build` — passed;
-- backend call/realtime suite: `17/17` tests passed;
-- Docker frontend image rebuilt, все `5` сервисов healthy/running,
-  `/api/v1/health` и `/sw-push.js` вернули `200`;
-- встроенный Browser открыл пересобранную PWA с active sync без console errors;
-  настоящий microphone/WebRTC media path в Browser sandbox недоступен, поэтому
-  physical native/PWA notification acceptance остаётся rollout gate.
-- GitHub CI `33907283494` и production deployment `33907283441` завершились
-  успешно для immutable commit `37fb89fb2e4f5c0bbfc7b803b950549f8c71c779`;
-- оба production origin вернули frontend/health HTTP `200` и отдают новый
-  `sw-push.js` с `yvPostNavigation`/opaque acknowledgement protocol.
+- Полный frontend suite: 75 files, 471 tests passed; final receipt parser suite
+  после compatibility correction: 12 passed. ESLint и Nuxt typecheck passed.
+- Production Nuxt build выполнен Dockerfile; API/frontend пересобраны, local Nginx
+  перезапущен после смены container IP. Compose config и docs checks passed.
+- Backend: 295 passed, 12 integration tests skipped без общего TEST_DATABASE_URL;
+  отдельный PostgreSQL container получил fresh `alembic upgrade head`, затем
+  relevant integration/application/HTTP suite: 17 passed (включая 2 PostgreSQL tests).
+  Ruff check/format, mypy (402 files), import-linter (3 contracts) passed.
+- Browser 412×915: `/chat -> conversation -> Back -> /chat -> Forward` passed;
+  unread badge QA-чата оставался 30 на Settings/list, открытие tail подтвердило 30.
+  При загруженном, но offscreen №31 серверный read cursor оставался 30;
+  scroll-to-latest продвинул его до 31. Финальный IntersectionObserver build
+  повторил проверку с №34: read оставался 33 вне экрана и стал 34 после scroll.
+  Sender показывает `Прочитано: 1/1`;
+  статус сохранился после reload. Console errors отсутствовали.
+- Focus/visibility, occlusion, tall/clipped messages, retry, in-flight coalescing,
+  KeepAlive deactivation и IntersectionObserver/fallback покрыты component tests.
+  Две вкладки встроенного Browser не воспроизвели надёжно OS background/focus;
+  это не считается physical foreground acceptance.
+- Изменений схемы/crypto нет; Rust rebuild и полный `make ci` не запускались.
+  Системная predictive Back animation Android/iOS требует физического устройства;
+  production deployment и native package release не выполнялись.

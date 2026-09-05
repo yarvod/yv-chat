@@ -812,10 +812,17 @@ retry является no-op без нового receipt. Batch repository од�
 арифметики `latest - read`, которая сломалась бы после delete/TTL gaps.
 
 Frontend получает read summaries через отдельный typed gateway и application use
-cases. `useMessenger` помечает только active conversation, только до последней
-фактически загруженной authoritative sequence и только когда page visibility сообщает
-foreground. Повторные submits дедуплицируются; потерянный/duplicate WebSocket hint
-всегда восстанавливается `/sync` и повторным read-state reload.
+cases. `WP-146` отделяет загрузку от прочтения: presentation observer после render и
+viewport restoration проверяет available message bubbles в пределах scroll/visual
+viewport, document visibility, window focus, KeepAlive activation и перекрывающий UI
+через hit testing. Scroll, resize, новые messages и focus запускают проверку на
+ближайшем animation frame; clipped pixel не считается просмотром, высокому вложению
+достаточно видимого участка. `useMessenger` принимает exact conversation/sequence,
+проверяет наличие available message и отправляет только этот cursor. Hidden mobile
+pane и Settings не подтверждают прочтение. Запросы сериализованы на observer,
+дедуплицированы и допускают retry; частичный unread count перечитывается с сервера.
+Cursor означает «прочитано до sequence включительно», отдельные per-message holes
+не моделируются. Потерянный/duplicate hint восстанавливается `/sync` и snapshot reload.
 
 Delivery state намеренно отделён от read state. Таблица
 `conversation_delivery_states` хранит monotonic cursor по ключу
@@ -828,7 +835,17 @@ server sequence. Future sequence отклоняется, lower/equal retry яв�
 Публичный participant summary агрегирует `max(last_delivered_sequence)` по active
 devices каждого active member. Поэтому UI трактует его как «доставлено хотя бы на
 одно устройство получателя»; revoked devices и покинувшие conversation участники не
-считаются. API/sync/realtime не раскрывают device ID или metadata другим участникам —
+считаются. `WP-146` аддитивно расширяет
+`GET /api/v1/conversation-delivery-states` полем `read_sequence`: shared user cursor
+из существующей read-state таблицы. Single set-based query объединяет read и delivery
+и фильтрует active membership. Read сам доказывает получение, поэтому public
+`delivered_sequence` не ниже read cursor и остаётся positive для старых PWA clients.
+Read cursor сохраняется после device revoke, поскольку он принадлежит user.
+Frontend различает «Отправлено», «Доставлено» и «Прочитано» (для group — число
+прочитавших); read receipt также обновляет participant snapshot через cursor sync.
+Encrypted local snapshots сохраняют read sequence; старое отсутствующее поле читается
+как `0`. Новая migration не нужна: таблицы и persistence invariants не меняются.
+API/sync/realtime не раскрывают device ID или metadata другим участникам —
 durable `delivery_receipt` содержит только conversation, actor user и sequence.
 Cursor и recipient-specific events коммитятся в одном Messaging UoW, realtime
 публикуется best-effort после commit. Send также атомарно двигает delivery cursor
@@ -2146,3 +2163,11 @@ focused git commit
 - `workplan.md`, `backlog.md`, `bugs.md` синхронизированы;
 - изменения зафиксированы отдельным commit;
 - непроверенное явно указано, а не предполагается.
+
+### WP-146: mobile history capture
+
+`ChatWorkspace` записывает conversation route до изменения mobile pane и запуска
+history loading. Источник выбора pane — route, а pending tap лишь блокирует duplicate
+interaction. Это оставляет список на outgoing history surface в момент `pushState`;
+OS/browser predictive animation остаётся платформенной функцией, требующей physical
+acceptance. Kept-alive workspace и encrypted history при переходах сохраняются.

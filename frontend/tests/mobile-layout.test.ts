@@ -157,14 +157,16 @@ describe('mobile application shell', () => {
     expect(layout).toContain("{ to: lastChatTarget.value, label: 'Чаты', icon: 'chat' }")
   })
 
-  it('opens a tapped conversation optimistically and keeps hover mouse-only', () => {
+  it('commits conversation history before changing the visible pane and keeps hover mouse-only', () => {
     const css = readFileSync(resolve(process.cwd(), 'app/assets/main.css'), 'utf8')
     const workspace = readFileSync(resolve(process.cwd(), 'app/components/chat/ChatWorkspace.vue'), 'utf8')
 
     expect(css).toMatch(/\.conversation-row \{[^}]*touch-action: manipulation;/)
     expect(css).toContain('@media (hover: hover) and (pointer: fine) { .conversation-row:hover')
-    expect(workspace).toMatch(/selectedConversationId\(route\.query\.conversation\) \|\| openingConversationId\.value/)
-    expect(workspace).toMatch(/openingConversationId\.value = conversationId\s+try \{\s+await messenger\.selectConversation/)
+    expect(workspace).not.toMatch(/selectedConversationId\(route\.query\.conversation\) \|\| openingConversationId\.value/)
+    const selection = workspace.slice(workspace.indexOf('async function selectConversation('), workspace.indexOf('const activeConversationOnline'))
+    expect(selection).toContain('await navigateTo(')
+    expect(selection).not.toContain('await messenger.selectConversation(')
     expect(workspace).toMatch(/finally \{\s+openingConversationId\.value = null/)
   })
 

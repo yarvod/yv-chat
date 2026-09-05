@@ -18,6 +18,10 @@ from messenger.application.messaging.mark_delivered import (
     MarkConversationDelivered,
     MarkConversationDeliveredCommand,
 )
+from messenger.application.messaging.mark_read import (
+    MarkConversationRead,
+    MarkConversationReadCommand,
+)
 from messenger.application.sync import SyncEventType, SyncPolicy
 from messenger.domain.entities import Conversation, Device, Message, User
 from tests.application.fakes import (
@@ -159,3 +163,23 @@ async def test_delivery_rejects_foreign_device_non_member_and_unknown_sequence()
                 MarkConversationDeliveredCommand(bob.id, bob_phone.id, conversation.id, sequence)
             )
     assert state.delivery_states == {}
+
+
+async def test_read_summary_is_shared_durable_and_membership_scoped() -> None:
+    state, alice, bob, charlie, _, bob_phone, _, conversation = delivery_fixture()
+    mark = MarkConversationRead(
+        unit_of_work=FakeMessagingUnitOfWorkFactory(state),
+        clock=FixedClock(NOW + timedelta(minutes=1)),
+        sync_policy=SyncPolicy(),
+        realtime_notifier=RecordingRealtimeNotifier(),
+    )
+    await mark.execute(MarkConversationReadCommand(bob.id, conversation.id, 1))
+    state.devices[bob_phone.id] = bob_phone.revoke(NOW + timedelta(minutes=2))
+    query = ListParticipantDeliveryStates(unit_of_work=FakeMessagingUnitOfWorkFactory(state))
+    summaries = await query.execute(ListParticipantDeliveryStatesQuery(alice.id))
+    assert [(item.user_id, item.delivered_sequence, item.read_sequence) for item in summaries] == [
+        (bob.id, 1, 1)
+    ]
+    assert await query.execute(ListParticipantDeliveryStatesQuery(charlie.id)) == []
+    with pytest.raises(ConversationNotFoundError):
+        await mark.execute(MarkConversationReadCommand(charlie.id, conversation.id, 2))

@@ -1246,6 +1246,8 @@ describe('messenger orchestration', () => {
       contentSecure: false,
     }])
     expect(messenger.state.syncCursor).toBe(5)
+    expect(readStateGateway.mark).not.toHaveBeenCalled()
+    await messenger.markVisibleRead('conversation-1', 1)
     expect(readStateGateway.mark).toHaveBeenCalledWith('conversation-1', 1)
     expect(deliveryStateGateway.mark).toHaveBeenCalledWith('conversation-1', 1)
     expect(await messenger.send('  hello  ')).toBe(true)
@@ -1277,8 +1279,58 @@ describe('messenger orchestration', () => {
     expect(readStateGateway.mark).not.toHaveBeenCalled()
     expect(deliveryStateGateway.mark).toHaveBeenCalledWith('conversation-1', 1)
     visible = true
-    await messenger.markActiveRead()
+    await messenger.markVisibleRead('conversation-1', 1)
     expect(readStateGateway.mark).toHaveBeenCalledWith('conversation-1', 1)
+  })
+
+  it('only accepts available scoped viewport cursors and preserves unread beyond a partial read', async () => {
+    const history = [1, 2, 3].map(sequence => ({ ...message, sequence, messageId: `message-${sequence}` }))
+    vi.mocked(gateway.listMessageHistory).mockResolvedValue({
+      messages: history, hasMore: false, oldestSequence: 1, newestSequence: 3,
+    })
+    vi.mocked(readStateGateway.list).mockResolvedValue([{
+      conversationId: 'conversation-1', lastReadSequence: 0, latestSequence: 3, unreadCount: 3,
+    }])
+    const messenger = useMessenger('alice-id', 'device-alice', vi.fn(), messengerDependencies())
+    await messenger.load()
+    expect(readStateGateway.mark).not.toHaveBeenCalled()
+    await messenger.markVisibleRead('other-conversation', 1)
+    await messenger.markVisibleRead('conversation-1', 999)
+    visible = false
+    await messenger.markVisibleRead('conversation-1', 1)
+    expect(readStateGateway.mark).not.toHaveBeenCalled()
+    visible = true
+    vi.mocked(readStateGateway.list).mockResolvedValue([{
+      conversationId: 'conversation-1', lastReadSequence: 1, latestSequence: 3, unreadCount: 2,
+    }])
+    await messenger.markVisibleRead('conversation-1', 1)
+    await messenger.markVisibleRead('conversation-1', 1)
+    expect(readStateGateway.mark).toHaveBeenCalledTimes(1)
+    expect(messenger.state.readStates[0]).toMatchObject({ lastReadSequence: 1, unreadCount: 2 })
+  })
+
+  it('retries a failed viewport receipt and reloads participant state on read sync', async () => {
+    vi.mocked(gateway.listMessageHistory).mockResolvedValue({
+      messages: [message], hasMore: false, oldestSequence: 1, newestSequence: 1,
+    })
+    const messenger = useMessenger('alice-id', 'device-alice', vi.fn(), messengerDependencies())
+    await messenger.load()
+    vi.mocked(readStateGateway.mark).mockRejectedValueOnce(new ApplicationError(503, 'network', 'offline'))
+    expect(await messenger.markVisibleRead('conversation-1', 1)).toBe(false)
+    expect(await messenger.markVisibleRead('conversation-1', 1)).toBe(true)
+    expect(readStateGateway.mark).toHaveBeenCalledTimes(2)
+    vi.mocked(deliveryStateGateway.list).mockClear().mockResolvedValue([{
+      conversationId: 'conversation-1', userId: 'bob-id', deliveredSequence: 1, readSequence: 1,
+    }])
+    vi.mocked(gateway.listSync).mockResolvedValue({
+      events: [{ eventId: 6, eventType: 'read_receipt', conversationId: 'conversation-1',
+        messageId: null, actorUserId: 'bob-id', readSequence: 1, deliverySequence: null,
+        createdAt: '2026-08-11T12:01:00Z' }],
+      nextCursor: 6, streamCursor: 6, hasMore: false, resetRequired: false,
+    })
+    await messenger.poll()
+    expect(deliveryStateGateway.list).toHaveBeenCalledTimes(1)
+    expect(messenger.state.deliveryStates[0]?.readSequence).toBe(1)
   })
 
   it('opens the latest page and loads more than 100 older messages without gaps', async () => {

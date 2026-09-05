@@ -414,7 +414,11 @@ export function useMessenger(
   }
 
   async function reloadReadStates(): Promise<void> {
-    state.readStates = await listConversationReadStates.execute()
+    const received = await listConversationReadStates.execute()
+    state.readStates = received.map(item => {
+      const current = state.readStates.find(state => state.conversationId === item.conversationId)
+      return current && current.lastReadSequence > item.lastReadSequence ? current : item
+    })
   }
 
   async function reloadDeliveryStates(): Promise<void> {
@@ -452,10 +456,13 @@ export function useMessenger(
     }
   }
 
-  async function advanceActiveReadIfVisible(): Promise<void> {
-    const conversationId = state.activeConversationId
-    const sequence = state.messages.at(-1)?.sequence ?? 0
-    if (!conversationId || sequence <= 0 || !pageVisibility.isVisible()) return
+  async function advanceVisibleRead(conversationId: string, sequence: number): Promise<void> {
+    if (
+      conversationId !== state.activeConversationId
+      || !pageVisibility.isVisible()
+      || !state.messages.some(message => message.sequence === sequence
+        && message.conversationId === conversationId && message.contentState === 'available')
+    ) return
     const persisted = state.readStates.find(item => item.conversationId === conversationId)
       ?.lastReadSequence ?? 0
     const submitted = readAdvances.get(conversationId) ?? 0
@@ -466,14 +473,19 @@ export function useMessenger(
       const current = state.readStates.find(item => item.conversationId === conversationId)
       replaceReadState({
         conversationId,
-        lastReadSequence: result.lastReadSequence,
+        lastReadSequence: Math.max(current?.lastReadSequence ?? 0, result.lastReadSequence),
         latestSequence: Math.max(current?.latestSequence ?? 0, sequence),
-        unreadCount: 0,
+        unreadCount: result.lastReadSequence >= (current?.latestSequence ?? 0)
+          ? 0
+          : current?.unreadCount ?? 0,
       })
     } catch (error) {
-      readAdvances.delete(conversationId)
+      if (readAdvances.get(conversationId) === sequence) readAdvances.delete(conversationId)
       throw error
     }
+    // Counts exclude own messages and tombstones; only the server can count a
+    // partially read conversation correctly. Never derive it by subtracting cursors.
+    await reloadReadStates()
   }
 
   function rememberHotHistoryWindow(
@@ -645,7 +657,6 @@ export function useMessenger(
       syncArchiveStatus()
       applyHistoryWindow(window)
       await advanceDelivery(message.conversationId)
-      await advanceActiveReadIfVisible()
     } else {
       await history.persist(message.conversationId, [{
         ...authoritative,
@@ -731,7 +742,6 @@ export function useMessenger(
     if (state.activeConversationId !== conversationId) return
     applyHistoryWindow(window)
     await advanceDelivery(conversationId)
-    await advanceActiveReadIfVisible()
   }
 
   async function reconcileHydratedActiveHistory(
@@ -785,7 +795,6 @@ export function useMessenger(
     if (state.activeConversationId !== conversationId) return
     applyHistoryWindow(window)
     await advanceDelivery(conversationId)
-    await advanceActiveReadIfVisible()
   }
 
   async function loadOlder(): Promise<void> {
@@ -1421,6 +1430,7 @@ export function useMessenger(
             || event.eventType === 'read_receipt'
           deliveryStatesChanged ||= event.eventType === 'message_created'
             || event.eventType === 'delivery_receipt'
+            || event.eventType === 'read_receipt'
           reactionsChanged ||= event.eventType === 'message_reaction_updated'
             && event.conversationId === state.activeConversationId
           pinsChanged ||= (
@@ -1485,11 +1495,13 @@ export function useMessenger(
     }
   }
 
-  async function markActiveRead(): Promise<void> {
+  async function markVisibleRead(conversationId: string, sequence: number): Promise<boolean> {
     try {
-      await advanceActiveReadIfVisible()
+      await advanceVisibleRead(conversationId, sequence)
+      return true
     } catch (error) {
       fail(error)
+      return false
     }
   }
 
@@ -1532,7 +1544,7 @@ export function useMessenger(
     loadOlder,
     returnToLatest,
     rememberViewport,
-    markActiveRead,
+    markVisibleRead,
     dispose,
   }
 }

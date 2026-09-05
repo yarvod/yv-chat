@@ -38,6 +38,7 @@ const snapshot: MessengerSnapshot = {
     conversationId: 'conversation-1',
     userId: 'user-2',
     deliveredSequence: 3,
+    readSequence: 2,
   }],
   viewportAnchors: [{
     conversationId: 'conversation-1',
@@ -81,6 +82,16 @@ beforeEach(() => {
 afterEach(() => store.close())
 
 describe('encrypted messenger snapshot store', () => {
+  it('opens older receipt snapshots with an unknown read cursor of zero', async () => {
+    await store.save({ ...snapshot, deliveryStates: [{
+      conversationId: 'conversation-1', userId: 'user-2', deliveredSequence: 3,
+    }] })
+    const restored = await store.load(ownerUserId)
+    expect(restored?.deliveryStates[0]).toEqual({
+      conversationId: 'conversation-1', userId: 'user-2', deliveredSequence: 3, readSequence: 0,
+    })
+  })
+
   it('releases its connection when a newer PWA requests a database upgrade', async () => {
     await store.save(snapshot)
 

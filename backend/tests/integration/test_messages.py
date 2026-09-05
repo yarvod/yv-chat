@@ -303,6 +303,13 @@ async def run_flow(database_url: str) -> None:
         assert bob_after[0].last_read_sequence == 3
         assert bob_after[0].unread_count == 0
 
+        read_only_summaries = await ListParticipantDeliveryStates(
+            unit_of_work=read_state_factory
+        ).execute(ListParticipantDeliveryStatesQuery(alice.id))
+        bob_read = next(item for item in read_only_summaries if item.user_id == bob.id)
+        assert bob_read.read_sequence == 3
+        assert bob_read.delivered_sequence == 3
+
         mark_delivered = MarkConversationDelivered(
             unit_of_work=read_state_factory,
             clock=FixedClock(NOW + timedelta(seconds=3)),
@@ -332,6 +339,7 @@ async def run_flow(database_url: str) -> None:
         ).execute(ListParticipantDeliveryStatesQuery(alice.id))
         bob_delivery = next(item for item in delivery_summaries if item.user_id == bob.id)
         assert bob_delivery.delivered_sequence == 3
+        assert bob_delivery.read_sequence == 3
 
         delete_message = DeleteMessageForEveryone(
             unit_of_work=read_state_factory,

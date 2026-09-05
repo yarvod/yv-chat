@@ -328,7 +328,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .message-reply-preview__copy strong { overflow: hidden; margin: 0; color: var(--primary); font-size: .75rem; text-overflow: ellipsis; white-space: nowrap; }
 .message-reply-preview__copy > span { overflow: hidden; color: var(--muted); font-size: .72rem; text-overflow: ellipsis; white-space: nowrap; }
 .message-meta { display: flex !important; align-items: center; justify-content: flex-end; gap: 4px; min-height: 12px; margin-top: 3px !important; color: var(--muted); text-align: right; font-size: .65rem !important; font-variant-numeric: tabular-nums; }
-.delivery-state { color: var(--primary); letter-spacing: -.18em; }
+.delivery-state { color: var(--muted); letter-spacing: -.18em; }
+.delivery-state--read { color: var(--primary); }
 .message-tombstone { color: var(--muted); font-style: italic; }
 .message-unavailable { color: var(--danger); font-style: italic; }
 .message-reactions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }

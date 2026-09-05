@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, literal, select, union_all
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,6 +11,7 @@ from messenger.domain.entities import ConversationDeliveryState
 from messenger.infrastructure.persistence.models import (
     ConversationDeliveryStateModel,
     ConversationMemberModel,
+    ConversationReadStateModel,
     DeviceModel,
 )
 
@@ -65,32 +66,50 @@ class SqlAlchemyConversationDeliveryStateRepository:
     ) -> list[ParticipantDeliverySummary]:
         if not conversation_ids:
             return []
+        # Read cursors are user-scoped and survive device revocation. Include
+        # read-only rows (e.g. an anchored history window) independently of delivery.
+        # Reading proves receipt; retain the positive delivery cursor API contract
+        # for older PWA clients during a rolling update.
+        receipts = union_all(
+            select(
+                ConversationDeliveryStateModel.conversation_id.label("conversation_id"),
+                DeviceModel.user_id.label("user_id"),
+                ConversationDeliveryStateModel.last_delivered_sequence.label("delivered"),
+                literal(0).label("read"),
+            )
+            .join(DeviceModel, DeviceModel.id == ConversationDeliveryStateModel.device_id)
+            .where(
+                ConversationDeliveryStateModel.conversation_id.in_(conversation_ids),
+                DeviceModel.revoked_at.is_(None),
+            ),
+            select(
+                ConversationReadStateModel.conversation_id,
+                ConversationReadStateModel.user_id,
+                literal(0),
+                ConversationReadStateModel.last_read_sequence,
+            ).where(ConversationReadStateModel.conversation_id.in_(conversation_ids)),
+        ).subquery()
         rows = (
             await self._session.execute(
                 select(
-                    ConversationDeliveryStateModel.conversation_id,
-                    DeviceModel.user_id,
-                    func.max(ConversationDeliveryStateModel.last_delivered_sequence),
+                    receipts.c.conversation_id,
+                    receipts.c.user_id,
+                    func.max(receipts.c.delivered),
+                    func.max(receipts.c.read),
                 )
-                .join(DeviceModel, DeviceModel.id == ConversationDeliveryStateModel.device_id)
                 .join(
                     ConversationMemberModel,
-                    (
-                        ConversationMemberModel.conversation_id
-                        == ConversationDeliveryStateModel.conversation_id
-                    )
-                    & (ConversationMemberModel.user_id == DeviceModel.user_id),
+                    (ConversationMemberModel.conversation_id == receipts.c.conversation_id)
+                    & (ConversationMemberModel.user_id == receipts.c.user_id),
                 )
-                .where(
-                    ConversationDeliveryStateModel.conversation_id.in_(conversation_ids),
-                    DeviceModel.revoked_at.is_(None),
-                    ConversationMemberModel.left_at.is_(None),
-                )
-                .group_by(ConversationDeliveryStateModel.conversation_id, DeviceModel.user_id)
-                .order_by(ConversationDeliveryStateModel.conversation_id, DeviceModel.user_id)
+                .where(ConversationMemberModel.left_at.is_(None))
+                .group_by(receipts.c.conversation_id, receipts.c.user_id)
+                .order_by(receipts.c.conversation_id, receipts.c.user_id)
             )
         ).all()
         return [
-            ParticipantDeliverySummary(conversation_id, user_id, int(sequence))
-            for conversation_id, user_id, sequence in rows
+            ParticipantDeliverySummary(
+                conversation_id, user_id, max(int(delivered), int(read)), int(read)
+            )
+            for conversation_id, user_id, delivered, read in rows
         ]
