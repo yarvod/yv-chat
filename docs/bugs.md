@@ -6,7 +6,8 @@
 
 ### BUG-137 — Back preview захватывает открываемый чат вместо списка
 
-Статус: **fixed locally; physical gesture acceptance pending** (`WP-146`).
+Статус: **fixed and production deployed; physical gesture acceptance pending**
+(`WP-146`, `6afafd4`, workflow `33964442194`; CI `33964442195`).
 Воспроизведение: mobile `/chat` → tap conversation → system edge Back.
 До `navigateTo` workspace устанавливает conversation pane и ждёт загрузку history;
 history entry списка уже показывает чат. Скриншот пользователя показывает дубликат.
@@ -15,7 +16,8 @@ history entry списка уже показывает чат. Скриншот 
 
 ### BUG-138 — Read привязан к загрузке tail, sender показывает только delivery
 
-Статус: **fixed locally** (`WP-146`).
+Статус: **fixed and production deployed** (`WP-146`, `6afafd4`, workflow
+`33964442194`; CI `33964442195`).
 Воспроизведение: оставить timeline прокрученным вверх либо открыть Settings и получить
 новое сообщение. Load/poll отправляет последний загруженный sequence при visible document,
 без проверки focus, pane и viewport. Частичный read безусловно обнуляет unread count.

@@ -2,7 +2,7 @@
 
 ## WP-146 — Мобильный возврат и прочтение видимых сообщений
 
-Статус: **completed locally; physical gesture acceptance pending**
+Статус: **production deployed; physical gesture acceptance pending**
 Backlog: `BL-FIX-073`
 Bugs: `BUG-137`, `BUG-138`
 
@@ -19,6 +19,8 @@ Bugs: `BUG-137`, `BUG-138`
 4. Добавить read sequence из существующей таблицы в participant receipt response,
    восстановление через sync/reload и отдельное отображение прочтения.
 5. Запустить Docker stack и проверить mobile browser, выполнить regression checks.
+6. По запросу пользователя отправить исправление в `main`, развернуть production
+   и проверить оба публичных origin.
 
 ### Security и архитектура
 
@@ -43,7 +45,7 @@ Bugs: `BUG-137`, `BUG-138`
 
 ### Exclusions
 
-- Production deployment, Android/iOS release, физический OS gesture emulator.
+- Android/iOS package release, физический OS gesture emulator.
 - Изменения E2EE, retention, session policy и схемы БД.
 
 ### Verification
@@ -67,6 +69,11 @@ Bugs: `BUG-137`, `BUG-138`
   KeepAlive deactivation и IntersectionObserver/fallback покрыты component tests.
   Две вкладки встроенного Browser не воспроизвели надёжно OS background/focus;
   это не считается physical foreground acceptance.
-- Изменений схемы/crypto нет; Rust rebuild и полный `make ci` не запускались.
-  Системная predictive Back animation Android/iOS требует физического устройства;
-  production deployment и native package release не выполнялись.
+- Изменений схемы/crypto нет; локально Rust rebuild и полный `make ci` не запускались.
+  Полный `make ci`, fresh-database migrations и dependency audit прошли в production
+  workflow `33964442194`; отдельный CI `33964442195` также successful.
+- Production развернут из `6afafd47777e5b993e62bb000f1d203d7374ddf4`;
+  immutable Docker builds и rollout health checks passed. Оба public origin вернули
+  frontend/API health HTTP `200` с успешной TLS verification.
+- Системная predictive Back animation Android/iOS требует физического устройства;
+  native package release не выполнялся.

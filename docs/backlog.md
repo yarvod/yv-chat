@@ -798,7 +798,8 @@ System audio не входит в этот slice, microphone audio продол�
 
 ### BL-FIX-073 — Мобильный возврат и своевременное прочтение
 
-Статус: **completed locally; physical gesture acceptance pending** (`WP-146`, `BUG-137`, `BUG-138`).
+Статус: **production deployed; physical gesture acceptance pending** (`WP-146`,
+`BUG-137`, `BUG-138`, `6afafd4`, workflow `33964442194`; CI `33964442195`).
 
 - History получает переход до смены списка на чат; Back/Forward сохраняют route.
 - Read следует видимым сообщениям активного timeline, а не загруженному tail.

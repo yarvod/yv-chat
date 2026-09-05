@@ -11,7 +11,23 @@ not be replaced with the broader JavaScript `unsafe-eval`. Without it, public
 crypto assets still return HTTP 200 but device provisioning stops before the
 `PUT /api/v1/devices/current/crypto-identity` registration request.
 
-## Latest rollout — WP-145 incoming-call notification resume
+## Latest rollout — WP-146 mobile back history and visible-message reads
+
+- Commit: `6afafd47777e5b993e62bb000f1d203d7374ddf4`.
+- Production workflow: `33964442194` (success); CI workflow: `33964442195`
+  (success).
+- Deployed image tag: `sha-6afafd47777e5b993e62bb000f1d203d7374ddf4` on frontend,
+  API and cleanup; full repository verification, fresh-database migrations,
+  dependency audit, immutable image builds and isolated rollout health checks passed.
+- Public acceptance: both origins returned frontend and `/api/v1/health` HTTP `200`
+  with successful TLS verification.
+- Docker Browser acceptance covered mobile Back/Forward, offscreen messages staying
+  unread until scroll and sender read labels surviving reload. Automated tests cover
+  inactive/hidden/covered timelines and read receipt authorization. Physical Android/iOS
+  predictive Back animation and foreground/focus acceptance remain device-bound;
+  no native package release was performed.
+
+## Prior rollout — WP-145 incoming-call notification resume
 
 - Commit: `37fb89fb2e4f5c0bbfc7b803b950549f8c71c779`.
 - Production workflow: `33907283441` (success); CI workflow: `33907283494`
