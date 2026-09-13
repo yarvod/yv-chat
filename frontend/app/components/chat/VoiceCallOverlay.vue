@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, onUnmounted, ref, watch } from 'vue'
 
-import type { VoiceCallAudioOutput, VoiceCallState } from '../../domain/calls/voice-call'
+import type { ScreenShareQuality, VoiceCallAudioOutput, VoiceCallState } from '../../domain/calls/voice-call'
+import { SCREEN_SHARE_FRAME_RATES, SCREEN_SHARE_RESOLUTIONS } from '../../domain/calls/voice-call'
 import { voiceCallStatus } from '../../presentation/calls/voice-call-status'
 import type { AppIconName } from '../../presentation/icons'
 import AppIcon from '../ui/AppIcon.vue'
@@ -16,6 +17,7 @@ const props = defineProps<{
   toggleCamera: () => Promise<void>
   switchCamera: () => Promise<void>
   toggleScreenShare: () => Promise<void>
+  setScreenShareQuality: (quality: ScreenShareQuality) => Promise<void>
   attachVideoElements: (
     local: HTMLVideoElement | null,
     remote: HTMLVideoElement | null,
@@ -28,13 +30,90 @@ const props = defineProps<{
 }>()
 
 const now = ref(Date.now())
+const overlay = ref<HTMLElement | null>(null)
 const localVideo = ref<HTMLVideoElement | null>(null)
 const remoteVideo = ref<HTMLVideoElement | null>(null)
 const remoteVideoContained = ref(false)
 const audioRoutingOpen = ref(false)
+const screenQualityOpen = ref(false)
+const controlsHidden = ref(false)
+const controlsHovered = ref(false)
+const controlsFocused = ref(false)
+const keyboardInteraction = ref(false)
+let hideControlsTimer: ReturnType<typeof setTimeout> | null = null
+let previousFocus: HTMLElement | null = null
+let unmounting = false
+if (typeof document !== 'undefined') {
+  previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+}
 const remoteVideoVisible = computed(() => (
   props.state.remoteVideoEnabled && !props.state.screenSharing
 ))
+const canHideControls = computed(() => (
+  props.state.phase === 'active'
+  && remoteVideoVisible.value
+  && !audioRoutingOpen.value
+  && !screenQualityOpen.value
+  && !props.state.cameraBusy
+  && !props.state.notice
+  && !controlsHovered.value
+  && !(keyboardInteraction.value && controlsFocused.value)
+))
+
+function revealControls(): void {
+  if (unmounting) return
+  controlsHidden.value = false
+  if (hideControlsTimer !== null) clearTimeout(hideControlsTimer)
+  hideControlsTimer = null
+  if (canHideControls.value) {
+    hideControlsTimer = setTimeout(() => {
+      hideControlsTimer = null
+      controlsHidden.value = true
+    }, 3_000)
+  }
+}
+
+function pointerActivity(event: PointerEvent): void {
+  controlsHovered.value = event.pointerType !== 'touch'
+    && event.target instanceof Element
+    && event.target.closest('[data-call-controls]') !== null
+  revealControls()
+}
+
+function pointerDown(event: PointerEvent): void {
+  keyboardInteraction.value = false
+  pointerActivity(event)
+  props.resumeAudio()
+}
+
+function keyboardActivity(event: KeyboardEvent): void {
+  keyboardInteraction.value = true
+  if (event.key === 'Escape') {
+    audioRoutingOpen.value = false
+    screenQualityOpen.value = false
+  }
+  revealControls()
+}
+
+function focusActivity(event: FocusEvent): void {
+  const focused = event.type === 'focusin' ? event.target : event.relatedTarget
+  controlsFocused.value = focused instanceof Element
+    && focused.closest('[data-call-controls]') !== null
+  revealControls()
+}
+
+watch(canHideControls, revealControls, { immediate: true })
+watch([audioRoutingOpen, screenQualityOpen], () => {
+  if (audioRoutingOpen.value || screenQualityOpen.value) return
+  // A removed panel can no longer be hovered/focused, even if the pointer
+  // has not moved since its close button was clicked.
+  controlsHovered.value = false
+  const focused = document.activeElement
+  controlsFocused.value = focused instanceof Element
+    && overlay.value?.contains(focused) === true
+    && focused.closest('[data-call-controls]') !== null
+  revealControls()
+}, { flush: 'post' })
 const timer = setInterval(() => { now.value = Date.now() }, 1_000)
 const stopVideoAttachment = watch(
   [localVideo, remoteVideo],
@@ -46,13 +125,21 @@ const stopRemoteFitWatch = watch(
   () => syncRemoteVideoFit(),
   { flush: 'post' },
 )
-onMounted(() => window.addEventListener('resize', syncRemoteVideoFit))
+onMounted(() => {
+  window.addEventListener('resize', syncRemoteVideoFit)
+  overlay.value?.focus({ preventScroll: true })
+})
 onBeforeUnmount(() => {
-  clearInterval(timer)
+  unmounting = true
   stopVideoAttachment()
   stopRemoteFitWatch()
   window.removeEventListener('resize', syncRemoteVideoFit)
   props.attachVideoElements(null, null)
+  clearInterval(timer)
+  if (hideControlsTimer !== null) clearTimeout(hideControlsTimer)
+})
+onUnmounted(() => {
+  if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true })
 })
 
 const status = computed(() => voiceCallStatus(props.state, now.value))
@@ -93,6 +180,7 @@ watch(
   phase => {
     if (phase === 'incoming' || phase === 'ended' || phase === 'error') {
       audioRoutingOpen.value = false
+      screenQualityOpen.value = false
     }
   },
 )
@@ -100,6 +188,16 @@ watch(
 async function chooseAudioOutput(deviceId: string): Promise<void> {
   await props.selectAudioOutput(deviceId)
   audioRoutingOpen.value = false
+}
+
+function toggleAudioRouting(): void {
+  screenQualityOpen.value = false
+  audioRoutingOpen.value = !audioRoutingOpen.value
+}
+
+function toggleScreenQuality(): void {
+  audioRoutingOpen.value = false
+  screenQualityOpen.value = !screenQualityOpen.value
 }
 
 function outputTitle(kind: VoiceCallAudioOutput['kind']): string {
@@ -122,12 +220,22 @@ function outputIcon(kind: VoiceCallAudioOutput['kind']): AppIconName {
 
 <template>
   <aside
+    ref="overlay"
     class="voice-call"
-    :class="{ 'voice-call--remote-video': remoteVideoVisible }"
+    :class="{
+      'voice-call--remote-video': remoteVideoVisible,
+      'voice-call--controls-hidden': controlsHidden,
+    }"
+    tabindex="-1"
     role="dialog"
     aria-modal="true"
     aria-label="Аудио- или видеозвонок"
-    @pointerdown="resumeAudio"
+    @pointerdown="pointerDown"
+    @pointermove="pointerActivity"
+    @pointerleave="controlsHovered = false; revealControls()"
+    @keydown="keyboardActivity"
+    @focusin="focusActivity"
+    @focusout="focusActivity"
   >
     <section class="voice-call__stage" aria-label="Видео звонка">
       <video
@@ -164,7 +272,7 @@ function outputIcon(kind: VoiceCallAudioOutput['kind']): AppIconName {
       />
     </section>
     <div class="voice-call__scrim" aria-hidden="true" />
-    <header class="voice-call__topbar">
+    <header class="voice-call__topbar" data-call-controls>
       <button
         v-if="minimizable"
         class="voice-call__minimize"
@@ -185,14 +293,73 @@ function outputIcon(kind: VoiceCallAudioOutput['kind']): AppIconName {
           Код сверки: {{ state.verificationCode }}
         </span>
         <span v-if="state.screenSharing" class="voice-call__sharing-status">
-          Вы показываете экран
+          Вы показываете экран · {{ state.screenShareQuality.resolution }}p · {{ state.screenShareQuality.frameRate }} fps
         </span>
       </div>
+      <button
+        v-if="state.screenShareSupported && state.identityVerified && audioRoutingAvailable"
+        class="voice-call__minimize voice-call__quality-button"
+        type="button"
+        aria-label="Настроить качество демонстрации"
+        :aria-expanded="screenQualityOpen"
+        @click.stop="toggleScreenQuality"
+      >
+        <AppIcon name="settings" />
+      </button>
     </header>
+    <section
+      v-if="screenQualityOpen && state.screenShareSupported && audioRoutingAvailable"
+      class="voice-call__routing voice-call__screen-settings"
+      aria-labelledby="screen-quality-title"
+      data-call-controls
+    >
+      <div class="voice-call__routing-head">
+        <strong id="screen-quality-title">Качество демонстрации</strong>
+        <button type="button" aria-label="Закрыть настройки демонстрации" @click="screenQualityOpen = false">×</button>
+      </div>
+      <fieldset :disabled="state.cameraBusy" class="voice-call__quality-options">
+        <legend>Разрешение</legend>
+        <button
+          v-for="resolution in SCREEN_SHARE_RESOLUTIONS"
+          :key="resolution"
+          type="button"
+          :aria-pressed="state.screenShareQuality.resolution === resolution"
+          @click="setScreenShareQuality({ ...state.screenShareQuality, resolution })"
+        >
+          {{ resolution }}p
+        </button>
+      </fieldset>
+      <fieldset :disabled="state.cameraBusy" class="voice-call__quality-options">
+        <legend>Кадров в секунду</legend>
+        <button
+          v-for="frameRate in SCREEN_SHARE_FRAME_RATES"
+          :key="frameRate"
+          type="button"
+          :aria-pressed="state.screenShareQuality.frameRate === frameRate"
+          @click="setScreenShareQuality({ ...state.screenShareQuality, frameRate })"
+        >
+          {{ frameRate }} fps
+        </button>
+      </fieldset>
+      <p class="voice-call__quality-note">
+        15 fps — меньше нагрузка. 60 fps — плавнее движение.
+        Реальное качество зависит от экрана, устройства и соединения.
+      </p>
+      <button
+        v-if="!state.screenSharing"
+        class="voice-call__quality-start"
+        type="button"
+        :disabled="state.cameraBusy"
+        @click="screenQualityOpen = false; toggleScreenShare()"
+      >
+        Показать экран · {{ state.screenShareQuality.resolution }}p / {{ state.screenShareQuality.frameRate }} fps
+      </button>
+    </section>
     <section
       v-if="audioRoutingOpen && audioRoutingAvailable"
       class="voice-call__routing"
       aria-labelledby="audio-routing-title"
+      data-call-controls
       @pointerdown.stop
     >
       <div class="voice-call__routing-head">
@@ -237,7 +404,7 @@ function outputIcon(kind: VoiceCallAudioOutput['kind']): AppIconName {
         громкая связь или подключённые наушники.
       </small>
     </section>
-    <div v-if="state.phase === 'incoming'" class="voice-call__actions">
+    <div v-if="state.phase === 'incoming'" class="voice-call__actions" data-call-controls>
       <button class="voice-call__action voice-call__action--reject" type="button" aria-label="Отклонить" @click="reject">
         <AppIcon name="phone-off" />
       </button>
@@ -245,10 +412,10 @@ function outputIcon(kind: VoiceCallAudioOutput['kind']): AppIconName {
         <AppIcon name="phone" />
       </button>
     </div>
-    <div v-else-if="state.phase === 'ended' || state.phase === 'error'" class="voice-call__actions">
+    <div v-else-if="state.phase === 'ended' || state.phase === 'error'" class="voice-call__actions" data-call-controls>
       <button class="voice-call__dismiss" type="button" @click="dismiss">Закрыть</button>
     </div>
-    <div v-else class="voice-call__actions">
+    <div v-else class="voice-call__actions" data-call-controls>
       <button
         class="voice-call__action"
         :class="{ 'voice-call__action--muted': !state.cameraEnabled }"
@@ -296,7 +463,7 @@ function outputIcon(kind: VoiceCallAudioOutput['kind']): AppIconName {
         type="button"
         aria-label="Выбрать аудиовыход"
         :aria-expanded="audioRoutingOpen"
-        @click.stop="audioRoutingOpen = !audioRoutingOpen"
+        @click.stop="toggleAudioRouting"
       >
         <AppIcon name="speaker" />
       </button>

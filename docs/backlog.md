@@ -52,6 +52,19 @@ authenticated call identity, video calls, затем screen sharing. Эти за
 
 ## Frontend application и administration
 
+### BL-FIX-075 — Выбор качества экрана и исчезающие controls
+
+Статус: **implemented locally; production and physical acceptance pending**
+(`WP-148`, `BUG-142`).
+
+- 720p/1080p/1440p × 15/30/60 fps; экономичный default 1080p/15.
+- Выбор до начала и изменение во время демонстрации с capture/sender caps.
+- Ошибка смены профиля не завершает звонок; качество зависит от source/device/network.
+- При active remote video controls, scrim и cursor скрываются после паузы и
+  возвращаются по движению мыши, касанию или клавиатуре; меню и errors остаются видимыми.
+- Frontend 512 tests, lint/typecheck/build passed; browser preview на desktop/mobile
+  подтвердил режимы и auto-hide. Physical CPU/network/OS acceptance и rollout pending.
+
 ### BL-FIX-074 — Надёжные звонки и экономичная демонстрация
 
 Статус: **completed locally; production and physical acceptance pending**
@@ -62,6 +75,9 @@ authenticated call identity, video calls, затем screen sharing. Эти за
 - Ограничить capture 1080p/15 fps и убрать ненужный video playback при share.
 - Повторный user click снова запрашивает экран; OS denial объясняет настройки.
 - Физические CPU/network/permission acceptance не подменяются mock tests.
+- `dfedb28`: 75 files / 484 frontend tests, lint/typecheck/build и docs/Compose
+  passed; 13 timing/media regressions. Full backend/Rust CI не запускался,
+  production rollout не выполнялся; CPU, OS permissions и реальные сети pending.
 
 ### BL-FIX-073 — Мобильный возврат и прочтение видимых сообщений
 

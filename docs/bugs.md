@@ -4,6 +4,15 @@
 
 ## Active
 
+### BUG-142 — Затемнение и кнопки постоянно перекрывают входящее видео
+
+Статус: **fixed locally in WP-148; production and physical acceptance pending**.
+Воспроизведение: открыть fullscreen звонок с remote video/демонстрацией и не двигать
+мышь. Верхний/нижний scrim и controls остаются поверх изображения постоянно, затемняя
+текст и детали экрана (screenshot пользователя от 2026-09-13).
+Ожидается: после короткой паузы показывать чистое видео; mouse/touch/keyboard
+возвращают управление. Входящий/ошибки/reconnect/открытое меню не прячутся.
+
 ### BUG-139 — ICE и повторные snapshot ломают установку звонка
 
 Статус: **fixed locally in WP-147; physical network acceptance pending**.

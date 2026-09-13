@@ -1988,8 +1988,8 @@ audio-output selector открывается только явным user action
 video sender. Только явное нажатие вызывает `getDisplayMedia()`; browser/OS picker
 владеет перечислением и выбором всего экрана, конкретного монитора, окна или вкладки.
 Приложение не получает права заранее и не подменяет picker собственным списком.
-Выбранный track получает `contentHint=detail`, target и ceiling 15 fps, ceiling 1920×1080 и
-sender cap 1.8 Mbit/s с `maintain-resolution`, чтобы при ограниченном TURN budget
+Выбранный track получает `contentHint=detail`, default target/ceiling 15 fps,
+1920×1080 и sender cap 1.8 Mbit/s (выбор профиля расширен в `WP-148`) с `maintain-resolution`, чтобы при ограниченном TURN budget
 сохранять читаемость текста раньше плавности анимации. Capture заменяет camera track
 через `RTCRtpSender.replaceTrack()` без renegotiation и без изменения подписанного
 SDP/DTLS identity binding.
@@ -2022,8 +2022,8 @@ Verified answer публикует identity state перед применени�
 remote ICE ограничен 64 entries. Это локальное упорядочивание; wire protocol и
 server authorization не меняются, ICE restart/renegotiation не добавляются.
 
-Capture envelope ограничен 1080p/15fps уже при запросе экрана, а не только encoder
-sender cap. На время share remote video element отсоединён от stream, включая
+Default capture envelope ограничен 1080p/15fps уже при запросе экрана, а не только
+encoder sender cap; `WP-148` добавляет явный выбор более высокого/низкого профиля. На время share remote video element отсоединён от stream, включая
 повторный mount overlay; после stop он подключается снова. Audio playback получает
 отдельный audio-only MediaStream и не содержит video track. Сам WebRTC receiver
 остаётся активным; это сокращает playback/render work, но не обещает остановку
@@ -2038,6 +2038,41 @@ sender cap. На время share remote video element отсоединён от
 может потребовать ручного изменения и перезапуска browser/PWA. Основания:
 [W3C Screen Capture](https://www.w3.org/TR/screen-capture/),
 [Apple screen recording permissions](https://support.apple.com/en-euro/guide/mac-help/mchld6aa7d23/mac).
+
+`WP-148` добавляет typed `ScreenShareQuality`: resolution 720/1080/1440 и frameRate
+15/30/60. Это только локальный intent, в RAM call adapter; default 1080p/15, reset
+возвращает default. Никакого runtime benchmark/автоматического включения 60fps нет;
+выбранный профиль остаётся только в памяти текущего call service до его reset.
+Capture max/ideal width/height/fps и sender bitrate/framerate следуют одному профилю:
+
+| Resolution | Capture envelope | 15 fps cap | 30 fps cap | 60 fps cap |
+| --- | --- | --- | --- | --- |
+| 720p | 1280×720 | 1.2 Mbit/s | 2.4 Mbit/s | 4.8 Mbit/s |
+| 1080p | 1920×1080 | 1.8 Mbit/s | 3.6 Mbit/s | 7.2 Mbit/s |
+| 1440p | 2560×1440 | 3 Mbit/s | 6 Mbit/s | 12 Mbit/s |
+
+При active share `track.applyConstraints` меняет profile без нового permission picker,
+peer или renegotiation, затем обновляются sender limits. Rejected constraints
+оставляют прежний profile/capture и не завершают audio call. Операции сериализованы
+с camera/share lifecycle; hangup не допускает stale completion, system `ended`
+во время apply ждёт completion и завершает sharing с обычным camera restore.
+`getDisplayMedia` при явном start вызывается до await даже из quality panel.
+Capability/congestion/negotiated codec/source limits могут понизить фактический FPS
+или resolution; UI показывает выбранный режим, а не измеренный FPS. Profile не
+снимает TURN quotas: существующий example `max-bps=262144` ограничивает relay,
+высокий профиль не обещает 1440p/60 на этом маршруте. Эти quotas не меняются.
+Поведение основано на [Screen Capture](https://www.w3.org/TR/screen-capture/) и
+[WebRTC sender parameters](https://www.w3.org/TR/webrtc/).
+
+Fullscreen presentation после 3 секунд idle в active remote-video состоянии делает
+opacity=0 у topbar/actions/scrim и прячет cursor. Remote video sink не размонтируется
+и media не останавливается. Pointer move/down, touch и keyboard/focus возвращают
+controls; открытые audio/quality panels, controls hover, keyboard focus, camera busy,
+notice и любой не-active phase запрещают auto-hide. Focusable controls остаются
+доступны клавиатуре: focusin немедленно раскрывает их. Overlay принимает initial
+focus и возвращает предыдущий connected element при unmount; timer освобождается.
+Reduced-motion отключает fade transition. Это не новый remote screen signal:
+прозрачный idle viewing применяется и к входящему camera video, и к screen share.
 
 ## 15. Security и trust boundaries
 

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { CallRealtimeFrame } from '../app/domain/messaging/realtime'
 import type { OutgoingCallSignal } from '../app/application/ports/realtime-gateway'
+import type { ScreenShareQuality } from '../app/domain/calls/voice-call'
 import type { NativeCallAudioPort } from '../app/application/ports/native-call-audio'
 import { BrowserVoiceCallService } from '../app/infrastructure/webrtc/browser-voice-call-service'
 
@@ -20,6 +21,7 @@ class FakeTrack extends EventTarget {
   muted = false
   readyState: MediaStreamTrackState = 'live'
   contentHint = ''
+  applyConstraints = vi.fn(async (_constraints: MediaTrackConstraints) => undefined)
   stop = vi.fn(() => { this.readyState = 'ended' })
 
   constructor(readonly kind: 'audio' | 'video') { super() }
@@ -1075,6 +1077,149 @@ describe('browser voice calls', () => {
     expect(screen.track.stop).toHaveBeenCalledOnce()
     expect(peer.videoSender.replaceTrack).toHaveBeenLastCalledWith(restored.track)
     expect(localVideo.srcObject).toBe(restored)
+    service.hangup()
+  })
+
+  it.each([
+    [720, 15, 1280, 1_200_000], [720, 30, 1280, 2_400_000], [720, 60, 1280, 4_800_000],
+    [1080, 15, 1920, 1_800_000], [1080, 30, 1920, 3_600_000], [1080, 60, 1920, 7_200_000],
+    [1440, 15, 2560, 3_000_000], [1440, 30, 2560, 6_000_000], [1440, 60, 2560, 12_000_000],
+  ] as const)('captures %ip at %i fps with bounded sender limits', async (resolution, frameRate, width, bitrate) => {
+    const screen = new FakeStream([new FakeTrack('video')])
+    const getDisplayMedia = vi.fn(async () => screen)
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true, value: { getUserMedia: vi.fn(async () => stream), getDisplayMedia },
+    })
+    const service = new BrowserVoiceCallService(
+      signaling, config, fakeIdentity(), BOB_USER, BOB_DEVICE, null, fakeTones(),
+    )
+    await service.apply(incomingFrame())
+    await service.accept()
+    await service.setScreenShareQuality({ resolution, frameRate })
+    expect(getDisplayMedia).not.toHaveBeenCalled()
+    const capture = service.toggleScreenShare()
+    expect(getDisplayMedia).toHaveBeenCalledOnce()
+    await capture
+    expect(getDisplayMedia).toHaveBeenCalledWith(expect.objectContaining({ video: {
+      displaySurface: 'monitor', width: { ideal: width, max: width },
+      height: { ideal: resolution, max: resolution }, frameRate: { ideal: frameRate, max: frameRate },
+    } }))
+    expect(FakePeerConnection.instances[0]?.videoSender.setParameters).toHaveBeenLastCalledWith({
+      encodings: [{ maxBitrate: bitrate, maxFramerate: frameRate }],
+      degradationPreference: 'maintain-resolution',
+    })
+    service.hangup()
+  })
+
+  it('changes a live screen profile in place and preserves microphone and peer', async () => {
+    const screen = new FakeStream([new FakeTrack('video')])
+    const getDisplayMedia = vi.fn(async () => screen)
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true, value: { getUserMedia: vi.fn(async () => stream), getDisplayMedia },
+    })
+    const service = new BrowserVoiceCallService(
+      signaling, config, fakeIdentity(), BOB_USER, BOB_DEVICE, null, fakeTones(),
+    )
+    let latest = null
+    service.subscribe(state => { latest = state })
+    await service.apply(incomingFrame())
+    await service.accept()
+    await service.toggleScreenShare()
+    const peer = FakePeerConnection.instances[0]!
+    await service.setScreenShareQuality({ resolution: 1440, frameRate: 60 })
+    expect(screen.track.applyConstraints).toHaveBeenLastCalledWith({
+      width: { ideal: 2560, max: 2560 }, height: { ideal: 1440, max: 1440 },
+      frameRate: { ideal: 60, max: 60 },
+    })
+    expect(peer.videoSender.setParameters).toHaveBeenLastCalledWith({
+      encodings: [{ maxBitrate: 12_000_000, maxFramerate: 60 }], degradationPreference: 'maintain-resolution',
+    })
+    expect(latest).toMatchObject({
+      screenShareQuality: { resolution: 1440, frameRate: 60 }, screenSharing: true, cameraBusy: false,
+    })
+    await service.setScreenShareQuality({ resolution: 720, frameRate: 15 })
+    expect(peer.videoSender.setParameters).toHaveBeenLastCalledWith({
+      encodings: [{ maxBitrate: 1_200_000, maxFramerate: 15 }], degradationPreference: 'maintain-resolution',
+    })
+    expect(getDisplayMedia).toHaveBeenCalledOnce()
+    expect(peer.videoSender.replaceTrack).toHaveBeenCalledOnce()
+    expect(peer.close).not.toHaveBeenCalled()
+    expect(screen.track.stop).not.toHaveBeenCalled()
+    expect(stream.track.stop).not.toHaveBeenCalled()
+    service.hangup()
+  })
+
+  it('preserves the active profile when the browser rejects new capture constraints', async () => {
+    const screen = new FakeStream([new FakeTrack('video')])
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: { getUserMedia: vi.fn(async () => stream), getDisplayMedia: vi.fn(async () => screen) },
+    })
+    const service = new BrowserVoiceCallService(
+      signaling, config, fakeIdentity(), BOB_USER, BOB_DEVICE, null, fakeTones(),
+    )
+    let latest = null
+    service.subscribe(state => { latest = state })
+    await service.apply(incomingFrame())
+    await service.accept()
+    await service.toggleScreenShare()
+    screen.track.applyConstraints.mockRejectedValueOnce(new DOMException('unsupported', 'OverconstrainedError'))
+    await service.setScreenShareQuality({ resolution: 1440, frameRate: 60 })
+    expect(latest).toMatchObject({
+      screenShareQuality: { resolution: 1080, frameRate: 15 }, screenSharing: true, cameraBusy: false,
+      notice: expect.stringContaining('прежнем режиме'),
+    })
+    expect(FakePeerConnection.instances[0]?.videoSender.setParameters).toHaveBeenCalledOnce()
+    expect(screen.track.stop).not.toHaveBeenCalled()
+    expect(stream.track.stop).not.toHaveBeenCalled()
+    service.hangup()
+  })
+
+  it.each(['hangup', 'system-stop'] as const)('cleans up %s during a pending profile change', async ending => {
+    const screen = new FakeStream([new FakeTrack('video')])
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: { getUserMedia: vi.fn(async () => stream), getDisplayMedia: vi.fn(async () => screen) },
+    })
+    const service = new BrowserVoiceCallService(
+      signaling, config, fakeIdentity(), BOB_USER, BOB_DEVICE, null, fakeTones(),
+    )
+    let latest = null
+    service.subscribe(state => { latest = state })
+    await service.apply(incomingFrame())
+    await service.accept()
+    await service.toggleScreenShare()
+    const change = deferred<undefined>()
+    screen.track.applyConstraints.mockReturnValueOnce(change.promise)
+    const pending = service.setScreenShareQuality({ resolution: 1440, frameRate: 60 })
+    if (ending === 'hangup') service.hangup()
+    else {
+      screen.track.readyState = 'ended'
+      screen.track.dispatchEvent(new Event('ended'))
+    }
+    change.resolve(undefined)
+    await pending
+    await vi.waitFor(() => expect(latest).toMatchObject({ screenSharing: false, cameraBusy: false }))
+    expect(screen.track.stop).toHaveBeenCalledOnce()
+    if (ending === 'hangup') {
+      expect(latest).toMatchObject({ phase: 'ended', screenShareQuality: { resolution: 1080, frameRate: 15 } })
+    } else service.hangup()
+  })
+
+  it('does not accept unbounded quality values at the service boundary', async () => {
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: { getUserMedia: vi.fn(async () => stream), getDisplayMedia: vi.fn() },
+    })
+    const service = new BrowserVoiceCallService(
+      signaling, config, fakeIdentity(), BOB_USER, BOB_DEVICE, null, fakeTones(),
+    )
+    let latest = null
+    service.subscribe(state => { latest = state })
+    await service.apply(incomingFrame())
+    await service.accept()
+    await service.setScreenShareQuality({ resolution: 9000, frameRate: 240 } as unknown as ScreenShareQuality)
+    expect(latest).toMatchObject({ screenShareQuality: { resolution: 1080, frameRate: 15 } })
     service.hangup()
   })
 

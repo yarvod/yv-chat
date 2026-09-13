@@ -1,53 +1,51 @@
 # Текущий workplan
 
-## WP-147 — Надёжность звонков и экономичная демонстрация экрана
+## WP-148 — Качество демонстрации и просмотр без перекрытий
 
 Статус: **implemented locally; production and physical acceptance pending**
-Backlog: `BL-FIX-074`; bugs: `BUG-139`, `BUG-140`, `BUG-141`.
+Backlog: `BL-FIX-075`; bug: `BUG-142`.
 
 ### Scope и шаги
 
-1. Сериализовать incoming signaling: ICE ждёт async MLS verification offer/answer;
-   повторный reconnect snapshot не сбрасывает текущий peer.
-2. Устранить race fast-connected против identity state и завершения старого media
-   setup против нового звонка. Ограничить ICE buffer.
-3. Ограничить screen capture 1920×1080 / 15 fps, сохранить detail/bitrate control;
-   освободить ненужные video sinks без остановки звука.
-4. Каждое явное повторное нажатие заново вызывает системный picker. При сохранённом
-   OS denial показать понятный путь к настройкам; не обещать обход запрета macOS.
-5. Добавить regression tests и выполнить frontend checks, docs/Compose checks.
+1. Добавить typed screen quality: 720p/1080p/1440p × 15/30/60 fps; default 1080p/15.
+2. Настраивать capture constraints и bounded sender bitrate по выбранному профилю;
+   менять профиль активной демонстрации без нового picker/peer. Unsupported change
+   сохраняет текущую демонстрацию и сообщает об ошибке; hangup отменяет completion.
+3. Добавить панель настроек в fullscreen call с выбором разрешения и FPS; audio,
+   camera и permission retry сохраняются. Качество — запрошенный предел, не гарантия.
+4. Скрывать topbar/actions/scrim/cursor после 3 секунд покоя при active remote video;
+   возвращать по mouse movement/touch/keyboard. Не скрывать открытые панели, ошибки,
+   pending operations, keyboard-focused controls или incoming/reconnecting calls.
+5. Regression tests, frontend checks/build, docs/Compose checks, browser visual QA.
 
 ### Security и архитектура
 
-SDP применяется только после MLS binding verification; protocol, device binding,
-DTLS-SRTP, sessions и server authorization сохраняются. Media остаётся в WebRTC;
-нет новых logs, секретов, persistence, dependencies или API schemas.
+Сохраняются MLS-verified SDP, DTLS-SRTP, explicit display permission, media-only
+WebRTC, anti-recursion и cancellation guards WP-147. Нет новых crypto/signaling/
+persistence contracts или зависимостей. Настройки живут в RAM; server TURN quotas
+не снимаются и могут ограничивать реальное качество relay.
 
 ### Tests и Definition of Done
 
-- Delayed verification + immediate ICE, duplicate offer/answer, fast connected,
-  hangup во время setup, stale peer events покрыты тестами.
-- Capture caps, permission retry, camera/audio continuity, cleanup проверены.
-- Frontend tests/lint/typecheck/build, docs и Compose validation проходят.
-- Документы обновлены, focused commit создан. Физические macOS permission/CPU и
-  two-device network acceptance отдельно отмечены, если недоступны локально.
+- Все 9 профилей, capture/sender limits, live update, rejection/cancellation,
+  camera restore и permission user activation проверены.
+- Auto-hide/reveal и отсутствие затемнения проверены; audio-only, входящий,
+  reconnect, меню и keyboard navigation не прячут нужные controls.
+- Frontend lint/typecheck/tests/build, docs/Compose checks проходят.
+- Документация обновлена, focused commit создан. Реальные 1440p/60fps на физических
+  устройствах/сетях отдельно отмечаются, если не проверены.
 
 ### Exclusions
 
-Production rollout, native package releases, ICE renegotiation/protocol changes,
-программный сброс системных privacy settings.
+Production deploy, native release, TURN quota changes, automatic quality benchmark,
+новый media/signaling/crypto protocol и обещание фиксированного FPS на любом устройстве.
 
 ### Verification
 
-- Полный frontend suite: 75 files / 484 tests passed, включая 13 новых call
-  regressions; focused call/UI suites: 45 passed.
+- Полный frontend suite: 75 files / 512 tests passed; call/UI suites: 71 passed.
 - ESLint и Nuxt typecheck passed; production Nuxt/PWA build passed.
 - `make docs-check compose-check` и `git diff --check` passed.
-- Diff проверен: только call adapter, regression tests и документация; новых
-  dependencies, секретов, API/crypto/persistence changes нет.
-- Backend/Rust checks и полный `make ci` не запускались: изменён frontend call
-  adapter, backend и crypto implementation не менялись.
-- Физический Mac screen-permission denial/re-enable, CPU before/after и звонки
-  между двумя реальными сетями здесь не проверены. Mock tests подтверждают
-  перечисленные timing defects, но не гарантируют все network/OS combinations.
-- Production rollout и native release не выполнялись.
+- Browser preview подтвердил auto-hide scrim/controls после idle, reveal по Tab и
+  responsive quality panel на 390×844; real 1440p/60fps media, CPU и OS acceptance
+  требуют физического устройства.
+- Backend/Rust checks, production rollout и native release не выполнялись.

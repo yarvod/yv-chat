@@ -1,9 +1,15 @@
 import type { CallRealtimeFrame } from '../../domain/messaging/realtime'
 import type { OutgoingCallSignal } from '../../application/ports/realtime-gateway'
 import type {
+  ScreenShareQuality,
   VoiceCallAudioOutput,
   VoiceCallState,
   VoiceCallSummary,
+} from '../../domain/calls/voice-call'
+import {
+  DEFAULT_SCREEN_SHARE_QUALITY,
+  SCREEN_SHARE_FRAME_RATES,
+  SCREEN_SHARE_RESOLUTIONS,
 } from '../../domain/calls/voice-call'
 import {
   BrowserCallToneService,
@@ -41,13 +47,23 @@ interface ScreenCaptureMediaDevices {
 }
 
 const VIDEO_MAX_BITRATE = 1_200_000
-const SCREEN_SHARE_MAX_BITRATE = 1_800_000
-const SCREEN_SHARE_MAX_WIDTH = 1_920
-const SCREEN_SHARE_MAX_HEIGHT = 1_080
-const SCREEN_SHARE_MAX_FRAMERATE = 15
 const CALL_CONNECTION_TIMEOUT_MS = 30_000
 const CALL_RECONNECT_TIMEOUT_MS = 15_000
 const MAX_BUFFERED_ICE_CANDIDATES = 64
+
+function screenShareConstraints(quality: ScreenShareQuality): MediaTrackConstraints {
+  const width = { 720: 1_280, 1080: 1_920, 1440: 2_560 }[quality.resolution]
+  return {
+    width: { ideal: width, max: width },
+    height: { ideal: quality.resolution, max: quality.resolution },
+    frameRate: { ideal: quality.frameRate, max: quality.frameRate },
+  }
+}
+
+function screenShareBitrate(quality: ScreenShareQuality): number {
+  const base = { 720: 1_200_000, 1080: 1_800_000, 1440: 3_000_000 }[quality.resolution]
+  return base * quality.frameRate / 15
+}
 
 function cameraConstraints(facingMode: VoiceCallState['cameraFacingMode']): MediaTrackConstraints {
   return {
@@ -82,6 +98,7 @@ const IDLE_STATE: VoiceCallState = {
   cameraFacingMode: 'user',
   screenShareSupported: false,
   screenSharing: false,
+  screenShareQuality: DEFAULT_SCREEN_SHARE_QUALITY,
   remoteVideoEnabled: false,
 }
 
@@ -178,6 +195,7 @@ export class BrowserVoiceCallService {
       cameraFacingMode: 'user',
       screenShareSupported: false,
       screenSharing: false,
+      screenShareQuality: this.state.screenShareQuality,
       remoteVideoEnabled: false,
     })
     try {
@@ -367,6 +385,52 @@ export class BrowserVoiceCallService {
       if (this.cameraOperationToken === token) this.cameraOperation = null
     })
     return this.cameraOperation
+  }
+
+  setScreenShareQuality(quality: ScreenShareQuality): Promise<void> {
+    if (
+      !SCREEN_SHARE_RESOLUTIONS.includes(quality.resolution)
+      || !SCREEN_SHARE_FRAME_RATES.includes(quality.frameRate)
+      || !this.state.identityVerified
+      || !this.state.screenShareSupported
+      || !['connecting', 'active'].includes(this.state.phase)
+    ) return Promise.resolve()
+    if (this.cameraOperation) return this.cameraOperation
+    const selected = { ...quality }
+    if (!this.state.screenSharing) {
+      this.update({ ...this.state, screenShareQuality: selected })
+      return Promise.resolve()
+    }
+    const operation = this.applyScreenShareQuality(selected)
+    const token = ++this.cameraOperationToken
+    this.cameraOperation = operation.finally(() => {
+      if (this.cameraOperationToken === token) this.cameraOperation = null
+    })
+    return this.cameraOperation
+  }
+
+  private async applyScreenShareQuality(quality: ScreenShareQuality): Promise<void> {
+    const peer = this.peer
+    const sender = this.videoSender
+    const track = this.screenStream?.getVideoTracks()[0]
+    if (!peer || !sender || !track) return
+    this.update({ ...this.state, cameraBusy: true, notice: 'Меняем качество демонстрации…' })
+    try {
+      await track.applyConstraints(screenShareConstraints(quality))
+      if (this.peer !== peer || this.screenStream?.getVideoTracks()[0] !== track) return
+      await this.limitVideoSender(sender, 'screen', quality)
+      if (this.peer !== peer || this.screenStream?.getVideoTracks()[0] !== track) return
+      this.update({ ...this.state, screenShareQuality: quality, cameraBusy: false, notice: null })
+    } catch {
+      // applyConstraints is atomic: a rejected profile leaves the existing
+      // capture constraints and sender limits in place.
+      if (this.peer !== peer || this.screenStream?.getVideoTracks()[0] !== track) return
+      this.update({
+        ...this.state,
+        cameraBusy: false,
+        notice: 'Браузер не смог изменить качество. Демонстрация продолжается в прежнем режиме.',
+      })
+    }
   }
 
   attachVideoElements(
@@ -570,6 +634,7 @@ export class BrowserVoiceCallService {
       screenShareSupported: typeof (navigator.mediaDevices as ScreenCaptureMediaDevices | undefined)
         ?.getDisplayMedia === 'function',
       screenSharing: false,
+      screenShareQuality: this.state.screenShareQuality,
       remoteVideoEnabled: false,
         identityVerified: true,
         verificationCode: null,
@@ -946,10 +1011,8 @@ export class BrowserVoiceCallService {
         selfBrowserSurface: 'exclude',
         surfaceSwitching: 'exclude',
         video: {
+          ...screenShareConstraints(this.state.screenShareQuality),
           displaySurface: 'monitor',
-          width: { ideal: SCREEN_SHARE_MAX_WIDTH, max: SCREEN_SHARE_MAX_WIDTH },
-          height: { ideal: SCREEN_SHARE_MAX_HEIGHT, max: SCREEN_SHARE_MAX_HEIGHT },
-          frameRate: { ideal: SCREEN_SHARE_MAX_FRAMERATE, max: SCREEN_SHARE_MAX_FRAMERATE },
         },
       })
       const track = stream.getVideoTracks()[0]
@@ -1031,7 +1094,14 @@ export class BrowserVoiceCallService {
   }
 
   private readonly handleScreenShareEnded = (): void => {
-    if (!this.state.screenSharing || this.cameraOperation) return
+    if (!this.state.screenSharing) return
+    if (this.cameraOperation) {
+      const stream = this.screenStream
+      void this.cameraOperation.then(() => {
+        if (this.screenStream === stream) this.handleScreenShareEnded()
+      })
+      return
+    }
     const operation = this.stopScreenShare(true)
     const token = ++this.cameraOperationToken
     this.cameraOperation = operation.finally(() => {
@@ -1042,15 +1112,16 @@ export class BrowserVoiceCallService {
   private async limitVideoSender(
     sender: RTCRtpSender,
     source: 'camera' | 'screen',
+    quality = this.state.screenShareQuality,
   ): Promise<void> {
     try {
       const parameters = sender.getParameters()
       parameters.encodings ??= []
       if (parameters.encodings.length === 0) parameters.encodings.push({})
       parameters.encodings[0]!.maxBitrate = source === 'screen'
-        ? SCREEN_SHARE_MAX_BITRATE
+        ? screenShareBitrate(quality)
         : VIDEO_MAX_BITRATE
-      parameters.encodings[0]!.maxFramerate = source === 'screen' ? SCREEN_SHARE_MAX_FRAMERATE : 30
+      parameters.encodings[0]!.maxFramerate = source === 'screen' ? quality.frameRate : 30
       parameters.degradationPreference = source === 'screen' ? 'maintain-resolution' : 'balanced'
       await sender.setParameters(parameters)
     } catch {

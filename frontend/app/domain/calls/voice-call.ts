@@ -27,6 +27,19 @@ export interface VoiceCallAudioOutput {
   kind: 'speaker' | 'earpiece' | 'headphones' | 'bluetooth' | 'other'
 }
 
+export const SCREEN_SHARE_RESOLUTIONS = [720, 1080, 1440] as const
+export const SCREEN_SHARE_FRAME_RATES = [15, 30, 60] as const
+
+export interface ScreenShareQuality {
+  readonly resolution: typeof SCREEN_SHARE_RESOLUTIONS[number]
+  readonly frameRate: typeof SCREEN_SHARE_FRAME_RATES[number]
+}
+
+export const DEFAULT_SCREEN_SHARE_QUALITY: ScreenShareQuality = {
+  resolution: 1080,
+  frameRate: 15,
+}
+
 export interface VoiceCallState {
   phase: VoiceCallPhase
   conversationId: string | null
@@ -46,5 +59,6 @@ export interface VoiceCallState {
   cameraFacingMode: 'user' | 'environment'
   screenShareSupported: boolean
   screenSharing: boolean
+  screenShareQuality: ScreenShareQuality
   remoteVideoEnabled: boolean
 }

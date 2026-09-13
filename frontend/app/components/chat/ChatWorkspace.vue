@@ -15,6 +15,7 @@ import type { TypingIndicator } from '../../application/messaging/typing-indicat
 import type { PresenceIndicator } from '../../application/messaging/presence-indicator-service'
 import type { RealtimeConnectionState } from '../../application/messaging/realtime-sync-service'
 import type { VoiceCallState } from '../../domain/calls/voice-call'
+import { DEFAULT_SCREEN_SHARE_QUALITY } from '../../domain/calls/voice-call'
 import type { ConversationAudioSource } from '../../presentation/composables/useConversationAudioPlayer'
 import { useConversationAudioPlayer } from '../../presentation/composables/useConversationAudioPlayer'
 import {
@@ -83,6 +84,7 @@ function callsState() {
     cameraFacingMode: 'user' as const,
     screenShareSupported: false,
     screenSharing: false,
+    screenShareQuality: DEFAULT_SCREEN_SHARE_QUALITY,
     remoteVideoEnabled: false,
   }
 }
@@ -383,6 +385,7 @@ onBeforeUnmount(() => {
       :switch-camera="calls.switchCamera.bind(calls)"
       :toggle-screen-share="calls.toggleScreenShare.bind(calls)"
       :attach-video-elements="calls.attachVideoElements.bind(calls)"
+      :set-screen-share-quality="calls.setScreenShareQuality.bind(calls)"
       :select-audio-output="calls.selectAudioOutput.bind(calls)"
       :request-audio-output="calls.requestAudioOutput.bind(calls)"
       :resume-audio="calls.resumeAudio.bind(calls)"
