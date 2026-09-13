@@ -1,79 +1,53 @@
 # Текущий workplan
 
-## WP-146 — Мобильный возврат и прочтение видимых сообщений
+## WP-147 — Надёжность звонков и экономичная демонстрация экрана
 
-Статус: **production deployed; physical gesture acceptance pending**
-Backlog: `BL-FIX-073`
-Bugs: `BUG-137`, `BUG-138`
-
-Цель: history transition сохраняет список до открытия чата; read cursor продвигается
-по реально показанному сообщению в активном окне, а отправитель видит прочтение.
+Статус: **implemented locally; production and physical acceptance pending**
+Backlog: `BL-FIX-074`; bugs: `BUG-139`, `BUG-140`, `BUG-141`.
 
 ### Scope и шаги
 
-1. Записать route до смены mobile pane и загрузки conversation; проверить Back/Forward.
-2. Наблюдать timeline после render/restoration, при scroll/resize/focus, исключить
-   hidden, inactive, detached и перекрытые страницы.
-3. Отправлять exact visible sequence с дедупликацией и retry; исключить auto-read
-   загруженного tail и ложное обнуление unread при частичном просмотре.
-4. Добавить read sequence из существующей таблицы в participant receipt response,
-   восстановление через sync/reload и отдельное отображение прочтения.
-5. Запустить Docker stack и проверить mobile browser, выполнить regression checks.
-6. По запросу пользователя отправить исправление в `main`, развернуть production
-   и проверить оба публичных origin.
+1. Сериализовать incoming signaling: ICE ждёт async MLS verification offer/answer;
+   повторный reconnect snapshot не сбрасывает текущий peer.
+2. Устранить race fast-connected против identity state и завершения старого media
+   setup против нового звонка. Ограничить ICE buffer.
+3. Ограничить screen capture 1920×1080 / 15 fps, сохранить detail/bitrate control;
+   освободить ненужные video sinks без остановки звука.
+4. Каждое явное повторное нажатие заново вызывает системный picker. При сохранённом
+   OS denial показать понятный путь к настройкам; не обещать обход запрета macOS.
+5. Добавить regression tests и выполнить frontend checks, docs/Compose checks.
 
 ### Security и архитектура
 
-- Только существующие opaque conversation/user IDs и sequence; plaintext/keys не
-  добавляются в transport, persistence или logs.
-- Membership authorization, CSRF/session/Origin и monotonic server cursors сохраняются.
-- Read и delivery остаются разными состояниями; read cursor общий для user, delivery
-  учитывает действующие устройства. Schema и crypto protocol не меняются.
-- Серверный cursor означает «прочитано по sequence включительно»; не вводится новая
-  таблица индивидуальных просмотренных сообщений.
+SDP применяется только после MLS binding verification; protocol, device binding,
+DTLS-SRTP, sessions и server authorization сохраняются. Media остаётся в WebRTC;
+нет новых logs, секретов, persistence, dependencies или API schemas.
 
 ### Tests и Definition of Done
 
-- Нет read на load/poll без viewport report, в фоне, скрытом pane или до restoration.
-- Scroll/focus/new render дают read без ожидания 30-second fallback; частичный viewport
-  не подтверждает невидимый tail, ошибки допускают retry, cursor не регрессирует.
-- Read receipt обновляет sender UI и восстанавливается после reload/catch-up;
-  non-member не видит чужие receipts.
-- Frontend tests/lint/typecheck/build, backend relevant tests/lint/types,
-  PostgreSQL query verification и Compose config проходят.
-- Документы обновлены; focused local commit создан.
+- Delayed verification + immediate ICE, duplicate offer/answer, fast connected,
+  hangup во время setup, stale peer events покрыты тестами.
+- Capture caps, permission retry, camera/audio continuity, cleanup проверены.
+- Frontend tests/lint/typecheck/build, docs и Compose validation проходят.
+- Документы обновлены, focused commit создан. Физические macOS permission/CPU и
+  two-device network acceptance отдельно отмечены, если недоступны локально.
 
 ### Exclusions
 
-- Android/iOS package release, физический OS gesture emulator.
-- Изменения E2EE, retention, session policy и схемы БД.
+Production rollout, native package releases, ICE renegotiation/protocol changes,
+программный сброс системных privacy settings.
 
 ### Verification
 
-- Полный frontend suite: 75 files, 471 tests passed; final receipt parser suite
-  после compatibility correction: 12 passed. ESLint и Nuxt typecheck passed.
-- Production Nuxt build выполнен Dockerfile; API/frontend пересобраны, local Nginx
-  перезапущен после смены container IP. Compose config и docs checks passed.
-- Backend: 295 passed, 12 integration tests skipped без общего TEST_DATABASE_URL;
-  отдельный PostgreSQL container получил fresh `alembic upgrade head`, затем
-  relevant integration/application/HTTP suite: 17 passed (включая 2 PostgreSQL tests).
-  Ruff check/format, mypy (402 files), import-linter (3 contracts) passed.
-- Browser 412×915: `/chat -> conversation -> Back -> /chat -> Forward` passed;
-  unread badge QA-чата оставался 30 на Settings/list, открытие tail подтвердило 30.
-  При загруженном, но offscreen №31 серверный read cursor оставался 30;
-  scroll-to-latest продвинул его до 31. Финальный IntersectionObserver build
-  повторил проверку с №34: read оставался 33 вне экрана и стал 34 после scroll.
-  Sender показывает `Прочитано: 1/1`;
-  статус сохранился после reload. Console errors отсутствовали.
-- Focus/visibility, occlusion, tall/clipped messages, retry, in-flight coalescing,
-  KeepAlive deactivation и IntersectionObserver/fallback покрыты component tests.
-  Две вкладки встроенного Browser не воспроизвели надёжно OS background/focus;
-  это не считается physical foreground acceptance.
-- Изменений схемы/crypto нет; локально Rust rebuild и полный `make ci` не запускались.
-  Полный `make ci`, fresh-database migrations и dependency audit прошли в production
-  workflow `33964442194`; отдельный CI `33964442195` также successful.
-- Production развернут из `6afafd47777e5b993e62bb000f1d203d7374ddf4`;
-  immutable Docker builds и rollout health checks passed. Оба public origin вернули
-  frontend/API health HTTP `200` с успешной TLS verification.
-- Системная predictive Back animation Android/iOS требует физического устройства;
-  native package release не выполнялся.
+- Полный frontend suite: 75 files / 484 tests passed, включая 13 новых call
+  regressions; focused call/UI suites: 45 passed.
+- ESLint и Nuxt typecheck passed; production Nuxt/PWA build passed.
+- `make docs-check compose-check` и `git diff --check` passed.
+- Diff проверен: только call adapter, regression tests и документация; новых
+  dependencies, секретов, API/crypto/persistence changes нет.
+- Backend/Rust checks и полный `make ci` не запускались: изменён frontend call
+  adapter, backend и crypto implementation не менялись.
+- Физический Mac screen-permission denial/re-enable, CPU before/after и звонки
+  между двумя реальными сетями здесь не проверены. Mock tests подтверждают
+  перечисленные timing defects, но не гарантируют все network/OS combinations.
+- Production rollout и native release не выполнялись.

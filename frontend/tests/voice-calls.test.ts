@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { CallRealtimeFrame } from '../app/domain/messaging/realtime'
 import type { OutgoingCallSignal } from '../app/application/ports/realtime-gateway'
 import type { NativeCallAudioPort } from '../app/application/ports/native-call-audio'
 import { BrowserVoiceCallService } from '../app/infrastructure/webrtc/browser-voice-call-service'
@@ -131,6 +132,26 @@ function fakeIdentity() {
   }
 }
 
+function incomingFrame(overrides: Partial<CallRealtimeFrame> = {}): CallRealtimeFrame {
+  return {
+    type: 'call_offer', version: 2, eventId: 'event',
+    conversationId: CONVERSATION, callId: 'incoming-call',
+    actorUserId: ALICE_USER, actorDeviceId: ALICE_DEVICE,
+    sdp: 'offer-sdp', identitySignature: '07'.repeat(64),
+    candidate: null, reason: null, ...overrides,
+  }
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
 describe('browser voice calls', () => {
   const signals: OutgoingCallSignal[] = []
   const stream = new FakeStream([new FakeTrack('audio')])
@@ -208,6 +229,215 @@ describe('browser voice calls', () => {
     service.hangup()
     expect(signals.at(-1)).toMatchObject({ type: 'call_ended', reason: 'hangup' })
     expect(stream.track.stop).toHaveBeenCalled()
+  })
+
+  it('preserves ICE arriving while the incoming offer is still being verified', async () => {
+    const identity = fakeIdentity()
+    const verification = deferred<{ verified: true }>()
+    identity.verifyCallBinding.mockReturnValueOnce(verification.promise)
+    const service = new BrowserVoiceCallService(
+      signaling, config, identity, BOB_USER, BOB_DEVICE, null, fakeTones(),
+    )
+    const offer = service.apply(incomingFrame())
+    const candidate = service.apply(incomingFrame({
+      type: 'ice_candidate', sdp: null, identitySignature: null,
+      candidate: JSON.stringify({ candidate: 'candidate:early', sdpMid: '0' }),
+    }))
+    await Promise.resolve()
+    expect(navigator.mediaDevices.getUserMedia).not.toHaveBeenCalled()
+    verification.resolve({ verified: true })
+    await Promise.all([offer, candidate])
+    await service.accept()
+    expect(FakePeerConnection.instances[0]?.addIceCandidate).toHaveBeenCalledWith({
+      candidate: 'candidate:early', sdpMid: '0',
+    })
+    service.hangup()
+  })
+
+  it('does not reset an accepted call when a reconnect repeats its offer', async () => {
+    const identity = fakeIdentity()
+    const service = new BrowserVoiceCallService(
+      signaling, config, identity, BOB_USER, BOB_DEVICE, null, fakeTones(),
+    )
+    let latest = null
+    service.subscribe(state => { latest = state })
+    await service.apply(incomingFrame())
+    await service.accept()
+    const peer = FakePeerConnection.instances[0]!
+    peer.connectionState = 'connected'
+    peer.dispatchEvent(new Event('connectionstatechange'))
+    await service.apply(incomingFrame({ eventId: 'snapshot' }))
+    expect(latest).toMatchObject({ phase: 'active' })
+    expect(peer.close).not.toHaveBeenCalled()
+    expect(stream.track.stop).not.toHaveBeenCalled()
+    expect(identity.verifyCallBinding).toHaveBeenCalledOnce()
+    service.hangup()
+  })
+
+  it('keeps a fast verified connection active and ignores a repeated answer', async () => {
+    const identity = fakeIdentity()
+    const service = new BrowserVoiceCallService(
+      signaling, config, identity, ALICE_USER, ALICE_DEVICE, null, fakeTones(),
+    )
+    let latest = null
+    service.subscribe(state => { latest = state })
+    await service.start(CONVERSATION, BOB_USER)
+    const peer = FakePeerConnection.instances[0]!
+    const answer = incomingFrame({
+      type: 'call_answer', callId: signals[0]!.call_id, sdp: 'answer-sdp',
+      actorUserId: BOB_USER, actorDeviceId: BOB_DEVICE,
+    })
+    const setRemote = vi.spyOn(peer, 'setRemoteDescription').mockImplementation(async value => {
+      peer.remoteDescription = value as RTCSessionDescription
+      peer.connectionState = 'connected'
+      peer.dispatchEvent(new Event('connectionstatechange'))
+    })
+    await service.apply(answer)
+    expect(latest).toMatchObject({ phase: 'active', identityVerified: true })
+    expect(peer.close).not.toHaveBeenCalled()
+    await service.apply(answer)
+    expect(setRemote).toHaveBeenCalledOnce()
+    expect(latest).toMatchObject({ phase: 'active' })
+    service.hangup()
+  })
+
+  it('cannot revive an incoming offer after reset while verification is pending', async () => {
+    const identity = fakeIdentity()
+    const verification = deferred<{ verified: true }>()
+    identity.verifyCallBinding.mockReturnValueOnce(verification.promise)
+    const service = new BrowserVoiceCallService(
+      signaling, config, identity, BOB_USER, BOB_DEVICE, null, fakeTones(),
+    )
+    let latest = null
+    service.subscribe(state => { latest = state })
+    const pending = service.apply(incomingFrame())
+    await vi.waitFor(() => expect(identity.verifyCallBinding).toHaveBeenCalledOnce())
+    service.reset()
+    verification.resolve({ verified: true })
+    await pending
+    expect(latest).toMatchObject({ phase: 'idle' })
+    expect(navigator.mediaDevices.getUserMedia).not.toHaveBeenCalled()
+  })
+
+  it('releases late microphone permission without altering the next call', async () => {
+    const microphone = deferred<MediaStream>()
+    const lateStream = new FakeStream([new FakeTrack('audio')])
+    vi.mocked(navigator.mediaDevices.getUserMedia).mockReturnValueOnce(microphone.promise)
+    const service = new BrowserVoiceCallService(
+      signaling, config, fakeIdentity(), ALICE_USER, ALICE_DEVICE, null, fakeTones(),
+    )
+    const pending = service.start(CONVERSATION, BOB_USER)
+    await vi.waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledOnce())
+    service.hangup()
+    await service.start(CONVERSATION, BOB_USER)
+    microphone.resolve(lateStream as unknown as MediaStream)
+    await pending
+    expect(lateStream.track.stop).toHaveBeenCalledOnce()
+    expect(FakePeerConnection.instances).toHaveLength(1)
+    expect(signals.filter(signal => signal.type === 'call_offer')).toHaveLength(1)
+    service.hangup()
+  })
+
+  it('does not publish a cancelled offer after slow signing completes', async () => {
+    const identity = fakeIdentity()
+    const signing = deferred<{ signature: Uint8Array }>()
+    identity.signCallBinding.mockReturnValueOnce(signing.promise)
+    const service = new BrowserVoiceCallService(
+      signaling, config, identity, ALICE_USER, ALICE_DEVICE, null, fakeTones(),
+    )
+    const pending = service.start(CONVERSATION, BOB_USER)
+    await vi.waitFor(() => expect(identity.signCallBinding).toHaveBeenCalledOnce())
+    service.hangup()
+    await service.start(CONVERSATION, BOB_USER)
+    signing.resolve({ signature: SIGNATURE })
+    await pending
+    expect(signals.filter(signal => signal.type === 'call_offer')).toHaveLength(1)
+    expect(FakePeerConnection.instances[1]?.close).not.toHaveBeenCalled()
+    service.hangup()
+  })
+
+  it('does not let an obsolete answer verification failure end a newer call', async () => {
+    const identity = fakeIdentity()
+    const verification = deferred<{ verified: true }>()
+    identity.verifyCallBinding.mockReturnValueOnce(verification.promise)
+    const service = new BrowserVoiceCallService(
+      signaling, config, identity, ALICE_USER, ALICE_DEVICE, null, fakeTones(),
+    )
+    let latest = null
+    service.subscribe(state => { latest = state })
+    await service.start(CONVERSATION, BOB_USER)
+    const pending = service.apply(incomingFrame({
+      type: 'call_answer', callId: signals[0]!.call_id,
+      actorUserId: BOB_USER, actorDeviceId: BOB_DEVICE, sdp: 'answer-sdp',
+    }))
+    await vi.waitFor(() => expect(identity.verifyCallBinding).toHaveBeenCalledOnce())
+    service.hangup()
+    await service.start(CONVERSATION, BOB_USER)
+    const nextOffer = signals.filter(signal => signal.type === 'call_offer').at(-1)!
+    await service.apply(incomingFrame({
+      type: 'call_answer', callId: nextOffer.call_id,
+      actorUserId: BOB_USER, actorDeviceId: BOB_DEVICE, sdp: 'next-answer-sdp',
+    }))
+    verification.reject(new Error('invalid binding'))
+    await pending
+    expect(latest).toMatchObject({ phase: 'connecting', identityVerified: true })
+    expect(FakePeerConnection.instances[1]?.remoteDescription?.sdp).toBe('next-answer-sdp')
+    expect(FakePeerConnection.instances[1]?.close).not.toHaveBeenCalled()
+    service.hangup()
+  })
+
+  it('stops late microphone capture when the caller cancels during accept', async () => {
+    const microphone = deferred<MediaStream>()
+    vi.mocked(navigator.mediaDevices.getUserMedia).mockReturnValueOnce(microphone.promise)
+    const service = new BrowserVoiceCallService(
+      signaling, config, fakeIdentity(), BOB_USER, BOB_DEVICE, null, fakeTones(),
+    )
+    let latest = null
+    service.subscribe(state => { latest = state })
+    await service.apply(incomingFrame())
+    const accepting = service.accept()
+    await vi.waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledOnce())
+    await service.apply(incomingFrame({ type: 'call_ended', reason: 'hangup' }))
+    microphone.resolve(stream as unknown as MediaStream)
+    await accepting
+    expect(latest).toMatchObject({ phase: 'ended' })
+    expect(stream.track.stop).toHaveBeenCalledOnce()
+    expect(FakePeerConnection.instances).toHaveLength(0)
+    expect(signals.some(signal => signal.type === 'call_answer')).toBe(false)
+  })
+
+  it('ignores closed peer events while a new call is ringing', async () => {
+    const service = new BrowserVoiceCallService(
+      signaling, config, fakeIdentity(), ALICE_USER, ALICE_DEVICE, null, fakeTones(),
+    )
+    let latest = null
+    service.subscribe(state => { latest = state })
+    await service.start(CONVERSATION, BOB_USER)
+    const oldPeer = FakePeerConnection.instances[0]!
+    service.hangup()
+    await service.start(CONVERSATION, BOB_USER)
+    oldPeer.connectionState = 'failed'
+    oldPeer.dispatchEvent(new Event('connectionstatechange'))
+    oldPeer.emitIceCandidate()
+    expect(latest).toMatchObject({ phase: 'outgoing' })
+    expect(FakePeerConnection.instances[1]?.close).not.toHaveBeenCalled()
+    expect(signals.filter(signal => signal.type === 'ice_candidate')).toHaveLength(0)
+    service.hangup()
+  })
+
+  it('bounds incoming ICE until the user accepts', async () => {
+    const service = new BrowserVoiceCallService(
+      signaling, config, fakeIdentity(), BOB_USER, BOB_DEVICE, null, fakeTones(),
+    )
+    await service.apply(incomingFrame())
+    for (let index = 0; index < 80; index += 1) {
+      await service.apply(incomingFrame({
+        type: 'ice_candidate', candidate: JSON.stringify({ candidate: `candidate:${index}` }),
+      }))
+    }
+    await service.accept()
+    expect(FakePeerConnection.instances[0]?.addIceCandidate).toHaveBeenCalledTimes(64)
+    service.hangup()
   })
 
   it('uses native receiver/speaker routing and releases proximity state on hangup', async () => {
@@ -816,9 +1046,9 @@ describe('browser voice calls', () => {
       surfaceSwitching: 'exclude',
       video: {
         displaySurface: 'monitor',
-        width: { ideal: 1_920, max: 2_560 },
-        height: { ideal: 1_080, max: 1_440 },
-        frameRate: { ideal: 15, max: 30 },
+        width: { ideal: 1_920, max: 1_920 },
+        height: { ideal: 1_080, max: 1_080 },
+        frameRate: { ideal: 15, max: 15 },
       },
     })
     expect(screen.track.contentHint).toBe('detail')
@@ -893,6 +1123,78 @@ describe('browser voice calls', () => {
       screenSharing: false,
       notice: 'Демонстрация экрана не начата',
     })
+    service.hangup()
+  })
+
+  it.each(['NotAllowedError', 'NotReadableError'])(
+    'requests the picker again from a fresh click after %s and preserves audio',
+    async errorName => {
+      vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0 (Macintosh)')
+      const screen = new FakeStream([new FakeTrack('video')])
+      const getDisplayMedia = vi.fn()
+        .mockRejectedValueOnce(new DOMException('denied', errorName))
+        .mockResolvedValueOnce(screen)
+      Object.defineProperty(navigator, 'mediaDevices', {
+        configurable: true,
+        value: { getUserMedia: vi.fn(async () => stream), getDisplayMedia },
+      })
+      const service = new BrowserVoiceCallService(
+        signaling, config, fakeIdentity(), BOB_USER, BOB_DEVICE, null, fakeTones(),
+      )
+      let latest = null
+      service.subscribe(state => { latest = state })
+      await service.apply(incomingFrame())
+      await service.accept()
+      await service.toggleScreenShare()
+      expect(latest).toMatchObject({
+        cameraBusy: false, screenSharing: false, screenShareSupported: true,
+        notice: expect.stringContaining('Системные настройки'),
+      })
+      expect(stream.track.stop).not.toHaveBeenCalled()
+      const retry = service.toggleScreenShare()
+      // No await before getDisplayMedia: preserve transient user activation.
+      expect(getDisplayMedia).toHaveBeenCalledTimes(2)
+      await retry
+      expect(latest).toMatchObject({ screenSharing: true, notice: null })
+      service.hangup()
+    },
+  )
+
+  it('detaches hidden video during share while keeping a separate audio-only sink', async () => {
+    const screen = new FakeStream([new FakeTrack('video')])
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn(async () => stream),
+        getDisplayMedia: vi.fn(async () => screen),
+      },
+    })
+    const service = new BrowserVoiceCallService(
+      signaling, config, fakeIdentity(), BOB_USER, BOB_DEVICE, null, fakeTones(),
+    )
+    await service.apply(incomingFrame())
+    await service.accept()
+    const peer = FakePeerConnection.instances[0]!
+    const video = new FakeVideo()
+    service.attachVideoElements(null, video as unknown as HTMLVideoElement)
+    const remoteAudio = new FakeTrack('audio')
+    const remoteVideo = new FakeTrack('video')
+    for (const track of [remoteAudio, remoteVideo]) {
+      peer.dispatchEvent(Object.assign(new Event('track'), { track }))
+    }
+    const audioSink = FakeAudio.instances[0]!.srcObject!
+    expect(audioSink.getAudioTracks()).toEqual([remoteAudio])
+    expect(audioSink.getVideoTracks()).toEqual([])
+    expect(video.srcObject?.getVideoTracks()).toEqual([remoteVideo])
+    await service.toggleScreenShare()
+    expect(video.srcObject).toBeNull()
+    // Remounting the fullscreen overlay must not restart hidden playback.
+    service.attachVideoElements(null, video as unknown as HTMLVideoElement)
+    expect(video.srcObject).toBeNull()
+    expect(FakeAudio.instances[0]!.srcObject).toBe(audioSink)
+    expect(remoteAudio.stop).not.toHaveBeenCalled()
+    await service.toggleScreenShare()
+    expect(video.srcObject?.getVideoTracks()).toEqual([remoteVideo])
     service.hangup()
   })
 

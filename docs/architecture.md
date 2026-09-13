@@ -1988,7 +1988,7 @@ audio-output selector открывается только явным user action
 video sender. Только явное нажатие вызывает `getDisplayMedia()`; browser/OS picker
 владеет перечислением и выбором всего экрана, конкретного монитора, окна или вкладки.
 Приложение не получает права заранее и не подменяет picker собственным списком.
-Выбранный track получает `contentHint=detail`, target 15 fps, ceiling 2560×1440 и
+Выбранный track получает `contentHint=detail`, target и ceiling 15 fps, ceiling 1920×1080 и
 sender cap 1.8 Mbit/s с `maintain-resolution`, чтобы при ограниченном TURN budget
 сохранять читаемость текста раньше плавности анимации. Capture заменяет camera track
 через `RTCRtpSender.replaceTrack()` без renegotiation и без изменения подписанного
@@ -2005,12 +2005,39 @@ capability остаётся disabled, а native WebView screen capture не об
 
 `WP-140` добавляет обязательный local anti-recursion invariant. Перед заменой sender
 track sharing client перестаёт рисовать remote video в call surface и никогда не
-присоединяет screen stream к local preview element; remote stream при этом остаётся
-подключённым и audio не меняется. Поэтому захваченный monitor/window не содержит
+присоединяет screen stream к local preview element; remote WebRTC track при этом
+остаётся подключённым и audio не меняется. Поэтому захваченный monitor/window не содержит
 screen-derived call video даже при одновременном share обоих участников. Picker
 получает `selfBrowserSurface=exclude` и `surfaceSwitching=exclude`, но эти значения —
 только browser preferences и не считаются единственной защитой: user agent вправе их
 игнорировать. После stop обычный remote video rendering и camera restore возвращаются.
+
+`WP-147` сериализует входящие signaling frames внутри call adapter: async MLS
+verification не позволяет ICE обогнать offer/answer. Повторный offer/answer из
+reconnect snapshot не пересоздаёт peer и не возвращает active call в connecting.
+Verified answer публикует identity state перед применением remote SDP, чтобы быстрый
+`connected` event не вызвал ложный identity failure; invalid binding по-прежнему
+не достигает `setRemoteDescription`. Async media/signing completion проверяет
+поколение lifecycle, а события закрытого peer не меняют следующий звонок. Pending
+remote ICE ограничен 64 entries. Это локальное упорядочивание; wire protocol и
+server authorization не меняются, ICE restart/renegotiation не добавляются.
+
+Capture envelope ограничен 1080p/15fps уже при запросе экрана, а не только encoder
+sender cap. На время share remote video element отсоединён от stream, включая
+повторный mount overlay; после stop он подключается снова. Audio playback получает
+отдельный audio-only MediaStream и не содержит video track. Сам WebRTC receiver
+остаётся активным; это сокращает playback/render work, но не обещает остановку
+сетевого приёма или всех decoder затрат браузера.
+
+Каждое явное повторное нажатие «Показать экран» синхронно вызывает новый
+`getDisplayMedia` до любого await: transient user activation сохраняется, denial
+не кэшируется и capability не отключается. `NotAllowedError` не позволяет отличить
+отмену picker от постоянного OS denial; UI предлагает повторить и поясняет системные
+настройки, `NotReadableError` также показывает recovery guidance. Web/PWA не может
+сбросить macOS TCC permission или гарантировать повтор системного prompt; разрешение
+может потребовать ручного изменения и перезапуска browser/PWA. Основания:
+[W3C Screen Capture](https://www.w3.org/TR/screen-capture/),
+[Apple screen recording permissions](https://support.apple.com/en-euro/guide/mac-help/mchld6aa7d23/mac).
 
 ## 15. Security и trust boundaries
 

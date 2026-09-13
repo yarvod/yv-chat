@@ -42,6 +42,9 @@ interface ScreenCaptureMediaDevices {
 
 const VIDEO_MAX_BITRATE = 1_200_000
 const SCREEN_SHARE_MAX_BITRATE = 1_800_000
+const SCREEN_SHARE_MAX_WIDTH = 1_920
+const SCREEN_SHARE_MAX_HEIGHT = 1_080
+const SCREEN_SHARE_MAX_FRAMERATE = 15
 const CALL_CONNECTION_TIMEOUT_MS = 30_000
 const CALL_RECONNECT_TIMEOUT_MS = 15_000
 const MAX_BUFFERED_ICE_CANDIDATES = 64
@@ -120,6 +123,9 @@ export class BrowserVoiceCallService {
   private nativeAudioActive = false
   private stopNativeAudioSubscription: (() => Promise<void>) | null = null
   private nativeAudioCleanup: Promise<void> = Promise.resolve()
+  private signalingQueue: Promise<void> = Promise.resolve()
+  private signalingGeneration = 0
+  private operationGeneration = 0
 
   constructor(
     private readonly signaling: CallSignalingTransport,
@@ -142,6 +148,9 @@ export class BrowserVoiceCallService {
     if (this.state.phase !== 'idle' && this.state.phase !== 'ended' && this.state.phase !== 'error') {
       return
     }
+    this.invalidatePendingSignals()
+    this.cleanup()
+    const generation = this.operationGeneration
     this.tones.unlock()
     const callId = crypto.randomUUID()
     this.caller = true
@@ -173,8 +182,11 @@ export class BrowserVoiceCallService {
     })
     try {
       const peer = await this.preparePeer()
+      if (!peer || generation !== this.operationGeneration) return
       const offer = await peer.createOffer({ offerToReceiveAudio: true })
+      if (generation !== this.operationGeneration) return
       await peer.setLocalDescription(offer)
+      if (generation !== this.operationGeneration) return
       const sdp = peer.localDescription?.sdp
       if (!sdp) throw new Error('missing local SDP')
       const signed = await this.identity.signCallBinding({
@@ -187,6 +199,7 @@ export class BrowserVoiceCallService {
         calleeDeviceId: null,
         sdp,
       })
+      if (generation !== this.operationGeneration) return
       this.localOffer = {
         sdp,
         signature: signed.signature,
@@ -211,6 +224,7 @@ export class BrowserVoiceCallService {
       this.tones.startOutgoing()
       this.armRingTimeout()
     } catch (error) {
+      if (generation !== this.operationGeneration) return
       this.fail(this.microphoneError(error))
     }
   }
@@ -222,24 +236,32 @@ export class BrowserVoiceCallService {
       || !this.state.callId
       || !this.pendingOffer
     ) return
+    const generation = this.operationGeneration
+    const offer = this.pendingOffer
+    const conversationId = this.state.conversationId
+    const callId = this.state.callId
     this.tones.unlock()
     this.tones.stop()
     this.clearRingTimeout()
     this.update({ ...this.state, phase: 'connecting', notice: 'Соединяем…' })
     try {
       const peer = await this.preparePeer()
-      await peer.setRemoteDescription({ type: 'offer', sdp: this.pendingOffer.sdp })
+      if (!peer || generation !== this.operationGeneration) return
+      await peer.setRemoteDescription({ type: 'offer', sdp: offer.sdp })
+      if (generation !== this.operationGeneration) return
       this.bindIncomingVideoSender(peer)
       await this.flushCandidates()
+      if (generation !== this.operationGeneration) return
       const answer = await peer.createAnswer()
+      if (generation !== this.operationGeneration) return
       await peer.setLocalDescription(answer)
+      if (generation !== this.operationGeneration) return
       const sdp = peer.localDescription?.sdp
       if (!sdp) throw new Error('missing local SDP')
-      const offer = this.pendingOffer
       const signed = await this.identity.signCallBinding({
         role: 'answer',
-        conversationId: this.state.conversationId,
-        callId: this.state.callId,
+        conversationId,
+        callId,
         callerUserId: offer.callerUserId,
         callerDeviceId: offer.callerDeviceId,
         calleeUserId: this.localUserId,
@@ -247,8 +269,8 @@ export class BrowserVoiceCallService {
         sdp,
       })
       const verification = await this.identity.deriveCallVerificationCode({
-        conversationId: this.state.conversationId,
-        callId: this.state.callId,
+        conversationId,
+        callId,
         callerUserId: offer.callerUserId,
         callerDeviceId: offer.callerDeviceId,
         calleeUserId: this.localUserId,
@@ -258,6 +280,7 @@ export class BrowserVoiceCallService {
         answerSdp: sdp,
         answerSignature: signed.signature,
       })
+      if (generation !== this.operationGeneration) return
       if (!this.send({
         type: 'call_answer',
         version: 2,
@@ -277,18 +300,24 @@ export class BrowserVoiceCallService {
       })
       this.armConnectionTimeout(CALL_CONNECTION_TIMEOUT_MS)
     } catch (error) {
+      if (generation !== this.operationGeneration) return
       this.fail(this.microphoneError(error), true)
     }
   }
 
   reject(): void {
     if (this.state.phase !== 'incoming') return
+    this.invalidatePendingSignals()
     this.sendTerminal('call_rejected', 'declined')
     this.finish('Звонок отклонён', 'declined')
   }
 
   hangup(): void {
-    if (this.state.phase === 'idle') return
+    this.invalidatePendingSignals()
+    if (this.state.phase === 'idle') {
+      this.cleanup()
+      return
+    }
     this.sendTerminal('call_ended', 'hangup')
     this.finish(
       'Звонок завершён',
@@ -355,7 +384,7 @@ export class BrowserVoiceCallService {
     this.remoteVideoElement = remote
     this.attachRemoteVideoListeners()
     this.attachStream(local, this.cameraStream)
-    this.attachStream(remote, this.remoteMediaStream)
+    this.attachStream(remote, this.state.screenSharing ? null : this.remoteMediaStream)
   }
 
   async selectAudioOutput(deviceId: string): Promise<void> {
@@ -424,6 +453,7 @@ export class BrowserVoiceCallService {
   }
 
   reset(): void {
+    this.invalidatePendingSignals()
     if (this.state.phase === 'incoming') this.reject()
     else if (
       this.state.phase === 'active'
@@ -439,8 +469,36 @@ export class BrowserVoiceCallService {
     this.tones.dispose()
   }
 
-  async apply(frame: CallRealtimeFrame): Promise<void> {
+  apply(frame: CallRealtimeFrame): Promise<void> {
+    // WebSocket callbacks do not await MLS verification. Keep candidates behind
+    // the authenticated offer/answer that establishes their call context.
+    const generation = this.signalingGeneration
+    const operation = this.signalingQueue.then(async () => {
+      if (generation !== this.signalingGeneration) return
+      const lifecycle = this.operationGeneration
+      try {
+        await this.applySignal(frame)
+      } catch (error) {
+        // An obsolete addIceCandidate rejection must not reach the caller's
+        // hangup handler and terminate a newer call.
+        if (lifecycle === this.operationGeneration) throw error
+      }
+    })
+    this.signalingQueue = operation.catch(() => undefined)
+    return operation
+  }
+
+  private invalidatePendingSignals(): void {
+    this.signalingGeneration += 1
+    // A new call must not wait for an obsolete asynchronous verification.
+    this.signalingQueue = Promise.resolve()
+  }
+
+  private async applySignal(frame: CallRealtimeFrame): Promise<void> {
+    const generation = this.operationGeneration
     if (frame.type === 'call_offer') {
+      // Reconnect snapshots repeat the original offer, including after accept.
+      if (this.state.callId === frame.callId) return
       if (
         this.state.phase !== 'idle'
         && this.state.phase !== 'ended'
@@ -474,6 +532,7 @@ export class BrowserVoiceCallService {
           calleeUserId: this.localUserId,
         }
       } catch {
+        if (generation !== this.operationGeneration) return
         this.cleanup()
         this.update({
           ...IDLE_STATE,
@@ -484,6 +543,7 @@ export class BrowserVoiceCallService {
         })
         return
       }
+      if (generation !== this.operationGeneration) return
       this.cleanup()
       this.caller = false
       this.offerSent = false
@@ -520,10 +580,13 @@ export class BrowserVoiceCallService {
       return
     }
     if (frame.callId !== this.state.callId) return
+    if (['idle', 'ended', 'error'].includes(this.state.phase)) return
     if (
       frame.type === 'call_answer' && this.peer && frame.sdp
       && frame.identitySignature && this.localOffer
     ) {
+      const peer = this.peer
+      if (peer.remoteDescription) return
       try {
         const signature = hexToBytes(frame.identitySignature)
         const offer = this.localOffer
@@ -550,10 +613,11 @@ export class BrowserVoiceCallService {
           answerSdp: frame.sdp,
           answerSignature: signature,
         })
+        if (generation !== this.operationGeneration) return
         this.tones.stop()
         this.clearRingTimeout()
-        await this.peer.setRemoteDescription({ type: 'answer', sdp: frame.sdp })
-        await this.flushCandidates()
+        // setRemoteDescription can dispatch connected before its promise settles.
+        // Publish the verified identity first, after both MLS operations succeeded.
         this.update({
           ...this.state,
           phase: 'connecting',
@@ -561,8 +625,13 @@ export class BrowserVoiceCallService {
           verificationCode: verification.code,
           notice: 'Устройство подтверждено MLS',
         })
+        await peer.setRemoteDescription({ type: 'answer', sdp: frame.sdp })
+        if (generation !== this.operationGeneration) return
+        await this.flushCandidates()
+        if (generation !== this.operationGeneration) return
         this.armConnectionTimeout(CALL_CONNECTION_TIMEOUT_MS)
       } catch {
+        if (generation !== this.operationGeneration) return
         this.sendTerminal('call_ended', 'identity_error')
         this.fail('Не удалось подтвердить устройство собеседника')
       }
@@ -570,8 +639,11 @@ export class BrowserVoiceCallService {
     }
     if (frame.type === 'ice_candidate' && frame.candidate) {
       const candidate = this.parseCandidate(frame.candidate)
-      if (!this.peer?.remoteDescription) this.pendingCandidates.push(candidate)
-      else await this.peer.addIceCandidate(candidate)
+      if (!this.peer?.remoteDescription) {
+        if (this.pendingCandidates.length < MAX_BUFFERED_ICE_CANDIDATES) {
+          this.pendingCandidates.push(candidate)
+        }
+      } else await this.peer.addIceCandidate(candidate)
       return
     }
     if (frame.type === 'call_rejected') {
@@ -594,20 +666,28 @@ export class BrowserVoiceCallService {
     }
   }
 
-  private async preparePeer(): Promise<RTCPeerConnection> {
+  private async preparePeer(): Promise<RTCPeerConnection | null> {
+    const generation = this.operationGeneration
     if (!navigator.mediaDevices?.getUserMedia || typeof RTCPeerConnection === 'undefined') {
       throw new Error('unsupported')
     }
     const loaded = await this.config.load()
+    if (generation !== this.operationGeneration) return null
     if (!loaded.enabled) throw new Error('disabled')
-    this.localStream = await navigator.mediaDevices.getUserMedia({
+    const localStream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       video: false,
     })
+    if (generation !== this.operationGeneration) {
+      for (const track of localStream.getTracks()) track.stop()
+      return null
+    }
+    this.localStream = localStream
     await this.activateNativeAudio()
+    if (generation !== this.operationGeneration) return null
     const peer = new RTCPeerConnection(loaded.configuration)
     this.peer = peer
-    for (const track of this.localStream.getAudioTracks()) peer.addTrack(track, this.localStream)
+    for (const track of localStream.getAudioTracks()) peer.addTrack(track, localStream)
     if (
       typeof peer.addTransceiver === 'function'
       && (this.caller || typeof peer.getTransceivers !== 'function')
@@ -632,8 +712,11 @@ export class BrowserVoiceCallService {
     this.remoteMediaStream = new MediaStream()
     this.remoteAudio = new Audio()
     this.remoteAudio.autoplay = true
-    this.remoteAudio.srcObject = this.remoteMediaStream
+    // An audio element must not also consume the remote video track.
+    const remoteAudioStream = new MediaStream()
+    this.remoteAudio.srcObject = remoteAudioStream
     await this.refreshAudioOutputs()
+    if (generation !== this.operationGeneration) return null
     if (!this.listeningForDeviceChanges) {
       navigator.mediaDevices.addEventListener?.('devicechange', this.handleDeviceChange)
       this.listeningForDeviceChanges = true
@@ -656,20 +739,29 @@ export class BrowserVoiceCallService {
         event.track.addEventListener('unmute', updateRemoteVideo)
         event.track.addEventListener('ended', updateRemoteVideo)
         updateRemoteVideo()
-        this.attachStream(this.remoteVideoElement, this.remoteMediaStream)
+        this.attachStream(
+          this.remoteVideoElement,
+          this.state.screenSharing ? null : this.remoteMediaStream,
+        )
       } else if (this.remoteAudio) {
+        if (!remoteAudioStream.getTracks().some(track => track.id === event.track.id)) {
+          remoteAudioStream.addTrack(event.track)
+        }
         void this.remoteAudio.play().catch(() => {
           this.update({ ...this.state, notice: 'Нажмите на экран, чтобы включить звук' })
         })
       }
     })
     peer.addEventListener('icecandidate', event => {
+      if (this.peer !== peer) return
       if (!event.candidate || !this.state.conversationId || !this.state.callId) return
       this.queueOrSendLocalCandidate(JSON.stringify(event.candidate.toJSON()))
     })
     peer.addEventListener('connectionstatechange', () => {
+      if (this.peer !== peer) return
       if (peer.connectionState === 'connected') {
         this.tones.stop()
+        this.clearRingTimeout()
         this.clearConnectionTimeout()
         this.connectedAt ??= Date.now()
         if (!this.state.identityVerified) {
@@ -719,9 +811,11 @@ export class BrowserVoiceCallService {
   }
 
   private async flushCandidates(): Promise<void> {
-    if (!this.peer) return
+    const peer = this.peer
+    if (!peer) return
     for (const candidate of this.pendingCandidates.splice(0)) {
-      await this.peer.addIceCandidate(candidate)
+      if (this.peer !== peer) return
+      await peer.addIceCandidate(candidate)
     }
   }
 
@@ -853,9 +947,9 @@ export class BrowserVoiceCallService {
         surfaceSwitching: 'exclude',
         video: {
           displaySurface: 'monitor',
-          width: { ideal: 1_920, max: 2_560 },
-          height: { ideal: 1_080, max: 1_440 },
-          frameRate: { ideal: 15, max: 30 },
+          width: { ideal: SCREEN_SHARE_MAX_WIDTH, max: SCREEN_SHARE_MAX_WIDTH },
+          height: { ideal: SCREEN_SHARE_MAX_HEIGHT, max: SCREEN_SHARE_MAX_HEIGHT },
+          frameRate: { ideal: SCREEN_SHARE_MAX_FRAMERATE, max: SCREEN_SHARE_MAX_FRAMERATE },
         },
       })
       const track = stream.getVideoTracks()[0]
@@ -895,16 +989,11 @@ export class BrowserVoiceCallService {
     } catch (error) {
       for (const item of stream?.getTracks() ?? []) item.stop()
       if (this.peer !== peer) return
-      const cancelled = error instanceof DOMException && (
-        error.name === 'NotAllowedError' || error.name === 'AbortError'
-      )
       this.update({
         ...this.state,
         cameraBusy: false,
         screenSharing: false,
-        notice: cancelled
-          ? 'Демонстрация экрана не начата'
-          : 'Не удалось показать экран — звонок продолжается',
+        notice: this.screenShareError(error),
       })
     }
   }
@@ -961,7 +1050,7 @@ export class BrowserVoiceCallService {
       parameters.encodings[0]!.maxBitrate = source === 'screen'
         ? SCREEN_SHARE_MAX_BITRATE
         : VIDEO_MAX_BITRATE
-      parameters.encodings[0]!.maxFramerate = source === 'screen' ? 15 : 30
+      parameters.encodings[0]!.maxFramerate = source === 'screen' ? SCREEN_SHARE_MAX_FRAMERATE : 30
       parameters.degradationPreference = source === 'screen' ? 'maintain-resolution' : 'balanced'
       await sender.setParameters(parameters)
     } catch {
@@ -1088,12 +1177,14 @@ export class BrowserVoiceCallService {
   }
 
   private cleanup(): void {
+    this.operationGeneration += 1
     this.tones.stop()
     navigator.vibrate?.(0)
     this.clearRingTimeout()
     this.clearConnectionTimeout()
-    this.peer?.close()
+    const peer = this.peer
     this.peer = null
+    peer?.close()
     for (const track of this.localStream?.getTracks() ?? []) track.stop()
     this.localStream = null
     for (const track of this.cameraStream?.getTracks() ?? []) track.stop()
@@ -1310,8 +1401,28 @@ export class BrowserVoiceCallService {
     return 'Не удалось начать звонок'
   }
 
+  private screenShareError(error: unknown): string {
+    if (error instanceof DOMException) {
+      if (error.name === 'AbortError') return 'Демонстрация экрана не начата'
+      if (error.name === 'NotAllowedError' || error.name === 'NotReadableError') {
+        const settings = /Mac/.test(navigator.userAgent)
+          ? 'На Mac: Системные настройки → Конфиденциальность и безопасность → Запись экрана и системного аудио. Разрешите доступ браузеру или yv-chat; если система попросит, перезапустите приложение.'
+          : 'Проверьте разрешение на захват экрана в настройках браузера и системы.'
+        return `Доступ к экрану не получен. Нажмите «Показать экран», чтобы повторить запрос. Если окно выбора не появляется: ${settings}`
+      }
+      if (error.name === 'InvalidStateError') {
+        return 'Вернитесь в окно звонка и снова нажмите «Показать экран»'
+      }
+    }
+    return 'Не удалось показать экран — звонок продолжается'
+  }
+
   private update(state: VoiceCallState): void {
+    const sharingChanged = this.state.screenSharing !== state.screenSharing
     this.state = state
+    if (sharingChanged) {
+      this.attachStream(this.remoteVideoElement, state.screenSharing ? null : this.remoteMediaStream)
+    }
     for (const listener of this.listeners) listener(state)
   }
 }

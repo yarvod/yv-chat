@@ -4,6 +4,41 @@
 
 ## Active
 
+### BUG-139 — ICE и повторные snapshot ломают установку звонка
+
+Статус: **fixed locally in WP-147; physical network acceptance pending**.
+Воспроизведение: задержать async offer verification и сразу доставить ICE; повторить
+call_offer после accept либо отправить connected внутри setRemoteDescription answer.
+Ранее ранний ICE терялся из-за ещё не установленного callId, snapshot выполнял cleanup,
+а быстрый connected видел identityVerified=false. Отдельно поздний getUserMedia/signing
+после hangup мог восстановить отменённый call и затронуть следующую попытку.
+Исправление: serialized incoming signaling, idempotent snapshot, verified state перед
+SDP application, lifecycle guards и игнорирование событий старого peer; ICE cap 64.
+Mock regressions воспроизводят эти причины. Они не доказывают устранение всех возможных
+сетевых причин симптома пользователя; реальные две сети/устройства требуют acceptance.
+
+### BUG-140 — Демонстрация захватывает лишние кадры и проигрывает скрытое видео
+
+Статус: **fixed locally in WP-147; macOS CPU measurement pending**.
+Воспроизведение: показать большой monitor с открытым call UI. Capture допускал
+2560×1440 / 30 fps при sender ceiling 15 fps; скрытый remote video оставался
+подключённым, а audio element получал stream с video track.
+Исправление: capture ceiling 1920×1080 / 15 fps, отсоединение скрытого video sink
+и отдельный audio-only playback stream; remote receive и audio call сохраняются.
+Тесты проверяют caps, detach/remount/restore и непрерывность audio. Скриншот пользователя
+показывает нагрузку, но не является сравнительным измерением после исправления.
+
+### BUG-141 — Системный запрет демонстрации выглядит как простая отмена
+
+Статус: **recovery guidance and retry verified locally in WP-147; OS acceptance pending**.
+Воспроизведение: запретить browser/PWA запись экрана в macOS, нажать «Показать экран».
+Ранее NotAllowedError показывал только «Демонстрация экрана не начата», без пути
+восстановления системного доступа. Новый текст объясняет повторное нажатие и
+System Settings → Privacy & Security → Screen & System Audio Recording.
+Каждый повторный click вызывает getDisplayMedia в user activation; проверены denial
+→ success и NotReadableError. Сайт не может сбросить постоянный OS запрет или
+принудительно повторить системный prompt; браузер может потребовать перезапуск.
+
 ### BUG-137 — Back preview захватывает открываемый чат вместо списка
 
 Статус: **fixed and production deployed; physical gesture acceptance pending**

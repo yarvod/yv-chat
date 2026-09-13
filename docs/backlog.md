@@ -52,6 +52,33 @@ authenticated call identity, video calls, затем screen sharing. Эти за
 
 ## Frontend application и administration
 
+### BL-FIX-074 — Надёжные звонки и экономичная демонстрация
+
+Статус: **completed locally; production and physical acceptance pending**
+(`WP-147`, `BUG-139`–`BUG-141`).
+
+- Сохранить ICE при async MLS verification и peer при повторном snapshot.
+- Исключить fast-connected и отменённый media setup races.
+- Ограничить capture 1080p/15 fps и убрать ненужный video playback при share.
+- Повторный user click снова запрашивает экран; OS denial объясняет настройки.
+- Физические CPU/network/permission acceptance не подменяются mock tests.
+
+### BL-FIX-073 — Мобильный возврат и прочтение видимых сообщений
+
+Статус: **production deployed; physical gesture acceptance pending** (`WP-146`,
+`6afafd4`, workflow `33964442194`, CI `33964442195`; `BUG-137`, `BUG-138`).
+
+- Route/history сохраняет список до открытия mobile conversation; Back/Forward
+  проверены в browser 412×915. Точная predictive OS animation требует устройства.
+- Read подтверждается по реально видимому сообщению активного timeline после
+  restoration; hidden/offscreen/inactive/occluded views не читают tail. Scroll,
+  focus, resize/new render используют bounded retry и monotonic coalescing.
+- Sender отображает read отдельно от delivery; membership и существующий user
+  sequence cursor сохранены. Новых schema/crypto contracts нет.
+- Frontend 471 tests, lint/typecheck/build; backend 295 passed + 17 relevant
+  PostgreSQL/application/HTTP, fresh migration, Ruff/mypy/import-linter прошли.
+  Полный CI и deployed public origins проверены; physical focus/gesture pending.
+
 ### BL-FIX-072 — Web Push открывает входящий звонок без teardown
 
 Статус: **production deployed** (`WP-145`, `BUG-136`, `37fb89f`, workflow
