@@ -4,6 +4,32 @@
 
 ## Active
 
+### BUG-143 — Внешняя ссылка Android PWA остаётся во встроенной вкладке
+
+Статус: **confirmed platform limitation; action-menu mitigation implemented locally in WP-149**.
+Воспроизведение: открыть внешнюю HTTP(S) ссылку из сообщения в установленной Android
+PWA, затем выбрать переход в браузер. По сообщению пользователя встроенная Custom Tab
+остаётся поверх чата, возврат требует перезапуска PWA (screenshot 2026-09-19).
+Стандартный `_blank` в Android PWA использует browser-owned Custom Tab; приложение
+не управляет её close/Back UI. Chromium также перехватывает intent к собственному
+browser package (`ExternalNavigationHandler.isNavigationToSelf`), поэтому такой
+обход не внедряется как исправление. Универсального mobile PWA API для force external
+launch нет: https://web.dev/learn/pwa/windows#force_a_browsers_navigation.
+Полное устранение требует browser/OS исправления либо native external-open boundary;
+это нельзя подтвердить mock tests. Добавлено меню copy/share/open/cancel
+перед переходом как PWA mitigation, без обещания принудительного browser launch.
+
+### BUG-144 — Прочитанные сообщения оставляют системные Web Push уведомления
+
+Статус: **fixed locally in WP-149; physical notification-tray acceptance pending**.
+Воспроизведение: получить несколько уведомлений в фоне, открыть чат и просмотреть
+сообщения. Read receipts/unread обновляются, но notifications остаются в системной ленте.
+Причина: отсутствовала связь confirmed read cursor с registration.getNotifications().
+Исправление: exact message metadata <= confirmed cursor закрывает только соответствующий
+item; startup/read sync повторяют reconciliation, ошибки cleanup не откатывают receipt.
+Unread, другие чаты, calls и неизвестные metadata не удаляются. Click уже вызывал
+notification.close() до navigation; добавлены проверки live, discarded и fallback routes.
+
 ### BUG-142 — Затемнение и кнопки постоянно перекрывают входящее видео
 
 Статус: **fixed locally in WP-148; production and physical acceptance pending**.

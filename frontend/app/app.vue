@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 
 import AppUpdatePrompt from './components/ui/AppUpdatePrompt.vue'
+import ExternalLinkMenu from './components/ui/ExternalLinkMenu.vue'
 
 const nuxtApp = useNuxtApp()
 const activatingUpdate = ref(false)
@@ -23,6 +24,10 @@ async function activateUpdate(): Promise<void> {
 
 <template>
   <div class="app-root">
+    <ExternalLinkMenu
+      :links="nuxtApp.$frontend.externalLinks"
+      :clipboard="nuxtApp.$frontend.clipboard"
+    />
     <AppUpdatePrompt
       v-if="updateAvailable"
       :busy="activatingUpdate"

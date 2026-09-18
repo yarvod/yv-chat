@@ -111,7 +111,9 @@ import { CryptoWorkerClient } from '../infrastructure/crypto/crypto-worker-clien
 import { IndexedDbConversationCryptoState } from '../infrastructure/storage/indexeddb-conversation-crypto-state'
 import { ConnectionMonitor } from '../application/connectivity/connection-monitor'
 import { PushNotificationManager } from '../application/notifications/push-notification-manager'
+import { DismissReadNotifications } from '../application/notifications/dismiss-read-notifications'
 import { BrowserPushAdapter } from '../infrastructure/browser/browser-push'
+import { BrowserExternalLinks } from '../infrastructure/browser/external-links'
 import { HttpPushRegistrationGateway } from '../infrastructure/http/push-registration-gateway'
 import { HttpCallConfigGateway } from '../infrastructure/http/call-config-gateway'
 import { BrowserVoiceCallService } from '../infrastructure/webrtc/browser-voice-call-service'
@@ -297,6 +299,9 @@ export default defineNuxtPlugin(nuxtApp => {
         leaveGroup: new LeaveGroup(messagingGateway),
         listConversationReadStates: new ListConversationReadStates(readStateGateway),
         markConversationRead: new MarkConversationRead(readStateGateway),
+        dismissReadNotifications: pushAdapter instanceof BrowserPushAdapter
+          ? new DismissReadNotifications(pushAdapter, messagingGateway)
+          : undefined,
         listParticipantDeliveryStates: new ListParticipantDeliveryStates(deliveryStateGateway),
         markConversationDelivered: new MarkConversationDelivered(deliveryStateGateway),
         pageVisibility,
@@ -319,6 +324,7 @@ export default defineNuxtPlugin(nuxtApp => {
         haptics,
         themePreferences,
         clipboard: new BrowserClipboard(),
+        externalLinks: new BrowserExternalLinks(native, window.location.origin),
         imageThumbnail,
         audioMediaSession: new BrowserAudioMediaSession(),
         clientIdGenerator,

@@ -1309,6 +1309,47 @@ describe('messenger orchestration', () => {
     expect(messenger.state.readStates[0]).toMatchObject({ lastReadSequence: 1, unreadCount: 2 })
   })
 
+  it('dismisses notifications only after successful viewport receipts or authoritative read catch-up', async () => {
+    vi.mocked(gateway.listMessageHistory).mockResolvedValue({
+      messages: [message], hasMore: false, oldestSequence: 1, newestSequence: 1,
+    })
+    vi.mocked(readStateGateway.list).mockResolvedValue([{
+      conversationId: 'conversation-1', lastReadSequence: 0, latestSequence: 1, unreadCount: 1,
+    }])
+    const execute = vi.fn().mockResolvedValue(undefined)
+    const messenger = useMessenger('alice-id', 'device-alice', vi.fn(), {
+      ...messengerDependencies(), dismissReadNotifications: { execute },
+    })
+    await messenger.load()
+    expect(execute).not.toHaveBeenCalledWith(
+      expect.arrayContaining([expect.objectContaining({ lastReadSequence: 1 })]), expect.anything(),
+    )
+    execute.mockClear()
+    vi.mocked(readStateGateway.mark).mockRejectedValueOnce(new ApplicationError(503, 'network', 'offline'))
+    expect(await messenger.markVisibleRead('conversation-1', 1)).toBe(false)
+    expect(execute).not.toHaveBeenCalled()
+    expect(await messenger.markVisibleRead('conversation-1', 1)).toBe(true)
+    expect(execute).toHaveBeenCalledWith(
+      [{ conversationId: 'conversation-1', lastReadSequence: 1 }],
+      [expect.objectContaining({ messageId: 'message-1', sequence: 1 })],
+    )
+
+    // A fresh instance cleans already confirmed reads on startup without a new receipt.
+    execute.mockClear()
+    vi.mocked(readStateGateway.mark).mockClear()
+    vi.mocked(readStateGateway.list).mockResolvedValue([{
+      conversationId: 'conversation-1', lastReadSequence: 1, latestSequence: 1, unreadCount: 0,
+    }])
+    await useMessenger('alice-id', 'device-alice', vi.fn(), {
+      ...messengerDependencies(), dismissReadNotifications: { execute },
+    }).load()
+    expect(readStateGateway.mark).not.toHaveBeenCalled()
+    expect(execute).toHaveBeenCalledWith(
+      [expect.objectContaining({ conversationId: 'conversation-1', lastReadSequence: 1 })],
+      expect.anything(),
+    )
+  })
+
   it('retries a failed viewport receipt and reloads participant state on read sync', async () => {
     vi.mocked(gateway.listMessageHistory).mockResolvedValue({
       messages: [message], hasMore: false, oldestSequence: 1, newestSequence: 1,

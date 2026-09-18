@@ -1,4 +1,5 @@
 import type { PushNotificationAdapter } from '../../application/ports/browser-push'
+import type { DeliveredMessageNotification, DeliveredNotifications } from '../../application/ports/delivered-notifications'
 import type {
   BrowserPushSubscriptionData,
   PushPermissionState,
@@ -36,7 +37,18 @@ function serialize(subscription: PushSubscription): BrowserPushSubscriptionData 
   }
 }
 
-export class BrowserPushAdapter implements PushNotificationAdapter {
+const notificationUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
+
+function messageNotification(notification: Notification): DeliveredMessageNotification | null {
+  const data: unknown = notification.data
+  if (!notification.tag.startsWith('yv-message-') || typeof data !== 'object' || data === null) return null
+  const { conversationId, messageId } = data as Record<string, unknown>
+  if (typeof conversationId !== 'string' || !notificationUuid.test(conversationId)
+    || typeof messageId !== 'string' || !notificationUuid.test(messageId)) return null
+  return { id: notification.tag, conversationId, messageId }
+}
+
+export class BrowserPushAdapter implements PushNotificationAdapter, DeliveredNotifications {
   readonly provider = 'web' as const
   readonly refreshRegistrationOnInspect = false
 
@@ -91,5 +103,29 @@ export class BrowserPushAdapter implements PushNotificationAdapter {
 
   async start(): Promise<() => Promise<void>> {
     return async () => undefined
+  }
+
+  async listMessages(): Promise<DeliveredMessageNotification[]> {
+    const notifications = await this.delivered()
+    return notifications.flatMap(notification => {
+      const message = messageNotification(notification)
+      return message ? [message] : []
+    })
+  }
+
+  async dismissMessages(messages: readonly DeliveredMessageNotification[]): Promise<void> {
+    for (const notification of await this.delivered()) {
+      const current = messageNotification(notification)
+      if (current && messages.some(message => message.id === current.id
+        && message.conversationId === current.conversationId
+        && message.messageId === current.messageId)) notification.close()
+    }
+  }
+
+  private async delivered(): Promise<Notification[]> {
+    if (!this.isSupported()) return []
+    // Unlike ready, getRegistration also settles when no worker is installed.
+    const registration = await navigator.serviceWorker.getRegistration()
+    return registration?.getNotifications ? registration.getNotifications() : []
   }
 }

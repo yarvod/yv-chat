@@ -3,7 +3,7 @@
 import { readFileSync } from 'node:fs'
 import { runInNewContext } from 'node:vm'
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 interface ExtendableEventLike {
   waitUntil(promise: Promise<void>): void
@@ -186,11 +186,12 @@ describe('privacy-safe push service worker', () => {
           conversationId: PAYLOAD.conversation_id,
           messageId: PAYLOAD.message_id,
         },
-        close() {},
+        close: vi.fn(),
       },
       waitUntil(promise) { pending = promise },
     }
     target.listeners.get('notificationclick')?.(event)
+    expect(event.notification.close).toHaveBeenCalledOnce()
     await pending
     expect(target.navigations).toEqual([])
     expect(target.focused()).toBe(1)
@@ -211,11 +212,12 @@ describe('privacy-safe push service worker', () => {
           conversationId: PAYLOAD.conversation_id,
           messageId: PAYLOAD.message_id,
         },
-        close() {},
+        close: vi.fn(),
       },
       waitUntil(promise) { pending = promise },
     }
     target.listeners.get('notificationclick')?.(event)
+    expect(event.notification.close).toHaveBeenCalledOnce()
     await pending
     expect(target.navigations).toEqual([
       `/chat?conversation=${PAYLOAD.conversation_id}&message=${PAYLOAD.message_id}`,
@@ -232,11 +234,12 @@ describe('privacy-safe push service worker', () => {
           conversationId: PAYLOAD.conversation_id,
           messageId: PAYLOAD.message_id,
         },
-        close() {},
+        close: vi.fn(),
       },
       waitUntil(promise) { pending = promise },
     }
     target.listeners.get('notificationclick')?.(event)
+    expect(event.notification.close).toHaveBeenCalledOnce()
     await pending
     expect(target.navigations).toEqual([
       `/chat?conversation=${PAYLOAD.conversation_id}&message=${PAYLOAD.message_id}`,

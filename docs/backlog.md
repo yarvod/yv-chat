@@ -52,6 +52,26 @@ authenticated call identity, video calls, затем screen sharing. Эти за
 
 ## Frontend application и administration
 
+### BL-FIX-076 — Внешние ссылки Android PWA и прочитанные уведомления
+
+Статус: **completed locally; physical Android acceptance and production pending**
+(`WP-149`, `BUG-143`, `BUG-144`).
+
+- Android standalone PWA предлагает menu перед внешней ссылкой: copy, системное
+  share, explicit ordinary open, cancel. URL остаётся copyable; modified clicks и
+  остальные browser/native platforms сохраняют обычный link handling.
+- Force external browser launch не обещается: Chrome перехватывает и intent к себе;
+  исходный browser-owned Custom Tab/Back дефект остаётся platform limitation.
+- Web Push notifications удаляются по exact conversation/message и confirmed read
+  sequence при viewport read, startup и read-state catch-up. Partial read не
+  удаляет новые сообщения, другие чаты или calls; metadata вне timeline проверяется
+  через существующий authorized API без decrypt.
+- Notification click закрывает выбранный item до focus/navigation; эта гарантия
+  покрыта regression assertions. Нет bulk clear-all, plaintext или новых permissions.
+- Frontend 79 files / 526 tests, lint/typecheck/build и docs/Compose passed;
+  browser fixture 390×844 подтверждает menu layout, copy status и Escape/focus.
+  Physical Android notification-tray/share acceptance и production rollout pending.
+
 ### BL-FIX-075 — Выбор качества экрана и исчезающие controls
 
 Статус: **implemented locally; production and physical acceptance pending**

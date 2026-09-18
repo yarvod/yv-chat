@@ -17,6 +17,7 @@ import type { RenameGroup } from '../../application/conversations/rename-group'
 import type { ListParticipantDeliveryStates } from '../../application/messaging/list-participant-delivery-states'
 import type { MarkConversationDelivered } from '../../application/messaging/mark-conversation-delivered'
 import type { MarkConversationRead } from '../../application/messaging/mark-conversation-read'
+import type { DismissReadNotifications } from '../../application/notifications/dismiss-read-notifications'
 import type { ProtocolMessageProtection } from '../../application/messaging/message-protection'
 import {
   conversationProtectionLabel as protectionLabelForConversation,
@@ -113,6 +114,7 @@ export interface MessengerDependencies extends MessageOutboxDependencies {
   clock: Clock
   listConversationReadStates: ListConversationReadStates
   markConversationRead: MarkConversationRead
+  dismissReadNotifications?: Pick<DismissReadNotifications, 'execute'>
   listParticipantDeliveryStates: ListParticipantDeliveryStates
   markConversationDelivered: MarkConversationDelivered
   deleteMessageForEveryone: DeleteMessageForEveryone
@@ -160,6 +162,7 @@ export function useMessenger(
       retryOutboxMessage: $frontend.retryOutboxMessage,
       listConversationReadStates: $frontend.listConversationReadStates,
       markConversationRead: $frontend.markConversationRead,
+      dismissReadNotifications: $frontend.dismissReadNotifications,
       listParticipantDeliveryStates: $frontend.listParticipantDeliveryStates,
       markConversationDelivered: $frontend.markConversationDelivered,
       deleteMessageForEveryone: $frontend.deleteMessageForEveryone,
@@ -419,6 +422,7 @@ export function useMessenger(
       const current = state.readStates.find(state => state.conversationId === item.conversationId)
       return current && current.lastReadSequence > item.lastReadSequence ? current : item
     })
+    void dependencies.dismissReadNotifications?.execute(state.readStates, [...state.messages])
   }
 
   async function reloadDeliveryStates(): Promise<void> {
@@ -479,6 +483,9 @@ export function useMessenger(
           ? 0
           : current?.unreadCount ?? 0,
       })
+      void dependencies.dismissReadNotifications?.execute([
+        { conversationId, lastReadSequence: result.lastReadSequence },
+      ], [...state.messages])
     } catch (error) {
       if (readAdvances.get(conversationId) === sequence) readAdvances.delete(conversationId)
       throw error
@@ -893,6 +900,7 @@ export function useMessenger(
         if (state.activeConversationId) {
           await selectConversation(state.activeConversationId, targetMessageId)
         }
+        void dependencies.dismissReadNotifications?.execute(state.readStates, [...state.messages])
         return
       }
       const syncBaseline = await gateway.listSync(0)
@@ -922,6 +930,7 @@ export function useMessenger(
       }
       state.syncCursor = syncBaseline.streamCursor
       state.phase = 'ready'
+      void dependencies.dismissReadNotifications?.execute(state.readStates, [...state.messages])
       await persistSnapshot()
       await outbox.flush()
     } catch (error) {

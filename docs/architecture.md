@@ -1542,6 +1542,18 @@ browser `URL`, trim-ит только внешнюю punctuation и выдаёт
 с `target="_blank"` и `rel="noopener noreferrer external"`. `javascript:`, `data:`,
 `file:` и HTML-looking text остаются inert text. Unfurl/network preview отсутствует:
 server и third-party endpoint не узнают ссылку до явного click пользователя.
+Мобильная PWA не может гарантированно открыть HTTP(S) в отдельном browser app:
+Chrome управляет Custom Tab и перехватывает даже intent к собственному package.
+Не добавлять недоказанный intent workaround или обещание force external launch;
+см. https://web.dev/learn/pwa/windows#force_a_browsers_navigation и Chromium
+`components/external_intents/.../ExternalNavigationHandler.java:isNavigationToSelf`.
+`WP-149` вместо автоматического открытия внешнего message-link в Android standalone
+показывает native HTML dialog с copy/share/explicit open/cancel. `ExternalLinks`
+port изолирует capability и system share; UI сохраняет canonical href и использует
+существующий `ClipboardPort`. Menu не делает network requests, не сохраняет URL,
+не перехватывает modified clicks и не распространяется на native/desktop/iOS.
+Обычный open остаётся browser-controlled; системное share требует отдельного клика.
+
 
 Authentication может ротировать opaque credential на любом authenticated GET.
 Поэтому attachment route обязан перенести каждый `Set-Cookie` из injected auth
@@ -1844,6 +1856,21 @@ discarded task использует `openWindow`. После восстанов�
 router повторно применяет его без plaintext данных. Generic title/body не содержат
 sender, message или attachment metadata. WebSocket и Push остаются wake-up каналами;
 authoritative cursor sync не меняется.
+
+`WP-149` связывает confirmed read state с Web Push tray через `DeliveredNotifications`
+port и `DismissReadNotifications` use case. Browser adapter перечисляет только
+`yv-message-*` с validated opaque conversation/message UUID; dismiss повторно
+проверяет exact tag + IDs, чтобы не удалить новое уведомление. Application сравнивает
+sequence с confirmed lastReadSequence, используя уже известные timeline metadata
+или существующий authorized getMessage без crypto decrypt для off-window items.
+Viewport receipt, startup (включая encrypted snapshot) и read sync запускают best-effort
+cleanup вне critical read path; быстрые updates coalesced без очереди запросов.
+Unread count не используется как разрешение очистить весь conversation. Calls,
+непрочитанные, чужие и неизвестные items сохраняются; недоступная OS/network
+reconciliation повторяется при следующем startup/read sync. Закрытие по click остаётся
+в Service Worker до navigation. FCM/APNs tray и background remote-device silent read
+не включены: этот slice относится к Web/PWA и не меняет push payload/server contracts.
+
 
 ## 14. Calls
 
