@@ -52,6 +52,13 @@ authenticated call identity, video calls, затем screen sharing. Эти за
 
 ## Frontend application и administration
 
+### BL-FIX-077 — Обновление зависимостей для прохождения production audit
+
+Статус: **проверено локально** (`WP-150`, `BUG-145`).
+Обновлены зависимости frontend и тестовое окружение. Чистая установка,
+lint, проверка типов, тесты и production build проходят. Действующий npm audit
+проходит с 0 high и 0 critical.
+
 ### BL-FIX-076 — Внешние ссылки Android PWA и прочитанные уведомления
 
 Статус: **completed locally; physical Android acceptance and production pending**

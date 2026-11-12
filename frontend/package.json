@@ -44,10 +44,10 @@
     "@vue/test-utils": "^2.4.6",
     "eslint": "^10.4.0",
     "fake-indexeddb": "6.2.5",
-    "happy-dom": "^20.11.2",
+    "happy-dom": "^21.0.4",
     "sharp": "^0.35.0",
     "typescript": "^5.9.2",
-    "vitest": "^3.2.4",
+    "vitest": "^4.1.12",
     "vue-tsc": "^3.0.6"
   }
 }
