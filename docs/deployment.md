@@ -11,7 +11,17 @@ not be replaced with the broader JavaScript `unsafe-eval`. Without it, public
 crypto assets still return HTTP 200 but device provisioning stops before the
 `PUT /api/v1/devices/current/crypto-identity` registration request.
 
-## Latest rollout — WP-151 MLS state recovery and device archive isolation
+## Latest rollout — WP-152 MLS enrollment and legacy history recovery
+
+- Deployed on 2026-11-12 from `fb3b70d9f2b1369b9b61710222c8e451980e9f7a`.
+  [Production workflow 43227051774](https://github.com/yarvod/yv-chat/actions/runs/43227051774)
+  passed repository verification with PostgreSQL, dependency audit and
+  rollout health checks.
+- Both public origins served the PWA, API health and the same OpenMLS v10
+  WASM. The Service Worker includes the v10 module and the worker that loads it.
+- Physical device checks are tracked separately.
+
+## Prior rollout — WP-151 MLS state recovery and device archive isolation
 
 - Deployed on 2026-11-12 from `7a72beb4b6a719f00c1f8c6fa5ddd1e5e8966a99`.
   [Production workflow 43126631119](https://github.com/yarvod/yv-chat/actions/runs/43126631119)
