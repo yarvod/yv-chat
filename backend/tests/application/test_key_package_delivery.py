@@ -196,7 +196,29 @@ async def test_replenish_is_bounded_atomic_and_inventory_excludes_claimed() -> N
             claim_request_id=uuid4(),
         )
     )
-    inventory = await ListDeviceKeyPackageInventory(unit_of_work=factory).execute(
-        ListDeviceKeyPackageInventoryQuery(BOB_ID, BOB_DEVICE_ID)
-    )
+    inventory = await ListDeviceKeyPackageInventory(
+        unit_of_work=factory, clock=FixedClock(NOW)
+    ).execute(ListDeviceKeyPackageInventoryQuery(BOB_ID, BOB_DEVICE_ID))
     assert inventory.available_count == 2
+
+
+async def test_old_package_does_not_count_or_get_claimed_after_replenishment() -> None:
+    state, conversation = await registered_state()
+    factory = FakeDeviceCryptoUnitOfWorkFactory(state)
+    clock = FixedClock(NOW + timedelta(days=84))
+    query = ListDeviceKeyPackageInventoryQuery(BOB_ID, BOB_DEVICE_ID)
+    inventory = ListDeviceKeyPackageInventory(unit_of_work=factory, clock=clock)
+    assert (await inventory.execute(query)).available_count == 0
+    fresh = b"bob-fresh-package"
+    assert (
+        await ReplenishDeviceKeyPackages(unit_of_work=factory, clock=clock).execute(
+            ReplenishDeviceKeyPackagesCommand(BOB_ID, BOB_DEVICE_ID, (fresh,))
+        )
+    ).available_count == 1
+    claimed = await ClaimDeviceKeyPackage(unit_of_work=factory, clock=clock).execute(
+        ClaimDeviceKeyPackageCommand(
+            ALICE_ID, ALICE_DEVICE_ID, conversation.id, BOB_DEVICE_ID, uuid4()
+        )
+    )
+    assert claimed.key_package == fresh
+    assert (await inventory.execute(query)).available_count == 0

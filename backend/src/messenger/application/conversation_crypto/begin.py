@@ -6,6 +6,7 @@ from uuid import UUID, uuid5
 from messenger.application.conversation_crypto.dto import ConversationCryptoResult
 from messenger.application.conversation_crypto.materialize import materialize_generation
 from messenger.application.conversation_crypto.roster import active_crypto_roster
+from messenger.application.device_crypto.key_package_policy import KEY_PACKAGE_MAX_QUEUE_AGE
 from messenger.application.errors import (
     ConversationCryptoConflictError,
     ConversationNotFoundError,
@@ -78,19 +79,24 @@ class BeginConversationCrypto:
                 raise ConversationCryptoConflictError(
                     "bootstrap request is bound to another conversation"
                 )
-            if retry is not None:
+            if retry is not None and retry.is_current:
                 return await materialize_generation(uow, retry)
 
             current = await uow.generations.get_current(
                 command.conversation_id,
                 for_update=True,
             )
+            if retry is not None:
+                # A delayed retry cannot revive a superseded generation or reuse
+                # its request ID for a second reservation.
+                return await materialize_generation(uow, current or retry)
 
             active_user_ids = {
                 member.user_id for member in conversation.members if member.is_active
             }
+            now = self._clock.now()
             active_devices = sorted(
-                await uow.devices.list_active_for_users(active_user_ids),
+                await uow.devices.list_active_for_users(active_user_ids, now=now),
                 key=lambda item: item.id.int,
             )
             roster = active_crypto_roster(
@@ -119,7 +125,7 @@ class BeginConversationCrypto:
             )
             if (
                 current is not None
-                and current.status is not ConversationCryptoStatus.BLOCKED
+                and current.status is ConversationCryptoStatus.READY
                 and current_roster_matches
             ):
                 return await materialize_generation(uow, current)
@@ -129,19 +135,50 @@ class BeginConversationCrypto:
                 if current is not None and current.status is ConversationCryptoStatus.READY
                 else await uow.generations.get_latest_ready(command.conversation_id)
             )
-            previous_device_ids = (
-                {
-                    item.device_id
-                    for item in await uow.required_devices.list_by_generation(previous_ready.id)
-                }
-                if previous_ready is not None
-                else set()
-            )
+            previous_required = {
+                item.device_id: item
+                for item in (
+                    await uow.required_devices.list_by_generation(previous_ready.id)
+                    if previous_ready is not None
+                    else ()
+                )
+            }
+            previous_device_ids = set(previous_required)
             existing_leaves = [item for item in active_devices if item.id in previous_device_ids]
             requesting_leaf = next(
                 (item for item in existing_leaves if item.id == command.device_id),
                 None,
             )
+            if requesting_leaf is not None and previous_ready is not None:
+                requested = previous_required[requesting_leaf.id]
+                if requested.key_package_id is not None:
+                    welcome = await uow.welcomes.get_for_device(
+                        generation_id=previous_ready.id, device_id=requesting_leaf.id
+                    )
+                    if welcome is None or welcome.acknowledged_at is None:
+                        requesting_leaf = None
+            if (
+                current is not None
+                and current.status is ConversationCryptoStatus.PENDING
+                and current_roster_matches
+            ):
+                # Older clients could reserve a generation before consuming their
+                # Welcome. A confirmed leaf can replace that reservation; a device
+                # which has acknowledged its Welcome keeps its existing Commit.
+                reserved = previous_required.get(current.coordinator_device_id)
+                if (
+                    requesting_leaf is None
+                    or current.coordinator_device_id == command.device_id
+                    or previous_ready is None
+                    or reserved is None
+                    or reserved.key_package_id is None
+                ):
+                    return await materialize_generation(uow, current)
+                welcome = await uow.welcomes.get_for_device(
+                    generation_id=previous_ready.id, device_id=current.coordinator_device_id
+                )
+                if welcome is not None and welcome.acknowledged_at is not None:
+                    return await materialize_generation(uow, current)
             if (
                 current is not None
                 and current.status is ConversationCryptoStatus.BLOCKED
@@ -160,7 +197,6 @@ class BeginConversationCrypto:
             )
             coordinator = requesting_leaf or device
 
-            now = self._clock.now()
             if current is not None:
                 await uow.generations.update(current.supersede(now))
             generation = ConversationCryptoGeneration.create(
@@ -210,8 +246,11 @@ class BeginConversationCrypto:
                     else active_device_ids - {coordinator.id}
                 )
                 targets = tuple(item for item in required if item.device_id in added_device_ids)
+                created_after = now - KEY_PACKAGE_MAX_QUEUE_AGE
                 availability = {
-                    item.device_id: await uow.key_packages.count_available(item.device_id)
+                    item.device_id: await uow.key_packages.count_available(
+                        item.device_id, created_after=created_after
+                    )
                     for item in targets
                 }
                 if any(count <= 0 for count in availability.values()):
@@ -226,7 +265,7 @@ class BeginConversationCrypto:
                             claimed_required.append(item)
                             continue
                         key_package = await uow.key_packages.get_next_available_for_update(
-                            item.device_id
+                            item.device_id, created_after=created_after
                         )
                         if key_package is None:
                             raise ConversationCryptoConflictError(

@@ -252,6 +252,7 @@ export function useMessenger(
     messageArchive,
     messageProtection,
     directAttachmentSecrets,
+    actorUserId,
   )
   dependencies.configureCryptoEpochDrainer?.(
     conversationId => history.cacheRetainedBeforeEpochAdvance(conversationId),
@@ -349,6 +350,19 @@ export function useMessenger(
       if (state.activeConversationId !== conversationId) return
       state.conversationCryptoPhase = result.status
       state.conversationCryptoBlockReason = result.blockReason
+      if (result.status === 'ready' && state.messages.some(item => item.contentState === 'unavailable')) {
+        const unresolved = [...state.messages]
+        const recovered = new Map((await history.retryUnavailable(unresolved))
+          .filter(item => item.contentState === 'available')
+          .map(item => [item.messageId, item]))
+        if (state.activeConversationId === conversationId && recovered.size > 0) {
+          state.messages = state.messages.map(item => (
+            item.contentState === 'unavailable' ? recovered.get(item.messageId) ?? item : item
+          ))
+          syncArchiveStatus()
+          rememberActiveHistoryWindow()
+        }
+      }
     } catch (error) {
       if (state.activeConversationId !== conversationId) return
       if (error instanceof DeviceCryptoError && error.code === 'local-state-lost') {

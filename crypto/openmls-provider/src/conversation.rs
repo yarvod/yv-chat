@@ -356,18 +356,23 @@ impl DeviceBootstrap {
             .wire_format_policy(PURE_CIPHERTEXT_WIRE_FORMAT_POLICY)
             .max_past_epochs(MAX_PAST_EPOCHS)
             .build();
-        let group = StagedWelcome::new_from_welcome(
-            &self._provider,
-            &join_config,
-            welcome,
-            Some(ratchet_tree),
-        )
-        .map_err(|_| ConversationError::InvalidWelcome)?
-        .into_group(&self._provider)
-        .map_err(|_| ConversationError::InvalidWelcome)?;
-        if group.group_id() != &expected_group_id || group.ciphersuite() != CIPHERSUITE {
+        // RFC 9420 §7.3 permits receiving a signed tree after a leaf's
+        // original KeyPackage lifetime has elapsed. Fresh Add proposals still
+        // pass strict package validation at their sender.
+        let staged = StagedWelcome::build_from_welcome(&self._provider, &join_config, welcome)
+            .map_err(|_| ConversationError::InvalidWelcome)?
+            .with_ratchet_tree(ratchet_tree)
+            .skip_lifetime_validation()
+            .build()
+            .map_err(|_| ConversationError::InvalidWelcome)?;
+        if staged.group_context().group_id() != &expected_group_id
+            || staged.group_context().ciphersuite() != CIPHERSUITE
+        {
             return Err(ConversationError::InvalidWelcome);
         }
+        let group = staged
+            .into_group(&self._provider)
+            .map_err(|_| ConversationError::InvalidWelcome)?;
         Ok(group.epoch().as_u64())
     }
 

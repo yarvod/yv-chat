@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from uuid import UUID
 
 from messenger.application.device_crypto.dto import ClaimedDeviceKeyPackageResult
+from messenger.application.device_crypto.key_package_policy import KEY_PACKAGE_MAX_QUEUE_AGE
 from messenger.application.errors import (
     ConversationNotFoundError,
     DeviceCryptoIdentityNotFoundError,
@@ -64,7 +65,10 @@ class ClaimDeviceKeyPackage:
                 ):
                     raise DeviceKeyPackageConflictError("claim request has another binding")
                 return ClaimedDeviceKeyPackageResult.from_entities(identity, existing)
-            key_package = await uow.key_packages.get_next_available_for_update(target.id)
+            now = self._clock.now()
+            key_package = await uow.key_packages.get_next_available_for_update(
+                target.id, created_after=now - KEY_PACKAGE_MAX_QUEUE_AGE
+            )
             if key_package is None:
                 raise DeviceKeyPackageUnavailableError("target has no available KeyPackage")
             claimed = key_package.claim(
@@ -72,7 +76,7 @@ class ClaimDeviceKeyPackage:
                 claimed_by_device_id=command.device_id,
                 conversation_id=command.conversation_id,
                 request_id=command.claim_request_id,
-                now=self._clock.now(),
+                now=now,
             )
             await uow.key_packages.update(claimed)
             await uow.commit()

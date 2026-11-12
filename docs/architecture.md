@@ -686,11 +686,12 @@ logout. Новый login получает новый backend device ID и не �
 keys, архив сообщений или cursor: ключи и записи архива и snapshot выбираются по
 точной паре user/device. История QR переносится только между явно авторизованными
 устройствами через `BL-015`. Старые записи архива и snapshot, созданные по одному
-user ID, не позволяют доказать привязку к устройству; текущий клиент оставляет их
-на диске без автоматического импорта. После обновления начальный sync заново
-загружает данные из server retention window, а сохранившийся MLS vault открывает
-доступные ему сообщения. История, доступная только в старом архиве, может быть
-недоступна в интерфейсе.
+user ID, не позволяют доказать привязку к устройству. Клиент сохраняет их на
+диске и использует зашифрованные сообщения как кандидатов на восстановление.
+Копия попадает в архив текущего устройства только после успешной расшифровки
+через его собственный MLS vault. Старый курсор и сохранённые открытые тела
+не импортируются. Записи, для которых у устройства нет ключей, остаются
+недоступными до авторизованного переноса истории.
 
 Восстановление запечатанного MLS состояния не зависит от текущего срока действия
 начального KeyPackage. OpenMLS по-прежнему проверяет подписи и привязку к
@@ -1137,8 +1138,8 @@ Conversation MLS coordination использует отдельный Unit of Wo
 типа opaque records: current generation, immutable required-device snapshot и
 адресный Welcome. `POST /api/v1/conversations/{id}/crypto/bootstrap` блокирует
 conversation/device rows в едином порядке `conversation → actor device → generation /
-packages / required rows`, проверяет active membership, снимает все non-revoked
-devices активных участников и атомарно claim-ит по одному KeyPackage для каждого
+packages / required rows`, проверяет active membership, исключает отозванные
+устройства и устройства с истёкшими сессиями и атомарно claim-ит по одному KeyPackage для каждого
 target кроме coordinator. Отсутствие identity/package создаёт `blocked` generation
 без частичного secure group и без расходования package. Retry привязан к
 `(coordinator_device_id, bootstrap_request_id)`; database uniqueness и conversation
@@ -1153,11 +1154,16 @@ row lock закрывают concurrent duplicate generations. Единый по�
 generation не может назначить себя coordinator и claim-ить собственный KeyPackage:
 его первый запрос создаёт идемпотентную `blocked/device_roster_changed` generation без
 расходования packages и durable `conversation_updated` для всех участников. Первое
-доступное прежнее leaf, которое выполняет reconciliation, supersede-ит announcement,
+доступное прежнее leaf, подтвердившее свой Welcome, supersede-ит announcement,
 становится фактическим coordinator и claim-ит packages новых leaves от собственного
 device identity. Поэтому новый и старый device не обязаны быть online одновременно:
 после публикации KeyPackage новый device может забрать сохранённый Welcome позже;
 если offline все прежние leaves, ждёт только enrollment нового device.
+Клиент применяет предыдущий Welcome даже во время ожидания нового состава.
+Подтверждённое устройство может заменить оставшуюся от старой версии резервацию
+неподтверждённого координатора с новыми пакетами. На приёме Welcome v10 проверяет
+подписи и привязку дерева к группе, но допускает исторические листья с истёкшим
+сроком в дереве. На отправке нового Add проверка срока остаётся обязательной.
 
 Pending generation создаёт durable/realtime wake-up для coordinator, а успешный
 finalize — для всех active participant users. Delivery остаётся correctness-механизмом

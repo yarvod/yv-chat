@@ -6,6 +6,7 @@ import type { ScheduledTask, Scheduler } from '../ports/scheduler'
 import type { ProtocolMessageProtection } from '../messaging/message-protection'
 import { MessageProtectionError } from '../messaging/message-protection'
 import { localMessengerScope } from '../messaging/local-messenger-scope'
+import { RecoverLegacyMessageArchive } from '../messaging/recover-legacy-message-archive'
 import { ApplicationError } from '../errors'
 
 const CHUNK_RECORD_LIMIT = 20
@@ -676,6 +677,7 @@ export class SynchronizeDeviceHistory {
       const records = await this.readTransferable(
         localMessengerScope(job.ownerUserId, job.currentDeviceId),
         conversation.conversationId,
+        job.ownerUserId,
       )
       this.ensureActive(job.pairingId)
       progress = { ...progress, gaps: progress.gaps + records.gaps }
@@ -986,13 +988,28 @@ export class SynchronizeDeviceHistory {
   private async readTransferable(
     ownerUserId: string,
     conversationId: string,
+    legacyOwnerUserId: string,
   ): Promise<{ messages: ArchivedMessage[], gaps: number }> {
     let page = await this.archive.loadLatest(ownerUserId, conversationId, 100)
+    const legacyRecovery = new RecoverLegacyMessageArchive(this.archive, this.protection)
+    const recover = async (
+      current: ArchivedMessage[],
+      loadLegacy: () => Promise<ArchivedMessage[]>,
+    ): Promise<ArchivedMessage[]> => {
+      try {
+        return (await legacyRecovery.execute(ownerUserId, conversationId, current, await loadLegacy()))
+          .slice(-100)
+      } catch {
+        return current
+      }
+    }
+    page = await recover(page, () => this.archive.loadLatest(legacyOwnerUserId, conversationId, 100))
     const messages = [...page]
     while (page.length === 100 && messages.length < MAX_TRANSFER_RECORDS) {
       const before = page.at(0)?.sequence
       if (!before) break
       page = await this.archive.loadBefore(ownerUserId, conversationId, before, 100)
+      page = await recover(page, () => this.archive.loadBefore(legacyOwnerUserId, conversationId, before, 100))
       messages.unshift(...page)
     }
     const bounded = messages.slice(-MAX_TRANSFER_RECORDS)

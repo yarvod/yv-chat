@@ -59,7 +59,8 @@ class FakeDevices:
         del for_update
         return self._state.devices.get(device_id)
 
-    async def list_active_for_users(self, user_ids: set[UUID]) -> list[Device]:
+    async def list_active_for_users(self, user_ids: set[UUID], *, now: datetime) -> list[Device]:
+        del now
         return [
             device
             for device in self._state.devices.values()

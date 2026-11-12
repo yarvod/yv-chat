@@ -425,12 +425,22 @@ class FakeDeviceRepository:
         device = self._state.devices.get(device_id)
         return device if device is not None and device.user_id == user_id else None
 
-    async def list_active_for_users(self, user_ids: set[UUID]) -> list[Device]:
+    async def list_active_for_users(self, user_ids: set[UUID], *, now: datetime) -> list[Device]:
+        with_sessions = {session.device_id for session in self._state.sessions.values()}
+        with_usable_sessions = {
+            session.device_id
+            for session in self._state.sessions.values()
+            if session.revoked_at is None
+            and session.idle_expires_at > now
+            and session.absolute_expires_at > now
+        }
         return sorted(
             (
                 device
                 for device in self._state.devices.values()
-                if device.user_id in user_ids and device.revoked_at is None
+                if device.user_id in user_ids
+                and device.revoked_at is None
+                and (device.id not in with_sessions or device.id in with_usable_sessions)
             ),
             key=lambda device: (device.user_id, device.created_at, device.id),
         )
@@ -508,9 +518,11 @@ class FakeDeviceKeyPackageRepository:
             if package_id in package_ids
         ]
 
-    async def count_available(self, device_id: UUID) -> int:
+    async def count_available(self, device_id: UUID, *, created_after: datetime) -> int:
         return sum(
-            package.device_id == device_id and not package.is_claimed
+            package.device_id == device_id
+            and not package.is_claimed
+            and package.created_at > created_after
             for package in self._state.device_key_packages.values()
         )
 
@@ -532,14 +544,18 @@ class FakeDeviceKeyPackageRepository:
             None,
         )
 
-    async def get_next_available_for_update(self, device_id: UUID) -> DeviceKeyPackage | None:
+    async def get_next_available_for_update(
+        self, device_id: UUID, *, created_after: datetime
+    ) -> DeviceKeyPackage | None:
         return next(
             iter(
                 sorted(
                     (
                         package
                         for package in self._state.device_key_packages.values()
-                        if package.device_id == device_id and not package.is_claimed
+                        if package.device_id == device_id
+                        and not package.is_claimed
+                        and package.created_at > created_after
                     ),
                     key=lambda package: (package.created_at, package.id),
                 )

@@ -4,7 +4,9 @@ from dataclasses import dataclass
 from uuid import UUID
 
 from messenger.application.device_crypto.dto import DeviceKeyPackageInventoryResult
+from messenger.application.device_crypto.key_package_policy import KEY_PACKAGE_MAX_QUEUE_AGE
 from messenger.application.errors import DeviceCryptoIdentityNotFoundError, OwnedDeviceNotFoundError
+from messenger.application.ports.clock import Clock
 from messenger.application.ports.device_crypto import DeviceCryptoUnitOfWorkFactory
 
 
@@ -15,8 +17,9 @@ class ListDeviceKeyPackageInventoryQuery:
 
 
 class ListDeviceKeyPackageInventory:
-    def __init__(self, *, unit_of_work: DeviceCryptoUnitOfWorkFactory) -> None:
+    def __init__(self, *, unit_of_work: DeviceCryptoUnitOfWorkFactory, clock: Clock) -> None:
         self._unit_of_work = unit_of_work
+        self._clock = clock
 
     async def execute(
         self,
@@ -28,5 +31,7 @@ class ListDeviceKeyPackageInventory:
                 raise OwnedDeviceNotFoundError("current device is unavailable")
             if await uow.identities.get_by_device_id(query.device_id) is None:
                 raise DeviceCryptoIdentityNotFoundError("device crypto identity not found")
-            available_count = await uow.key_packages.count_available(query.device_id)
+            available_count = await uow.key_packages.count_available(
+                query.device_id, created_after=self._clock.now() - KEY_PACKAGE_MAX_QUEUE_AGE
+            )
         return DeviceKeyPackageInventoryResult(query.device_id, available_count)

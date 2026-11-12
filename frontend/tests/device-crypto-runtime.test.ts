@@ -13,10 +13,14 @@ import { IndexedDbCryptoVault } from '../app/infrastructure/storage/indexeddb-cr
 import initOpenMls, {
   DeviceBootstrap,
   validatePublicKeyPackage,
-} from '../public/crypto/v9/yv_chat_openmls_provider.js'
+} from '../public/crypto/v10/yv_chat_openmls_provider.js'
 import initOpenMlsV8, {
   DeviceBootstrap as DeviceBootstrapV8,
 } from '../public/crypto/v8/yv_chat_openmls_provider.js'
+import initOpenMlsV9, {
+  DeviceBootstrap as DeviceBootstrapV9,
+  validatePublicKeyPackage as validatePublicKeyPackageV9,
+} from '../public/crypto/v9/yv_chat_openmls_provider.js'
 
 const userId = '1b0a32e8-144f-4f60-bcb6-112f71bd5316'
 const deviceId = '50d6b08a-84ae-4bd7-829a-f40f38e9a2c1'
@@ -49,7 +53,7 @@ function vault(indexedDb: IDBFactory): IndexedDbCryptoVault {
 }
 
 beforeAll(async () => {
-  const wasm = await readFile('public/crypto/v9/yv_chat_openmls_provider_bg.wasm')
+  const wasm = await readFile('public/crypto/v10/yv_chat_openmls_provider_bg.wasm')
   await initOpenMls({ module_or_path: wasm })
 })
 
@@ -60,6 +64,56 @@ beforeEach(() => {
 })
 
 describe('device crypto runtime with the release OpenMLS WASM', () => {
+  it('joins with a fresh package when an unchanged leaf in the signed tree has aged out', async () => {
+    const wasmV9 = await readFile('public/crypto/v9/yv_chat_openmls_provider_bg.wasm')
+    await initOpenMlsV9({ module_or_path: wasmV9 })
+    const alice = new DeviceCryptoRuntime(openMlsModule, vault(new IDBFactory()))
+    const bob = new DeviceCryptoRuntime(openMlsModule, vault(new IDBFactory()))
+    const joiningDb = new IDBFactory()
+    const joining = new DeviceCryptoRuntime(openMlsModule, vault(joiningDb))
+    const previous = new DeviceCryptoRuntime({
+      default: initOpenMlsV9,
+      DeviceBootstrap: DeviceBootstrapV9,
+      validatePublicKeyPackage: validatePublicKeyPackageV9,
+    }, vault(joiningDb))
+    await alice.provision({ userId, deviceId })
+    const bobIdentity = await bob.provision({ userId: otherUserId, deviceId: otherDeviceId })
+    const initial = await alice.bootstrapConversation({
+      conversationId, keyPackages: [bobIdentity.keyPackage],
+    })
+    await bob.joinConversation({
+      conversationId, welcome: initial.welcome, ratchetTree: initial.ratchetTree,
+    })
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 85 * 24 * 60 * 60 * 1000)
+    try {
+      const fresh = await joining.provision({ userId: thirdUserId, deviceId: thirdDeviceId })
+      const update = await alice.updateConversation({
+        conversationId,
+        desiredDeviceIds: [deviceId, otherDeviceId, thirdDeviceId],
+        keyPackages: [fresh.keyPackage],
+      })
+      if (!update.welcome) throw new Error('expected Welcome for the new leaf')
+      await previous.restore({ userId: thirdUserId, deviceId: thirdDeviceId })
+      await expect(previous.joinConversation({
+        conversationId, welcome: update.welcome, ratchetTree: update.ratchetTree,
+      })).rejects.toMatchObject({ code: 'operation-failed' })
+      await expect(joining.joinConversation({
+        conversationId, welcome: update.welcome, ratchetTree: update.ratchetTree,
+      })).resolves.toMatchObject({ epoch: update.epoch })
+      const plaintext = new TextEncoder().encode('message after offline join')
+      const message = await alice.protectMessage({ conversationId, clientMessageId: messageId, plaintext })
+      await expect(joining.unprotectMessage({
+        conversationId, clientMessageId: messageId, ciphertext: message.ciphertext,
+      })).resolves.toMatchObject({ plaintext })
+    } finally {
+      clock.mockRestore()
+      previous.dispose()
+      joining.dispose()
+      bob.dispose()
+      alice.dispose()
+    }
+  })
+
   it('opens a v8 vault and decrypts retained history after the registration package expires', async () => {
     const wasm = await readFile('public/crypto/v8/yv_chat_openmls_provider_bg.wasm')
     await initOpenMlsV8({ module_or_path: wasm })

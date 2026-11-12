@@ -1,8 +1,8 @@
 import { DeviceCryptoError } from '../../application/device-crypto/errors'
 
 // A new immutable path is mandatory whenever the generated JS/WASM binding changes.
-// v9 restores historical registration anchors; v1-v8 remain rolling assets.
-const MODULE_URL = '/crypto/v9/yv_chat_openmls_provider.js'
+// v10 receives signed trees containing aged leaves; prior builds remain rolling assets.
+const MODULE_URL = '/crypto/v10/yv_chat_openmls_provider.js'
 
 export interface OpenMlsSealedSnapshot {
   readonly revision: bigint

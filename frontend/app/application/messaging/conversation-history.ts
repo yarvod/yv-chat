@@ -3,6 +3,7 @@ import type { MessagingGateway } from '../ports/messaging-gateway'
 import type { OpaqueMessage } from '../../domain/messaging/models'
 import type { ProtocolMessageProtection } from './message-protection'
 import { prepareTimelineMessage, type TimelineMessage } from './timeline-message'
+import { RecoverLegacyMessageArchive } from './recover-legacy-message-archive'
 import type { DirectAttachmentSecrets } from './direct-message-content'
 import {
   conversationMediaItems,
@@ -48,10 +49,15 @@ export class ConversationHistory {
     private readonly archive: MessageArchive,
     private readonly protection: ProtocolMessageProtection,
     private readonly directSecrets?: DirectAttachmentSecrets,
+    private readonly legacyOwnerUserId?: string,
   ) {}
 
   get archiveStatus(): 'ready' | 'unavailable' {
     return this.archiveAvailable ? 'ready' : 'unavailable'
+  }
+
+  async retryUnavailable(messages: readonly TimelineMessage[]): Promise<TimelineMessage[]> {
+    return await this.prepare(messages.filter(message => message.contentState === 'unavailable'))
   }
 
   /**
@@ -399,6 +405,7 @@ export class ConversationHistory {
   }
 
   private async readLatest(conversationId: string): Promise<ArchivedMessage[]> {
+    const legacyOwner = this.legacyOwnerUserId
     try {
       const messages = await this.archive.loadLatest(
         this.ownerUserId,
@@ -406,7 +413,12 @@ export class ConversationHistory {
         HISTORY_PAGE_SIZE,
       )
       this.archiveAvailable = true
-      return messages
+      if (!legacyOwner) return messages
+      const recovered = await this.recoverLegacy(
+        conversationId, messages,
+        () => this.archive.loadLatest(legacyOwner, conversationId, HISTORY_PAGE_SIZE),
+      )
+      return recovered.slice(-HISTORY_PAGE_SIZE)
     } catch {
       this.markArchiveUnavailable()
       return []
@@ -418,6 +430,7 @@ export class ConversationHistory {
     beforeSequence: number,
     limit: number = HISTORY_PAGE_SIZE,
   ): Promise<ArchivedMessage[]> {
+    const legacyOwner = this.legacyOwnerUserId
     try {
       const messages = await this.archive.loadBefore(
         this.ownerUserId,
@@ -426,7 +439,12 @@ export class ConversationHistory {
         limit,
       )
       this.archiveAvailable = true
-      return messages
+      if (!legacyOwner) return messages
+      const recovered = await this.recoverLegacy(
+        conversationId, messages,
+        () => this.archive.loadBefore(legacyOwner, conversationId, beforeSequence, limit),
+      )
+      return recovered.slice(-limit)
     } catch {
       this.markArchiveUnavailable()
       return []
@@ -438,6 +456,7 @@ export class ConversationHistory {
     afterSequence: number,
     limit: number,
   ): Promise<ArchivedMessage[]> {
+    const legacyOwner = this.legacyOwnerUserId
     try {
       const messages = await this.archive.loadAfter(
         this.ownerUserId,
@@ -446,10 +465,30 @@ export class ConversationHistory {
         limit,
       )
       this.archiveAvailable = true
-      return messages
+      if (!legacyOwner) return messages
+      const recovered = await this.recoverLegacy(
+        conversationId, messages,
+        () => this.archive.loadAfter(legacyOwner, conversationId, afterSequence, limit),
+      )
+      return recovered.slice(0, limit)
     } catch {
       this.markArchiveUnavailable()
       return []
+    }
+  }
+
+  private async recoverLegacy(
+    conversationId: string,
+    scoped: ArchivedMessage[],
+    loadLegacy: () => Promise<ArchivedMessage[]>,
+  ): Promise<ArchivedMessage[]> {
+    try {
+      const legacy = await loadLegacy()
+      return await new RecoverLegacyMessageArchive(this.archive, this.protection)
+        .execute(this.ownerUserId, conversationId, scoped, legacy)
+    } catch {
+      // A damaged legacy cache must not hide the current device's history.
+      return scoped
     }
   }
 

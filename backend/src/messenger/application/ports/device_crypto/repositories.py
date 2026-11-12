@@ -1,5 +1,6 @@
 """Persistence ports for public device cryptography records."""
 
+from datetime import datetime
 from typing import Protocol
 from uuid import UUID
 
@@ -36,7 +37,7 @@ class DeviceKeyPackageRepository(Protocol):
 
     async def get_by_ids(self, package_ids: set[UUID]) -> list[DeviceKeyPackage]: ...
 
-    async def count_available(self, device_id: UUID) -> int: ...
+    async def count_available(self, device_id: UUID, *, created_after: datetime) -> int: ...
 
     async def get_by_claim_request(
         self,
@@ -49,6 +50,8 @@ class DeviceKeyPackageRepository(Protocol):
     async def get_next_available_for_update(
         self,
         device_id: UUID,
+        *,
+        created_after: datetime,
     ) -> DeviceKeyPackage | None: ...
 
     async def update(self, key_package: DeviceKeyPackage) -> None: ...

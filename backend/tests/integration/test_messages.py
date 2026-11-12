@@ -574,6 +574,15 @@ async def run_v2_legacy_device_flow(database_url: str) -> None:
             await provision_transaction.commit()
         with pytest.raises(ConversationCryptoNotReadyError):
             await send.execute(replace(command, client_message_id=uuid4()))
+
+        async with session_factory.begin() as session:
+            await session.execute(
+                update(SessionModel)
+                .where(SessionModel.device_id == bob_legacy.device_id)
+                .values(idle_expires_at=NOW + timedelta(seconds=1))
+            )
+        after_expiry = await send.execute(replace(command, client_message_id=uuid4()))
+        assert after_expiry.sequence == 2
     finally:
         await reset_tables(session_factory)
         await engine.dispose()

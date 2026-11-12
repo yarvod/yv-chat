@@ -1,5 +1,6 @@
 """SQLAlchemy repositories for public device cryptography state."""
 
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -105,11 +106,12 @@ class SqlAlchemyDeviceKeyPackageRepository:
         )
         return [map_device_key_package(model) for model in models]
 
-    async def count_available(self, device_id: UUID) -> int:
+    async def count_available(self, device_id: UUID, *, created_after: datetime) -> int:
         count = await self._session.scalar(
             select(func.count(DeviceKeyPackageModel.id)).where(
                 DeviceKeyPackageModel.device_id == device_id,
                 DeviceKeyPackageModel.claimed_at.is_(None),
+                DeviceKeyPackageModel.created_at > created_after,
             )
         )
         return int(count or 0)
@@ -133,12 +135,15 @@ class SqlAlchemyDeviceKeyPackageRepository:
     async def get_next_available_for_update(
         self,
         device_id: UUID,
+        *,
+        created_after: datetime,
     ) -> DeviceKeyPackage | None:
         model = await self._session.scalar(
             select(DeviceKeyPackageModel)
             .where(
                 DeviceKeyPackageModel.device_id == device_id,
                 DeviceKeyPackageModel.claimed_at.is_(None),
+                DeviceKeyPackageModel.created_at > created_after,
             )
             .order_by(DeviceKeyPackageModel.created_at, DeviceKeyPackageModel.id)
             .limit(1)

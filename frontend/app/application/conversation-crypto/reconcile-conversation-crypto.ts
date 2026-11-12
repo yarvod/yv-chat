@@ -41,6 +41,14 @@ export class ReconcileConversationCrypto {
     command: ReconcileConversationCryptoCommand,
     hooks: ReconcileConversationCryptoHooks = {},
   ): Promise<ReconcileConversationCryptoResult> {
+    return await this.reconcile(command, hooks, true)
+  }
+
+  private async reconcile(
+    command: ReconcileConversationCryptoCommand,
+    hooks: ReconcileConversationCryptoHooks,
+    retryAfterCatchUp: boolean,
+  ): Promise<ReconcileConversationCryptoResult> {
     if (!command.conversationId || !command.deviceId) {
       throw new TypeError('conversation and device binding is required')
     }
@@ -55,19 +63,31 @@ export class ReconcileConversationCrypto {
     const generation = await this.server.begin(command.conversationId, bootstrapRequestId)
     this.assertGenerationBinding(generation, command.conversationId)
     local = await this.resumeAppliedCheckpoint(command, local)
+    const waitingForLeaf = generation.blockReason === 'device_roster_changed'
+    if (generation.status !== 'blocked' || waitingForLeaf) {
+      const beforeCatchUp = local.generationNumber
+      local = await this.recoverCheckpointFromSealedGroup(command, local, generation.generationNumber)
+      local = await this.catchUpReadyGenerations(
+        command,
+        local,
+        generation.generationNumber,
+        hooks,
+      )
+      if (
+        retryAfterCatchUp && waitingForLeaf && local.phase === 'ready'
+        && local.generationNumber !== beforeCatchUp
+      ) {
+        // The current roster may be blocked while this device still needs to
+        // acknowledge its Welcome from the last ready generation.
+        return await this.reconcile(command, hooks, false)
+      }
+    }
     if (generation.status === 'blocked') {
       if (local.phase === 'bootstrap-requested') {
         await this.state.save(bootstrapState(command, this.ids.create()))
       }
       return result(generation)
     }
-    local = await this.recoverCheckpointFromSealedGroup(command, local, generation.generationNumber)
-    local = await this.catchUpReadyGenerations(
-      command,
-      local,
-      generation.generationNumber,
-      hooks,
-    )
     if (generation.coordinatorDeviceId === command.deviceId) {
       return await this.reconcileCoordinator(
         command,

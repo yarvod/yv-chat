@@ -1,5 +1,6 @@
 """Device repository port."""
 
+from datetime import datetime
 from typing import Protocol
 from uuid import UUID
 
@@ -17,7 +18,9 @@ class DeviceRepository(Protocol):
         for_update: bool = False,
     ) -> Device | None: ...
 
-    async def list_active_for_users(self, user_ids: set[UUID]) -> list[Device]: ...
+    async def list_active_for_users(
+        self, user_ids: set[UUID], *, now: datetime
+    ) -> list[Device]: ...
 
     async def add(self, device: Device) -> None: ...
 

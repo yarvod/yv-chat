@@ -36,6 +36,7 @@ from messenger.domain.entities import (
     Device,
     DeviceCryptoIdentity,
     DeviceKeyPackage,
+    Session,
 )
 from messenger.domain.entities.device_crypto_identity import expected_credential_identity
 from tests.application.fakes import (
@@ -403,6 +404,13 @@ async def test_new_device_waits_for_any_existing_leaf_before_package_claim() -> 
             ),
         )
     )
+    await AcknowledgeConversationCryptoWelcome(
+        unit_of_work=factory, clock=FixedClock(NOW + timedelta(seconds=2))
+    ).execute(
+        AcknowledgeConversationCryptoWelcomeCommand(
+            ALICE_ID, ALICE_LAPTOP_ID, CONVERSATION_ID, first.id
+        )
+    )
     new_phone = Device.create(
         user_id=ALICE_ID,
         name="Alice new phone",
@@ -525,6 +533,13 @@ async def test_multiple_new_devices_reuse_one_blocked_roster_snapshot() -> None:
             ),
         )
     )
+    await AcknowledgeConversationCryptoWelcome(
+        unit_of_work=factory, clock=FixedClock(NOW + timedelta(seconds=2))
+    ).execute(
+        AcknowledgeConversationCryptoWelcomeCommand(
+            ALICE_ID, ALICE_LAPTOP_ID, CONVERSATION_ID, first.id
+        )
+    )
     replacements = (
         Device.create(
             user_id=ALICE_ID,
@@ -589,6 +604,98 @@ async def test_multiple_new_devices_reuse_one_blocked_roster_snapshot() -> None:
     assert pending.generation.status is ConversationCryptoStatus.PENDING
     assert pending.generation.coordinator_device_id == ALICE_LAPTOP_ID
     assert len(state.conversation_crypto_generations) == 3
+
+
+async def test_confirmed_leaf_can_replace_a_legacy_pending_reservation() -> None:
+    state = bootstrap_state()
+    factory = FakeConversationCryptoUnitOfWorkFactory(state)
+    first = (await begin_crypto(factory, NOW).execute(begin_command())).generation
+    await finalize_crypto(factory, NOW + timedelta(seconds=1)).execute(
+        FinalizeConversationCryptoCommand(
+            user_id=ALICE_ID,
+            device_id=ALICE_PHONE_ID,
+            conversation_id=CONVERSATION_ID,
+            generation_id=first.id,
+            epoch=1,
+            commit_message=b"initial-commit",
+            ratchet_tree=b"initial-tree",
+            welcomes=(
+                DeviceWelcomeInput(ALICE_LAPTOP_ID, b"welcome-alice-laptop"),
+                DeviceWelcomeInput(BOB_PHONE_ID, b"welcome-bob-phone"),
+            ),
+        )
+    )
+    await AcknowledgeConversationCryptoWelcome(
+        unit_of_work=factory, clock=FixedClock(NOW + timedelta(seconds=2))
+    ).execute(
+        AcknowledgeConversationCryptoWelcomeCommand(
+            ALICE_ID, ALICE_LAPTOP_ID, CONVERSATION_ID, first.id
+        )
+    )
+    state.devices[BOB_LAPTOP_ID] = Device.create(
+        user_id=BOB_ID, name="Bob laptop", now=NOW, device_id=BOB_LAPTOP_ID
+    )
+    state.device_crypto_identities[BOB_LAPTOP_ID] = crypto_identity(BOB_ID, BOB_LAPTOP_ID, 10)
+    for i in range(2):
+        package = DeviceKeyPackage.create(
+            user_id=BOB_ID, device_id=BOB_LAPTOP_ID, key_package=bytes([i + 1]), now=NOW
+        )
+        state.device_key_packages[package.id] = package
+    old_request = replace(
+        begin_command(),
+        device_id=ALICE_LAPTOP_ID,
+        bootstrap_request_id=UUID("aaaaaaaa-0000-4000-8000-000000000001"),
+    )
+    begin = begin_crypto(factory, NOW + timedelta(seconds=3))
+    reserved = await begin.execute(old_request)
+    phone_request = replace(
+        begin_command(), bootstrap_request_id=UUID("aaaaaaaa-0000-4000-8000-000000000002")
+    )
+    assert (await begin.execute(phone_request)).generation.id == reserved.generation.id
+
+    # Simulate a reservation written by the old implementation before its Welcome ACK.
+    key = (first.id, ALICE_LAPTOP_ID)
+    state.conversation_crypto_welcomes[key] = replace(
+        state.conversation_crypto_welcomes[key], acknowledged_at=None
+    )
+    recovered = await begin.execute(phone_request)
+    assert recovered.generation.status is ConversationCryptoStatus.PENDING
+    assert recovered.generation.coordinator_device_id == ALICE_PHONE_ID
+    assert recovered.generation.id != reserved.generation.id
+    assert (await begin.execute(old_request)).generation.id == recovered.generation.id
+    assert {
+        item.key_package_ref for item in reserved.required_devices if item.key_package_ref
+    }.isdisjoint(
+        item.key_package_ref for item in recovered.required_devices if item.key_package_ref
+    )
+
+
+async def test_expired_session_is_excluded_but_offline_device_can_still_join() -> None:
+    state = bootstrap_state()
+    expired = Session.create(
+        user_id=ALICE_ID,
+        device_id=ALICE_LAPTOP_ID,
+        token_hash="aa" * 32,
+        now=NOW - timedelta(days=40),
+        idle_timeout=timedelta(days=30),
+        absolute_lifetime=timedelta(days=90),
+    )
+    offline = Session.create(
+        user_id=BOB_ID,
+        device_id=BOB_PHONE_ID,
+        token_hash="bb" * 32,
+        now=NOW - timedelta(days=10),
+        idle_timeout=timedelta(days=30),
+        absolute_lifetime=timedelta(days=90),
+    )
+    state.sessions = {expired.id: expired, offline.id: offline}
+    generation = await begin_crypto(FakeConversationCryptoUnitOfWorkFactory(state), NOW).execute(
+        begin_command()
+    )
+    assert {item.device_id for item in generation.required_devices} == {
+        ALICE_PHONE_ID,
+        BOB_PHONE_ID,
+    }
 
 
 async def test_full_roster_recovery_never_claims_coordinator_own_key_package() -> None:

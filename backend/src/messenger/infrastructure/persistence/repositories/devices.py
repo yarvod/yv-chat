@@ -1,12 +1,13 @@
 """SQLAlchemy device repository adapter."""
 
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from messenger.domain.entities import Device
-from messenger.infrastructure.persistence.models import DeviceModel
+from messenger.infrastructure.persistence.models import DeviceModel, SessionModel
 from messenger.infrastructure.persistence.repositories.mappers import map_device
 
 
@@ -37,14 +38,21 @@ class SqlAlchemyDeviceRepository:
         model = await self._session.scalar(statement)
         return map_device(model) if model is not None else None
 
-    async def list_active_for_users(self, user_ids: set[UUID]) -> list[Device]:
+    async def list_active_for_users(self, user_ids: set[UUID], *, now: datetime) -> list[Device]:
         if not user_ids:
             return []
+        sessions = select(SessionModel.id).where(SessionModel.device_id == DeviceModel.id)
+        usable_session = sessions.where(
+            SessionModel.revoked_at.is_(None),
+            SessionModel.idle_expires_at > now,
+            SessionModel.absolute_expires_at > now,
+        )
         models = await self._session.scalars(
             select(DeviceModel)
             .where(
                 DeviceModel.user_id.in_(user_ids),
                 DeviceModel.revoked_at.is_(None),
+                ~sessions.exists() | usable_session.exists(),
             )
             .order_by(DeviceModel.user_id, DeviceModel.created_at, DeviceModel.id)
         )

@@ -206,6 +206,37 @@ class MemberServer implements ConversationCryptoGateway {
 }
 
 describe('conversation crypto reconciliation', () => {
+  it('applies an outstanding Welcome even while the next roster is blocked', async () => {
+    const earlier = generation('ready', coordinatorDeviceId, memberDeviceId)
+    const blocked: ConversationCryptoGeneration = {
+      ...generation('pending', coordinatorDeviceId),
+      generationId: secondGenerationId,
+      generationNumber: 2,
+      status: 'blocked',
+      blockReason: 'device_roster_changed',
+    }
+    const acknowledgeWelcome = vi.fn(async () => undefined)
+    const begin = vi.fn().mockResolvedValue(blocked)
+    const server: ConversationCryptoGateway = {
+      getCurrent: vi.fn(),
+      listReadyAfter: vi.fn(async (_id, after) => after === 0 ? [earlier] : []),
+      begin,
+      finalize: vi.fn(),
+      acknowledgeWelcome,
+    }
+    const state = new MemoryState()
+    const mls = new FakeMls()
+    const useCase = new ReconcileConversationCrypto(
+      server, state, new FakeDeviceCrypto(), mls, new FixedIds([requestId, retryRequestId]),
+    )
+    await expect(useCase.execute({ conversationId, deviceId: memberDeviceId }))
+      .resolves.toMatchObject({ status: 'blocked', generationNumber: 2 })
+    expect(mls.joinConversation).toHaveBeenCalledOnce()
+    expect(acknowledgeWelcome).toHaveBeenCalledWith(conversationId, earlier.generationId)
+    expect(begin).toHaveBeenNthCalledWith(2, conversationId, retryRequestId)
+    expect(state.value).toMatchObject({ phase: 'ready', generationNumber: 1 })
+  })
+
   it('retries server finalization from the durable checkpoint without mutating MLS twice', async () => {
     const server = new CoordinatorServer()
     const state = new MemoryState()

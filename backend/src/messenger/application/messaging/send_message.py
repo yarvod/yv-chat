@@ -139,6 +139,7 @@ class SendOpaqueMessage:
                 raise AttachmentConflictError(
                     "attachments must use the conversation's exact message protocol"
                 )
+            now = self._clock.now()
             if command.protocol_version == 2:
                 generation = await unit_of_work.crypto_generations.get_current(
                     conversation.id,
@@ -160,7 +161,9 @@ class SendOpaqueMessage:
                 active_user_ids = {
                     member.user_id for member in conversation.members if member.is_active
                 }
-                active_devices = await unit_of_work.devices.list_active_for_users(active_user_ids)
+                active_devices = await unit_of_work.devices.list_active_for_users(
+                    active_user_ids, now=now
+                )
                 roster = active_crypto_roster(
                     active_user_ids=active_user_ids,
                     active_devices=active_devices,
@@ -180,7 +183,6 @@ class SendOpaqueMessage:
                     raise ConversationCryptoNotReadyError(
                         "sender device is outside current MLS roster"
                     )
-            now = self._clock.now()
             attachments = await unit_of_work.attachments.get_many_for_update(command.attachment_ids)
             if len(attachments) != len(command.attachment_ids) or any(
                 item.conversation_id != conversation.id

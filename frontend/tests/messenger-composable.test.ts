@@ -40,7 +40,7 @@ import { MarkConversationDelivered } from '../app/application/messaging/mark-con
 import type { ConversationReadStateGateway } from '../app/application/ports/conversation-read-state-gateway'
 import type { ConversationDeliveryStateGateway } from '../app/application/ports/conversation-delivery-state-gateway'
 import type { PageVisibility } from '../app/application/ports/page-visibility'
-import { ProtocolMessageProtection } from '../app/application/messaging/message-protection'
+import { MessageProtectionError, ProtocolMessageProtection } from '../app/application/messaging/message-protection'
 import { SyntheticMessageProtocol } from '../app/infrastructure/crypto/synthetic-message-protocol'
 import { UnavailableMlsMessageProtocol } from '../app/infrastructure/crypto/unavailable-mls-message-protocol'
 import { IndexedDbMessageArchive } from '../app/infrastructure/storage/indexeddb-message-archive'
@@ -254,6 +254,44 @@ beforeEach(() => {
 })
 
 describe('messenger orchestration', () => {
+  it('retries an open message after MLS becomes ready and can then report it read', async () => {
+    const direct = { ...conversation, conversationType: 'direct' as const, title: null }
+    const envelope = { ...message, protocolVersion: 2, cryptoGenerationId: 'generation', cryptoEpoch: 1 }
+    let hasKeys = false
+    const protection = new ProtocolMessageProtection([{
+      protocolVersion: 2,
+      secure: true,
+      label: 'Test MLS',
+      protectText: vi.fn(),
+      async unprotectText() {
+        if (!hasKeys) throw new MessageProtectionError('provider-unavailable')
+        return 'restored message'
+      },
+    }])
+    vi.mocked(gateway.listConversations).mockResolvedValue([direct])
+    vi.mocked(gateway.listMessageHistory).mockResolvedValue({
+      messages: [envelope], hasMore: false, oldestSequence: 1, newestSequence: 1,
+    })
+    const messenger = useMessenger('alice-id', 'device-alice', vi.fn(), {
+      ...messengerDependencies(),
+      messageProtection: protection,
+      reconcileConversationCrypto: async () => ({
+        status: hasKeys ? 'ready' : 'pending', generationId: 'generation',
+        generationNumber: 1, blockReason: null, epoch: hasKeys ? 1 : null,
+      }),
+    })
+    await messenger.load()
+    expect(messenger.state.messages[0]?.contentState).toBe('unavailable')
+    await messenger.markVisibleRead(direct.conversationId, 1)
+    expect(readStateGateway.mark).not.toHaveBeenCalled()
+
+    hasKeys = true
+    await messenger.selectConversation(direct.conversationId)
+    expect(messenger.state.messages[0]?.displayBody).toBe('restored message')
+    await messenger.markVisibleRead(direct.conversationId, 1)
+    expect(readStateGateway.mark).toHaveBeenCalledWith(direct.conversationId, 1)
+  })
+
   it('never opens the old device or account-only archive after a fresh login on the same origin', async () => {
     vi.stubGlobal('IDBKeyRange', IDBKeyRange)
     const db = new IDBFactory()
@@ -304,6 +342,35 @@ describe('messenger orchestration', () => {
       expect(gateway.listSync).toHaveBeenCalledWith(0)
       expect(gateway.listSync).not.toHaveBeenCalledWith(900)
       replacement.dispose()
+
+      const oldEnvelope = {
+        ...envelope, sequence: 2, messageId: 'archived-only', clientMessageId: 'archived-only-client',
+      }
+      await archive.put('alice-id', direct.conversationId, [{
+        ...oldEnvelope, localPlaintext: 'unverified legacy body',
+      }])
+      const restoreOwnArchive = useMessenger('alice-id', 'device-alice', vi.fn(), {
+        ...dependencies,
+        messageProtection: new ProtocolMessageProtection([{
+          protocolVersion: 2,
+          secure: true,
+          label: 'Test MLS',
+          protectText: vi.fn(),
+          async unprotectText(input) {
+            if (input.clientMessageId === oldEnvelope.clientMessageId) return 'verified body'
+            throw new MessageProtectionError('provider-unavailable')
+          },
+        }]),
+      })
+      await restoreOwnArchive.load()
+      expect(restoreOwnArchive.state.messages).toContainEqual(expect.objectContaining({
+        messageId: oldEnvelope.messageId, displayBody: 'verified body',
+      }))
+      await expect(archive.loadLatest(storageScope, direct.conversationId, 100))
+        .resolves.toContainEqual(expect.objectContaining({
+          messageId: oldEnvelope.messageId, localPlaintext: 'verified body',
+        }))
+      restoreOwnArchive.dispose()
     } finally {
       archive.close()
       snapshots.close()

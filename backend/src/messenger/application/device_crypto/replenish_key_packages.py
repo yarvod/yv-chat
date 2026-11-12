@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from uuid import UUID
 
 from messenger.application.device_crypto.dto import ReplenishDeviceKeyPackagesResult
+from messenger.application.device_crypto.key_package_policy import KEY_PACKAGE_MAX_QUEUE_AGE
 from messenger.application.errors import (
     DeviceCryptoIdentityNotFoundError,
     DeviceKeyPackageConflictError,
@@ -60,7 +61,9 @@ class ReplenishDeviceKeyPackages:
             if await uow.key_packages.get_by_refs(refs):
                 raise DeviceKeyPackageConflictError("KeyPackage is already registered")
             await uow.key_packages.add_many(candidates)
-            available_count = await uow.key_packages.count_available(command.device_id)
+            available_count = await uow.key_packages.count_available(
+                command.device_id, created_after=now - KEY_PACKAGE_MAX_QUEUE_AGE
+            )
             await uow.commit()
         return ReplenishDeviceKeyPackagesResult(
             device_id=command.device_id,
