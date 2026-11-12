@@ -681,12 +681,21 @@ server временно недоступен, client сохраняет cancel i
 
 Выход с текущего устройства является security operation, а не обычной навигацией:
 он требует отдельного confirm step в Settings и backend атомарно отзывает current
-session вместе с device identity. Device-scoped IndexedDB records физически не
-удаляются скрыто, но новый login создаёт новый backend device ID и не получает старые
-MLS private keys. Поэтому старая E2EE-история, доступная только этому device, может
-стать недоступной после выхода; другие уже подключённые устройства сохраняют свои
-локальные архивы. Возврат истории новому device требует отдельного secure
-device-to-device transfer из `BL-015`.
+session вместе с device identity. Локальные записи не стираются физически при
+logout. Новый login получает новый backend device ID и не открывает старые MLS
+keys, архив сообщений или cursor: ключи и записи архива и snapshot выбираются по
+точной паре user/device. История QR переносится только между явно авторизованными
+устройствами через `BL-015`. Старые записи архива и snapshot, созданные по одному
+user ID, не позволяют доказать привязку к устройству; текущий клиент оставляет их
+на диске без автоматического импорта. После обновления начальный sync заново
+загружает данные из server retention window, а сохранившийся MLS vault открывает
+доступные ему сообщения. История, доступная только в старом архиве, может быть
+недоступна в интерфейсе.
+
+Восстановление запечатанного MLS состояния не зависит от текущего срока действия
+начального KeyPackage. OpenMLS по-прежнему проверяет подписи и привязку к
+идентичности, а клиент сверяет SHA-256 исходного пакета с неизменяемой регистрацией.
+Для новых предложений о добавлении устройства OpenMLS проверяет срок как обычно.
 
 Current-account API получает identity исключительно из authenticated principal. `GET/PATCH /api/v1/me` возвращает/изменяет только bounded profile fields. Password change и explicit security reset используют текущий пароль как step-up factor внутри row-locked identity transaction; IP/GeoIP/User-Agent не участвуют. Password change обновляет Argon2id hash и отзывает все остальные sessions/devices, сохраняя current session. Security reset отзывает все sessions/devices, включая current, после чего transport удаляет auth/CSRF cookies. Обе операции создают typed bounded audit events без password/token payload. E2EE identity/key reset в эту account-операцию не входит и проектируется только после protocol ADR.
 

@@ -87,6 +87,6 @@ describe('device crypto lifecycle diagnostics', () => {
     await Promise.resolve()
 
     expect(start).toHaveBeenCalledWith(account.userId, account.deviceId)
-    expect(reconcileCurrentRoster).toHaveBeenCalledWith(account.userId)
+    expect(reconcileCurrentRoster).toHaveBeenCalledWith(account.userId, account.deviceId)
   })
 })

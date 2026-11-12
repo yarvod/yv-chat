@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
+import { DeviceCryptoError } from '../app/application/device-crypto/errors'
 import type { ReconcileConversationCryptoResult } from '../app/application/conversation-crypto/reconcile-conversation-crypto'
 import type {
   ProtectMlsMessageCommand,
@@ -99,4 +100,17 @@ describe('MLS v2 message protocol adapter', () => {
     })).rejects.toMatchObject({ kind: 'corrupt-envelope' })
     expect(session.unprotectMessage).not.toHaveBeenCalled()
   })
+
+  it.each(['not-provisioned', 'message-key-unavailable'] as const)(
+    'reports %s as unavailable rather than corrupt',
+    async (code) => {
+      const session = new FakeSession()
+      session.unprotectMessage.mockRejectedValue(new DeviceCryptoError(code))
+      await expect(new MlsMessageProtocol(session).unprotectText({
+        conversationId,
+        clientMessageId,
+        ciphertextBase64: 'AQID',
+      })).rejects.toMatchObject({ kind: 'provider-unavailable' })
+    },
+  )
 })

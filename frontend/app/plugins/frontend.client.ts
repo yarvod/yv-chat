@@ -231,17 +231,17 @@ export default defineNuxtPlugin(nuxtApp => {
     conversationCryptoGateway,
     deviceCryptoSession,
     scheduler,
-    async (ownerUserId, conversationId) => {
-      let history = epochHistories.get(ownerUserId)
+    async (storageScope, conversationId) => {
+      let history = epochHistories.get(storageScope)
       if (!history) {
         history = new ConversationHistory(
-          ownerUserId,
+          storageScope,
           messagingGateway,
           messageArchive,
           messageProtection,
           directAttachmentSecrets,
         )
-        epochHistories.set(ownerUserId, history)
+        epochHistories.set(storageScope, history)
       }
       await history.cacheRetainedBeforeEpochAdvance(conversationId)
     },
@@ -258,9 +258,10 @@ export default defineNuxtPlugin(nuxtApp => {
     new BrowserDeviceHistorySyncJobStore(),
     scheduler,
     12,
-    (ownerUserId, targetDeviceId, onProgress, ensureActive) => (
+    (ownerUserId, currentDeviceId, targetDeviceId, onProgress, ensureActive) => (
       linkedDeviceEnrollment.enroll(
         ownerUserId,
+        currentDeviceId,
         targetDeviceId,
         onProgress,
         ensureActive,

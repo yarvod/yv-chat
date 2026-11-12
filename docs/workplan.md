@@ -1,20 +1,23 @@
 # Текущий workplan
 
-## WP-150 — Обновление зависимостей для прохождения production audit
+## WP-151 — Восстановление MLS и изоляция локального архива
 
-Статус: **проверено локально**.
-Backlog: `BL-FIX-077`. Дефект: `BUG-145`.
+Статус: **проверено локально, production rollout pending**.
+Backlog: `BL-FIX-078`. Дефекты: `BUG-146`, `BUG-147`.
 
-1. Воспроизвести отказ аудита для lockfile из `4aaf2f1`.
-2. Обновить пакеты с исправлениями и проверить совместимость обновлённого
-   тестового окружения. Сохранить полную проверку production и dev зависимостей.
-3. Проверить чистый `npm ci`, `npm audit --audit-level=high`, lint, typecheck,
-   frontend tests и production build, включая Service Worker и crypto assets.
+1. Восстановить подписанное состояние v8 через v9 после истечения первого
+   KeyPackage. Сохранить точную привязку к регистрации и строгую проверку
+   срока при добавлении устройств.
+2. Привязать архив, курсор и перенос истории к паре user/device. Старый
+   архив по одному user ID оставить на диске без автоматического импорта.
+3. Проверить выпуск через production workflow и убедиться, что оба HTTPS
+   origin отдают рабочий API и новый модуль v9.
 
-Готовность: проверки проходят и изменения собраны в отдельный commit.
-Production rollout и исправление восстановления MLS snapshot (`BUG-146`) вне
-scope обновления зависимостей.
+Готовность: regression tests для старого MLS состояния и повторного входа,
+crypto checks, чистая установка и audit, frontend checks, успешный rollout.
+Отдельная проверка пары физических устройств остаётся после rollout.
+Исправление серверного инвентаря (`BUG-148`) и новый механизм восстановления
+истории вне scope.
 
-Проверка 2026-11-12: чистый `npm ci`, аудит с 0 high и 0 critical, lint,
-typecheck, 531 frontend test и production build с Service Worker прошли на
-подготовленном дереве релиза.
+Локально прошли 531 frontend test, 27 Rust tests, lint, typecheck,
+production build, audit с 0 high и 0 critical, docs/deploy checks.

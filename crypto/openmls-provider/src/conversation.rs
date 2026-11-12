@@ -7,10 +7,11 @@
 use std::collections::{HashMap, HashSet};
 
 use openmls::{
+    framing::errors::{MessageDecryptionError, SecretTreeError},
     key_packages::{KeyPackage, KeyPackageIn},
     prelude::{
-        GroupId, MlsGroup, MlsGroupJoinConfig, MlsMessageBodyIn, MlsMessageIn,
-        ProcessedMessageContent, ProtocolVersion, RatchetTreeIn, StagedWelcome,
+        GroupId, MlsGroup, MlsGroupJoinConfig, MlsMessageBodyIn, MlsMessageIn, ProcessMessageError,
+        ProcessedMessageContent, ProtocolVersion, RatchetTreeIn, StagedWelcome, ValidationError,
         PURE_CIPHERTEXT_WIRE_FORMAT_POLICY,
     },
 };
@@ -55,6 +56,8 @@ pub enum ConversationError {
     SerializationFailed,
     #[error("MLS application message is invalid")]
     InvalidApplicationMessage,
+    #[error("MLS message keys are unavailable")]
+    MessageKeysUnavailable,
     #[error("MLS application message AAD does not match server routing")]
     AadMismatch,
     #[error("MLS application payload is too large")]
@@ -422,9 +425,20 @@ impl DeviceBootstrap {
         let message = parse_message(ciphertext, ConversationError::InvalidApplicationMessage)?
             .try_into_protocol_message()
             .map_err(|_| ConversationError::InvalidApplicationMessage)?;
-        let processed = group
-            .process_message(&self._provider, message)
-            .map_err(|_| ConversationError::InvalidApplicationMessage)?;
+        let processed =
+            group
+                .process_message(&self._provider, message)
+                .map_err(|error| match error {
+                    ProcessMessageError::ValidationError(
+                        ValidationError::WrongEpoch
+                        | ValidationError::NoPastEpochData
+                        | ValidationError::CannotDecryptOwnMessage
+                        | ValidationError::UnableToDecrypt(MessageDecryptionError::SecretTreeError(
+                            SecretTreeError::TooDistantInThePast,
+                        )),
+                    ) => ConversationError::MessageKeysUnavailable,
+                    _ => ConversationError::InvalidApplicationMessage,
+                })?;
         if processed.aad() != expected_aad {
             return Err(ConversationError::AadMismatch);
         }
@@ -782,7 +796,7 @@ mod tests {
         );
         assert_eq!(
             bob.unprotect_application_message(CONVERSATION, MESSAGE_TWO, &future.ciphertext),
-            Err(ConversationError::InvalidApplicationMessage),
+            Err(ConversationError::MessageKeysUnavailable),
         );
 
         let bob_rejoin_package = bob.generate_key_packages(1).unwrap().remove(0);

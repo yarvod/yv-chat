@@ -1,6 +1,7 @@
 import {
   MessageProtectionError,
 } from '../../application/messaging/message-protection'
+import { DeviceCryptoError } from '../../application/device-crypto/errors'
 import type {
   MessageProtocolAdapter,
   ProtectedProtocolText,
@@ -82,6 +83,10 @@ export class MlsMessageProtocol implements MessageProtocolAdapter {
       return new TextDecoder('utf-8', { fatal: true }).decode(result.plaintext)
     } catch (error) {
       if (error instanceof MessageProtectionError) throw error
+      if (error instanceof DeviceCryptoError && (
+        error.code === 'message-key-unavailable' || error.code === 'not-provisioned'
+        || error.code === 'storage-unavailable' || error.code.startsWith('worker-')
+      )) throw new MessageProtectionError('provider-unavailable')
       throw new MessageProtectionError('corrupt-envelope')
     }
   }

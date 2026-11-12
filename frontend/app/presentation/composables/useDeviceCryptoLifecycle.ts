@@ -87,7 +87,7 @@ export function deviceCryptoIssueNeedsReconnect(
 
 interface ReadyHistorySyncServices {
   readonly linkedDeviceEnrollment: {
-    reconcileCurrentRoster(ownerUserId: string): Promise<void>
+    reconcileCurrentRoster(ownerUserId: string, currentDeviceId: string): Promise<void>
   }
   readonly deviceHistorySync: {
     start(ownerUserId: string, currentDeviceId: string): void
@@ -100,7 +100,7 @@ export function resumeHistorySyncAfterCryptoReady(
 ): void {
   services.deviceHistorySync.start(current.userId, current.deviceId)
   void services.linkedDeviceEnrollment
-    .reconcileCurrentRoster(current.userId)
+    .reconcileCurrentRoster(current.userId, current.deviceId)
     .catch(() => undefined)
 }
 
@@ -156,7 +156,13 @@ export function useDeviceCryptoLifecycle(user: ComputedRef<CurrentAccount | null
   onMounted(() => {
     stopWatching = watch(
       () => user.value ? `${user.value.userId}:${user.value.deviceId}` : null,
-      () => { void initialize() },
+      (_binding, previous) => {
+        if (previous) {
+          $frontend.linkedDeviceEnrollment.cancelAll()
+          $frontend.deviceHistorySync.stop()
+        }
+        void initialize()
+      },
       { immediate: true },
     )
   })

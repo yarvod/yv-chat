@@ -6,6 +6,7 @@ export interface DeviceCryptoIdentity {
   credentialIdentity: Uint8Array
   signaturePublicKey: Uint8Array
   keyPackage: Uint8Array
+  initialKeyPackageRef: string
 }
 
 export interface DeviceCryptoIdentityCommand {

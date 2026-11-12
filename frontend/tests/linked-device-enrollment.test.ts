@@ -10,6 +10,7 @@ import type { MessagingGateway } from '../app/application/ports/messaging-gatewa
 import type { Scheduler } from '../app/application/ports/scheduler'
 import type { Conversation } from '../app/domain/messaging/models'
 
+const currentDeviceId = 'current-device'
 const targetDeviceId = 'target-device'
 const directIds = ['direct-a', 'direct-b'] as const
 
@@ -78,7 +79,7 @@ describe('linked device MLS enrollment', () => {
     const drained: string[] = []
     let drainer: ((conversationId: string) => Promise<void>) | null = null
     const session: LinkedDeviceEnrollmentSession = {
-      setBeforeEpochAdvance: callback => { drainer = callback },
+      setBeforeEpochAdvance: (_scope, callback) => { drainer = callback },
       invalidateConversation: vi.fn(),
       reconcileConversation: vi.fn(async (conversationId) => {
         await drainer?.(conversationId)
@@ -105,15 +106,15 @@ describe('linked device MLS enrollment', () => {
       cryptoServer,
       session,
       scheduler,
-      async (ownerUserId, conversationId) => {
-        expect(ownerUserId).toBe('alice')
+      async (storageScope, conversationId) => {
+        expect(storageScope).toBe('device:alice:current-device')
         drained.push(conversationId)
       },
       1,
       3,
     )
 
-    const result = await enrollment.enroll('alice', targetDeviceId, progress)
+    const result = await enrollment.enroll('alice', currentDeviceId, targetDeviceId, progress)
 
     expect(result.complete).toBe(true)
     expect(result.readyConversations).toBe(2)
@@ -149,7 +150,7 @@ describe('linked device MLS enrollment', () => {
       2,
     )
 
-    const result = await enrollment.enroll('alice', targetDeviceId)
+    const result = await enrollment.enroll('alice', currentDeviceId, targetDeviceId)
 
     expect(result.complete).toBe(false)
     expect(result.pendingConversationIds).toEqual(directIds)
@@ -186,7 +187,7 @@ describe('linked device MLS enrollment', () => {
       2,
     )
 
-    const result = await enrollment.enroll('alice', targetDeviceId)
+    const result = await enrollment.enroll('alice', currentDeviceId, targetDeviceId)
 
     expect(result.complete).toBe(true)
     expect(session.invalidateConversation).toHaveBeenCalledTimes(2)
@@ -228,7 +229,7 @@ describe('linked device MLS enrollment', () => {
       async () => undefined,
     )
 
-    const result = await enrollment.enroll('alice', targetDeviceId)
+    const result = await enrollment.enroll('alice', currentDeviceId, targetDeviceId)
 
     expect(result).toMatchObject({
       complete: true,
@@ -262,6 +263,7 @@ describe('linked device MLS enrollment', () => {
 
     await expect(enrollment.enroll(
       'alice',
+      currentDeviceId,
       targetDeviceId,
       () => undefined,
       ensureActive,
@@ -294,7 +296,7 @@ describe('linked device MLS enrollment', () => {
       async () => undefined,
     )
 
-    await enrollment.reconcileCurrentRoster('alice')
+    await enrollment.reconcileCurrentRoster('alice', currentDeviceId)
 
     expect(session.reconcileConversation).toHaveBeenCalledWith('direct-a')
     expect(session.reconcileConversation).toHaveBeenCalledWith('direct-b')

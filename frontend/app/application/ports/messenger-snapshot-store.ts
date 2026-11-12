@@ -6,6 +6,7 @@ import type {
 } from '../../domain/messaging/models'
 
 export interface MessengerSnapshot {
+  /** Device storage scope in current records; the serialized field name is kept for compatibility. */
   ownerUserId: string
   directory: readonly DirectoryUser[]
   conversations: readonly Conversation[]

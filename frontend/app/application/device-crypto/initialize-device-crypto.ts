@@ -36,19 +36,13 @@ export class InitializeDeviceCrypto {
       registration.userId !== identity.userId
       || registration.deviceId !== identity.deviceId
       || registration.fingerprint !== identity.fingerprint
+      || registration.initialKeyPackageRef !== identity.initialKeyPackageRef
       || !equalBytes(registration.credentialIdentity, identity.credentialIdentity)
       || !equalBytes(registration.signaturePublicKey, identity.signaturePublicKey)
     ) throw new DeviceCryptoError('conflict')
 
-    await this.crypto.validateKeyPackage({
-      targetUserId: registration.userId,
-      targetDeviceId: registration.deviceId,
-      credentialIdentity: registration.credentialIdentity,
-      signaturePublicKey: registration.signaturePublicKey,
-      fingerprint: registration.fingerprint,
-      packageRef: registration.initialKeyPackageRef,
-      keyPackage: identity.keyPackage,
-    })
+    // The worker validates fresh packages on creation and the historical anchor
+    // on sealed restore. Here we compare that anchor with the immutable registry.
     return { identity, registration }
   }
 }

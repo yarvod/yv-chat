@@ -33,7 +33,7 @@ function unavailableLabel(error: unknown): string {
       return 'Эта версия защищённого сообщения не поддерживается.'
     }
   }
-  return 'Сообщение повреждено или не прошло проверку.'
+  return 'Не удалось расшифровать или проверить сообщение.'
 }
 
 export async function prepareTimelineMessage(

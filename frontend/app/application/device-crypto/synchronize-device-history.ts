@@ -5,6 +5,7 @@ import type { MessagingGateway } from '../ports/messaging-gateway'
 import type { ScheduledTask, Scheduler } from '../ports/scheduler'
 import type { ProtocolMessageProtection } from '../messaging/message-protection'
 import { MessageProtectionError } from '../messaging/message-protection'
+import { localMessengerScope } from '../messaging/local-messenger-scope'
 import { ApplicationError } from '../errors'
 
 const CHUNK_RECORD_LIMIT = 20
@@ -78,6 +79,7 @@ type ProgressListener = (progress: DeviceHistorySyncProgress) => void
 type StatusListener = (progress: DeviceHistorySyncProgress) => void
 type TargetPreparer = (
   ownerUserId: string,
+  currentDeviceId: string,
   targetDeviceId: string,
   onProgress: (progress: {
     totalConversations: number
@@ -576,6 +578,7 @@ export class SynchronizeDeviceHistory {
     if (job.prepareTarget && this.prepareTarget) {
       const prepared = await this.prepareTarget(
         job.ownerUserId,
+        job.currentDeviceId,
         job.targetDeviceId,
         state => {
           progress = {
@@ -670,7 +673,10 @@ export class SynchronizeDeviceHistory {
     const peerComplete = new Set(job.peerCompletedConversationIds ?? [])
     for (const conversation of transferableConversations) {
       this.ensureActive(job.pairingId)
-      const records = await this.readTransferable(job.ownerUserId, conversation.conversationId)
+      const records = await this.readTransferable(
+        localMessengerScope(job.ownerUserId, job.currentDeviceId),
+        conversation.conversationId,
+      )
       this.ensureActive(job.pairingId)
       progress = { ...progress, gaps: progress.gaps + records.gaps }
       const pages = packedRecordChunks(records.messages)
@@ -843,7 +849,11 @@ export class SynchronizeDeviceHistory {
           peerComplete.add(conversationId)
         }
         if (payload.records.length > 0) {
-          await this.archive.put(job.ownerUserId, chunk.conversationId, payload.records)
+          await this.archive.put(
+            localMessengerScope(job.ownerUserId, job.currentDeviceId),
+            chunk.conversationId,
+            payload.records,
+          )
           this.ensureActive(job.pairingId)
         }
         if (payload.complete) {

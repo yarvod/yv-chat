@@ -7,7 +7,7 @@
 
 use openmls::{
     credentials::{BasicCredential, CredentialWithKey},
-    key_packages::{KeyPackage, KeyPackageIn},
+    key_packages::{errors::KeyPackageVerifyError, KeyPackage, KeyPackageIn},
     prelude::{ProtocolVersion, SignatureScheme},
 };
 use openmls_basic_credential::SignatureKeyPair;
@@ -230,6 +230,14 @@ impl DeviceBootstrap {
         &self.key_package
     }
 
+    pub fn initial_key_package_ref(&self) -> Result<String, BootstrapError> {
+        self._provider
+            .crypto()
+            .hash(CIPHERSUITE.hash_algorithm(), &self.key_package)
+            .map(hex::encode)
+            .map_err(|_| BootstrapError::CryptoUnavailable)
+    }
+
     pub fn generate_key_packages(&mut self, count: usize) -> Result<Vec<Vec<u8>>, BootstrapError> {
         if count == 0 || count > MAX_GENERATED_KEY_PACKAGES {
             return Err(BootstrapError::KeyPackageUnavailable);
@@ -295,22 +303,44 @@ fn validate_public_key_package(
     expected_identity: &[u8],
     expected_signature_key: &[u8],
 ) -> Result<(), BootstrapError> {
-    let mut input = serialized;
-    let key_package = KeyPackageIn::tls_deserialize(&mut input)
-        .map_err(|_| BootstrapError::ValidationFailed)?
-        .validate(
-            OpenMlsRustCrypto::default().crypto(),
-            ProtocolVersion::Mls10,
-        )
-        .map_err(|_| BootstrapError::ValidationFailed)?;
-    if !input.is_empty()
-        || key_package.ciphersuite() != CIPHERSUITE
-        || key_package.leaf_node().credential().serialized_content() != expected_identity
-        || key_package.leaf_node().signature_key().as_slice() != expected_signature_key
+    validate_key_package(serialized, expected_identity, expected_signature_key, false)
+}
+
+fn validate_key_package(
+    serialized: &[u8],
+    expected_identity: &[u8],
+    expected_signature_key: &[u8],
+    restoring_snapshot: bool,
+) -> Result<(), BootstrapError> {
+    // Read the fixed header with OpenMLS types. On InvalidLifetime OpenMLS
+    // returns no verified package from which to read the ciphersuite.
+    let mut header = serialized;
+    if ProtocolVersion::tls_deserialize(&mut header) != Ok(ProtocolVersion::Mls10)
+        || Ciphersuite::tls_deserialize(&mut header) != Ok(CIPHERSUITE)
     {
         return Err(BootstrapError::ValidationFailed);
     }
-    Ok(())
+    let mut input = serialized;
+    let key_package =
+        KeyPackageIn::tls_deserialize(&mut input).map_err(|_| BootstrapError::ValidationFailed)?;
+    let credential = key_package.unverified_credential();
+    if !input.is_empty()
+        || credential.credential.serialized_content() != expected_identity
+        || credential.signature_key.as_slice() != expected_signature_key
+    {
+        return Err(BootstrapError::ValidationFailed);
+    }
+    match key_package.validate(
+        OpenMlsRustCrypto::default().crypto(),
+        ProtocolVersion::Mls10,
+    ) {
+        Ok(_) => Ok(()),
+        // OpenMLS 0.8.1 checks lifetime after verifying both signatures.
+        // A sealed snapshot contains the historical registration anchor, not
+        // a package being offered for a new membership operation.
+        Err(KeyPackageVerifyError::InvalidLifetime) if restoring_snapshot => Ok(()),
+        Err(_) => Err(BootstrapError::ValidationFailed),
+    }
 }
 
 /// Validate a server-delivered KeyPackage against the canonical yv-chat device
@@ -381,6 +411,12 @@ impl DeviceBootstrap {
     #[wasm_bindgen(js_name = keyPackage)]
     pub fn wasm_key_package(&self) -> Vec<u8> {
         self.key_package().to_vec()
+    }
+
+    #[wasm_bindgen(js_name = initialKeyPackageRef)]
+    pub fn wasm_initial_key_package_ref(&self) -> Result<String, JsError> {
+        self.initial_key_package_ref()
+            .map_err(|error| JsError::new(&error.to_string()))
     }
 
     #[wasm_bindgen(js_name = generateKeyPackages)]

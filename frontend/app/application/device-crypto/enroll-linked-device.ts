@@ -1,12 +1,16 @@
 import type { ConversationCryptoGateway } from '../ports/conversation-crypto-gateway'
 import type { MessagingGateway } from '../ports/messaging-gateway'
 import type { Scheduler } from '../ports/scheduler'
+import { localMessengerScope } from '../messaging/local-messenger-scope'
 import type {
   ReconcileConversationCryptoResult,
 } from '../conversation-crypto/reconcile-conversation-crypto'
 
 export interface LinkedDeviceEnrollmentSession {
-  setBeforeEpochAdvance(callback: (conversationId: string) => Promise<void>): void
+  setBeforeEpochAdvance(
+    storageScope: string,
+    callback: (conversationId: string) => Promise<void>,
+  ): void
   invalidateConversation(conversationId: string): void
   reconcileConversation(conversationId: string): Promise<ReconcileConversationCryptoResult>
 }
@@ -20,7 +24,7 @@ export interface LinkedDeviceEnrollmentProgress {
   readonly complete: boolean
 }
 
-type EpochDrainer = (ownerUserId: string, conversationId: string) => Promise<void>
+type EpochDrainer = (storageScope: string, conversationId: string) => Promise<void>
 type ProgressListener = (progress: LinkedDeviceEnrollmentProgress) => void
 type ActivityGuard = () => Promise<void>
 type TargetState =
@@ -45,17 +49,21 @@ export class EnrollLinkedDevice {
 
   enroll(
     ownerUserId: string,
+    currentDeviceId: string,
     targetDeviceId: string,
     onProgress: ProgressListener = () => undefined,
     ensureActive: ActivityGuard = async () => undefined,
   ): Promise<LinkedDeviceEnrollmentProgress> {
-    if (!ownerUserId || !targetDeviceId) throw new TypeError('device enrollment binding is required')
-    const key = `${ownerUserId}:${targetDeviceId}`
+    if (!ownerUserId || !currentDeviceId || !targetDeviceId) {
+      throw new TypeError('device enrollment binding is required')
+    }
+    const storageScope = localMessengerScope(ownerUserId, currentDeviceId)
+    const key = `${storageScope}:${targetDeviceId}`
     const existing = this.running.get(key)
     if (existing) return existing
     const generation = this.cancelledGeneration
     const operation = this.run(
-      ownerUserId,
+      storageScope,
       targetDeviceId,
       generation,
       onProgress,
@@ -68,11 +76,13 @@ export class EnrollLinkedDevice {
     return operation
   }
 
-  async reconcileCurrentRoster(ownerUserId: string): Promise<void> {
-    if (!ownerUserId) throw new TypeError('owner binding is required')
-    this.configureEpochDrain(ownerUserId)
+  async reconcileCurrentRoster(ownerUserId: string, currentDeviceId: string): Promise<void> {
+    if (!ownerUserId || !currentDeviceId) throw new TypeError('device binding is required')
+    const generation = this.cancelledGeneration
+    this.configureEpochDrain(localMessengerScope(ownerUserId, currentDeviceId))
     const conversations = await this.messaging.listConversations()
     for (const conversation of conversations) {
+      if (generation !== this.cancelledGeneration) return
       if (conversation.conversationType !== 'direct') continue
       this.cryptoSession.invalidateConversation(conversation.conversationId)
       try {
@@ -89,13 +99,13 @@ export class EnrollLinkedDevice {
   }
 
   private async run(
-    ownerUserId: string,
+    storageScope: string,
     targetDeviceId: string,
     generation: number,
     onProgress: ProgressListener,
     ensureActive: ActivityGuard,
   ): Promise<LinkedDeviceEnrollmentProgress> {
-    this.configureEpochDrain(ownerUserId)
+    this.configureEpochDrain(storageScope)
     await ensureActive()
     const conversations = (await this.messaging.listConversations())
       .filter(item => item.conversationType === 'direct')
@@ -163,9 +173,10 @@ export class EnrollLinkedDevice {
     return progress
   }
 
-  private configureEpochDrain(ownerUserId: string): void {
+  private configureEpochDrain(storageScope: string): void {
     this.cryptoSession.setBeforeEpochAdvance(
-      conversationId => this.drainEpoch(ownerUserId, conversationId),
+      storageScope,
+      conversationId => this.drainEpoch(storageScope, conversationId),
     )
   }
 

@@ -5,6 +5,7 @@ export type DeviceCryptoErrorCode =
   | 'invalid-key-package'
   | 'local-state-lost'
   | 'not-provisioned'
+  | 'message-key-unavailable'
   | 'operation-failed'
   | 'rollback'
   | 'runtime-import-failed'

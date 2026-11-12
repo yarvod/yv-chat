@@ -25,8 +25,8 @@ function cancel(): void {
     </div>
     <p class="logout-history-warning">
       Ключи MLS привязаны к этому устройству. После выхода новая сессия получит новый
-      device identity и может не открыть старую E2EE-историю, доступную только здесь.
-      История на других уже подключённых устройствах не удаляется.
+      ID устройства и не откроет локальную историю этого входа. Выход отзывает
+      устройство, но не стирает данные браузера. История на других устройствах сохраняется.
     </p>
     <p v-if="error && !confirming" class="settings-message danger-text" role="alert">{{ error }}</p>
     <button class="danger-button" type="button" :disabled="busy" @click="confirming = true">

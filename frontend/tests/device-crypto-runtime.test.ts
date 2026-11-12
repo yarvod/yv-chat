@@ -4,7 +4,7 @@ import { webcrypto } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 
 import { IDBFactory } from 'fake-indexeddb'
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { DeviceCryptoError } from '../app/application/device-crypto/errors'
 import { DeviceCryptoRuntime } from '../app/infrastructure/crypto/device-crypto-runtime'
@@ -13,6 +13,9 @@ import { IndexedDbCryptoVault } from '../app/infrastructure/storage/indexeddb-cr
 import initOpenMls, {
   DeviceBootstrap,
   validatePublicKeyPackage,
+} from '../public/crypto/v9/yv_chat_openmls_provider.js'
+import initOpenMlsV8, {
+  DeviceBootstrap as DeviceBootstrapV8,
 } from '../public/crypto/v8/yv_chat_openmls_provider.js'
 
 const userId = '1b0a32e8-144f-4f60-bcb6-112f71bd5316'
@@ -46,7 +49,7 @@ function vault(indexedDb: IDBFactory): IndexedDbCryptoVault {
 }
 
 beforeAll(async () => {
-  const wasm = await readFile('public/crypto/v8/yv_chat_openmls_provider_bg.wasm')
+  const wasm = await readFile('public/crypto/v9/yv_chat_openmls_provider_bg.wasm')
   await initOpenMls({ module_or_path: wasm })
 })
 
@@ -57,6 +60,75 @@ beforeEach(() => {
 })
 
 describe('device crypto runtime with the release OpenMLS WASM', () => {
+  it('opens a v8 vault and decrypts retained history after the registration package expires', async () => {
+    const wasm = await readFile('public/crypto/v8/yv_chat_openmls_provider_bg.wasm')
+    await initOpenMlsV8({ module_or_path: wasm })
+    const oldDevice = new DeviceBootstrapV8(userId, deviceId)
+    const peer = new DeviceBootstrapV8(otherUserId, otherDeviceId)
+    const initialPackage = oldDevice.keyPackage()
+    peer.createConversation(conversationId)
+    const setup = peer.addMembersAndMerge(conversationId, [initialPackage])
+    oldDevice.joinConversation(conversationId, setup.welcome, setup.ratchetTree)
+    const plaintext = new TextEncoder().encode('retained MLS message')
+    const message = peer.protectApplicationMessage(conversationId, messageId, plaintext)
+    const localVault = vault(indexedDb)
+    const stored = await localVault.bootstrap(userId, deviceId, async (key) => {
+      const snapshot = await oldDevice.sealState(key, 1n)
+      try {
+        return {
+          revision: Number(snapshot.revision),
+          fingerprint: snapshot.fingerprint,
+          iv: snapshot.iv,
+          ciphertext: snapshot.ciphertext,
+        }
+      } finally {
+        snapshot.free()
+      }
+    })
+    localVault.close()
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 85 * 24 * 60 * 60 * 1000)
+    const runtime = new DeviceCryptoRuntime(openMlsModule, vault(indexedDb))
+    try {
+      await expect(DeviceBootstrapV8.restoreSealedState(
+        stored.wrappingKey, userId, deviceId, stored.state.fingerprint, 1n,
+        stored.state.iv, stored.state.ciphertext,
+      )).rejects.toThrow('private state snapshot is corrupt')
+      const restored = await runtime.restore({ userId, deviceId })
+      expect(restored).toMatchObject({
+        deviceId,
+        fingerprint: oldDevice.fingerprint(),
+        signaturePublicKey: oldDevice.signaturePublicKey(),
+        initialKeyPackageRef: await sha256Hex(initialPackage),
+        keyPackage: initialPackage,
+      })
+      const packageBinding = {
+        targetUserId: userId,
+        targetDeviceId: deviceId,
+        credentialIdentity: restored.credentialIdentity,
+        signaturePublicKey: restored.signaturePublicKey,
+        fingerprint: restored.fingerprint,
+      }
+      await expect(runtime.validateKeyPackage({
+        ...packageBinding, packageRef: restored.initialKeyPackageRef, keyPackage: initialPackage,
+      })).rejects.toMatchObject({ code: 'invalid-key-package' })
+      await expect(runtime.unprotectMessage({
+        conversationId, clientMessageId: messageId, ciphertext: message.ciphertext,
+      })).resolves.toMatchObject({ plaintext })
+      const [freshPackage] = (await runtime.generateKeyPackages({ count: 1 })).keyPackages
+      if (!freshPackage) throw new Error('expected a fresh KeyPackage')
+      await expect(runtime.validateKeyPackage({
+        ...packageBinding, packageRef: await sha256Hex(freshPackage), keyPackage: freshPackage,
+      })).resolves.toEqual({ validated: true })
+    } finally {
+      clock.mockRestore()
+      runtime.dispose()
+      message.free()
+      setup.free()
+      peer.free()
+      oldDevice.free()
+    }
+  })
+
   it('requires explicit provisioning and restores the exact identity after reload', async () => {
     const first = new DeviceCryptoRuntime(openMlsModule, vault(indexedDb))
     await expect(first.restore({ userId, deviceId })).rejects.toMatchObject({
@@ -453,7 +525,7 @@ describe('device crypto runtime with the release OpenMLS WASM', () => {
       conversationId,
       clientMessageId: futureMessageId,
       ciphertext: future.ciphertext,
-    })).rejects.toMatchObject({ code: 'operation-failed' })
+    })).rejects.toMatchObject({ code: 'message-key-unavailable' })
 
     await bob.restore({ userId: otherUserId, deviceId: otherDeviceId })
     const bobRejoinPackages = await bob.generateKeyPackages({ count: 1 })

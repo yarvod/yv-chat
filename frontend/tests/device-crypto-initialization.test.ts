@@ -17,6 +17,7 @@ const identity = {
   credentialIdentity: new Uint8Array(33),
   signaturePublicKey: new Uint8Array(32),
   keyPackage: new Uint8Array([1, 2, 3]),
+  initialKeyPackageRef: 'cd'.repeat(32),
 }
 const registration = {
   userId,
@@ -25,7 +26,7 @@ const registration = {
   fingerprint: identity.fingerprint,
   credentialIdentity: identity.credentialIdentity,
   signaturePublicKey: identity.signaturePublicKey,
-  initialKeyPackageRef: 'cd'.repeat(32),
+  initialKeyPackageRef: identity.initialKeyPackageRef,
   createdAt: '2026-08-11T12:00:00Z',
 }
 
@@ -56,15 +57,6 @@ describe('authenticated device crypto initialization', () => {
     expect(crypto.provision).toHaveBeenCalledWith({ userId, deviceId })
     expect(crypto.restore).not.toHaveBeenCalled()
     expect(registry.register).toHaveBeenCalledWith(identity)
-    expect(crypto.validateKeyPackage).toHaveBeenCalledWith({
-      targetUserId: userId,
-      targetDeviceId: deviceId,
-      credentialIdentity: registration.credentialIdentity,
-      signaturePublicKey: registration.signaturePublicKey,
-      fingerprint: registration.fingerprint,
-      packageRef: registration.initialKeyPackageRef,
-      keyPackage: identity.keyPackage,
-    })
   })
 
   it('restores registered state and never silently generates a replacement identity', async () => {
@@ -74,6 +66,7 @@ describe('authenticated device crypto initialization', () => {
     expect(crypto.restore).toHaveBeenCalledWith({ userId, deviceId })
     expect(crypto.provision).not.toHaveBeenCalled()
     expect(registry.register).not.toHaveBeenCalled()
+    expect(crypto.validateKeyPackage).not.toHaveBeenCalled()
 
     vi.mocked(crypto.restore).mockRejectedValue(new DeviceCryptoError('not-provisioned'))
     await expect(new InitializeDeviceCrypto(crypto, registry).execute({ userId, deviceId }))
@@ -87,6 +80,13 @@ describe('authenticated device crypto initialization', () => {
     await expect(new InitializeDeviceCrypto(crypto, registry).execute({ userId, deviceId }))
       .rejects.toMatchObject({ code: 'conflict' })
     expect(crypto.validateKeyPackage).not.toHaveBeenCalled()
+  })
+
+  it('rejects a different initial package even when the device and signer match', async () => {
+    const crypto = cryptoGateway()
+    const registry = registryGateway({ ...registration, initialKeyPackageRef: 'ef'.repeat(32) })
+    await expect(new InitializeDeviceCrypto(crypto, registry).execute({ userId, deviceId }))
+      .rejects.toMatchObject({ code: 'conflict' })
   })
 
   it('validates a claimed package before returning it to group orchestration', async () => {

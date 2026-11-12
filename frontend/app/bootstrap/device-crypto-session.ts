@@ -8,6 +8,7 @@ import {
   type ReconcileConversationCryptoResult,
 } from '../application/conversation-crypto/reconcile-conversation-crypto'
 import { DeviceCryptoError } from '../application/device-crypto/errors'
+import { localMessengerScope } from '../application/messaging/local-messenger-scope'
 import type { ClientIdGenerator } from '../application/ports/client-id-generator'
 import type { ConversationCryptoGateway } from '../application/ports/conversation-crypto-gateway'
 import type { ConversationCryptoStateRepository } from '../application/ports/conversation-crypto-state-repository'
@@ -57,7 +58,10 @@ export class DeviceCryptoSession implements MlsConversationGateway, CallIdentity
   >()
   private readonly readyConversations = new Map<string, ReconcileConversationCryptoResult>()
   private poolRefresh: Promise<void> | null = null
-  private beforeEpochAdvance: ReconcileConversationCryptoHooks['beforeEpochAdvance'] = undefined
+  private readonly epochDrainers = new Map<
+    string,
+    NonNullable<ReconcileConversationCryptoHooks['beforeEpochAdvance']>
+  >()
 
   constructor(
     private readonly registry: DeviceCryptoRegistryGateway,
@@ -69,7 +73,7 @@ export class DeviceCryptoSession implements MlsConversationGateway, CallIdentity
   ) {}
 
   async initialize(command: DeviceCryptoIdentityCommand): Promise<InitializedDeviceCrypto> {
-    const binding = `${command.userId}:${command.deviceId}`
+    const binding = localMessengerScope(command.userId, command.deviceId)
     if (this.active?.binding === binding) return this.active.initialized
     if (this.initializing?.binding === binding) return await this.initializing.promise
     if (this.initializing) await this.initializing.promise.catch(() => undefined)
@@ -83,9 +87,10 @@ export class DeviceCryptoSession implements MlsConversationGateway, CallIdentity
   }
 
   setBeforeEpochAdvance(
-    callback: ReconcileConversationCryptoHooks['beforeEpochAdvance'],
+    binding: string,
+    callback: NonNullable<ReconcileConversationCryptoHooks['beforeEpochAdvance']>,
   ): void {
-    this.beforeEpochAdvance = callback
+    this.epochDrainers.set(binding, callback)
   }
 
   reconcileConversation(conversationId: string): Promise<ReconcileConversationCryptoResult> {
@@ -97,7 +102,9 @@ export class DeviceCryptoSession implements MlsConversationGateway, CallIdentity
     const operation = this.reconcileAfterPoolRefresh(active, conversationId)
     this.reconciliation.set(conversationId, operation)
     void operation.then((result) => {
-      if (result.status === 'ready') this.readyConversations.set(conversationId, result)
+      if (this.active === active && result.status === 'ready') {
+        this.readyConversations.set(conversationId, result)
+      }
     }, () => undefined).finally(() => {
       if (this.reconciliation.get(conversationId) === operation) {
         this.reconciliation.delete(conversationId)
@@ -210,7 +217,10 @@ export class DeviceCryptoSession implements MlsConversationGateway, CallIdentity
     this.poolRefresh = null
     const current = this.active
     this.active = null
-    if (current) await current.gateway.dispose()
+    if (current) {
+      this.epochDrainers.delete(current.binding)
+      await current.gateway.dispose()
+    }
   }
 
   private requireActive(): ActiveDeviceCryptoScope {
@@ -228,7 +238,7 @@ export class DeviceCryptoSession implements MlsConversationGateway, CallIdentity
         conversationId,
         deviceId: active.initialized.identity.deviceId,
       },
-      { beforeEpochAdvance: this.beforeEpochAdvance },
+      { beforeEpochAdvance: this.epochDrainers.get(active.binding) },
     )
   }
 

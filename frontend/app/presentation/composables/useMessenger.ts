@@ -8,6 +8,7 @@ import {
   ConversationHistory,
   type ConversationHistoryWindow,
 } from '../../application/messaging/conversation-history'
+import { localMessengerScope } from '../../application/messaging/local-messenger-scope'
 import type { ListConversationReadStates } from '../../application/messaging/list-conversation-read-states'
 import type { DeleteMessageForEveryone } from '../../application/messaging/delete-message-for-everyone'
 import type { AddGroupMember } from '../../application/conversations/add-group-member'
@@ -146,6 +147,7 @@ export function useMessenger(
   onUnauthorized: () => void,
   suppliedDependencies?: MessengerDependencies,
 ) {
+  const storageScope = localMessengerScope(actorUserId, actorDeviceId)
   const dependencies = suppliedDependencies ?? (() => {
     const { $frontend } = useNuxtApp()
     return {
@@ -183,7 +185,7 @@ export function useMessenger(
         $frontend.deviceCryptoSession.reconcileConversation(conversationId)
       ),
       configureCryptoEpochDrainer: drainer => (
-        $frontend.deviceCryptoSession.setBeforeEpochAdvance(drainer)
+        $frontend.deviceCryptoSession.setBeforeEpochAdvance(storageScope, drainer)
       ),
       invalidateConversationCrypto: conversationId => (
         $frontend.deviceCryptoSession.invalidateConversation(conversationId)
@@ -245,7 +247,7 @@ export function useMessenger(
     message: null,
   })
   const history = new ConversationHistory(
-    actorUserId,
+    storageScope,
     gateway,
     messageArchive,
     messageProtection,
@@ -678,7 +680,7 @@ export function useMessenger(
     // corresponding message envelopes were never stored locally.
     if (history.archiveStatus !== 'ready') return
     const snapshot: MessengerSnapshot = {
-      ownerUserId: actorUserId,
+      ownerUserId: storageScope,
       directory: [...state.directory],
       conversations: [...state.conversations],
       readStates: [...state.readStates],
@@ -699,7 +701,7 @@ export function useMessenger(
   async function hydrateSnapshot(preferredConversationId: string | null = null): Promise<boolean> {
     let snapshot: MessengerSnapshot | null
     try {
-      snapshot = await messengerSnapshotStore.load(actorUserId)
+      snapshot = await messengerSnapshotStore.load(storageScope)
     } catch {
       messengerSnapshotStore.close()
       return false

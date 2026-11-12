@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { SynchronizeDeviceHistory } from '../app/application/device-crypto/synchronize-device-history'
 import { ApplicationError } from '../app/application/errors'
+import { localMessengerScope } from '../app/application/messaging/local-messenger-scope'
 import { ProtocolMessageProtection } from '../app/application/messaging/message-protection'
 import type { DeviceHistorySyncJob, DeviceHistorySyncJobStore } from '../app/application/ports/device-history-sync-jobs'
 import type { DevicePairingGateway } from '../app/application/ports/device-pairing-gateway'
@@ -760,8 +761,8 @@ describe('QR-linked bidirectional device history sync', () => {
     const extended = { ...original, expiresAt: '2027-09-12T12:00:00Z' }
     const relay: RelayState = { chunks: [], acknowledged: new Set() }
     try {
-      await trustedArchive.put(owner, conversation, [original])
-      await candidateArchive.put(owner, conversation, [extended])
+      await trustedArchive.put(localMessengerScope(owner, trusted), conversation, [original])
+      await candidateArchive.put(localMessengerScope(owner, candidate), conversation, [extended])
 
       const [trustedProgress, candidateProgress] = await Promise.all([
         service(trusted, trustedArchive, relay, new MemoryJobs()).synchronize({
@@ -784,11 +785,11 @@ describe('QR-linked bidirectional device history sync', () => {
       expect(candidateProgress).toMatchObject({ complete: true, importedRecords: 1 })
       expect(relay.chunks).toHaveLength(4)
       expect(relay.acknowledged.size).toBe(4)
-      await expect(trustedArchive.loadLatest(owner, conversation, 100)).resolves.toMatchObject([{
+      await expect(trustedArchive.loadLatest(localMessengerScope(owner, trusted), conversation, 100)).resolves.toMatchObject([{
         expiresAt: extended.expiresAt,
         localPlaintext: original.localPlaintext,
       }])
-      await expect(candidateArchive.loadLatest(owner, conversation, 100)).resolves.toMatchObject([{
+      await expect(candidateArchive.loadLatest(localMessengerScope(owner, candidate), conversation, 100)).resolves.toMatchObject([{
         expiresAt: extended.expiresAt,
         localPlaintext: original.localPlaintext,
       }])
@@ -801,7 +802,7 @@ describe('QR-linked bidirectional device history sync', () => {
 
   it('prepares the exact target MLS leaf before a trusted device exports history', async () => {
     const relay: RelayState = { chunks: [], acknowledged: new Set() }
-    const prepareTarget = vi.fn(async (_owner, _target, onProgress) => {
+    const prepareTarget = vi.fn(async (_owner, _current, _target, onProgress) => {
       onProgress({ totalConversations: 1, readyConversations: 1 })
       return { complete: true, totalConversations: 1, readyConversations: 1 }
     })
@@ -825,6 +826,7 @@ describe('QR-linked bidirectional device history sync', () => {
 
     expect(prepareTarget).toHaveBeenCalledWith(
       owner,
+      trusted,
       candidate,
       expect.any(Function),
       expect.any(Function),
@@ -836,7 +838,7 @@ describe('QR-linked bidirectional device history sync', () => {
   it('stops trusted-device MLS preparation when the peer cancels the relay', async () => {
     const jobs = new MemoryJobs()
     const prepareTarget: ConstructorParameters<typeof SynchronizeDeviceHistory>[7]
-      = vi.fn(async (_owner, _target, _onProgress, ensureActive) => {
+      = vi.fn(async (_owner, _current, _target, _onProgress, ensureActive) => {
         await ensureActive()
         return { complete: true, totalConversations: 1, readyConversations: 1 }
       })
@@ -886,7 +888,7 @@ describe('QR-linked bidirectional device history sync', () => {
         conversationId === blockedConversation ? 'skipped' : 'ready'
       ))
     const prepareTarget: ConstructorParameters<typeof SynchronizeDeviceHistory>[7]
-      = vi.fn(async (_owner, _target, onProgress) => {
+      = vi.fn(async (_owner, _current, _target, onProgress) => {
         onProgress({ totalConversations: 2, readyConversations: 1 })
         return {
           complete: true,

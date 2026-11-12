@@ -14,11 +14,10 @@ use openmls::{
 use openmls_basic_credential::SignatureKeyPair;
 use openmls_rust_crypto::OpenMlsRustCrypto;
 use openmls_traits::OpenMlsProvider;
-use tls_codec::Deserialize;
 
 use super::{
-    encode_credential_identity, public_fingerprint, validate_public_key_package, BootstrapError,
-    DeviceBootstrap, CIPHERSUITE, CREDENTIAL_IDENTITY_LENGTH,
+    encode_credential_identity, public_fingerprint, validate_key_package, BootstrapError,
+    DeviceBootstrap, CREDENTIAL_IDENTITY_LENGTH,
 };
 
 const MAGIC: &[u8; 8] = b"YVMLSST\0";
@@ -155,7 +154,7 @@ pub(super) fn restore(
         return Err(BootstrapError::SnapshotCorrupt);
     }
 
-    validate_public_key_package(&key_package, &identity, &signature_public_key)
+    validate_key_package(&key_package, &identity, &signature_public_key, true)
         .map_err(|_| BootstrapError::SnapshotCorrupt)?;
     let provider = OpenMlsRustCrypto::default();
     *provider
@@ -174,19 +173,10 @@ pub(super) fn restore(
         credential: BasicCredential::new(identity.clone()).into(),
         signature_key: signature_public_key.clone().into(),
     };
-    let mut key_package_input = key_package.as_slice();
-    let parsed_key_package =
-        openmls::key_packages::KeyPackageIn::tls_deserialize(&mut key_package_input)
-            .map_err(|_| BootstrapError::SnapshotCorrupt)?
-            .validate(provider.crypto(), openmls::prelude::ProtocolVersion::Mls10)
-            .map_err(|_| BootstrapError::SnapshotCorrupt)?;
     // OpenMLS removes a one-time KeyPackage bundle after consuming the Welcome.
     // The immutable public package remains part of the device registration, but
     // its private init key is correctly absent after use and must not make an
     // otherwise complete MLS group snapshot unrestorable.
-    if parsed_key_package.ciphersuite() != CIPHERSUITE {
-        return Err(BootstrapError::SnapshotCorrupt);
-    }
     let fingerprint = public_fingerprint(&provider, &identity, &signature_public_key)?;
     let bootstrap = DeviceBootstrap {
         _provider: provider,
@@ -195,7 +185,6 @@ pub(super) fn restore(
         key_package,
         fingerprint,
     };
-    bootstrap.validate()?;
     Ok((bootstrap, revision))
 }
 
@@ -273,7 +262,11 @@ impl<'a> Reader<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use openmls::prelude::{KeyPackage, Lifetime};
     use openmls_traits::{crypto::OpenMlsCrypto, signatures::Signer};
+    use tls_codec::Serialize;
+
+    use crate::CIPHERSUITE;
 
     const USER_ID: &str = "1b0a32e8-144f-4f60-bcb6-112f71bd5316";
     const DEVICE_ID: &str = "50d6b08a-84ae-4bd7-829a-f40f38e9a2c1";
@@ -317,6 +310,29 @@ mod tests {
         assert_eq!(
             encode(&bootstrap, 1).unwrap(),
             encode(&bootstrap, 1).unwrap()
+        );
+    }
+
+    #[test]
+    fn an_expired_registration_anchor_still_requires_a_valid_signature() {
+        let mut bootstrap = DeviceBootstrap::generate(USER_ID, DEVICE_ID).unwrap();
+        bootstrap.key_package = KeyPackage::builder()
+            .key_package_lifetime(Lifetime::init(1, 2))
+            .build(
+                CIPHERSUITE,
+                &bootstrap._provider,
+                &bootstrap.signer,
+                bootstrap.credential.clone(),
+            )
+            .unwrap()
+            .key_package()
+            .tls_serialize_detached()
+            .unwrap();
+        assert!(restore(&encode(&bootstrap, 1).unwrap(), USER_ID, DEVICE_ID).is_ok());
+        *bootstrap.key_package.last_mut().unwrap() ^= 1;
+        assert_eq!(
+            restore(&encode(&bootstrap, 1).unwrap(), USER_ID, DEVICE_ID).err(),
+            Some(BootstrapError::SnapshotCorrupt),
         );
     }
 

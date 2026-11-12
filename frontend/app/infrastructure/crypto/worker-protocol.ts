@@ -30,6 +30,7 @@ const ERROR_CODES = new Set<DeviceCryptoErrorCode>([
   'local-state-lost',
   'invalid-request',
   'not-provisioned',
+  'message-key-unavailable',
   'operation-failed',
   'rollback',
   'runtime-import-failed',
@@ -183,6 +184,7 @@ function parseIdentity(value: unknown): DeviceCryptoIdentity | null {
       'credentialIdentity',
       'deviceId',
       'fingerprint',
+      'initialKeyPackageRef',
       'keyPackage',
       'revision',
       'signaturePublicKey',
@@ -193,6 +195,8 @@ function parseIdentity(value: unknown): DeviceCryptoIdentity | null {
     || Number(candidate.revision) <= 0
     || typeof candidate.fingerprint !== 'string'
     || !FINGERPRINT_PATTERN.test(candidate.fingerprint)
+    || typeof candidate.initialKeyPackageRef !== 'string'
+    || !FINGERPRINT_PATTERN.test(candidate.initialKeyPackageRef)
     || !(candidate.credentialIdentity instanceof Uint8Array)
     || candidate.credentialIdentity.byteLength !== 33
     || !(candidate.signaturePublicKey instanceof Uint8Array)
@@ -206,6 +210,7 @@ function parseIdentity(value: unknown): DeviceCryptoIdentity | null {
     deviceId: identityCommand.deviceId,
     revision: Number(candidate.revision),
     fingerprint: candidate.fingerprint,
+    initialKeyPackageRef: candidate.initialKeyPackageRef,
     credentialIdentity: candidate.credentialIdentity,
     signaturePublicKey: candidate.signaturePublicKey,
     keyPackage: candidate.keyPackage,

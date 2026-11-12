@@ -26,6 +26,7 @@ const identity = {
   credentialIdentity: new Uint8Array(33),
   signaturePublicKey: new Uint8Array(32),
   keyPackage: new Uint8Array([1, 2, 3]),
+  initialKeyPackageRef: 'cd'.repeat(32),
 }
 const validationCommand = {
   targetUserId: userId,

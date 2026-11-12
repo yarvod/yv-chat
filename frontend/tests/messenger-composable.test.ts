@@ -1,3 +1,6 @@
+import { webcrypto } from 'node:crypto'
+
+import { IDBFactory, IDBKeyRange } from 'fake-indexeddb'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApplicationError } from '../app/application/errors'
@@ -40,9 +43,12 @@ import type { PageVisibility } from '../app/application/ports/page-visibility'
 import { ProtocolMessageProtection } from '../app/application/messaging/message-protection'
 import { SyntheticMessageProtocol } from '../app/infrastructure/crypto/synthetic-message-protocol'
 import { UnavailableMlsMessageProtocol } from '../app/infrastructure/crypto/unavailable-mls-message-protocol'
+import { IndexedDbMessageArchive } from '../app/infrastructure/storage/indexeddb-message-archive'
+import { IndexedDbMessengerSnapshotStore } from '../app/infrastructure/storage/indexeddb-messenger-snapshot-store'
 import { useMessenger } from '../app/presentation/composables/useMessenger'
 import type { MessageProtocolAdapter } from '../app/application/ports/message-protocol-adapter'
 
+const storageScope = 'device:alice-id:device-alice'
 const conversation = {
   conversationId: 'conversation-1',
   conversationType: 'group' as const,
@@ -248,6 +254,63 @@ beforeEach(() => {
 })
 
 describe('messenger orchestration', () => {
+  it('never opens the old device or account-only archive after a fresh login on the same origin', async () => {
+    vi.stubGlobal('IDBKeyRange', IDBKeyRange)
+    const db = new IDBFactory()
+    const subtle = webcrypto.subtle as unknown as SubtleCrypto
+    const random = (array: Uint8Array<ArrayBuffer>) => webcrypto.getRandomValues(array)
+    const archive = new IndexedDbMessageArchive(db, subtle, random)
+    const snapshots = new IndexedDbMessengerSnapshotStore(db, subtle, random)
+    const direct = { ...conversation, conversationType: 'direct' as const, title: null }
+    const envelope = { ...message, protocolVersion: 2, cryptoGenerationId: 'generation', cryptoEpoch: 1 }
+    const cached = { ...envelope, localPlaintext: 'old device only' }
+    const snapshot = {
+      ownerUserId: storageScope,
+      directory: [],
+      conversations: [direct],
+      readStates: [],
+      deliveryStates: [],
+      syncCursor: 900,
+      savedAt: '2026-08-11T11:59:00Z',
+    }
+    const dependencies = {
+      ...messengerDependencies(), messageArchive: archive, messengerSnapshotStore: snapshots,
+    }
+    vi.mocked(gateway.listConversations).mockResolvedValue([direct])
+    vi.mocked(gateway.listMessages).mockReset().mockResolvedValue([envelope])
+    vi.mocked(gateway.listMessageHistory).mockResolvedValue({
+      messages: [envelope], hasMore: false, oldestSequence: 1, newestSequence: 1,
+    })
+    vi.mocked(gateway.listSync).mockReset().mockImplementation(async cursor => ({
+      events: [], nextCursor: cursor, streamCursor: cursor, hasMore: false, resetRequired: false,
+    }))
+    try {
+      await archive.put('alice-id', direct.conversationId, [cached])
+      await archive.put(storageScope, direct.conversationId, [cached])
+      await snapshots.save({ ...snapshot, ownerUserId: 'alice-id' })
+      await snapshots.save(snapshot)
+      const existing = useMessenger('alice-id', 'device-alice', vi.fn(), dependencies)
+      await existing.load()
+      expect(existing.state.messages[0]?.displayBody).toBe('old device only')
+      expect(gateway.listSync).toHaveBeenCalledWith(900)
+      existing.dispose()
+
+      vi.mocked(gateway.listSync).mockClear()
+      const replacement = useMessenger('alice-id', 'new-device', vi.fn(), dependencies)
+      await replacement.load()
+      expect(replacement.state.messages[0]).toMatchObject({
+        messageId: envelope.messageId, contentState: 'unavailable',
+      })
+      expect(gateway.listSync).toHaveBeenCalledWith(0)
+      expect(gateway.listSync).not.toHaveBeenCalledWith(900)
+      replacement.dispose()
+    } finally {
+      archive.close()
+      snapshots.close()
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('updates multiple pins immediately and reloads them after durable pin sync', async () => {
     const firstPin = {
       messageId: 'message-1',
@@ -882,7 +945,7 @@ describe('messenger orchestration', () => {
 
   it('hydrates a local conversation snapshot and catches up without full list refetch', async () => {
     vi.mocked(messengerSnapshotStore.load).mockResolvedValue({
-      ownerUserId: 'alice-id',
+      ownerUserId: storageScope,
       directory: [],
       conversations: [conversation],
       readStates: [],
@@ -910,7 +973,7 @@ describe('messenger orchestration', () => {
     expect(readStateGateway.list).not.toHaveBeenCalled()
     expect(deliveryStateGateway.list).not.toHaveBeenCalled()
     expect(messengerSnapshotStore.save).toHaveBeenCalledWith(expect.objectContaining({
-      ownerUserId: 'alice-id', syncCursor: 8,
+      ownerUserId: storageScope, syncCursor: 8,
     }))
   })
 
@@ -984,7 +1047,7 @@ describe('messenger orchestration', () => {
       sequence: 42,
     }
     vi.mocked(messengerSnapshotStore.load).mockResolvedValue({
-      ownerUserId: 'alice-id',
+      ownerUserId: storageScope,
       directory: [],
       conversations: [conversation, secondConversation],
       readStates: [],
@@ -1051,8 +1114,8 @@ describe('messenger orchestration', () => {
     await vi.waitFor(() => expect(messenger.state.messages[0]?.messageId).toBe('message-anchor'))
     expect(messenger.state.historyHasNewer).toBe(true)
     expect(settled).toBe(false)
-    expect(messageArchive.loadBefore).toHaveBeenCalledWith('alice-id', 'conversation-1', 43, 50)
-    expect(messageArchive.loadAfter).toHaveBeenCalledWith('alice-id', 'conversation-1', 42, 51)
+    expect(messageArchive.loadBefore).toHaveBeenCalledWith(storageScope, 'conversation-1', 43, 50)
+    expect(messageArchive.loadAfter).toHaveBeenCalledWith(storageScope, 'conversation-1', 42, 51)
 
     releaseNetwork?.({
       messages: [anchoredMessage],
@@ -1078,7 +1141,7 @@ describe('messenger orchestration', () => {
       sequence: 1_000,
     }
     vi.mocked(messengerSnapshotStore.load).mockResolvedValue({
-      ownerUserId: 'alice-id',
+      ownerUserId: storageScope,
       directory: [],
       conversations: [conversation],
       readStates: [],
@@ -1114,7 +1177,7 @@ describe('messenger orchestration', () => {
 
     expect(messageArchive.loadLatest).not.toHaveBeenCalled()
     expect(messageArchive.loadBefore).toHaveBeenCalledWith(
-      'alice-id', 'conversation-1', 501, 50,
+      storageScope, 'conversation-1', 501, 50,
     )
     expect(messenger.state.messages[0]?.messageId).toBe('message-anchor')
     expect(messenger.state.messages.at(-1)?.sequence).toBe(550)
@@ -1131,7 +1194,7 @@ describe('messenger orchestration', () => {
     }))
     const ownCachedMessage = latest.at(-1)!
     vi.mocked(messengerSnapshotStore.load).mockResolvedValue({
-      ownerUserId: 'alice-id',
+      ownerUserId: storageScope,
       directory: [],
       conversations: [conversation],
       readStates: [],
@@ -1169,7 +1232,7 @@ describe('messenger orchestration', () => {
     expect(messenger.state.messages.map(item => item.sequence)).toEqual([
       149, 150, 151, 152, 153, 154, 155,
     ])
-    expect(messageArchive.put).toHaveBeenCalledWith('alice-id', 'conversation-1', latest)
+    expect(messageArchive.put).toHaveBeenCalledWith(storageScope, 'conversation-1', latest)
   })
 
   it('loads an exact deep-linked message window and persists its encrypted viewport anchor', async () => {
@@ -1609,7 +1672,7 @@ describe('messenger orchestration', () => {
       contentState: 'deleted', ciphertextBase64: null, deletionReason: 'manual',
     })
     expect(messageArchive.put).toHaveBeenLastCalledWith(
-      'alice-id',
+      storageScope,
       'conversation-1',
       [tombstone],
     )

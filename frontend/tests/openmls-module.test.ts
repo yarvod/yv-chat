@@ -13,6 +13,7 @@ function moduleFixture(initialize: () => Promise<unknown>): OpenMlsModule {
     } },
   )
   Object.assign(Bootstrap.prototype, {
+    initialKeyPackageRef: vi.fn(),
     createConversation: vi.fn(),
     inspectConversation: vi.fn(),
     generateKeyPackages: vi.fn(),

@@ -12,5 +12,10 @@ async function sessionExpired(): Promise<void> {
 </script>
 
 <template>
-  <ChatWorkspace v-if="auth.user.value" :user="auth.user.value" @session-expired="sessionExpired" />
+  <ChatWorkspace
+    v-if="auth.user.value"
+    :key="auth.user.value.deviceId"
+    :user="auth.user.value"
+    @session-expired="sessionExpired"
+  />
 </template>

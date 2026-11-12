@@ -385,13 +385,24 @@ export class DeviceCryptoRuntime {
     } catch (error) {
       throw translateError(error)
     }
-    return await this.mutateAndCheckpointWithMessageContent(command, active => ({
-      plaintext: active.unprotectApplicationMessage(
-        command.conversationId,
-        command.clientMessageId,
-        command.ciphertext,
-      ).slice(),
-    }))
+    return await this.mutateAndCheckpointWithMessageContent(command, active => {
+      try {
+        return {
+          plaintext: active.unprotectApplicationMessage(
+            command.conversationId,
+            command.clientMessageId,
+            command.ciphertext,
+          ).slice(),
+        }
+      } catch (error) {
+        // Match the two fixed errors from the OpenMLS WASM boundary.
+        if (error instanceof Error && (
+          error.message === 'MLS group is not available'
+          || error.message === 'MLS message keys are unavailable'
+        )) throw new DeviceCryptoError('message-key-unavailable')
+        throw error
+      }
+    })
   }
 
   async signCallBinding(command: CallBindingCommand): Promise<CallBindingSignatureResult> {
@@ -570,8 +581,10 @@ export class DeviceCryptoRuntime {
     const credentialIdentity = active.value.credentialIdentity()
     const signaturePublicKey = active.value.signaturePublicKey()
     const keyPackage = active.value.keyPackage()
+    const initialKeyPackageRef = active.value.initialKeyPackageRef()
     if (
       !FINGERPRINT_PATTERN.test(fingerprint)
+      || !FINGERPRINT_PATTERN.test(initialKeyPackageRef)
       || credentialIdentity.byteLength !== CREDENTIAL_IDENTITY_BYTES
       || signaturePublicKey.byteLength !== SIGNATURE_PUBLIC_KEY_BYTES
       || keyPackage.byteLength === 0
@@ -584,6 +597,7 @@ export class DeviceCryptoRuntime {
       deviceId: active.deviceId,
       revision: active.revision,
       fingerprint,
+      initialKeyPackageRef,
       credentialIdentity: credentialIdentity.slice(),
       signaturePublicKey: signaturePublicKey.slice(),
       keyPackage: keyPackage.slice(),
