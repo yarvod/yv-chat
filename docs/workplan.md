@@ -2,7 +2,7 @@
 
 ## WP-151 — Восстановление MLS и изоляция локального архива
 
-Статус: **проверено локально, production rollout pending**.
+Статус: **развернуто в production, проверка на физических устройствах ожидается**.
 Backlog: `BL-FIX-078`. Дефекты: `BUG-146`, `BUG-147`.
 
 1. Восстановить подписанное состояние v8 через v9 после истечения первого
@@ -21,3 +21,5 @@ crypto checks, чистая установка и audit, frontend checks, усп
 
 Локально прошли 531 frontend test, 27 Rust tests, lint, typecheck,
 production build, audit с 0 high и 0 critical, docs/deploy checks.
+Workflow `43126631119` прошёл полный CI и rollout для `7a72beb`. Оба
+production origin отдают рабочий API, Service Worker и OpenMLS v9.
